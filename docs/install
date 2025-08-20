@@ -104,7 +104,7 @@ OPTIONS:
             Force installation to specific directory
 
         --version VERSION
-            Install a specific version instead of the latest
+            Install a specific version instead of the latest production release
 
     -h, --help
             Print help information
@@ -114,7 +114,7 @@ ENVIRONMENT VARIABLES:
     HCLI_PRINT_QUIET=1       Disable progress output  
     HCLI_NO_MODIFY_PATH=1    Don't modify PATH
     HCLI_INSTALL_DIR=DIR     Force installation directory
-    HCLI_VERSION=VERSION     Install specific version instead of latest
+    HCLI_VERSION=VERSION     Install specific version instead of latest production release
     HCLI_GITHUB_TOKEN=TOKEN  GitHub token for authenticated downloads
     HCLI_GITHUB_REPO=REPO    Override GitHub repository (default: HexRaysSA/ida-hcli)
 
@@ -498,10 +498,10 @@ get_install_dir() {
 # =============================================================================
 
 get_latest_release() {
-    local _releases_url="$GITHUB_API_BASE/repos/$GITHUB_REPO/releases/latest"
+    local _releases_url="$GITHUB_API_BASE/repos/$GITHUB_REPO/releases"
     local _tmp_file
     
-    say_verbose "Fetching latest release from GitHub API"
+    say_verbose "Fetching latest production release from GitHub API"
     say_verbose "URL: $_releases_url"
     
     _tmp_file="$(ensure mktemp)" || return 1
@@ -510,22 +510,22 @@ get_latest_release() {
         err "Failed to fetch release information from GitHub API: $_releases_url"
     fi
     
-    # Extract tag name (version) from GitHub API response
+    # Extract all tag names and filter out dev releases
     local _version
-    _version=$(grep -o '"tag_name":"[^"]*"' "$_tmp_file" | cut -d'"' -f4 | sed 's/^v//')
+    _version=$(grep -o '"tag_name":"[^"]*"' "$_tmp_file" | cut -d'"' -f4 | sed 's/^v//' | grep -v -i dev | head -n1)
     
     if [ -z "$_version" ]; then
         # Try alternative parsing for different JSON formats
-        _version=$(grep -o '"tag_name": *"[^"]*"' "$_tmp_file" | cut -d'"' -f4 | sed 's/^v//')
+        _version=$(grep -o '"tag_name": *"[^"]*"' "$_tmp_file" | cut -d'"' -f4 | sed 's/^v//' | grep -v -i dev | head -n1)
     fi
     
     ignore rm -f "$_tmp_file"
     
     if [ -z "$_version" ]; then
-        err "Failed to parse version from GitHub releases API response"
+        err "Failed to find any production releases (excluding dev versions) from GitHub releases API"
     fi
     
-    say_verbose "Found latest release: $_version"
+    say_verbose "Found latest production release: $_version"
     echo "$_version"
 }
 
@@ -796,7 +796,7 @@ main() {
         text_title "Fetching Specific Release" " version $FORCE_VERSION"
         _version=$(get_specific_release "$FORCE_VERSION")
     else
-        text_title "Fetching Latest Release"
+        text_title "Fetching Latest Production Release"
         _version=$(get_latest_release)
     fi
 

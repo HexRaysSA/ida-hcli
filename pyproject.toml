@@ -21,6 +21,7 @@ dependencies = [
     "packaging",
     "questionary",
     "ida-domain>=0.0.1.dev29",
+    "semantic-version>=2.10.0",
 ]
 
 [project.urls]

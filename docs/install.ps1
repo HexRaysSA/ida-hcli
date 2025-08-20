@@ -23,7 +23,7 @@ Default: HexRaysSA/ida-hcli
 Force installation to a specific directory. Overrides all other directory detection.
 
 .PARAMETER Version
-Install a specific version instead of the latest release.
+Install a specific version instead of the latest production release.
 
 .PARAMETER NoModifyPath
 Don't add the installation directory to PATH
@@ -68,7 +68,7 @@ param (
     })]
     [string]$InstallDir,
     
-    [Parameter(HelpMessage = "Install a specific version instead of the latest release")]
+    [Parameter(HelpMessage = "Install a specific version instead of the latest production release")]
     [ValidatePattern('^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]*)?$')]
     [string]$Version,
     
@@ -298,15 +298,46 @@ function Invoke-GitHubApiRequest {
 function Get-LatestRelease {
     <#
     .SYNOPSIS
-    Fetches the latest release information from GitHub API
+    Fetches the latest production release information from GitHub API (excluding dev releases)
     #>
     [CmdletBinding()]
     param(
         [string]$Repository
     )
     
-    $releases_url = "$github_api_base/repos/$Repository/releases/latest"
-    return Invoke-GitHubApiRequest -Uri $releases_url -ErrorContext "fetch latest release information"
+    $releases_url = "$github_api_base/repos/$Repository/releases"
+    Write-Verbose "Fetching latest production release from: $releases_url"
+    
+    try {
+        $headers = @{}
+        if ($auth_token) {
+            $headers["Authorization"] = "Bearer $auth_token"
+            Write-Verbose "Using GitHub authentication token"
+        }
+        
+        if ($headers.Count -gt 0) {
+            $response = Invoke-RestMethod -Uri $releases_url -Headers $headers -ErrorAction Stop
+        } else {
+            $response = Invoke-RestMethod -Uri $releases_url -ErrorAction Stop
+        }
+        
+        # Filter out dev releases and get the first (latest) production release
+        $productionRelease = $response | Where-Object { $_.tag_name -notmatch "dev" } | Select-Object -First 1
+        
+        if (-not $productionRelease -or -not $productionRelease.tag_name) {
+            throw "No production releases found (excluding dev versions)"
+        }
+        
+        # Remove 'v' prefix if present
+        $version = $productionRelease.tag_name -replace '^v', ''
+        Write-Verbose "Retrieved latest production version: $version"
+        return $version
+        
+    } catch [System.Net.WebException] {
+        throw "Failed to fetch latest release information from ${releases_url}. Check your internet connection and try again. Error: $_"
+    } catch {
+        throw "Failed to parse response from fetch latest release information: $_"
+    }
 }
 
 function Get-SpecificRelease {
@@ -605,9 +636,9 @@ function Install-Hcli {
             $version = Get-SpecificRelease -Repository $github_repo -TargetVersion $Version
             Write-Information "Target version: $version"
         } else {
-            Write-Information "Fetching latest release..."
+            Write-Information "Fetching latest production release..."
             $version = Get-LatestRelease -Repository $github_repo
-            Write-Information "Latest version: $version"
+            Write-Information "Latest production version: $version"
         }
         
         # Determine installation directory
