@@ -30,6 +30,30 @@ env:
   UV_PYTHON: '3.13'
 
 jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python with uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python and dependencies
+        run: |
+          uv python install "${{ env.UV_PYTHON }}"
+          uv sync --extra test
+
+      - name: Run tests
+        run: |
+          uv run --extra test pytest
+
   publish:
     name: Publish PyPi Package
     runs-on: ubuntu-latest

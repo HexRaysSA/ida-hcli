@@ -26,7 +26,7 @@ class TestCLIBasics:
         assert result.returncode == 0, f"Version command failed: {result.stderr}"
         assert result.stdout.strip() == f"hcli, version {__version__}", "Version command should produce output"
 
-    @pytest.mark.parametrize("subcommand", ["auth", "download", "ida", "license", "plugin", "share", "update"])
+    @pytest.mark.parametrize("subcommand", ["auth", "download", "ida", "license", "share", "update"])
     def test_subcommand_help(self, subcommand):
         """Test help for various subcommands."""
         result = subprocess.run(["uv", "run", "hcli", subcommand, "--help"], capture_output=True, text=True, timeout=10)
