@@ -30,6 +30,24 @@ This will automatically install an **hcli** binary
     .\install.ps1 -Version "0.7.4"
     ```
 
+!!! tip
+
+    The installation script may be inspected before use:
+
+    === "macOS and Linux"
+
+        ```console
+        $ curl -LsSf https://hcli.docs.hex-rays.com/install | less
+        ```
+
+    === "Windows"
+
+        ```pwsh-session
+        PS> powershell -c "irm https://hcli.docs.hex-rays.com/install.ps1 | more"
+        ```
+
+    Alternatively, the installer or binaries can be downloaded directly from [GitHub](#github-releases).
+
 ## Python Installation 
 
 ```bash
