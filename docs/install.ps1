@@ -55,7 +55,7 @@ Install without modifying PATH, with verbose output
 [CmdletBinding()]
 param (
     [Parameter(HelpMessage = "Override the GitHub repository for downloads (format: owner/repo)")]
-    [ValidatePattern('^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$')]
+    [ValidatePattern('^$|^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$')]
     [string]$GitHubRepo,
     
     [Parameter(HelpMessage = "Force installation to a specific directory")]
