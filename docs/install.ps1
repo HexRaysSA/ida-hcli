@@ -55,7 +55,6 @@ Install without modifying PATH, with verbose output
 [CmdletBinding()]
 param (
     [Parameter(HelpMessage = "Override the GitHub repository for downloads (format: owner/repo)")]
-    [ValidatePattern('^$|^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$')]
     [string]$GitHubRepo,
     
     [Parameter(HelpMessage = "Force installation to a specific directory")]
@@ -69,7 +68,6 @@ param (
     [string]$InstallDir,
     
     [Parameter(HelpMessage = "Install a specific version instead of the latest production release")]
-    [ValidatePattern('^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]*)?$')]
     [string]$Version,
     
     [Parameter(HelpMessage = "Don't add the installation directory to PATH")]
@@ -99,9 +97,17 @@ function Initialize-Configuration {
     
     # GitHub repository configuration
     if ($GitHubRepo) {
+        # Validate the GitHubRepo format
+        if ($GitHubRepo -notmatch '^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$') {
+            throw "Invalid GitHub repository format. Expected: owner/repo"
+        }
         $script:github_repo = $GitHubRepo
         Write-Verbose "Using GitHub repo from parameter: $GitHubRepo"
     } elseif ($env:HCLI_GITHUB_REPO) {
+        # Validate the environment variable format
+        if ($env:HCLI_GITHUB_REPO -notmatch '^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$') {
+            throw "Invalid GitHub repository format in HCLI_GITHUB_REPO. Expected: owner/repo"
+        }
         $script:github_repo = $env:HCLI_GITHUB_REPO
         Write-Verbose "Using GitHub repo from environment: $env:HCLI_GITHUB_REPO"
     }
@@ -113,7 +119,17 @@ function Initialize-Configuration {
     }
     
     # Version configuration
+    if ($Version) {
+        # Validate the Version format
+        if ($Version -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]*)?$') {
+            throw "Invalid version format. Expected: x.y.z or vx.y.z (e.g., 0.7.3 or v0.7.3)"
+        }
+    }
     if ($env:HCLI_VERSION) {
+        # Validate the environment variable format
+        if ($env:HCLI_VERSION -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]*)?$') {
+            throw "Invalid version format in HCLI_VERSION. Expected: x.y.z or vx.y.z"
+        }
         $script:Version = $env:HCLI_VERSION
         Write-Verbose "Using version from environment: $env:HCLI_VERSION"
     }
