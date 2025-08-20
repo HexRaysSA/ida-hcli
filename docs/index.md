@@ -20,7 +20,7 @@ This will automatically install an **hcli** binary
 
 === "Windows"
     ```cmd
-    iwr https://hcli.docs.hex-rays.com/install.ps1 | iex
+    iex (iwr -useb https://hcli.docs.hex-rays.com/install.ps1)
     ```
 
 ## Python Installation 

@@ -1,159 +1,800 @@
 #!/usr/bin/env sh
+# shellcheck shell=dash
+# shellcheck disable=SC2039  # local is non-POSIX
 
-set -eu
+# Enhanced installer script for hcli
+# Based on patterns from uv-installer with improvements for robustness and usability
+
+# Some versions of ksh have no `local` keyword. Alias it to `typeset`
+has_local() {
+    # shellcheck disable=SC2034  # deliberately unused  
+    local _has_local
+}
+
+has_local 2>/dev/null || alias local=typeset
+
+set -u
 
 # =============================================================================
-# Define base variables
+# Configuration and Environment Variables
 # =============================================================================
 
-NAME="hcli"
-DOWNLOAD_BASE_URL="https://hcli.docs.hex-rays.com"
+APP_NAME="hcli"
+GITHUB_REPO="HexRaysSA/ida-hcli"
+GITHUB_API_BASE="https://api.github.com"
 
-# Fetch version from API
-VERSION=$(curl -s "$DOWNLOAD_BASE_URL/release/version.json" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
-if [ -z "$VERSION" ]; then
-  echo " Failed to fetch version from API"
-  exit 1
+# Environment variable configuration
+if [ -n "${HCLI_PRINT_VERBOSE:-}" ]; then
+    PRINT_VERBOSE="$HCLI_PRINT_VERBOSE"
+else
+    PRINT_VERBOSE=0
 fi
 
+if [ -n "${HCLI_PRINT_QUIET:-}" ]; then
+    PRINT_QUIET="$HCLI_PRINT_QUIET"
+else
+    PRINT_QUIET=0
+fi
+
+if [ -n "${HCLI_NO_MODIFY_PATH:-}" ]; then
+    NO_MODIFY_PATH="$HCLI_NO_MODIFY_PATH"
+else
+    NO_MODIFY_PATH=0
+fi
+
+if [ -n "${HCLI_INSTALL_DIR:-}" ]; then
+    FORCE_INSTALL_DIR="$HCLI_INSTALL_DIR"
+else
+    FORCE_INSTALL_DIR=""
+fi
+
+if [ -n "${HCLI_VERSION:-}" ]; then
+    FORCE_VERSION="$HCLI_VERSION"
+else
+    FORCE_VERSION=""
+fi
+
+AUTH_TOKEN="${HCLI_GITHUB_TOKEN:-}"
+
+# Allow override of GitHub repository
+if [ -n "${HCLI_GITHUB_REPO:-}" ]; then
+    GITHUB_REPO="$HCLI_GITHUB_REPO"
+fi
+
+# Get HOME directory safely
+get_home() {
+    if [ -n "${HOME:-}" ]; then
+        echo "$HOME"
+    elif [ -n "${USER:-}" ]; then
+        getent passwd "$USER" | cut -d: -f6 2>/dev/null || echo "/tmp"
+    else
+        getent passwd "$(id -un)" | cut -d: -f6 2>/dev/null || echo "/tmp"
+    fi
+}
+
+INFERRED_HOME=$(get_home)
 
 # =============================================================================
-# Define helper functions
+# Utility Functions
 # =============================================================================
+
+usage() {
+    cat <<EOF
+hcli-installer.sh
+
+Enhanced installer for hcli - IDA Pro command-line interface
+
+This script detects your platform and downloads the appropriate binary
+from GitHub releases, then installs it to a suitable location.
+
+USAGE:
+    hcli-installer.sh [OPTIONS]
+
+OPTIONS:
+    -v, --verbose
+            Enable verbose output
+
+    -q, --quiet  
+            Disable progress output
+
+        --no-modify-path
+            Don't configure the PATH environment variable
+
+        --install-dir DIR
+            Force installation to specific directory
+
+        --version VERSION
+            Install a specific version instead of the latest
+
+    -h, --help
+            Print help information
+
+ENVIRONMENT VARIABLES:
+    HCLI_PRINT_VERBOSE=1     Enable verbose output
+    HCLI_PRINT_QUIET=1       Disable progress output  
+    HCLI_NO_MODIFY_PATH=1    Don't modify PATH
+    HCLI_INSTALL_DIR=DIR     Force installation directory
+    HCLI_VERSION=VERSION     Install specific version instead of latest
+    HCLI_GITHUB_TOKEN=TOKEN  GitHub token for authenticated downloads
+    HCLI_GITHUB_REPO=REPO    Override GitHub repository (default: HexRaysSA/ida-hcli)
+
+EOF
+}
+
+say() {
+    if [ "$PRINT_QUIET" = "0" ]; then
+        echo "$1"
+    fi
+}
+
+say_verbose() {
+    if [ "$PRINT_VERBOSE" = "1" ]; then
+        echo "$1"
+    fi
+}
+
+warn() {
+    if [ "$PRINT_QUIET" = "0" ]; then
+        local yellow reset
+        yellow=$(tput setaf 3 2>/dev/null || echo '')
+        reset=$(tput sgr0 2>/dev/null || echo '')
+        say "${yellow}WARN${reset}: $1" >&2
+    fi
+}
+
+err() {
+    if [ "$PRINT_QUIET" = "0" ]; then
+        local red reset
+        red=$(tput setaf 1 2>/dev/null || echo '')
+        reset=$(tput sgr0 2>/dev/null || echo '')
+        say "${red}ERROR${reset}: $1" >&2
+    fi
+    exit 1
+}
 
 text_bold() {
-  echo "\033[1m$1\033[0m"
+    local bold reset
+    bold=$(tput bold 2>/dev/null || echo '\033[1m')
+    reset=$(tput sgr0 2>/dev/null || echo '\033[0m')
+    echo "${bold}$1${reset}"
 }
+
 text_underline() {
-  echo "\033[4m$1\033[0m"
+    local underline reset
+    underline=$(tput smul 2>/dev/null || echo '\033[4m')
+    reset=$(tput sgr0 2>/dev/null || echo '\033[0m')
+    echo "${underline}$1${reset}"
 }
+
 text_title() {
-  echo ""
-  text_bold "$1"
-  if [ -n "${2:-}" ]; then echo "$2"; fi
+    if [ "$PRINT_QUIET" = "0" ]; then
+        echo ""
+        text_bold "$1"
+        if [ -n "${2:-}" ]; then 
+            echo "$2"
+        fi
+    fi
 }
+
 text_title_error() {
-  echo ""
-  echo "\033[1;31m$1\033[00m"
+    if [ "$PRINT_QUIET" = "0" ]; then
+        echo ""
+        local red bold reset
+        red=$(tput setaf 1 2>/dev/null || echo '')
+        bold=$(tput bold 2>/dev/null || echo '')
+        reset=$(tput sgr0 2>/dev/null || echo '')
+        echo "${bold}${red}$1${reset}"
+    fi
+}
+
+# Command availability checking
+need_cmd() {
+    if ! check_cmd "$1"; then
+        err "need '$1' (command not found)"
+    fi
+}
+
+check_cmd() {
+    command -v "$1" > /dev/null 2>&1
+}
+
+assert_nz() {
+    if [ -z "$1" ]; then 
+        err "assert_nz $2"
+    fi
+}
+
+ensure() {
+    if ! "$@"; then 
+        err "command failed: $*"
+    fi
+}
+
+ignore() {
+    "$@" || true
 }
 
 # =============================================================================
-# Define supported OS & Arch
+# Download Functions
+# =============================================================================
+
+downloader() {
+    # Check if we have a broken snap curl
+    local _snap_curl=0
+    if command -v curl > /dev/null 2>&1; then
+        local _curl_path
+        _curl_path=$(command -v curl)
+        if echo "$_curl_path" | grep "/snap/" > /dev/null 2>&1; then
+            _snap_curl=1
+        fi
+    fi
+
+    local _dld
+    # Check if we have a working (non-snap) curl
+    if check_cmd curl && [ "$_snap_curl" = "0" ]; then
+        _dld=curl
+    # Try wget for both no curl and the broken snap curl
+    elif check_cmd wget; then
+        _dld=wget
+    # If we can't fall back from broken snap curl to wget, report the broken snap curl
+    elif [ "$_snap_curl" = "1" ]; then
+        err "curl installed with snap cannot be used to install $APP_NAME due to missing permissions. Please uninstall it and reinstall curl with a different package manager (e.g., apt)."
+    else
+        _dld='curl or wget' # to be used in error message of need_cmd
+    fi
+
+    if [ "$1" = "--check" ]; then
+        need_cmd "$_dld"
+    elif [ "$_dld" = "curl" ]; then
+        local _curl_args="-sSfL"
+        if [ "$PRINT_VERBOSE" = "1" ]; then
+            _curl_args="-SfL"
+        elif [ "$PRINT_QUIET" = "0" ]; then
+            _curl_args="-SfL#"
+        fi
+        
+        if [ -n "${AUTH_TOKEN:-}" ]; then
+            curl $_curl_args --header "Authorization: Bearer ${AUTH_TOKEN}" "$1" -o "$2"
+        else
+            curl $_curl_args "$1" -o "$2"
+        fi
+    elif [ "$_dld" = "wget" ]; then
+        local _wget_args="--quiet"
+        if [ "$PRINT_VERBOSE" = "1" ]; then
+            _wget_args="--verbose"
+        elif [ "$PRINT_QUIET" = "0" ]; then
+            _wget_args="--progress=bar"
+        fi
+
+        if [ -n "${AUTH_TOKEN:-}" ]; then
+            wget $_wget_args --header "Authorization: Bearer ${AUTH_TOKEN}" "$1" -O "$2"
+        else
+            wget $_wget_args "$1" -O "$2"
+        fi
+    else
+        err "Unknown downloader"
+    fi
+}
+
+
+# =============================================================================
+# Platform Detection
 # =============================================================================
 
 get_binary_name() {
-  case "$1:$2" in
-    Linux:x86_64) echo "${NAME}" ;;
-    Darwin:arm64) echo "${NAME}" ;;
-    *)
-      text_title_error "Error"
-      echo " Unsupported OS or arch: $1:$2"
-      exit 1
-      ;;
-  esac
+    case "$1:$2" in
+        Linux:x86_64) echo "${APP_NAME}" ;;
+        Darwin:arm64) echo "${APP_NAME}" ;;
+        Darwin:x86_64) echo "${APP_NAME}" ;;
+        *)
+            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Darwin:arm64, Darwin:x86_64"
+            ;;
+    esac
 }
 
 get_platform_name() {
-  case "$1:$2" in
-    Linux:x86_64) echo "linux" ;;
-    Darwin:arm64) echo "mac" ;;
-    *)
-      text_title_error "Error"
-      echo " Unsupported OS or arch: $1:$2"
-      exit 1
-      ;;
-  esac
+    case "$1:$2" in
+        Linux:x86_64) echo "linux" ;;
+        Darwin:arm64) echo "mac" ;;
+        Darwin:x86_64) echo "mac" ;;
+        *)
+            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Darwin:arm64, Darwin:x86_64"
+            ;;
+    esac
 }
 
 # =============================================================================
-# Get the user's OS and Arch
+# PATH Management Functions
 # =============================================================================
 
-OS="$(uname -s)"
-ARCH="$(uname -m)"
-SYSTEM="$OS:$ARCH"
+replace_home() {
+    local _str="$1"
+    if [ -n "${HOME:-}" ]; then
+        echo "$_str" | sed "s,$HOME,\$HOME,"
+    else
+        echo "$_str"
+    fi
+}
 
-BINARY=$(get_binary_name "$OS" "$ARCH")
-PLATFORM=$(get_platform_name "$OS" "$ARCH")
-DOWNLOAD_URL="$DOWNLOAD_BASE_URL/release/$NAME-$PLATFORM-$ARCH-$VERSION"
-
-# =============================================================================
-# Prompt user for installation
-# =============================================================================
-
-echo "This script will install $NAME version $VERSION."
-printf "Do you want to continue? ("$(text_underline "yes")"/no): "
-read -r CONFIRMATION < /dev/tty
-CONFIRMATION=${CONFIRMATION:-yes}
-case "$CONFIRMATION" in
-  y|Y|yes|YES) ;;
-  *) text_title_error "Installation Aborted"; exit 0 ;;
+write_env_script_sh() {
+    local _install_dir_expr="$1"
+    local _env_script_path="$2"
+    ensure cat <<EOF > "$_env_script_path"
+#!/bin/sh
+# Add $APP_NAME binaries to PATH if they aren't added yet
+# Affix colons on either side of \$PATH to simplify matching
+case ":\${PATH}:" in
+    *:"$_install_dir_expr":*)
+        ;;
+    *)
+        # Prepending path in case a system-installed binary needs to be overridden
+        export PATH="$_install_dir_expr:\$PATH"
+        ;;
 esac
+EOF
+}
+
+write_env_script_fish() {
+    local _install_dir_expr="$1"
+    local _env_script_path="$2"
+    ensure cat <<EOF > "$_env_script_path"
+if not contains "$_install_dir_expr" \$PATH
+    # Prepending path in case a system-installed binary needs to be overridden
+    set -x PATH "$_install_dir_expr" \$PATH
+end
+EOF
+}
+
+print_home_for_script() {
+    local _script="$1"
+    local _home
+    case "$_script" in
+        # zsh has a special ZDOTDIR directory, which if set should be considered instead of $HOME
+        .zsh*)
+            if [ -n "${ZDOTDIR:-}" ]; then
+                _home="$ZDOTDIR"
+            else
+                _home="$INFERRED_HOME"
+            fi
+            ;;
+        *)
+            _home="$INFERRED_HOME"
+            ;;
+    esac
+    echo "$_home"
+}
+
+add_install_dir_to_path() {
+    local _install_dir_expr="$1"
+    local _env_script_path="$2"
+    local _env_script_path_expr="$3"
+    local _rcfiles="$4"
+    local _shell="$5"
+
+    if [ -n "${INFERRED_HOME:-}" ]; then
+        local _target _home
+
+        # Find the first file in the array that exists and choose that as our target
+        for _rcfile_relative in $_rcfiles; do
+            _home="$(print_home_for_script "$_rcfile_relative")"
+            local _rcfile="$_home/$_rcfile_relative"
+
+            if [ -f "$_rcfile" ]; then
+                _target="$_rcfile"
+                break
+            fi
+        done
+
+        # If we didn't find anything, pick the first entry as default to create
+        if [ -z "${_target:-}" ]; then
+            local _rcfile_relative
+            _rcfile_relative="$(echo "$_rcfiles" | awk '{print $1}')"
+            _home="$(print_home_for_script "$_rcfile_relative")"
+            _target="$_home/$_rcfile_relative"
+        fi
+
+        local _robust_line=". \"$_env_script_path_expr\""
+        local _pretty_line="source \"$_env_script_path_expr\""
+
+        # Add the env script if it doesn't already exist
+        if [ ! -f "$_env_script_path" ]; then
+            say_verbose "creating $_env_script_path"
+            if [ "$_shell" = "sh" ]; then
+                write_env_script_sh "$_install_dir_expr" "$_env_script_path"
+            else
+                write_env_script_fish "$_install_dir_expr" "$_env_script_path"
+            fi
+        else
+            say_verbose "$_env_script_path already exists"
+        fi
+
+        # Check if the line is already in the rcfile
+        if ! grep -F "$_robust_line" "$_target" > /dev/null 2>/dev/null && \
+           ! grep -F "$_pretty_line" "$_target" > /dev/null 2>/dev/null; then
+            # If the script now exists, add the line to source it to the rcfile
+            if [ -f "$_env_script_path" ]; then
+                local _line
+                if [ "$_shell" = "fish" ]; then
+                    _line="$_pretty_line"
+                else
+                    _line="$_robust_line"
+                fi
+                say_verbose "adding $_line to $_target"
+                ensure echo "" >> "$_target"
+                ensure echo "$_line" >> "$_target"
+                return 1
+            fi
+        else
+            say_verbose "$_install_dir_expr already on PATH"
+        fi
+    fi
+}
+
+check_for_shadowed_bins() {
+    local _install_dir="$1"
+    local _bins="$2"
+    local _shadowed_bins=""
+
+    for _bin_name in $_bins; do
+        local _shadow
+        _shadow="$(command -v "$_bin_name" 2>/dev/null || true)"
+        if [ -n "$_shadow" ] && [ "$_shadow" != "$_install_dir/$_bin_name" ]; then
+            _shadowed_bins="$_shadowed_bins $_bin_name"
+        fi
+    done
+
+    echo "$_shadowed_bins"
+}
 
 # =============================================================================
-# Ask user for installation directory
+# Installation Directory Detection
 # =============================================================================
 
-DEFAULT_INSTALL_DIR="$HOME/.${NAME}/bin"
-echo ""
-printf "Enter installation directory [$DEFAULT_INSTALL_DIR]: "
-read -r INSTALL_DIR < /dev/tty
+get_install_dir() {
+    local _install_dir=""
 
-# If user didn't enter anything, use the default
-if [ -z "$INSTALL_DIR" ]; then
-  INSTALL_DIR="$DEFAULT_INSTALL_DIR"
-fi
+    # Check for forced install directory
+    if [ -n "$FORCE_INSTALL_DIR" ]; then
+        _install_dir="$FORCE_INSTALL_DIR"
+    # Try XDG_BIN_HOME
+    elif [ -n "${XDG_BIN_HOME:-}" ]; then
+        _install_dir="$XDG_BIN_HOME"
+    # Try XDG_DATA_HOME/../bin
+    elif [ -n "${XDG_DATA_HOME:-}" ]; then
+        _install_dir="$XDG_DATA_HOME/../bin"
+    # Fall back to ~/.local/bin
+    elif [ -n "$INFERRED_HOME" ]; then
+        _install_dir="$INFERRED_HOME/.local/bin"
+    else
+        err "could not determine a suitable installation directory"
+    fi
 
-# Check if directory exists, offer to create it
-if [ ! -d "$INSTALL_DIR" ]; then
-  printf "The directory '$INSTALL_DIR' does not exist. Create it? (yes/no): "
-  read -r CREATE_DIR < /dev/tty
-  CREATE_DIR=${CREATE_DIR:-yes}
-  if [ "$CREATE_DIR" = "yes" ]; then
-    mkdir -p "$INSTALL_DIR"
-  else
-    text_title_error "Installation Aborted"
-    exit 1
-  fi
-fi
-
-INSTALL_DIR=$(realpath "$INSTALL_DIR")
-
-echo "${NAME} $VERSION will be installed in ${INSTALL_DIR}."
-printf "Do you confirm? ("$(text_underline "yes")"/no): "
-read -r CONFIRMATION < /dev/tty
-CONFIRMATION=${CONFIRMATION:-yes}
-case "$CONFIRMATION" in
-  y|Y|yes|YES) ;;
-  *) text_title_error "Installation Aborted"; exit 0 ;;
-esac
+    echo "$_install_dir"
+}
 
 # =============================================================================
-# Create and change to temp directory
+# GitHub API Functions
 # =============================================================================
 
-TMP_DIR=$(mktemp -d)
-cd "$TMP_DIR"
+get_latest_release() {
+    local _releases_url="$GITHUB_API_BASE/repos/$GITHUB_REPO/releases/latest"
+    local _tmp_file
+    
+    say_verbose "Fetching latest release from GitHub API"
+    say_verbose "URL: $_releases_url"
+    
+    _tmp_file="$(ensure mktemp)" || return 1
+    
+    if ! downloader "$_releases_url" "$_tmp_file"; then
+        err "Failed to fetch release information from GitHub API: $_releases_url"
+    fi
+    
+    # Extract tag name (version) from GitHub API response
+    local _version
+    _version=$(grep -o '"tag_name":"[^"]*"' "$_tmp_file" | cut -d'"' -f4 | sed 's/^v//')
+    
+    if [ -z "$_version" ]; then
+        # Try alternative parsing for different JSON formats
+        _version=$(grep -o '"tag_name": *"[^"]*"' "$_tmp_file" | cut -d'"' -f4 | sed 's/^v//')
+    fi
+    
+    ignore rm -f "$_tmp_file"
+    
+    if [ -z "$_version" ]; then
+        err "Failed to parse version from GitHub releases API response"
+    fi
+    
+    say_verbose "Found latest release: $_version"
+    echo "$_version"
+}
+
+get_specific_release() {
+    local _target_version="$1"
+    local _releases_url="$GITHUB_API_BASE/repos/$GITHUB_REPO/releases/tags/v$_target_version"
+    local _tmp_file
+    
+    say_verbose "Checking if version $_target_version exists"
+    say_verbose "URL: $_releases_url"
+    
+    _tmp_file="$(ensure mktemp)" || return 1
+    
+    if ! downloader "$_releases_url" "$_tmp_file"; then
+        # Try without 'v' prefix if the first attempt failed
+        _releases_url="$GITHUB_API_BASE/repos/$GITHUB_REPO/releases/tags/$_target_version"
+        say_verbose "Retry URL: $_releases_url"
+        
+        if ! downloader "$_releases_url" "$_tmp_file"; then
+            ignore rm -f "$_tmp_file"
+            err "Version $_target_version not found in GitHub releases. Available versions can be seen at: https://github.com/$GITHUB_REPO/releases"
+        fi
+    fi
+    
+    # Verify the response contains the expected version
+    local _found_version
+    _found_version=$(grep -o '"tag_name":"[^"]*"' "$_tmp_file" | cut -d'"' -f4 | sed 's/^v//')
+    
+    if [ -z "$_found_version" ]; then
+        _found_version=$(grep -o '"tag_name": *"[^"]*"' "$_tmp_file" | cut -d'"' -f4 | sed 's/^v//')
+    fi
+    
+    ignore rm -f "$_tmp_file"
+    
+    if [ -z "$_found_version" ]; then
+        err "Failed to parse version from GitHub releases API response for version $_target_version"
+    fi
+    
+    say_verbose "Found specified release: $_found_version"
+    echo "$_found_version"
+}
+
+get_release_download_url() {
+    local _version="$1"
+    local _os="$2"
+    local _arch="$3"
+    
+    local _platform_name
+    _platform_name=$(get_platform_name "$_os" "$_arch")
+    
+    # Construct download URL for GitHub releases
+    local _filename="$APP_NAME-$_platform_name-$_arch-$_version"
+    local _download_url="https://github.com/$GITHUB_REPO/releases/download/v$_version/$_filename"
+    
+    say_verbose "Constructed download URL: $_download_url"
+    echo "$_download_url"
+}
 
 # =============================================================================
-# Download binary
+# Main Installation Function
 # =============================================================================
 
-text_title "Downloading Binary" " $DOWNLOAD_URL"
-curl -L --proto '=https' --tlsv1.2 -# -Sf "$DOWNLOAD_URL" > "$BINARY"
+install_binary() {
+    local _version="$1"
+    local _os="$2" 
+    local _arch="$3"
+
+    need_cmd uname
+    need_cmd mktemp
+    need_cmd chmod
+    need_cmd mkdir
+    need_cmd rm
+    need_cmd grep
+    need_cmd cat
+
+    local _binary_name
+    local _download_url
+    
+    _binary_name=$(get_binary_name "$_os" "$_arch")
+    _download_url=$(get_release_download_url "$_version" "$_os" "$_arch")
+
+    # Determine installation directory
+    local _install_dir
+    _install_dir="$(get_install_dir)"
+    assert_nz "$_install_dir" "install_dir"
+
+    # Create installation directory
+    if [ ! -d "$_install_dir" ]; then
+        say "creating installation directory: $_install_dir"
+        ensure mkdir -p "$_install_dir"
+    fi
+
+    # Create temporary directory
+    local _tmp_dir
+    _tmp_dir="$(ensure mktemp -d)" || return 1
+
+    # Download binary
+    local _binary_file="$_tmp_dir/$_binary_name"
+    text_title "Downloading Binary" " $_download_url"
+    
+    if ! downloader "$_download_url" "$_binary_file"; then
+        err "failed to download $_download_url. This may be a network error or the release may not be available for your platform."
+    fi
+
+    # Install binary
+    text_title "Installing Binary" " $_install_dir/$APP_NAME"
+    ensure chmod +x "$_binary_file"
+    ensure mv "$_binary_file" "$_install_dir/$APP_NAME"
+
+    # Check for shadowed binaries
+    local _shadowed_bins
+    _shadowed_bins="$(check_for_shadowed_bins "$_install_dir" "$APP_NAME")"
+    if [ -n "$_shadowed_bins" ]; then
+        warn "The following commands are shadowed by other commands in your PATH:$_shadowed_bins"
+    fi
+
+    # Set up PATH if requested
+    if [ "$NO_MODIFY_PATH" = "0" ]; then
+        # Check if already in PATH
+        case ":$PATH:" in
+            *:"$_install_dir":*) 
+                say_verbose "$_install_dir already in PATH"
+                ;;
+            *)
+                local _install_dir_expr
+                _install_dir_expr="$(replace_home "$_install_dir")"
+                
+                local _env_script_path="$_install_dir/env"
+                local _env_script_path_expr="$(replace_home "$_env_script_path")"
+                local _fish_env_script_path="$_env_script_path.fish"
+                local _fish_env_script_path_expr="$_env_script_path_expr.fish"
+
+                # Add to common shell RC files
+                add_install_dir_to_path "$_install_dir_expr" "$_env_script_path" "$_env_script_path_expr" ".profile .bashrc .bash_profile" "sh"
+                local _sh_result=$?
+                
+                add_install_dir_to_path "$_install_dir_expr" "$_env_script_path" "$_env_script_path_expr" ".zshrc .zshenv" "sh"
+                local _zsh_result=$?
+
+                # Fish shell setup
+                if [ -n "$INFERRED_HOME" ]; then
+                    if mkdir -p "$INFERRED_HOME/.config/fish/conf.d" 2>/dev/null; then
+                        add_install_dir_to_path "$_install_dir_expr" "$_fish_env_script_path" "$_fish_env_script_path_expr" ".config/fish/conf.d/$APP_NAME.env.fish" "fish"
+                        local _fish_result=$?
+                    else
+                        say_verbose "Could not create fish config directory, skipping fish shell integration"
+                        local _fish_result=0
+                    fi
+                else
+                    _fish_result=0
+                fi
+
+                if [ "$_sh_result" = "1" ] || [ "$_zsh_result" = "1" ] || [ "$_fish_result" = "1" ]; then
+                    text_title "PATH Setup" "To add $_install_dir_expr to your PATH, restart your shell or run:"
+                    say "    source $_env_script_path_expr (sh, bash, zsh)"
+                    say "    source $_fish_env_script_path_expr (fish)"
+                fi
+                ;;
+        esac
+    fi
+
+    # Clean up
+    ignore rm -rf "$_tmp_dir"
+
+    # Success message
+    text_title "Installation Complete" " Run $APP_NAME --help for more information"
+    if [ "$NO_MODIFY_PATH" = "1" ]; then
+        text_title "Note" "Add $_install_dir to your PATH to run $APP_NAME from anywhere"
+    fi
+    echo ""
+
+    return 0
+}
 
 # =============================================================================
-# Make binary executable and move to install directory with appropriate name
+# Argument Parsing
 # =============================================================================
 
-text_title "Installing Binary" " $INSTALL_DIR/$NAME"
-chmod +x "$BINARY"
-mv "$BINARY" "$INSTALL_DIR/$NAME"
+parse_args() {
+    for arg in "$@"; do
+        case "$arg" in
+            --help|-h)
+                usage
+                exit 0
+                ;;
+            --quiet|-q)
+                PRINT_QUIET=1
+                ;;
+            --verbose|-v)
+                PRINT_VERBOSE=1
+                ;;
+            --no-modify-path)
+                NO_MODIFY_PATH=1
+                ;;
+            --install-dir)
+                if [ -n "${2:-}" ]; then
+                    FORCE_INSTALL_DIR="$2"
+                    shift
+                else
+                    err "--install-dir requires a directory argument"
+                fi
+                ;;
+            --install-dir=*)
+                FORCE_INSTALL_DIR="${arg#--install-dir=}"
+                ;;
+            --version)
+                if [ -n "${2:-}" ]; then
+                    FORCE_VERSION="$2"
+                    shift
+                else
+                    err "--version requires a version argument"
+                fi
+                ;;
+            --version=*)
+                FORCE_VERSION="${arg#--version=}"
+                ;;
+            *)
+                if [ "${arg%%--*}" = "" ]; then
+                    err "unknown option $arg"
+                fi
+                # Handle short options
+                while getopts :hvq sub_arg "$arg"; do
+                    case "$sub_arg" in
+                        h)
+                            usage
+                            exit 0
+                            ;;
+                        v)
+                            PRINT_VERBOSE=1
+                            ;;
+                        q)
+                            PRINT_QUIET=1
+                            ;;
+                        *)
+                            err "unknown option -$OPTARG"
+                            ;;
+                    esac
+                done
+                ;;
+        esac
+    done
+}
 
 # =============================================================================
-# Display post install message
+# Main Script
 # =============================================================================
 
-text_title "Installation Complete" " Run $NAME --help for more information"
-text_title "Hint: " "Add $INSTALL_DIR to your PATH to run $NAME from anywhere"
-echo ""
+main() {
+    # Parse command line arguments
+    parse_args "$@"
+
+    # Check for required tools
+    downloader --check
+
+    # Get system information
+    local _os _arch _version
+    _os="$(uname -s)"
+    _arch="$(uname -m)"
+
+    say_verbose "Detected platform: $_os:$_arch"
+
+    # Get version (specific or latest)
+    if [ -n "$FORCE_VERSION" ]; then
+        text_title "Fetching Specific Release" " version $FORCE_VERSION"
+        _version=$(get_specific_release "$FORCE_VERSION")
+    else
+        text_title "Fetching Latest Release"
+        _version=$(get_latest_release)
+    fi
+
+    say "Installing $APP_NAME version $_version for $_os:$_arch"
+
+    # Interactive confirmation unless in quiet mode or non-interactive mode
+    if [ "$PRINT_QUIET" = "0" ] && [ -t 0 ] && [ -z "$FORCE_INSTALL_DIR" ]; then
+        echo ""
+        printf "Do you want to continue? (%s/no): " "$(text_underline "yes")"
+        read -r confirmation </dev/tty
+        confirmation=${confirmation:-yes}
+        case "$confirmation" in
+            y|Y|yes|YES) ;;
+            *) 
+                text_title_error "Installation Aborted"
+                exit 0 
+                ;;
+        esac
+    fi
+
+    # Perform installation
+    install_binary "$_version" "$_os" "$_arch"
+}
+
+# Run main function with all arguments
+main "$@" || exit 1

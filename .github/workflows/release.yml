@@ -195,17 +195,6 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Fetch latest release
-        run: |
-          mkdir -p ./site/release
-          gh release download "${{ needs.publish.outputs.tag }}" \
-            --repo ${{ github.repository }} \
-            --pattern "*" \
-            --dir ./site/release || echo "No release found"
-          echo "{\"version\":\"${{ needs.publish.outputs.version }}\"}" > ./site/release/version.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
