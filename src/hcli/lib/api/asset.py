@@ -1,0 +1,211 @@
+"""File sharing API client."""
+
+from __future__ import annotations  # only needed for Python <3.10
+
+import hashlib
+from pathlib import Path
+from typing import Dict, ForwardRef, List, Optional
+
+import httpx
+from pydantic import BaseModel
+
+from .common import get_api_client
+
+SHARED = "shared"
+INSTALLERS = "installers"
+
+
+# Forward reference for TreeNode
+TreeNodeType = ForwardRef("TreeNode")
+
+
+class TreeNode(BaseModel):
+    name: str
+    type: str = "file"
+    children: List["TreeNode"] | None = None
+    asset: Asset
+
+
+class Asset(BaseModel):
+    email: Optional[str] = None
+    filename: str
+    size: int = 0
+    key: str
+    code: Optional[str] = None
+    created_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    url: Optional[str] = None
+    version: int = 0
+    metadata: Optional[dict] = None
+
+
+class PagedAsset(BaseModel):
+    """Paged response wrapper."""
+
+    offset: int
+    limit: int
+    total: int
+    items: List[Asset]
+
+
+class PagingFilter(BaseModel):
+    """Paging filter parameters."""
+
+    limit: Optional[int] = 1000
+    offset: Optional[int] = 0
+
+
+class UploadResponse(BaseModel):
+    """Upload response."""
+
+    code: str
+    url: str
+    download_url: str
+
+
+class AssetAPI:
+    """File sharing API client."""
+
+    async def upload_file(
+        self,
+        bucket: str,
+        file_path: str,
+        user_email: str,
+        acl_type: str = "authenticated",
+        force: bool = False,
+        code: Optional[str] = None,
+    ) -> UploadResponse:
+        """Upload a file for sharing."""
+        file_path_obj = Path(file_path)
+        filename = file_path_obj.name
+        size = file_path_obj.stat().st_size
+
+        # Calculate SHA-256 checksum by streaming the file
+        checksum_obj = hashlib.sha256()
+        with open(file_path_obj, "rb") as f:
+            while chunk := f.read(8192):
+                checksum_obj.update(chunk)
+        checksum = checksum_obj.hexdigest()
+
+        client = await get_api_client()
+
+        # Request upload URL
+        # convert acl_type to allowed_segments & allowed_users
+        acl_fields = get_permissions_from_acl_type(acl_type, user_email)
+        upload_data = {
+            "filename": filename,
+            "size": size,
+            "force": force,
+            "status": "active",
+            "checksum": checksum,
+            **acl_fields,
+            "metadata": {
+                "acl_type": acl_type,
+            },
+        }
+
+        if code:
+            upload_data["code"] = code
+
+        # ask for an upload url
+        response = await client.post_json(f"/api/assets/{bucket}", upload_data)
+        upload_url = response.get("url")
+        file_code = response.get("code")
+        key = response.get("key")
+
+        if upload_url:
+            # Upload the file (without content parameter to use streaming)
+            await client.put_file(upload_url, file_path_obj)
+            # Confirm upload
+            response = await client.post_json(f"/api/assets/{bucket}/{key}", {})
+
+        from hcli.env import ENV
+
+        return UploadResponse(
+            code=file_code,
+            url=f"{ENV.HCLI_PORTAL_URL}/share/{file_code}",
+            download_url=f"{ENV.HCLI_API_URL}/api/assets/s/{file_code}",
+        )
+
+    async def delete_file_by_key(self, bucket: str, key: str) -> None:
+        """Delete a file."""
+        client = await get_api_client()
+        await client.delete_json(f"/api/assets/{bucket}/{key}")
+
+    async def get_shared_file_by_code(self, code: str, version: int = -1) -> Asset | None:
+        """Get information about a file."""
+        client = await get_api_client()
+        try:
+            data = await client.get_json(f"/api/assets/s/{code}?version={version}")
+            return Asset(**data)
+        except httpx.HTTPStatusError:
+            return None
+
+    async def get_file_versions(self, bucket: str, code: str) -> Asset:
+        """Get all versions of a shared file."""
+        client = await get_api_client()
+        data = await client.get_json(f"/api/assets/{bucket}/{code}/versions")
+        return Asset(**data)
+
+    async def get_files(self, bucket: str, filter_params: Optional[PagingFilter] = None) -> PagedAsset:
+        """Get all shared files for the current user."""
+        if filter_params is None:
+            filter_params = PagingFilter()
+
+        client = await get_api_client()
+        data = await client.get_json(
+            f"/api/assets/{bucket}?type=file&limit={filter_params.limit}&offset={filter_params.offset}"
+        )
+        return PagedAsset(**data)
+
+    async def get_file(self, bucket: str, key: str) -> Optional[Asset]:
+        client = await get_api_client()
+        data = await client.get_json(f"/api/assets/{bucket}/{key}")
+        return Asset(**data)
+
+    async def get_files_tree(self, bucket: str, filter_params: Optional[PagingFilter] = None) -> List[TreeNode]:
+        """Get all shared files for the current user."""
+        if filter_params is None:
+            filter_params = PagingFilter()
+
+        client = await get_api_client()
+        data = await client.get_json(
+            f"/api/assets/{bucket}?type=file&view=tree&limit={filter_params.limit}&offset={filter_params.offset}"
+        )
+        return [TreeNode(**item) for item in data]
+
+
+def get_email_domain(email: str) -> str:
+    return email.lower().split("@")[-1]
+
+
+def get_permissions_from_acl_type(acl_type: str, user_email: str) -> Dict[str, Optional[List[str]]]:
+    if acl_type == "public":
+        return {
+            "allowed_segments": None,
+            "allowed_emails": None,
+        }
+    elif acl_type == "authenticated":
+        return {
+            "allowed_segments": ["authenticated"],
+            "allowed_emails": None,
+        }
+    elif acl_type == "domain":
+        return {
+            "allowed_segments": ["authenticated", f"@{get_email_domain(user_email)}"],
+            "allowed_emails": None,
+        }
+    elif acl_type == "private":
+        return {
+            "allowed_segments": ["authenticated"],
+            "allowed_emails": [user_email],
+        }
+    else:
+        return {
+            "allowed_segments": [],
+            "allowed_emails": [],
+        }
+
+
+# Global instance
+asset = AssetAPI()
