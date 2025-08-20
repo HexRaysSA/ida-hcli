@@ -118,6 +118,10 @@ jobs:
           uv python install "${{ env.UV_PYTHON }}"
           uv sync --no-sources
 
+      - name: Set ARTIFACT_NAME
+        shell: bash
+        run: echo "ARTIFACT_NAME=${{ matrix.artifact-name }}-${{ needs.publish.outputs.version }}" >> $GITHUB_ENV
+
       - name: Build binary
         run: uv run --no-sources --with pyinstaller pyinstaller hcli.spec
 
