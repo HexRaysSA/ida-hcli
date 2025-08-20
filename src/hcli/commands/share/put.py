@@ -25,8 +25,8 @@ def get_email_domain(email: str) -> str:
 @click.option(
     "-a",
     "--acl",
-    type=click.Choice(["public", "private", "authenticated", "domain"]),
-    help="Access control level (public, private, authenticated, domain)",
+    type=click.Choice(["private", "authenticated", "domain"]),
+    help="Access control level (private, authenticated, domain)",
 )
 @click.option("-c", "--code", help="Upload a new version for an existing code")
 @click.option("-f", "--force", is_flag=True, help="Upload a new version for an existing code")
@@ -54,7 +54,6 @@ async def put(path: Path, acl: Optional[str], code: Optional[str], force: bool) 
             Choice("[private] Just for me", value="private"),
             Choice(f"[domain] Anyone from my domain (@{domain})", value="domain"),
             Choice("[authenticated] Anyone authenticated with the link", value="authenticated"),
-            Choice("[public] Anyone with the link", value="public"),
         ]
 
         acl = await safe_ask_async(

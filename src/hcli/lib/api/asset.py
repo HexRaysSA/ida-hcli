@@ -180,12 +180,7 @@ def get_email_domain(email: str) -> str:
 
 
 def get_permissions_from_acl_type(acl_type: str, user_email: str) -> Dict[str, Optional[List[str]]]:
-    if acl_type == "public":
-        return {
-            "allowed_segments": None,
-            "allowed_emails": None,
-        }
-    elif acl_type == "authenticated":
+    if acl_type == "authenticated":
         return {
             "allowed_segments": ["authenticated"],
             "allowed_emails": None,

@@ -23,7 +23,6 @@ hcli share put <file-path>
 - `--name`: Custom name for the shared file
 - `--description`: Description of the file contents
 - `--expires`: Expiration date (e.g., "2024-12-31")
-- `--public`: Make the file publicly accessible
 
 ## Managing Shared Files
 
