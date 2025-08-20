@@ -430,6 +430,22 @@ add_install_dir_to_path() {
     fi
 }
 
+check_for_existing_installation() {
+    local _existing_path
+    _existing_path="$(command -v "$APP_NAME" 2>/dev/null || true)"
+    
+    if [ -n "$_existing_path" ]; then
+        echo "$_existing_path"
+    fi
+}
+
+get_existing_install_dir() {
+    local _existing_path="$1"
+    if [ -n "$_existing_path" ]; then
+        dirname "$_existing_path"
+    fi
+}
+
 check_for_shadowed_bins() {
     local _install_dir="$1"
     local _bins="$2"
@@ -451,11 +467,16 @@ check_for_shadowed_bins() {
 # =============================================================================
 
 get_install_dir() {
+    local _existing_installation="$1"
     local _install_dir=""
 
     # Check for forced install directory
     if [ -n "$FORCE_INSTALL_DIR" ]; then
         _install_dir="$FORCE_INSTALL_DIR"
+    # If there's an existing installation and no forced directory, use existing location
+    elif [ -n "$_existing_installation" ]; then
+        _install_dir="$(get_existing_install_dir "$_existing_installation")"
+        say_verbose "Found existing installation at $_existing_installation, will replace in place"
     # Try XDG_BIN_HOME
     elif [ -n "${XDG_BIN_HOME:-}" ]; then
         _install_dir="$XDG_BIN_HOME"
@@ -586,9 +607,13 @@ install_binary() {
     _binary_name=$(get_binary_name "$_os" "$_arch")
     _download_url=$(get_release_download_url "$_version" "$_os" "$_arch")
 
-    # Determine installation directory
+    # Check for existing installation first
+    local _existing_installation
+    _existing_installation="$(check_for_existing_installation)"
+    
+    # Determine installation directory (will use existing location if found)
     local _install_dir
-    _install_dir="$(get_install_dir)"
+    _install_dir="$(get_install_dir "$_existing_installation")"
     assert_nz "$_install_dir" "install_dir"
 
     # Create installation directory
@@ -775,12 +800,42 @@ main() {
         _version=$(get_latest_release)
     fi
 
-    say "Installing $APP_NAME version $_version for $_os:$_arch"
+    # Check for existing installation before proceeding
+    local _existing_installation
+    _existing_installation="$(check_for_existing_installation)"
+    
+    if [ -n "$_existing_installation" ]; then
+        local _existing_version
+        if command -v "$APP_NAME" > /dev/null 2>&1 && "$APP_NAME" --version > /dev/null 2>&1; then
+            _existing_version="$("$APP_NAME" --version 2>/dev/null | head -n1 || echo "unknown")"
+        else
+            _existing_version="unknown"
+        fi
+        
+        if [ -z "$FORCE_INSTALL_DIR" ]; then
+            say ""
+            say "Found existing $APP_NAME installation:"
+            say "  Location: $_existing_installation"
+            say "  Version:  $_existing_version"
+            say ""
+            say "Installing $APP_NAME version $_version for $_os:$_arch"
+            say "Will replace the existing installation at: $(dirname "$_existing_installation")"
+        else
+            warn "Existing $APP_NAME found at $_existing_installation but installing to forced directory $FORCE_INSTALL_DIR"
+            say "Installing $APP_NAME version $_version for $_os:$_arch"
+        fi
+    else
+        say "Installing $APP_NAME version $_version for $_os:$_arch"
+    fi
 
     # Interactive confirmation unless in quiet mode or non-interactive mode
     if [ "$PRINT_QUIET" = "0" ] && [ -t 0 ] && [ -z "$FORCE_INSTALL_DIR" ]; then
         echo ""
-        printf "Do you want to continue? (%s/no): " "$(text_underline "yes")"
+        if [ -n "$_existing_installation" ]; then
+            printf "Do you want to replace the existing installation? (%s/no): " "$(text_underline "yes")"
+        else
+            printf "Do you want to continue? (%s/no): " "$(text_underline "yes")"
+        fi
         read -r confirmation </dev/tty
         confirmation=${confirmation:-yes}
         case "$confirmation" in
