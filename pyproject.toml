@@ -1,0 +1,96 @@
+[project]
+name = "ida-hcli"
+version = "0.6.0"
+description = "HCLI - Hex-Rays CLI Utility"
+requires-python = ">=3.10"
+license = "MIT"
+readme = "README.md"
+keywords = ["ida", "ida-pro", "reverse-engineering", "disassembler", "binary-analysis", "malware-analysis", "security"]
+authors = [
+    { name = "Hex-Rays SA", email = "support@hex-rays.com" }
+]
+
+dependencies = [
+    "click",
+    "rich",
+    "rich-click",
+    "httpx",
+    "supabase",
+    "pydantic",
+    "platformdirs",
+    "packaging",
+    "questionary",
+    "ida-domain>=0.0.1.dev29",
+]
+
+[project.urls]
+Homepage = "https://hex-rays.com/"
+Repository = "https://github.com/HexRaysSA/ida-hcli"
+Issues = "https://github.com/HexRaysSA/ida-hcli/issues"
+
+[project.scripts]
+hcli = "hcli.main:cli"
+ida-hcli = "hcli.main:cli"
+
+[tool.taskipy.tasks]
+current-version = "semantic-release version --print-last-released"
+dev-start = "semantic-release version --as-prerelease --patch --prerelease-token dev --no-changelog"
+dev-patch = "semantic-release version --prerelease --prerelease-token dev --no-changelog"
+release-major = "semantic-release version --major --no-changelog"
+release-minor = "semantic-release version --minor --no-changelog"
+release-patch = "semantic-release version --patch --no-changelog"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.16.0",
+    "ruff",
+    "bandit",
+    "pre-commit>=4.2.0",
+    "safety>=3.5.2",
+    "python-semantic-release>=10.3.1",
+    "taskipy>=1.14.1",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.10.0",
+    "pytest-httpx>=0.21.0",
+    "pexpect>=4.9.0",
+]
+docs = [
+    "mkdocs-material",
+    "mkdocs-click>=0.9.0",
+    "mkdocstrings[python]>=0.20.0",
+    "mkdocs-gen-files>=0.5.0",
+    "mkdocs-include-markdown-plugin>=7.1.5",
+    "mkdocs-literate-nav>=0.6.2",
+    "pymdown-extensions>=10.15"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+fix = true
+
+[tool.mypy]
+check_untyped_defs = true
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]  # or wherever your version is
+version_variables = ["src/hcli/__init__.py:__version__"]  # update your actual path
+build_command = """
+    uv lock --upgrade-package "$PACKAGE_NAME"
+    git add uv.lock
+    uv build
+"""
+dist_path = "dist/"
+major_on_zero = false  # Stay in 0.x.x range
+allow_zero_version = true
+

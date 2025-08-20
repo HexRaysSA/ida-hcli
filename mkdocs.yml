@@ -1,0 +1,150 @@
+site_name: HCLI
+site_description: HCLI - Hex-Rays CLI Utility
+site_author: Hex-Rays
+site_url: https://hcli.docs.hex-rays.com
+
+repo_url: https://github.com/HexRaysSA/ida-hcli
+repo_name: HexRaysSA/ida-hcli
+
+docs_dir: docs
+site_dir: site
+
+copyright: Copyright &copy; 2025 Hex-Rays
+
+theme:
+  name: material
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      scheme: default
+      primary: black
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+
+  features:
+    # Allows copying code blocks
+    - content.code.copy
+    # Allows selecting code blocks
+    - content.code.select
+    # Shows the current path in the sidebar
+    - navigation.path
+    # Shows sections in the sidebar
+    - navigation.sections
+    # Shows sections expanded by default
+    - navigation.expand
+    # Enables annotations in code blocks
+    - content.code.annotate
+    # others
+    - content.tabs.link
+    - content.code.annotate
+    - content.code.copy
+    - announce.dismiss
+    - navigation.footer
+    - navigation.indexes  # <= if set, each "section" can have its own page, if index.md is used
+    - navigation.instant
+    - navigation.instant.prefetch
+    # - navigation.instant.preview
+    - navigation.instant.progress
+    - navigation.path
+    - navigation.sections  # <=
+    - navigation.top
+    - navigation.tracking
+    - search.suggest
+    - toc.follow
+  logo: assets/logo.svg
+  favicon: images/favicon-platform.svg
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Authentication: getting-started/authentication.md
+    - Quick Start: getting-started/quick-start.md
+  - User Guide:
+    - License Management: user-guide/licenses.md
+    - File Sharing: user-guide/file-sharing.md
+    - Extending: user-guide/extensions.md
+    - Troubleshooting: user-guide/troubleshooting.md
+  - Reference:
+    - CLI Commands: reference/cli-commands.md
+    - Environment Variables: reference/environment-variables.md
+  - Development:
+    - Development Setup: development/setup.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["src/hcli"]
+          options:
+            docstring_style: sphinx
+            # Shows links to other members in signatures
+            signature_crossrefs: true
+            # Orders members by source order, rather than alphabetical
+            members_order: alphabetical
+            # Puts the signature on a separate line from the member name
+            separate_signature: true
+            # Shows type annotations in signatures
+            show_signature_annotations: true
+            # Show inherited members
+            inherited_members: true
+            show_if_no_docstring: true
+            ### SPECIFIC
+            show_submodules: true
+            docstring_section_style: list
+            filters: [ "!^_", "!^logger$" ]
+            heading_level: 2
+            merge_init_into_class: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_source: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            summary: true
+
+markdown_extensions:
+  - attr_list
+  - mkdocs-click
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - admonition
+  - pymdownx.snippets:
+  - pymdownx.details
+  - pymdownx.highlight
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+extra_css:
+  - stylesheets/extra.css
+
+watch:
+  - "src/hcli"

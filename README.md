@@ -7,7 +7,7 @@
 
 ![](docs/assets/screenshot.png)
 
-A modern command-line interface for managing IDA Pro licenses, plugins, ...
+A modern command-line interface for managing IDA Pro licenses, downloads, ...
 
 # Documentation
 
@@ -15,12 +15,15 @@ See [https://hcli.docs.hex-rays.com/](hcli.docs.hex-rays.com/)
 
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on how to:
+HCLI is under heavy active development by our team. We are not accepting external contributions at this time due to:
 
-- Report bugs and suggest features
-- Submit pull requests with proper testing
-- Set up your development environment with Hatch
-- Generate and update documentation automatically
+- Rapid development and frequent breaking changes
+- Tight integration requirements with our proprietary IDA Pro workflows
+- Internal roadmap priorities and architectural decisions
+
+However feel free to report bugs or suggest features via Issues
+
+For our internal team, please see our [Contributing Guidelines](CONTRIBUTING.md) for development setup and workflow.
 
 ## License
 

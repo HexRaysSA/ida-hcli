@@ -1,0 +1,159 @@
+#!/usr/bin/env sh
+
+set -eu
+
+# =============================================================================
+# Define base variables
+# =============================================================================
+
+NAME="hcli"
+DOWNLOAD_BASE_URL="https://hcli.docs.hex-rays.com"
+
+# Fetch version from API
+VERSION=$(curl -s "$DOWNLOAD_BASE_URL/release/version.json" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+if [ -z "$VERSION" ]; then
+  echo " Failed to fetch version from API"
+  exit 1
+fi
+
+
+# =============================================================================
+# Define helper functions
+# =============================================================================
+
+text_bold() {
+  echo "\033[1m$1\033[0m"
+}
+text_underline() {
+  echo "\033[4m$1\033[0m"
+}
+text_title() {
+  echo ""
+  text_bold "$1"
+  if [ -n "${2:-}" ]; then echo "$2"; fi
+}
+text_title_error() {
+  echo ""
+  echo "\033[1;31m$1\033[00m"
+}
+
+# =============================================================================
+# Define supported OS & Arch
+# =============================================================================
+
+get_binary_name() {
+  case "$1:$2" in
+    Linux:x86_64) echo "${NAME}" ;;
+    Darwin:arm64) echo "${NAME}" ;;
+    *)
+      text_title_error "Error"
+      echo " Unsupported OS or arch: $1:$2"
+      exit 1
+      ;;
+  esac
+}
+
+get_platform_name() {
+  case "$1:$2" in
+    Linux:x86_64) echo "linux" ;;
+    Darwin:arm64) echo "mac" ;;
+    *)
+      text_title_error "Error"
+      echo " Unsupported OS or arch: $1:$2"
+      exit 1
+      ;;
+  esac
+}
+
+# =============================================================================
+# Get the user's OS and Arch
+# =============================================================================
+
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+SYSTEM="$OS:$ARCH"
+
+BINARY=$(get_binary_name "$OS" "$ARCH")
+PLATFORM=$(get_platform_name "$OS" "$ARCH")
+DOWNLOAD_URL="$DOWNLOAD_BASE_URL/release/$NAME-$PLATFORM-$ARCH-$VERSION"
+
+# =============================================================================
+# Prompt user for installation
+# =============================================================================
+
+echo "This script will install $NAME version $VERSION."
+printf "Do you want to continue? ("$(text_underline "yes")"/no): "
+read -r CONFIRMATION < /dev/tty
+CONFIRMATION=${CONFIRMATION:-yes}
+case "$CONFIRMATION" in
+  y|Y|yes|YES) ;;
+  *) text_title_error "Installation Aborted"; exit 0 ;;
+esac
+
+# =============================================================================
+# Ask user for installation directory
+# =============================================================================
+
+DEFAULT_INSTALL_DIR="$HOME/.${NAME}/bin"
+echo ""
+printf "Enter installation directory [$DEFAULT_INSTALL_DIR]: "
+read -r INSTALL_DIR < /dev/tty
+
+# If user didn't enter anything, use the default
+if [ -z "$INSTALL_DIR" ]; then
+  INSTALL_DIR="$DEFAULT_INSTALL_DIR"
+fi
+
+# Check if directory exists, offer to create it
+if [ ! -d "$INSTALL_DIR" ]; then
+  printf "The directory '$INSTALL_DIR' does not exist. Create it? (yes/no): "
+  read -r CREATE_DIR < /dev/tty
+  CREATE_DIR=${CREATE_DIR:-yes}
+  if [ "$CREATE_DIR" = "yes" ]; then
+    mkdir -p "$INSTALL_DIR"
+  else
+    text_title_error "Installation Aborted"
+    exit 1
+  fi
+fi
+
+INSTALL_DIR=$(realpath "$INSTALL_DIR")
+
+echo "${NAME} $VERSION will be installed in ${INSTALL_DIR}."
+printf "Do you confirm? ("$(text_underline "yes")"/no): "
+read -r CONFIRMATION < /dev/tty
+CONFIRMATION=${CONFIRMATION:-yes}
+case "$CONFIRMATION" in
+  y|Y|yes|YES) ;;
+  *) text_title_error "Installation Aborted"; exit 0 ;;
+esac
+
+# =============================================================================
+# Create and change to temp directory
+# =============================================================================
+
+TMP_DIR=$(mktemp -d)
+cd "$TMP_DIR"
+
+# =============================================================================
+# Download binary
+# =============================================================================
+
+text_title "Downloading Binary" " $DOWNLOAD_URL"
+curl -L --proto '=https' --tlsv1.2 -# -Sf "$DOWNLOAD_URL" > "$BINARY"
+
+# =============================================================================
+# Make binary executable and move to install directory with appropriate name
+# =============================================================================
+
+text_title "Installing Binary" " $INSTALL_DIR/$NAME"
+chmod +x "$BINARY"
+mv "$BINARY" "$INSTALL_DIR/$NAME"
+
+# =============================================================================
+# Display post install message
+# =============================================================================
+
+text_title "Installation Complete" " Run $NAME --help for more information"
+text_title "Hint: " "Add $INSTALL_DIR to your PATH to run $NAME from anywhere"
+echo ""
