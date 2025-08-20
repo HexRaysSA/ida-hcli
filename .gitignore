@@ -169,6 +169,8 @@ poetry.toml
 # LSP config files
 pyrightconfig.json
 
+# Mac
+.DS_Store
 
 # IDE
 .idea
