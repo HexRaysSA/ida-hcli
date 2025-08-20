@@ -11,7 +11,7 @@ A modern command-line interface for managing IDA Pro licenses, downloads, ...
 
 # Documentation
 
-See [https://hcli.docs.hex-rays.com/](hcli.docs.hex-rays.com/)
+See [https://hcli.docs.hex-rays.com/](https://hcli.docs.hex-rays.com/)
 
 ## Contributing
 
