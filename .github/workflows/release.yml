@@ -52,7 +52,7 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run --extra test pytest
+          uv run pytest
 
   publish:
     name: Publish PyPi Package
