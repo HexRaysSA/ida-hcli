@@ -20,7 +20,7 @@ dependencies = [
     "platformdirs",
     "packaging",
     "questionary",
-    "ida-domain>=0.0.1.dev29",
+    "ida-domain>=0.1.0",
     "semantic-version>=2.10.0",
     "requests>=2.32.4",
 ]

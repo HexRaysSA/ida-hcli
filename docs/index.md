@@ -19,7 +19,7 @@ This will automatically install an **hcli** binary
 
 === "Windows"
     ```cmd
-    iex (iwr -useb https://hcli.docs.hex-rays.com/install.ps1)
+    iwr -useb https://hcli.docs.hex-rays.com/install.ps1 | iex
     ```
     To request a specific version: 
     ```cmd
