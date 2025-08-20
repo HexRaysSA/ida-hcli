@@ -8,19 +8,26 @@
 
 This will automatically install an **hcli** binary
 
-=== "macOS"
+=== "macOS and Linux"
     ```bash
-    curl -LsSf https://hcli.docs.hex-rays.com/install | sh
+    curl -LsSf https://hcli.docs.hex-rays.com/install | sh 
     ```
-
-=== "Linux"
+    Request a specific version by including it in the URL:
     ```bash
-    curl -LsSf https://hcli.docs.hex-rays.com/install | sh
+    curl -LsSf https://hcli.docs.hex-rays.com/install | sh -s -- --version 0.7.3
     ```
 
 === "Windows"
     ```cmd
     iex (iwr -useb https://hcli.docs.hex-rays.com/install.ps1)
+    ```
+    To request a specific version: 
+    ```cmd
+    iwr https://hcli.docs.hex-rays.com/install.ps1 -OutFile install.ps1
+    ```
+    Then run locally with the -Version argument 
+    ```cmd
+    .\install.ps1 -Version "0.7.4"
     ```
 
 ## Python Installation 
