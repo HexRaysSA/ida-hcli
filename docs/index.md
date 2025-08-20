@@ -6,7 +6,7 @@
 
 ## Binary Installation 
 
-This will automatically install an **hclii** binary
+This will automatically install an **hcli** binary
 
 === "macOS"
     ```bash
