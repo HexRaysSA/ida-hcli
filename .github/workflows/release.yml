@@ -1,4 +1,4 @@
-name: Release
+name: Binary Only
 
 run-name: ${{ github.event.inputs.release_type == 'dev' && 'Pre-Release Version Bump' || format('Release Version Bump ({0})', github.event.inputs.release_type) }}
 
