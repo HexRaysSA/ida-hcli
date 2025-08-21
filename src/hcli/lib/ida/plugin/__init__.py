@@ -1,0 +1,222 @@
+import io
+import logging
+import pathlib
+import re
+import zipfile
+from pathlib import Path
+from typing import Optional
+
+import packaging.version
+from pydantic import AliasPath, BaseModel, Field
+
+logger = logging.getLogger(__name__)
+
+
+# TODO: dedup with hcli.lib.ida.plugin
+class IDAPluginMetadata(BaseModel):
+    """IDA Plugin metadata from ida-plugin.json"""
+
+    metadata_version: int = Field(validation_alias="IDAMetadataDescriptorVersion")
+
+    #######################
+    # required
+    name: str = Field(validation_alias=AliasPath("plugin", "name"))
+    # TODO: must validate via: packaging.version.parse
+    version: str = Field(validation_alias=AliasPath("plugin", "version"))
+    entry_point: str = Field(validation_alias=AliasPath("plugin", "entryPoint"))
+
+    #######################
+    # optional
+    categories: list[str] = Field(validation_alias=AliasPath("plugin", "categories"), default_factory=list)
+    logo_path: Optional[str] = Field(validation_alias=AliasPath("plugin", "logoPath"), default=None)
+    ida_versions: Optional[str] = Field(validation_alias=AliasPath("plugin", "idaVersions"), default=None)
+    description: Optional[str] = Field(validation_alias=AliasPath("plugin", "description"), default=None)
+
+    python_dependencies: list[str] = Field(
+        validation_alias=AliasPath("plugin", "pythonDependencies"), default_factory=list
+    )
+
+
+def get_metadata_path_from_plugin_archive(zip_data: bytes) -> Path:
+    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
+        for file_path in zip_file.namelist():
+            if file_path.endswith("ida-plugin.json"):
+                logger.debug(f"Found ida-plugin.json at '{file_path}'")
+                return Path(file_path)
+    raise ValueError("No ida-plugin.json found in zip archive")
+
+
+def get_metadata_from_plugin_archive(zip_data: bytes) -> IDAPluginMetadata:
+    """Extract ida-plugin.json metadata from zip archive without extracting"""
+    path = get_metadata_path_from_plugin_archive(zip_data)
+
+    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
+        with zip_file.open(str(path)) as f:
+            try:
+                return IDAPluginMetadata.model_validate_json(f.read().decode("utf-8"))
+            except ValueError as e:
+                logger.debug("failed to validate ida-plugin.json: %s", e)
+                raise
+
+
+def validate_metadata_in_plugin_archive(zip_data: bytes):
+    """validate the `ida-plugin.json` metadata within the given plugin archive.
+
+    The following things must be checked:
+    - metadata version must be "1"
+    - the following fields must contain only ASCII. alphanumeric, underscores, dashes, spaces.
+      - name
+    - the following paths must contain relative paths, no paths like ".." or similar escapes:
+      - entry point
+      - logo path
+    - the file paths must exist in the archive:
+      - entry point
+      - logo path
+    """
+    metadata = get_metadata_from_plugin_archive(zip_data)
+
+    if metadata.metadata_version != 1:
+        logger.debug("Invalid metadata version")
+        raise ValueError(f"Invalid metadata version: {metadata.metadata_version}. Expected: 1")
+
+    # name contains only ASCII alphanumeric, underscores, dashes, spaces
+    if not re.match(r"^[a-zA-Z0-9_\- ]+$", metadata.name):
+        logger.debug("Invalid name format")
+        raise ValueError(
+            f"Invalid name format: '{metadata.name}'. Must contain only ASCII alphanumeric, underscores, dashes"
+        )
+
+    if not metadata.entry_point:
+        logger.debug("Missing entry point")
+        raise ValueError("entry point required")
+
+    # expect paths to be:
+    # - relative
+    # - contain only ASCII
+    # - not contain traversals up
+    def validate_path(path: str, field_name: str) -> None:
+        if not path:
+            return
+
+        try:
+            _ = path.encode("ascii")
+        except UnicodeEncodeError:
+            logger.debug(f"Invalid {field_name} path: '{path}'")
+            raise ValueError(f"Invalid {field_name} path: '{path}'")
+
+        # Use PurePosixPath for consistent path handling in zip archives
+        try:
+            path_obj = pathlib.PurePosixPath(path)
+        except Exception:
+            logger.debug(f"Invalid {field_name} path: '{path}'")
+            raise ValueError(f"Invalid {field_name} path: '{path}'")
+
+        # Check if path is absolute or contains parent directory references
+        if path_obj.is_absolute() or ".." in path_obj.parts:
+            logger.debug(f"Invalid {field_name} path: '{path}'")
+            raise ValueError(f"Invalid {field_name} path: '{path}'")
+
+    validate_path(metadata.entry_point, "entry point")
+    if metadata.logo_path:
+        validate_path(metadata.logo_path, "logo path")
+
+    plugin_dir = get_metadata_path_from_plugin_archive(zip_data).parent
+    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
+        file_list = set(zip_file.namelist())
+
+        entry_point_path = (plugin_dir / metadata.entry_point).as_posix()
+
+        if entry_point_path.endswith(".py"):
+            # source plugin
+            if entry_point_path not in file_list:
+                logger.debug(f"Entry point file not found in archive: '{metadata.entry_point}'")
+                raise ValueError(f"Entry point file not found in archive: '{metadata.entry_point}'")
+        else:
+            # binary plugin
+            if entry_point_path not in file_list:
+                if not any(entry_point_path + extension in file_list for extension in (".so", ".dll", ".dylib")):
+                    logger.debug(f"Entry point file not found in archive: '{metadata.entry_point}'")
+                    raise ValueError(f"Entry point file not found in archive: '{metadata.entry_point}'")
+
+        if metadata.logo_path:
+            logo_path_full_path = (plugin_dir / metadata.logo_path).as_posix()
+
+            if logo_path_full_path not in file_list:
+                logger.debug(f"Logo file not found in archive: '{metadata.logo_path}'")
+                raise ValueError(f"Logo file not found in archive: '{metadata.logo_path}'")
+
+    _ = packaging.version.parse(metadata.version)
+
+
+def is_plugin_archive(zip_data: bytes) -> bool:
+    """is the given archive an IDA plugin archive.
+
+    It must contain:
+    - exactly one file `ida-plugin.json` (can be relaxed later)
+    - the metadata must validate
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
+            plugin_json_files = [f for f in zip_file.namelist() if f.endswith("ida-plugin.json")]
+
+            if len(plugin_json_files) == 0:
+                logger.debug("No ida-plugin.json file found in archive")
+                return False
+            elif len(plugin_json_files) > 1:
+                logger.debug("Multiple ida-plugin.json files found in archive")
+                raise ValueError(f"Multiple ida-plugin.json files found: {plugin_json_files}. Expected exactly one.")
+
+            # Check that ida-plugin.json.disabled is not present
+            disabled_files = [f for f in zip_file.namelist() if f.endswith("ida-plugin.json.disabled")]
+            if disabled_files:
+                logger.debug("Found ida-plugin.json.disabled file(s) in archive")
+                raise ValueError(f"Archive should not contain ida-plugin.json.disabled files: {disabled_files}")
+
+        validate_metadata_in_plugin_archive(zip_data)
+
+        return True
+    except (ValueError, Exception):
+        return False
+
+
+def is_source_plugin_archive(zip_data: bytes) -> bool:
+    # the following should be true:
+    # - the entry point is a filename ending with .py
+    try:
+        if not is_plugin_archive(zip_data):
+            return False
+
+        metadata = get_metadata_from_plugin_archive(zip_data)
+
+        return metadata.entry_point.endswith(".py")
+    except (ValueError, Exception):
+        return False
+
+
+def is_binary_plugin_archive(zip_data: bytes) -> bool:
+    # the following should be true:
+    # - the entry point is in the root of the archive
+    # - the entry point ends with: .so, .dll, .dylib, or there is no extension
+    try:
+        if not is_plugin_archive(zip_data):
+            return False
+
+        metadata = get_metadata_from_plugin_archive(zip_data)
+        entry_point = metadata.entry_point
+
+        if "/" in entry_point or "\\" in entry_point:
+            return False
+
+        binary_extensions = {".so", ".dll", ".dylib"}
+        if "." in entry_point:
+            _, ext = entry_point.rsplit(".", 1)
+            ext = "." + ext.lower()
+            return ext in binary_extensions
+        else:
+            # technically this misses things like `foo.bar` with an implied extension `.so`
+            # like `foo.bar.so`
+            # TODO: also add check for the entry point file's existence
+            return True
+
+    except (ValueError, Exception):
+        return False
