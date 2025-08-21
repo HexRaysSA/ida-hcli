@@ -158,24 +158,20 @@ async def download(
 
     """
     try:
-        selected_keys: List[str] = []
+        if pattern:
+            mode = "direct"
 
         if key:
             selected_keys = [key]
         else:
-            # Get downloads from API
             console.print("[yellow]Fetching available downloads...[/yellow]")
-            assets = await asset_api.get_files_tree("installers")
-
-            if not assets:
-                console.print("[red]No downloads available or unable to fetch downloads[/red]")
-                return
 
             if mode == "direct" and pattern:
-                # Direct mode: collect all assets and filter by pattern
-                all_assets = collect_all_assets(assets)
-                filtered_assets = filter_assets_by_pattern(all_assets, pattern)
-                
+                # Get downloads from API
+                assets = await asset_api.get_files("installers")
+
+                filtered_assets = filter_assets_by_pattern(assets.items, pattern)
+
                 if not filtered_assets:
                     console.print(f"[red]No assets found matching pattern: {pattern}[/red]")
                     return
@@ -186,6 +182,9 @@ async def download(
                 
                 selected_keys = [asset.key for asset in filtered_assets]
             else:
+                # Get downloads from API
+                assets = await asset_api.get_files_tree("installers")
+
                 # Interactive navigation
                 selected_asset = await select_asset(assets, "")
 

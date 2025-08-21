@@ -46,7 +46,7 @@ async def install(
             enforce_login()
 
         if download_slug:
-            await download.callback(output_dir=tmp_dir, slug=download_slug)
+            await download.callback(output_dir=tmp_dir, key=download_slug)
             # Find the downloaded installer file
             installer_path = Path(tmp_dir) / Path(download_slug).name
             installer = str(installer_path)
