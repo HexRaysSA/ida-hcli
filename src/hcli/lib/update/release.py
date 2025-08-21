@@ -68,6 +68,7 @@ class ReleaseAsset:
             or self.size <= 0
         )
 
+
 class AuthSession:
     header = dict()
 
@@ -75,15 +76,16 @@ class AuthSession:
     def init(cls, repo: GitHubRepo):
         if cls.header or not repo.token:
             return
-        cls.header = dict(Authorization=f'Bearer {repo.token}')
+        cls.header = dict(Authorization=f"Bearer {repo.token}")
+
 
 def check_and_download_updates(
     repo: GitHubRepo,
     compatibility_spec: SimpleSpec = None,
     current_version: Version = None,
-    assets_mask=re.compile('.*'),
+    assets_mask=re.compile(".*"),
     downloads_dir=Path(),
-    download_callback: Callable[[ReleaseAsset, int], None] = None
+    download_callback: Callable[[ReleaseAsset, int], None] = None,
 ):
     if download_callback is None:
         download_callback = default_download_callback
@@ -104,7 +106,7 @@ def check_and_download_updates(
 
     if is_already_installed(download_version, current_version, compatibility_spec):
         return
-    tag_name = getattr(download_version, '_origin_tag_name', str(download_version))
+    tag_name = getattr(download_version, "_origin_tag_name", str(download_version))
     assets = get_assets(repo, tag_name, assets_mask)
     if not assets:
         logging.error("No assets found")
@@ -120,7 +122,7 @@ def get_compatible_version(repo: GitHubRepo, compatibility_spec: SimpleSpec, inc
     if not include_dev:
         filtered_versions = []
         for version in all_versions:
-            tag_name = getattr(version, '_origin_tag_name', str(version))
+            tag_name = getattr(version, "_origin_tag_name", str(version))
             if not is_dev_version(tag_name):
                 filtered_versions.append(version)
         all_versions = filtered_versions
@@ -131,46 +133,44 @@ def get_compatible_version(repo: GitHubRepo, compatibility_spec: SimpleSpec, inc
     logging.info(f"Available versions: {tuple(map(str, versions))}")
     return versions[-1]
 
+
 def is_dev_version(version_string: str) -> bool:
     """Check if a version string contains development indicators"""
-    dev_indicators = ['dev', 'alpha', 'beta', 'rc', 'pre', 'snapshot', 'nightly']
+    dev_indicators = ["dev", "alpha", "beta", "rc", "pre", "snapshot", "nightly"]
     version_lower = version_string.lower()
     return any(indicator in version_lower for indicator in dev_indicators)
+
 
 def download_assets(
     assets: typing.Iterable[ReleaseAsset],
     out_dir=Path(),
     block_size=2**20,
-    callback: Callable[[ReleaseAsset, int], None] = lambda _, __: None
+    callback: Callable[[ReleaseAsset, int], None] = lambda _, __: None,
 ):
     logging.info(f"Start downloading assets: {tuple(asset.name for asset in assets)}")
     for asset in assets:
-        download_asset(asset, out_dir, block_size,
-                       lambda downloaded, _: callback(asset, downloaded))
+        download_asset(asset, out_dir, block_size, lambda downloaded, _: callback(asset, downloaded))
 
 
 def download_asset(
-    asset: ReleaseAsset,
-    out_dir=Path(),
-    block_size=2**20,
-    callback: Callable[[int, int], None] = lambda _, __: None
+    asset: ReleaseAsset, out_dir=Path(), block_size=2**20, callback: Callable[[int, int], None] = lambda _, __: None
 ):
     logging.info(f"Start downloading asset: '{asset.name}'")
     if out_dir.is_file():
         out_dir = out_dir.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     response = requests.get(asset.url, stream=True, headers=AuthSession.header)
-    with open(out_dir.joinpath(asset.name), 'wb') as file:
+    with open(out_dir.joinpath(asset.name), "wb") as file:
         for i, data in enumerate(response.iter_content(block_size)):
             file.write(data)
-            callback(i*block_size, asset.size)
+            callback(i * block_size, asset.size)
         callback(asset.size, asset.size)
 
 
 def default_download_callback(asset: ReleaseAsset, downloaded: int):
     logging.info(
         f"'{asset.name}' downloading progress: "
-        f"{downloaded // 2 ** 13}/{asset.size // 2 ** 13}kb "
+        f"{downloaded // 2**13}/{asset.size // 2**13}kb "
         f"({100 * downloaded / asset.size:.2f}%)"
     )
 
@@ -183,7 +183,7 @@ def get_available_versions(repo: GitHubRepo, process_tag: Callable[[str], Versio
     page_size = 100
     for i in itertools.count(1):
         data = json.loads(requests.get(request_url, dict(page=i, per_page=page_size), headers=AuthSession.header).text)
-        if 'message' in data or not isinstance(data, list):
+        if "message" in data or not isinstance(data, list):
             break
         for release in data:
             tag_name = release.get("tag_name")
@@ -207,7 +207,7 @@ def get_latest_version(repo: GitHubRepo, process_tag: Callable[[str], Version] =
         logging.info(f"Searching for latest release in 'https://github.com/{repo.user}/{repo.repo}/'...")
         request_url = f"{ENV.HCLI_GITHUB_API_URL}/repos/{repo.user}/{repo.repo}/releases/latest"
         data = json.loads(requests.get(request_url, headers=AuthSession.header).text)
-        if 'message' in data:
+        if "message" in data:
             return
         tag_name = data.get("tag_name")
         if tag_name is None:
@@ -219,33 +219,34 @@ def get_latest_version(repo: GitHubRepo, process_tag: Callable[[str], Version] =
         # Search through all releases to find latest stable
         logging.info(f"Searching for latest stable release in 'https://github.com/{repo.user}/{repo.repo}/'...")
         for version in get_available_versions(repo, process_tag):
-            tag_name = getattr(version, '_origin_tag_name', str(version))
+            tag_name = getattr(version, "_origin_tag_name", str(version))
             if not is_dev_version(tag_name):
                 return version
         return None
+
 
 def parse_tag(tag_name: str):
     return Version(tag_name.lstrip("v").strip())
 
 
-def get_assets(repo: GitHubRepo, tag_name: str, assets_mask=re.compile('.*')):
+def get_assets(repo: GitHubRepo, tag_name: str, assets_mask=re.compile(".*")):
     logging.info(f"Searching for assets by tag '{tag_name}' and mask: '{assets_mask.pattern}'")
     request_url = f"{ENV.HCLI_GITHUB_API_URL}/repos/{repo.user}/{repo.repo}/releases/tags/{tag_name}"
     data = json.loads(requests.get(request_url, headers=AuthSession.header).text)
-    if 'message' in data:
+    if "message" in data:
         return []
-    assets = data.get('assets')
+    assets = data.get("assets")
     if not assets:
         return []
-    assets = (ReleaseAsset(
-        asset.get("name"),
-        asset.get("browser_download_url"),
-        asset.get("size"),
-    ) for asset in assets)
-    return tuple(
-        asset for asset in assets
-        if asset.is_valid and assets_mask.match(asset.name) is not None
+    assets = (
+        ReleaseAsset(
+            asset.get("name"),
+            asset.get("browser_download_url"),
+            asset.get("size"),
+        )
+        for asset in assets
     )
+    return tuple(asset for asset in assets if asset.is_valid and assets_mask.match(asset.name) is not None)
 
 
 def is_already_installed(latest: Version, current: Version, compatibility_spec: SimpleSpec):
@@ -254,49 +255,48 @@ def is_already_installed(latest: Version, current: Version, compatibility_spec: 
     logging.info(f"Latest version is already installed: {current}")
     if current > latest:
         logging.warning(
-            f"Current version newer then latest found ({latest})" + (
-                ", but still compatible." if compatibility_spec.match(current)
-                else ", and incompatible!"
-            )
+            f"Current version newer then latest found ({latest})"
+            + (", but still compatible." if compatibility_spec.match(current) else ", and incompatible!")
         )
     return True
+
 
 def update_asset(asset: ReleaseAsset, binary_path: str) -> bool:
     """
     Download an asset to a temporary file and replace the running binary.
-    
+
     Args:
         asset: The ReleaseAsset to download
         binary_path: Path to the current binary to replace
-        
+
     Returns:
         True if update was successful, False otherwise
     """
     if not asset.is_valid:
         logging.error(f"Invalid asset: {asset.name}")
         return False
-    
+
     binary_path = Path(binary_path).resolve()
     if not binary_path.exists():
         logging.error(f"Binary not found: {binary_path}")
         return False
-    
+
     # Store original permissions
     original_stat = binary_path.stat()
     original_mode = original_stat.st_mode
-    
+
     try:
         # Create temporary directory for download
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_dir_path = Path(tmp_dir)
-            
+
             logging.info(f"Downloading {asset.name} to temporary directory: {tmp_dir_path}")
-            
+
             # Use existing download_asset function
             download_asset(asset, tmp_dir_path)
-            
+
             tmp_path = tmp_dir_path / asset.name
-        
+
             # Set executable permissions on the temporary file
             tmp_path.chmod(original_mode)
 
@@ -304,7 +304,7 @@ def update_asset(asset: ReleaseAsset, binary_path: str) -> bool:
             # On Unix systems, this works even if the original file is currently running
             if sys.platform == "win32":
                 # On Windows, we need to move the original file first
-                backup_path = binary_path.with_suffix(binary_path.suffix + '.old')
+                backup_path = binary_path.with_suffix(binary_path.suffix + ".old")
                 if backup_path.exists():
                     backup_path.unlink()
                 shutil.move(str(binary_path), str(backup_path))
@@ -318,15 +318,15 @@ def update_asset(asset: ReleaseAsset, binary_path: str) -> bool:
             else:
                 # On Unix systems, atomic replacement using rename
                 tmp_path.replace(binary_path)
-        
+
         logging.info(f"Successfully updated binary: {binary_path}")
         return True
-        
+
     except Exception as e:
         logging.error(f"Failed to update binary: {e}")
         # Clean up temporary file if it exists
         try:
-            if 'tmp_path' in locals() and tmp_path.exists():
+            if "tmp_path" in locals() and tmp_path.exists():
                 tmp_path.unlink()
         except OSError:
             pass
@@ -335,13 +335,14 @@ def update_asset(asset: ReleaseAsset, binary_path: str) -> bool:
 
 def test():
     rep = GitHubRepo.from_url(ENV.HCLI_GITHUB_URL)
-    print(get_compatible_version(rep,SimpleSpec(">=0.0.0")))
+    print(get_compatible_version(rep, SimpleSpec(">=0.0.0")))
     version = get_latest_version(rep, include_dev=True)
     print(version)
-    tag = getattr(version, '_origin_tag_name', "0.0.0")
+    tag = getattr(version, "_origin_tag_name", "0.0.0")
     print(get_assets(rep, tag))
     print(__file__)
     pass
+
 
 if __name__ == "__main__":
     test()

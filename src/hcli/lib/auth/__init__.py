@@ -216,15 +216,15 @@ class AuthService:
         # No expired session for environment API key
         if ENV.HCLI_API_KEY:
             return False
-            
+
         # No expired session if no credentials exist
         if not self._current_source:
             return False
-            
+
         # Only interactive auth can have expired sessions
         if self._current_source.type != CredentialType.INTERACTIVE:
             return False
-            
+
         # Has credentials but session is invalid/expired
         if self._current_source.token and (self.session is None or self.session.user is None):
             try:
@@ -233,7 +233,7 @@ class AuthService:
                 return user_response.user is None
             except Exception:
                 return True
-                
+
         return False
 
     def get_auth_type(self) -> Dict[str, str]:

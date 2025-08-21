@@ -89,9 +89,7 @@ def cli(_ctx, quiet, auth, auth_credentials, verbose):
     if verbose:
         FORMAT = "%(message)s"
         handler = RichHandler(show_time=False, show_path=False, rich_tracebacks=True)
-        logging.basicConfig(
-            level=logging.DEBUG, format="%(message)s", datefmt="[%X]", handlers=[handler]
-        )
+        logging.basicConfig(level=logging.DEBUG, format="%(message)s", datefmt="[%X]", handlers=[handler])
 
 
 @cli.result_callback()

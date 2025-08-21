@@ -109,13 +109,13 @@ async def select_asset(nodes: List[TreeNode], current_path: str = "") -> Optiona
 def collect_all_assets(nodes: List[TreeNode]) -> List[Asset]:
     """Recursively collect all assets from the tree nodes."""
     assets = []
-    
+
     for node in nodes:
         if node.type == "file" and node.asset:
             assets.append(node.asset)
         elif node.type == "folder" and node.children:
             assets.extend(collect_all_assets(node.children))
-    
+
     return assets
 
 
@@ -130,24 +130,27 @@ def filter_assets_by_pattern(assets: List[Asset], pattern: str) -> List[Asset]:
 
 
 def validate_pattern_for_direct_mode(ctx, param, value):
-    mode = ctx.params.get('mode')
-    if mode == 'direct' and not value:
+    mode = ctx.params.get("mode")
+    if mode == "direct" and not value:
         raise click.BadParameter('--pattern is required when --mode is "direct"')
     return value
+
 
 @auth_command()
 @click.option("-f", "--force", is_flag=True, help="Skip cache")
 @click.option("--mode", "mode", default="interactive", help="One of interactive or direct")
 @click.option("--output-dir", "output_dir", default="./", help="Output path")
-@click.option("--pattern", "pattern", default=None, help="Pattern to search for assets",callback=validate_pattern_for_direct_mode)
+@click.option(
+    "--pattern", "pattern", default=None, help="Pattern to search for assets", callback=validate_pattern_for_direct_mode
+)
 @click.argument("key", required=False)
 @async_command
 async def download(
-        force: bool = False,
-        output_dir: str = "./",
-        mode: str = "interactive",
-        pattern: Optional[str] = None,
-        key: Optional[str] = None,
+    force: bool = False,
+    output_dir: str = "./",
+    mode: str = "interactive",
+    pattern: Optional[str] = None,
+    key: Optional[str] = None,
 ) -> None:
     """Download IDA binaries, SDK, utilities and more.
 
@@ -175,11 +178,11 @@ async def download(
                 if not filtered_assets:
                     console.print(f"[red]No assets found matching pattern: {pattern}[/red]")
                     return
-                
+
                 console.print(f"[green]Found {len(filtered_assets)} assets matching pattern:[/green]")
                 for asset in filtered_assets:
                     console.print(f"  • {asset.key}")
-                
+
                 selected_keys = [asset.key for asset in filtered_assets]
             else:
                 # Get downloads from API
@@ -197,7 +200,7 @@ async def download(
         # Download files
         client = await get_api_client()
         downloaded_files = []
-        
+
         for selected_key in selected_keys:
             console.print(f"[yellow]Getting download URL for: {selected_key}[/yellow]")
             try:
@@ -216,13 +219,15 @@ async def download(
             # Download the file
             console.print(f"[yellow]Starting download of {selected_key}...[/yellow]")
             try:
-                target_path = await client.download_file(download_asset.url, target_dir=output_dir, force=force, auth=True)
+                target_path = await client.download_file(
+                    download_asset.url, target_dir=output_dir, force=force, auth=True
+                )
                 downloaded_files.append(target_path)
                 console.print(f"[green]Download complete! File saved to: {target_path}[/green]")
             except Exception as e:
                 console.print(f"[red]Failed to download {selected_key}: {e}[/red]")
                 continue
-        
+
         if downloaded_files:
             console.print(f"[green]Successfully downloaded {len(downloaded_files)} file(s)[/green]")
         else:

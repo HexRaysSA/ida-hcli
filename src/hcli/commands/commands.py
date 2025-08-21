@@ -56,7 +56,7 @@ def commands(ctx: click.Context):
                 raise AttributeError("Not a group")
             help_text = command.help or "No description available"
             # Get only the first line of the help text
-            help_text = help_text.split('\n')[0].strip()
+            help_text = help_text.split("\n")[0].strip()
 
         except (KeyError, AttributeError):
             help_text = "No description available"

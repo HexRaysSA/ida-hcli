@@ -2,7 +2,7 @@
 Integration tests for HCLI download functionality.
 These tests verify download-related CLI behavior including interactive commands.
 """
-import os
+
 import sys
 import time
 
