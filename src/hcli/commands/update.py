@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+import questionary
 import rich_click as click
 from semantic_version import SimpleSpec
 
@@ -9,6 +10,8 @@ from hcli import __version__
 from hcli.env import ENV
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
+from hcli.commands.common import safe_ask_async
+from hcli.lib.constants import cli
 
 from hcli.lib.update.release import GitHubRepo, get_latest_version, get_compatible_version, get_assets, download_asset, \
     update_asset
@@ -79,8 +82,22 @@ async def update(force: bool = False,
             assets = get_assets(repo, latest_tag, re.compile(mask))
 
             if latest_tag and len(assets) == 1:
-                #binary_path = get_executable_path()
-                binary_path = "/Users/plosson/devel/projects/hexrays/ida-hcli/dist/hcli"
+                console.print(f"[yellow]Update available: {__version__} → {latest_version}[/yellow]")
+                
+                # Skip confirmation if auto_install is enabled
+                if not auto_install:
+                    confirm = await safe_ask_async(
+                        questionary.confirm(
+                            f"Do you want to install the update to {latest_version}?",
+                            default=True
+                        ),
+                        "Update cancelled."
+                    )
+                    if not confirm:
+                        console.print("[yellow]Update cancelled.[/yellow]")
+                        return
+                
+                binary_path = get_executable_path()
                 if not update_asset(assets[0], binary_path):
                     console.print(f"[green]Already using the latest version ({__version__})[/green]")
                 else:
