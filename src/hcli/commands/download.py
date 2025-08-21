@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import List, Optional
 
 import questionary
@@ -50,7 +51,7 @@ async def select_asset(nodes: List[TreeNode], current_path: str = "") -> Optiona
             # Get display info from asset metadata if available
             display_name = file.name
             if file.asset and file.asset.metadata and "operating_system" in file.asset.metadata:
-                display_name = f"{file.asset.metadata['name']} ({file.asset.metadata['operating_system']})"
+                display_name = f"{file.asset.metadata['name']} ({file.asset.key.split('/')[-1]})"
             choices.append(Choice(f"📄 {display_name}", value=file))
 
         if not choices:
@@ -105,66 +106,127 @@ async def select_asset(nodes: List[TreeNode], current_path: str = "") -> Optiona
     return await _traverse_recursive(nodes, [])
 
 
+def collect_all_assets(nodes: List[TreeNode]) -> List[Asset]:
+    """Recursively collect all assets from the tree nodes."""
+    assets = []
+    
+    for node in nodes:
+        if node.type == "file" and node.asset:
+            assets.append(node.asset)
+        elif node.type == "folder" and node.children:
+            assets.extend(collect_all_assets(node.children))
+    
+    return assets
+
+
+def filter_assets_by_pattern(assets: List[Asset], pattern: str) -> List[Asset]:
+    """Filter assets by regex pattern matching their keys."""
+    try:
+        compiled_pattern = re.compile(pattern, re.IGNORECASE)
+        return [asset for asset in assets if compiled_pattern.search(asset.key)]
+    except re.error as e:
+        console.print(f"[red]Invalid regex pattern: {e}[/red]")
+        return []
+
+
+def validate_pattern_for_direct_mode(ctx, param, value):
+    mode = ctx.params.get('mode')
+    if mode == 'direct' and not value:
+        raise click.BadParameter('--pattern is required when --mode is "direct"')
+    return value
+
 @auth_command()
 @click.option("-f", "--force", is_flag=True, help="Skip cache")
+@click.option("--mode", "mode", default="interactive", help="One of interactive or direct")
 @click.option("--output-dir", "output_dir", default="./", help="Output path")
-@click.argument("slug", required=False)
+@click.option("--pattern", "pattern", default=None, help="Pattern to search for assets",callback=validate_pattern_for_direct_mode)
+@click.argument("key", required=False)
 @async_command
 async def download(
-    force: bool = False,
-    output_dir: str = "./",
-    version_filter: Optional[str] = None,
-    latest: bool = False,
-    category_filter: Optional[str] = None,
-    slug: Optional[str] = None,
+        force: bool = False,
+        output_dir: str = "./",
+        mode: str = "interactive",
+        pattern: Optional[str] = None,
+        key: Optional[str] = None,
 ) -> None:
-    """Download IDA binaries, SDK, utilities and more."""
+    """Download IDA binaries, SDK, utilities and more.
+
+    KEY: The asset key for direct download eg. release/9.1/ida-pro/ida-pro_91_x64linux.run (optional)
+
+    \b
+    When using direct mode, a pattern is required.
+
+    """
     try:
-        selected_key: Optional[str]
+        if pattern:
+            mode = "direct"
 
-        if slug:
-            selected_key = slug
+        if key:
+            selected_keys = [key]
         else:
-            # Get downloads from API
             console.print("[yellow]Fetching available downloads...[/yellow]")
-            assets = await asset_api.get_files_tree("installers")
 
-            if not assets:
-                console.print("[red]No downloads available or unable to fetch downloads[/red]")
-                return
+            if mode == "direct" and pattern:
+                # Get downloads from API
+                assets = await asset_api.get_files("installers")
 
-            # Interactive navigation
-            selected_asset = await select_asset(assets, "")
+                filtered_assets = filter_assets_by_pattern(assets.items, pattern)
 
-            if not selected_asset:
-                console.print("[yellow]Download cancelled[/yellow]")
-                return
+                if not filtered_assets:
+                    console.print(f"[red]No assets found matching pattern: {pattern}[/red]")
+                    return
+                
+                console.print(f"[green]Found {len(filtered_assets)} assets matching pattern:[/green]")
+                for asset in filtered_assets:
+                    console.print(f"  • {asset.key}")
+                
+                selected_keys = [asset.key for asset in filtered_assets]
+            else:
+                # Get downloads from API
+                assets = await asset_api.get_files_tree("installers")
 
-            selected_key = selected_asset.key
+                # Interactive navigation
+                selected_asset = await select_asset(assets, "")
 
-        # Get download URL
-        console.print(f"[yellow]Getting download URL for: {selected_key}[/yellow]")
-        try:
-            asset = await asset_api.get_file("installers", selected_key)
-        except Exception as e:
-            console.print(f"[red]Failed to get download URL: {e}[/red]")
-            return
+                if not selected_asset:
+                    console.print("[yellow]Download cancelled[/yellow]")
+                    return
 
-        if not asset:
-            console.print(f"[red]Asset '{selected_key}' not found[/red]")
-            return
+                selected_keys = [selected_asset.key]
 
-        # Download the file
-        console.print("[yellow]Starting download...[/yellow]")
+        # Download files
         client = await get_api_client()
+        downloaded_files = []
+        
+        for selected_key in selected_keys:
+            console.print(f"[yellow]Getting download URL for: {selected_key}[/yellow]")
+            try:
+                download_asset: Optional[Asset] = await asset_api.get_file("installers", selected_key)
+                if not download_asset:
+                    console.print(f"[red]Asset '{selected_key}' not found[/red]")
+                    continue
+            except Exception as e:
+                console.print(f"[red]Failed to get download URL for {selected_key}: {e}[/red]")
+                continue
 
-        if not asset.url:
-            console.print("[red]Error: No download URL available for asset[/red]")
-            return
+            if not download_asset.url:
+                console.print(f"[red]Error: No download URL available for asset {selected_key}[/red]")
+                continue
 
-        target_path = await client.download_file(asset.url, target_dir=output_dir, force=force, auth=True)
-
-        console.print(f"[green]Download complete! File saved to: {target_path}[/green]")
+            # Download the file
+            console.print(f"[yellow]Starting download of {selected_key}...[/yellow]")
+            try:
+                target_path = await client.download_file(download_asset.url, target_dir=output_dir, force=force, auth=True)
+                downloaded_files.append(target_path)
+                console.print(f"[green]Download complete! File saved to: {target_path}[/green]")
+            except Exception as e:
+                console.print(f"[red]Failed to download {selected_key}: {e}[/red]")
+                continue
+        
+        if downloaded_files:
+            console.print(f"[green]Successfully downloaded {len(downloaded_files)} file(s)[/green]")
+        else:
+            console.print("[red]No files were downloaded[/red]")
 
     except Exception as e:
         console.print(f"[red]Download failed: {e}[/red]")
