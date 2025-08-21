@@ -586,43 +586,184 @@ function Add-CiPath {
 
 #endregion
 
-#region Main Installation Function
+#region Output Formatting Functions
 
-function Show-InstallationSummary {
+function Write-Title {
     <#
     .SYNOPSIS
-    Displays installation completion message and next steps
+    Writes a title with optional description, matching Unix script formatting
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string]$Version,
-        [Parameter(Mandatory)]
-        [string]$InstallDir,
-        [Parameter(Mandatory)]
-        [string]$BinaryPath,
-        [bool]$PathModified = $false,
-        [bool]$NoModifyPath = $false
+        [string]$Title,
+        [string]$Description = ""
     )
     
-    if (-not $NoModifyPath) {
-        if ($PathModified) {
-            Write-Information ""
-            Write-Information "Added $InstallDir to your user PATH."
-            Write-Information "You may need to restart your terminal or run:"
-            Write-Information "    `$env:Path = [System.Environment]::GetEnvironmentVariable('Path','User') + ';' + [System.Environment]::GetEnvironmentVariable('Path','Machine')"
+    Write-Information ""
+    Write-Information $Title
+    if ($Description) {
+        Write-Information $Description
+    }
+}
+
+function Test-ExistingInstallation {
+    <#
+    .SYNOPSIS
+    Checks for existing hcli installation and returns path if found
+    #>
+    [CmdletBinding()]
+    param()
+    
+    try {
+        $existingPath = Get-Command "hcli" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+        if ($existingPath) {
+            return $existingPath
         }
-    } else {
-        Write-Information ""
-        Write-Information "Installation complete! To use $app_name, either:"
-        Write-Information "  1. Add $InstallDir to your PATH, or"  
-        Write-Information "  2. Run the full path: $BinaryPath"
+    } catch {
+        Write-Verbose "No existing hcli installation found"
     }
     
-    Write-Information ""
-    Write-Information "$app_name $Version installed successfully!"
-    Write-Information "Run '$app_name --help' to get started."
+    return $null
 }
+
+function Get-ExistingVersion {
+    <#
+    .SYNOPSIS
+    Gets version of existing hcli installation
+    #>
+    [CmdletBinding()]
+    param(
+        [string]$ExistingPath
+    )
+    
+    if ($ExistingPath) {
+        try {
+            $versionOutput = & $ExistingPath --version 2>$null
+            if ($versionOutput) {
+                return $versionOutput
+            }
+        } catch {
+            Write-Verbose "Could not determine existing version"
+        }
+    }
+    
+    return "unknown"
+}
+
+function Confirm-Installation {
+    <#
+    .SYNOPSIS
+    Prompts user for installation confirmation, matching Unix script behavior
+    #>
+    [CmdletBinding()]
+    param(
+        [string]$ExistingPath,
+        [string]$ExistingVersion,
+        [string]$TargetVersion,
+        [string]$Platform
+    )
+    
+    if ($ExistingPath) {
+        Write-Information ""
+        Write-Information "Found existing hcli installation:"
+        Write-Information "  Location: $ExistingPath"
+        Write-Information "  Version:  $ExistingVersion"
+        Write-Information ""
+        Write-Information "Installing hcli version $TargetVersion for $Platform"
+        Write-Information "Will replace the existing installation at: $(Split-Path $ExistingPath -Parent)"
+    } else {
+        Write-Information "Installing hcli version $TargetVersion for $Platform"
+    }
+    
+    # Interactive confirmation unless in CI or non-interactive mode
+    if ([Environment]::UserInteractive -and -not $env:CI) {
+        Write-Information ""
+        if ($ExistingPath) {
+            $prompt = "Do you want to replace the existing installation? (yes/no): "
+        } else {
+            $prompt = "Do you want to continue? (yes/no): "
+        }
+        
+        $response = Read-Host $prompt
+        $response = if ([string]::IsNullOrWhiteSpace($response)) { "yes" } else { $response }
+        
+        if ($response -notmatch '^(y|yes)$') {
+            Write-Information ""
+            Write-Information "Installation Aborted"
+            exit 0
+        }
+    }
+}
+
+function Test-PathShadowing {
+    <#
+    .SYNOPSIS
+    Checks if installing hcli.exe will shadow existing executables in PATH
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$InstallDir
+    )
+    
+    Write-Verbose "Checking for potential PATH shadowing issues..."
+    
+    try {
+        # Get current PATH (both user and system)
+        $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+        $systemPath = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
+        $currentPath = "$userPath;$systemPath"
+        
+        # Split and clean PATH directories
+        $pathDirs = $currentPath -split ';' | Where-Object { 
+            $_.Trim() -ne '' -and $_.ToLower() -ne $InstallDir.ToLower()
+        }
+        
+        # Look for existing hcli.exe in PATH
+        $existingHcli = @()
+        foreach ($dir in $pathDirs) {
+            if (Test-Path $dir -PathType Container -ErrorAction SilentlyContinue) {
+                $hcliPath = Join-Path $dir "hcli.exe"
+                if (Test-Path $hcliPath -PathType Leaf -ErrorAction SilentlyContinue) {
+                    $existingHcli += $hcliPath
+                }
+            }
+        }
+        
+        if ($existingHcli.Count -gt 0) {
+            Write-Warning @"
+The following commands are shadowed by other commands in your PATH: hcli
+
+Installing to: $InstallDir
+Will shadow existing: $($existingHcli -join ', ')
+
+The new installation will take precedence. Existing installations may become inaccessible.
+"@
+            
+            # In interactive mode, prompt user
+            if ([Environment]::UserInteractive -and -not $env:CI) {
+                $response = Read-Host "Continue with installation? (y/N)"
+                if ($response -notmatch '^[Yy]') {
+                    throw "Installation cancelled by user due to PATH shadowing concerns"
+                }
+            } else {
+                Write-Information "Continuing installation (non-interactive mode)"
+            }
+        } else {
+            Write-Verbose "No PATH shadowing detected"
+        }
+        
+    } catch {
+        Write-Verbose "Failed to check PATH shadowing: $_"
+        # Don't fail installation on shadowing check errors
+    }
+}
+
+#endregion
+
+#region Main Installation Function
+
 
 function Install-Hcli {
     <#
@@ -644,33 +785,50 @@ function Install-Hcli {
         
         # Detect architecture
         $architecture = Get-Architecture
-        Write-Information "Detected architecture: $architecture"
+        Write-Verbose "Detected platform: windows:$architecture"
         
         # Get release version (latest or specific)
         if ($Version) {
-            Write-Information "Fetching specific version: $Version"
+            Write-Title "Fetching Specific Release" " version $Version"
             $version = Get-SpecificRelease -Repository $github_repo -TargetVersion $Version
-            Write-Information "Target version: $version"
         } else {
-            Write-Information "Fetching latest production release..."
+            Write-Title "Fetching Latest Production Release"
             $version = Get-LatestRelease -Repository $github_repo
-            Write-Information "Latest production version: $version"
         }
         
-        # Determine installation directory
-        $install_dir = Get-InstallDirectory -ForceDir $InstallDir
-        Write-Information "Installing to: $install_dir"
+        # Check for existing installation
+        $existingPath = Test-ExistingInstallation
+        $existingVersion = Get-ExistingVersion -ExistingPath $existingPath
+        
+        # Determine installation directory (use existing location if found and not forced)
+        if ($existingPath -and -not $InstallDir) {
+            $install_dir = Split-Path $existingPath -Parent
+        } else {
+            $install_dir = Get-InstallDirectory -ForceDir $InstallDir
+        }
+        
+        # Show installation info and get confirmation
+        $platform = "windows:$architecture"
+        Confirm-Installation -ExistingPath $existingPath -ExistingVersion $existingVersion -TargetVersion $version -Platform $platform
         
         # Create installation directory if it doesn't exist
         if (-not (Test-Path $install_dir)) {
-            Write-Verbose "Creating installation directory"
+            Write-Information "creating installation directory: $install_dir"
             $null = New-Item -Path $install_dir -ItemType Directory -Force
         }
         
         # Download binary
         $binary_path = Join-Path $install_dir "$app_name.exe"
+        Write-Title "Downloading Binary" " https://github.com/$github_repo/releases/download/v$version/$app_name-windows-$architecture-$version.exe"
         Download-Binary -Repository $github_repo -Version $version -Architecture $architecture -DestinationPath $binary_path
-        Write-Information "  $app_name.exe"
+        
+        # Install binary
+        Write-Title "Installing Binary" " $install_dir\$app_name.exe"
+        
+        # Check for PATH shadowing before modifying PATH
+        if (-not $NoModifyPath) {
+            Test-PathShadowing -InstallDir $install_dir
+        }
         
         # Add to PATH if requested
         $pathModified = $false
@@ -682,10 +840,19 @@ function Install-Hcli {
             
             # Add to user PATH
             $pathModified = Add-ToUserPath -Directory $install_dir
+            
+            if ($pathModified) {
+                Write-Title "PATH Setup" "To add $install_dir to your PATH, restart your shell or run:"
+                Write-Information "    `$env:Path = [System.Environment]::GetEnvironmentVariable('Path','User') + ';' + [System.Environment]::GetEnvironmentVariable('Path','Machine')"
+            }
         }
         
         # Show installation summary
-        Show-InstallationSummary -Version $version -InstallDir $install_dir -BinaryPath $binary_path -PathModified $pathModified -NoModifyPath $NoModifyPath
+        Write-Title "Installation Complete" " Run $app_name --help for more information"
+        if ($NoModifyPath) {
+            Write-Title "Note" "Add $install_dir to your PATH to run $app_name from anywhere"
+        }
+        Write-Information ""
         
     } catch {
         Write-Error $_.Exception.Message
