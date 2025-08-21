@@ -10,6 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import rich.progress
 from pydantic import BaseModel, ConfigDict, Field
 
 from hcli.lib.ida.plugin import (
@@ -274,8 +275,6 @@ def get_releases_metadata_cache(owner: str, repo: str) -> GitHubReleases:
 def warm_releases_metadata_cache(client: GitHubGraphQLClient, repos: List[Tuple[str, str]]) -> None:
     """Warm the releases metadata cache for multiple repositories"""
 
-    # TODO: add progress bar
-
     repos_to_fetch = []
 
     for owner, repo in repos:
@@ -290,14 +289,11 @@ def warm_releases_metadata_cache(client: GitHubGraphQLClient, repos: List[Tuple[
 
     logging.debug(f"Warming cache for {len(repos_to_fetch)} repositories")
 
-    # Process in batches of 20
-    batch_size = 20
-    for i in range(0, len(repos_to_fetch), batch_size):
-        batch = repos_to_fetch[i : i + batch_size]
-        logging.debug(
-            f"Processing batch {i // batch_size + 1}/{(len(repos_to_fetch) + batch_size - 1) // batch_size} ({len(batch)} repositories)"
-        )
-
+    BATCH_SIZE = 10
+    for i in rich.progress.track(
+        range(0, len(repos_to_fetch), BATCH_SIZE), description="Warming cache", transient=True
+    ):
+        batch = repos_to_fetch[i : i + BATCH_SIZE]
         releases_batch = client.get_many_releases(batch)
 
         for (owner, repo), releases in releases_batch.items():
@@ -620,9 +616,13 @@ class GithubPluginRepo(BasePluginRepo):
         self.token = token
         self.client = GitHubGraphQLClient(token)
 
+        warm_releases_metadata_cache(self.client, self._get_repos())
+
+    def _get_repos(self):
+        return [parse_repository(repo) for repo in INITIAL_REPOSITORIES]
+
     def get_plugins(self) -> list[Plugin]:
-        repos = [parse_repository(repo) for repo in INITIAL_REPOSITORIES]
-        warm_releases_metadata_cache(self.client, repos)
+        repos = self._get_repos()
 
         # TODO: for binary plugins, there are often different builds for each platform
         # so need to include that in the map, too.
@@ -630,11 +630,7 @@ class GithubPluginRepo(BasePluginRepo):
         # name -> version -> url
         index: dict[str, dict[str, str]] = defaultdict(dict)
 
-        # the following should be pretty hot, given all the caching
-        # TODO: refactor this ugly logic. collect URLs first, fetch next.
-        # TODO: progress bar
-        #
-        for owner, repo in sorted(repos):
+        for owner, repo in rich.progress.track(sorted(repos), description="Fetching plugins", transient=True):
             releases = get_releases_metadata(self.client, owner, repo).releases
             for release in releases:
                 for asset in release.assets:
