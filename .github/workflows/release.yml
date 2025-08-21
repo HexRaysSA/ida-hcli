@@ -54,13 +54,6 @@ jobs:
           uv python install "${{ env.UV_PYTHON }}"
           uv sync --extra dev
 
-      - name: Install termshot
-        run: |
-          # Download and install termshot for amd64
-          curl -LsSf https://github.com/homeport/termshot/releases/download/v0.6.0/termshot_0.6.0_linux_amd64.tar.gz | tar -xzf - -C /tmp
-          sudo mv /tmp/termshot /usr/local/bin/
-          chmod +x /usr/local/bin/termshot
-
       - name: Bump version
         id: version
         run: |

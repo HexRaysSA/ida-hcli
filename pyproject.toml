@@ -90,8 +90,6 @@ version_variables = ["src/hcli/__init__.py:__version__"]  # update your actual p
 build_command = """
     uv lock --upgrade-package "$PACKAGE_NAME"
     uv run hcli
-    termshot -f docs/assets/screenshot.png uv run hcli
-    git add uv.lock docs/assets/screenshot.png
     uv build
 """
 dist_path = "dist/"
