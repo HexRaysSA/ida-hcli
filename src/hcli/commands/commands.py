@@ -55,9 +55,8 @@ def commands(ctx: click.Context):
             else:
                 raise AttributeError("Not a group")
             help_text = command.help or "No description available"
-            # Truncate long help text
-            if len(help_text) > 80:
-                help_text = help_text[:77] + "..."
+            # Get only the first line of the help text
+            help_text = help_text.split('\n')[0].strip()
 
         except (KeyError, AttributeError):
             help_text = "No description available"

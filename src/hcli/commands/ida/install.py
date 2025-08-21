@@ -19,13 +19,21 @@ from hcli.lib.util.io import get_temp_dir
 @click.option("-i", "--install-dir", "install_dir", required=True, help="Install dir")
 @click.option("-a", "--accept-eula", "eula", is_flag=True, help="Accept EULA", default=True)
 @click.argument("installer", required=False)
-@click.command(help="Install IDA")
+@click.command()
 @click.pass_context
 @async_command
 async def install(
     ctx, install_dir: str, eula: bool, installer: str, download_slug: Optional[str], license_id: Optional[str]
 ) -> None:
-    """Download IDA binaries, SDK, utilities and more."""
+    """Installs IDA unattended.
+
+    If install_dir is /tmp/myida, the ida binary will be located:
+
+    \b
+    On Windows: /tmp/myida/ida
+    On Linux: /tmp/myida/ida
+    On Mac: /tmp/myida/Contents/MacOS/ida
+    """
     try:
         # download installer using the download command
         tmp_dir = get_temp_dir()
