@@ -13,7 +13,7 @@ from hcli.lib.console import console
 
 
 @click.command()
-@click.argument("name", required=False)
+@click.option("-n", "--name", help="Name for the new key")
 @require_auth
 @async_command
 async def create(name: str | None) -> None:
