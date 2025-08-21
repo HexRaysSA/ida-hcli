@@ -15,11 +15,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from hcli.lib.ida.plugin import (
     IDAPluginMetadata,
+    discover_platforms_from_plugin_archive,
     get_metadata_from_plugin_archive,
     is_plugin_archive,
     validate_metadata_in_plugin_archive,
 )
-from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginVersion
+from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveLocation
 from hcli.lib.util.cache import get_cache_directory
 
 logger = logging.getLogger(__name__)
@@ -610,6 +611,60 @@ INITIAL_REPOSITORIES = [
 ]
 
 
+class PluginArchiveIndex:
+    """index a collection of plugin archive URLs by name/version/idaVersion/platform.
+
+    Plugins are uniquely identified by the name.
+    There may be multiple versions of a plugin.
+    Each version may have multiple distribution archives due to:
+      - different IDA versions (compiled against SDK for 7.4 versus 9.2)
+      - different platforms (compiled for Windows, macOS, Linux)
+    """
+
+    def __init__(self):
+        # name -> version -> tuple[idaVersion, set[platforms]] -> list[url]
+        self.index: dict[str, dict[str, dict[tuple[str, frozenset[str]], list[str]]]] = defaultdict(
+            lambda: defaultdict(lambda: defaultdict(list))
+        )
+
+    def index_plugin_archive(self, buf: bytes, url: str):
+        if not is_plugin_archive(buf):
+            return
+
+        try:
+            metadata = get_metadata_from_plugin_archive(buf)
+            validate_metadata_in_plugin_archive(buf)
+        except ValueError:
+            return
+
+        name = metadata.name
+        version = metadata.version
+        ida_versions = metadata.ida_versions or ">=0"
+        platforms: frozenset[str] = discover_platforms_from_plugin_archive(buf, name)
+        spec = (ida_versions, platforms)
+
+        versions = self.index[name]
+        specs = versions[version]
+        specs[spec].append(url)
+        logger.debug("found plugin: %s %s IDA:%s %s %s", name, version, ida_versions, platforms, url)
+
+    def get_plugins(self) -> list[Plugin]:
+        ret = []
+        for name, versions in self.index.items():
+            locations_by_version = defaultdict(list)
+            for version, specs in versions.items():
+                for spec, urls in specs.items():
+                    ida_versions, platforms = spec
+                    for url in urls:
+                        location = PluginArchiveLocation(url, name, version, ida_versions, platforms)
+                        locations_by_version[version].append(location)
+
+            plugin = Plugin(name, locations_by_version)
+            ret.append(plugin)
+
+        return ret
+
+
 class GithubPluginRepo(BasePluginRepo):
     def __init__(self, token: str):
         super().__init__()
@@ -624,66 +679,44 @@ class GithubPluginRepo(BasePluginRepo):
     def get_plugins(self) -> list[Plugin]:
         repos = self._get_repos()
 
-        # TODO: for binary plugins, there are often different builds for each platform
-        # so need to include that in the map, too.
-        # TODO: also by IDA version
-        # name -> version -> url
-        index: dict[str, dict[str, str]] = defaultdict(dict)
+        assets = []
+        source_archives = []
 
         for owner, repo in rich.progress.track(sorted(repos), description="Fetching plugins", transient=True):
             releases = get_releases_metadata(self.client, owner, repo).releases
             for release in releases:
+                # source archives
+                source_archives.append((owner, repo, release.commit_hash, release.zipball_url))
+
+                # assets (distribution/binary archives)
                 for asset in release.assets:
-                    # TODO: check file extension
-                    try:
-                        buf = get_release_asset(owner, repo, release.tag_name, asset)
-                    except ValueError:
+                    if asset.content_type != "application/zip":
                         continue
 
-                    if not is_plugin_archive(buf):
-                        continue
+                    assets.append((owner, repo, release.tag_name, asset))
 
-                    try:
-                        metadata = get_metadata_from_plugin_archive(buf)
-                        validate_metadata_in_plugin_archive(buf)
-                    except ValueError:
-                        continue
+        index = PluginArchiveIndex()
 
-                    try:
-                        metadata = get_metadata_from_plugin_archive(buf)
-                    except ValueError:
-                        logger.debug(
-                            "skipping invalid plugin archive: %s/%s %s %s %s",
-                            owner,
-                            repo,
-                            release.tag_name,
-                            asset.name,
-                            asset.download_url,
-                        )
-                        continue
-                    else:
-                        # TODO: last write wins
-                        logger.debug("found plugin: %s %s %s", metadata.name, metadata.version, release.zipball_url)
-                        index[metadata.name][metadata.version] = asset.download_url
+        # TODO: disallow different repos from providing the same plugin name
 
-                # TODO: refactor this ugly logic
-                try:
-                    buf = get_source_archive(owner, repo, release.commit_hash, release.zipball_url)
-                except ValueError:
-                    pass
-                else:
-                    if is_plugin_archive(buf):
-                        try:
-                            metadata = get_metadata_from_plugin_archive(buf)
-                            validate_metadata_in_plugin_archive(buf)
-                        except ValueError:
-                            pass
-                        else:
-                            # TODO: last write wins
-                            logger.debug("found plugin: %s %s %s", metadata.name, metadata.version, release.zipball_url)
-                            index[metadata.name][metadata.version] = release.zipball_url
+        for owner, repo, tag_name, asset in rich.progress.track(
+            assets, description="Fetching plugin assests", transient=True
+        ):
+            try:
+                buf = get_release_asset(owner, repo, tag_name, asset)
+            except ValueError:
+                continue
 
-        return [
-            Plugin(name, [PluginVersion(version, url) for version, url in versions.items()])
-            for name, versions in index.items()
-        ]
+            index.index_plugin_archive(buf, asset.download_url)
+
+        for owner, repo, commit_hash, url in rich.progress.track(
+            source_archives, description="Fetching plugin source archives", transient=True
+        ):
+            try:
+                buf = get_source_archive(owner, repo, commit_hash, url)
+            except ValueError:
+                continue
+
+            index.index_plugin_archive(buf, url)
+
+        return index.get_plugins()

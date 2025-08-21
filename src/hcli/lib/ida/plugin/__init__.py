@@ -148,6 +148,73 @@ def validate_metadata_in_plugin_archive(zip_data: bytes):
     _ = packaging.version.parse(metadata.version)
 
 
+PLATFORM_WINDOWS = "windows-x86_64"
+PLATFORM_LINUX = "linux-x86_64"
+PLATFORM_MACOS_INTEL = "macos-x86_64"
+PLATFORM_MACOS_ARM = "macos-aarch64"
+
+ALL_PLATFORMS = frozenset(
+    {
+        PLATFORM_WINDOWS,
+        PLATFORM_LINUX,
+        PLATFORM_MACOS_INTEL,
+        PLATFORM_MACOS_ARM,
+    }
+)
+
+
+def does_path_exist_in_zip_archive(zip_data: bytes, path: str) -> bool:
+    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
+        return path in zip_file.namelist()
+
+
+def does_plugin_path_exist_in_plugin_archive(zip_data: bytes, plugin_name: str, relative_path: str) -> bool:
+    """does the given path exist relative to the metadata file of the given plugin?"""
+    metadata_path = get_metadata_path_from_plugin_archive(zip_data)
+    plugin_root_path = Path(metadata_path).parent
+    candidate_path = plugin_root_path / Path(relative_path)
+    return does_path_exist_in_zip_archive(zip_data, str(candidate_path))
+
+
+def discover_platforms_from_plugin_archive(zip_data: bytes, name: str) -> frozenset[str]:
+    if is_source_plugin_archive(zip_data):
+        return ALL_PLATFORMS
+    elif is_binary_plugin_archive(zip_data):
+        metadata = get_metadata_from_plugin_archive(zip_data)
+        if metadata.entry_point.lower().endswith(".so"):
+            return frozenset({PLATFORM_LINUX})
+        elif metadata.entry_point.lower().endswith(".dylib"):
+            # assume universal binary
+            return frozenset({PLATFORM_MACOS_INTEL, PLATFORM_MACOS_ARM})
+        elif metadata.entry_point.lower().endswith(".dll"):
+            return frozenset({PLATFORM_WINDOWS})
+        else:
+            # entrypoint should be a bare filename
+            # and we need to test for the existence of files with candidate extensions (.so, .dylib, .dll)
+            platforms = set()
+            extensions = [
+                (".so", {PLATFORM_LINUX}),
+                (".dll", {PLATFORM_WINDOWS}),
+                ("_aarch64.dylib", {PLATFORM_MACOS_ARM}),
+                ("_x86_64.dylib", {PLATFORM_MACOS_INTEL}),
+            ]
+            for ext, plats in extensions:
+                if does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.entry_point + ext):
+                    platforms.update(plats)
+
+            # check for universal binary
+            if not platforms.intersection({PLATFORM_MACOS_INTEL, PLATFORM_MACOS_ARM}):
+                if does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.entry_point + ".dylib"):
+                    platforms.update({PLATFORM_MACOS_INTEL, PLATFORM_MACOS_ARM})
+
+            if platforms:
+                return frozenset(platforms)
+
+            raise ValueError("failed to discover platforms")
+    else:
+        raise ValueError("not a valid plugin archive")
+
+
 def is_plugin_archive(zip_data: bytes) -> bool:
     """is the given archive an IDA plugin archive.
 
