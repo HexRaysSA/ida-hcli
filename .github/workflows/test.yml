@@ -41,13 +41,13 @@ jobs:
             os: macos-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-essential/ida-essential_91_x64mac.app.zip"
-            idat_path: "/Content/MacOS/idat"
+            idat_path: "/Contents/MacOS/idat"
 
           - name: IDA 9.1 on macOS (ARM)
             os: macos-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-essential/ida-essential_91_armmac.app.zip"
-            idat_path: "/Content/MacOS/idat"
+            idat_path: "/Contents/MacOS/idat"
 
           - name: IDA 9.0 on Linux
             os: ubuntu-latest
@@ -65,13 +65,13 @@ jobs:
             os: macos-latest
             ida_version: "9.0"
             slug: "release/9.0/ida-essential/ida-essential_90_x64mac.app.zip"
-            idat_path: "/Content/MacOS/idat"
+            idat_path: "/Contents/MacOS/idat"
 
           - name: IDA 9.0 on macOS (ARM)
             os: macos-latest
             ida_version: "9.0"
             slug: "release/9.0/ida-essential/ida-essential_90_armmac.app.zip"
-            idat_path: "/Content/MacOS/idat"
+            idat_path: "/Contents/MacOS/idat"
 
     steps:
       - name: Checkout
