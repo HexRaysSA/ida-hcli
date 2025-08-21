@@ -256,8 +256,14 @@ function Get-InstallDirectory {
     }
     
     # Windows-standard user binaries location (highest priority for Windows)
-    $windowsLocalBin = Join-Path $env:LOCALAPPDATA "Programs\hcli"
-    if ($env:LOCALAPPDATA) {
+    # Use .NET method as $env: might not be available in all contexts
+    $localAppData = [System.Environment]::GetEnvironmentVariable('LOCALAPPDATA')
+    if (-not $localAppData) {
+        $localAppData = $env:LOCALAPPDATA
+    }
+    
+    if ($localAppData) {
+        $windowsLocalBin = Join-Path $localAppData "Programs\hcli"
         Write-Verbose "Using Windows standard location: $windowsLocalBin"
         return $windowsLocalBin
     }
@@ -412,6 +418,15 @@ function Download-Binary {
     Write-Verbose "  from: $download_url"
     Write-Verbose "  to: $DestinationPath"
     
+    # Check if destination is a symbolic link and remove it first
+    if (Test-Path $DestinationPath) {
+        $existingFile = Get-Item $DestinationPath -ErrorAction SilentlyContinue
+        if ($existingFile -and ($existingFile.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            Write-Information "[DEBUG] Destination is a symbolic link, removing it first"
+            Remove-Item $DestinationPath -Force
+        }
+    }
+    
     # Create webclient with proper configuration
     $webClient = New-Object System.Net.WebClient
     
@@ -433,24 +448,46 @@ function Download-Binary {
             }
             
             Write-Information "Downloading... (this may take a moment)"
+            Write-Information "[DEBUG] Download URL: $download_url"
+            Write-Information "[DEBUG] Destination: $DestinationPath"
+            Write-Information "[DEBUG] Headers count: $($headers.Count)"
+            
             if ($headers.Count -gt 0) {
-                Invoke-WebRequest -Uri $download_url -OutFile $DestinationPath -Headers $headers -UseBasicParsing
+                Write-Information "[DEBUG] Using Invoke-WebRequest with headers"
+                $response = Invoke-WebRequest -Uri $download_url -OutFile $DestinationPath -Headers $headers -UseBasicParsing -PassThru
+                Write-Information "[DEBUG] Response StatusCode: $($response.StatusCode)"
+                Write-Information "[DEBUG] Response ContentLength: $($response.RawContentLength)"
             } else {
-                Invoke-WebRequest -Uri $download_url -OutFile $DestinationPath -UseBasicParsing
+                Write-Information "[DEBUG] Using Invoke-WebRequest without headers"
+                $response = Invoke-WebRequest -Uri $download_url -OutFile $DestinationPath -UseBasicParsing -PassThru
+                Write-Information "[DEBUG] Response StatusCode: $($response.StatusCode)"
+                Write-Information "[DEBUG] Response ContentLength: $($response.RawContentLength)"
             }
         } catch {
             # Fallback to WebClient if Invoke-WebRequest fails
-            Write-Verbose "Invoke-WebRequest failed, falling back to WebClient"
+            Write-Information "[DEBUG] Invoke-WebRequest failed with error: $_"
+            Write-Information "[DEBUG] Error type: $($_.Exception.GetType().FullName)"
+            Write-Information "[DEBUG] Falling back to WebClient"
             $webClient.DownloadFile($download_url, $DestinationPath)
+            Write-Information "[DEBUG] WebClient download completed"
         }
         
         # Verify the file was downloaded
+        Write-Information "[DEBUG] Checking if file exists at: $DestinationPath"
         if (-not (Test-Path $DestinationPath)) {
             throw "Download appeared to succeed but file not found at destination"
         }
         
-        $fileSize = (Get-Item $DestinationPath).Length
+        Write-Information "[DEBUG] File exists, checking size..."
+        $fileInfo = Get-Item $DestinationPath
+        $fileSize = $fileInfo.Length
+        Write-Information "[DEBUG] File size: $fileSize bytes"
+        Write-Information "[DEBUG] File attributes: $($fileInfo.Attributes)"
+        Write-Information "[DEBUG] File creation time: $($fileInfo.CreationTime)"
+        Write-Information "[DEBUG] File last write time: $($fileInfo.LastWriteTime)"
+        
         if ($fileSize -eq 0) {
+            Write-Information "[DEBUG] ERROR: File is empty (0 bytes)"
             throw "Downloaded file is empty"
         }
         
