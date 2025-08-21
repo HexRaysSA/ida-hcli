@@ -20,7 +20,12 @@ def require_auth(f: Callable) -> Callable:
 
         # Check if user is logged in
         if not auth_service.is_logged_in():
-            console.print("[red]You are not logged in. Use 'hcli login'.[/red]")
+            if auth_service.has_expired_session():
+                current_source = auth_service.get_current_credentials()
+                email = current_source.email if current_source else "unknown"
+                console.print(f"[red]Your session {email} has expired, use 'hcli login'.[/red]")
+            else:
+                console.print("[red]You are not logged in. Use 'hcli login'.[/red]")
             sys.exit(1)
 
         return f(*args, **kwargs)
@@ -52,7 +57,12 @@ def enforce_login() -> bool:
     auth_service = get_auth_service()
 
     if not auth_service.is_logged_in():
-        console.print("[red]You are not logged in. Use 'hcli login'.[/red]")
+        if auth_service.has_expired_session():
+            current_source = auth_service.get_current_credentials()
+            email = current_source.email if current_source else "unknown"
+            console.print(f"[red]Your session {email} has expired, use 'hcli login'.[/red]")
+        else:
+            console.print("[red]You are not logged in. Use 'hcli login'.[/red]")
         sys.exit(1)
 
     return True
@@ -97,7 +107,12 @@ class AuthCommand(BaseCommand):
 
         # Check if user is logged in
         if not auth_service.is_logged_in():
-            console.print("[red]You are not logged in. Use 'hcli login'.[/red]")
+            if auth_service.has_expired_session():
+                current_source = auth_service.get_current_credentials()
+                email = current_source.email if current_source else "unknown"
+                console.print(f"[red]Your session {email} has expired, use 'hcli login'.[/red]")
+            else:
+                console.print("[red]You are not logged in. Use 'hcli login'.[/red]")
             sys.exit(1)
 
         # Validate forced credentials exists

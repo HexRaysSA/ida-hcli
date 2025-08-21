@@ -193,8 +193,47 @@ class AuthService:
         if self._current_source.type == CredentialType.KEY:
             return bool(self._current_source.token)
         elif self._current_source.type == CredentialType.INTERACTIVE:
-            return self.session is not None and self.session.user is not None
+            # For interactive auth, check if session is valid by attempting to get user
+            if self.session is not None and self.session.user is not None:
+                return True
+            # If we have credentials but no valid session, try to refresh
+            if self._current_source.token:
+                try:
+                    user_response = self.supabase.auth.get_user()
+                    if user_response.user:
+                        self.user = user_response.user
+                        self.session = self.supabase.auth.get_session()
+                        return True
+                except Exception:
+                    # Token exists but is expired/invalid
+                    return False
+            return False
 
+        return False
+
+    def has_expired_session(self) -> bool:
+        """Check if user has credentials but session is expired."""
+        # No expired session for environment API key
+        if ENV.HCLI_API_KEY:
+            return False
+            
+        # No expired session if no credentials exist
+        if not self._current_source:
+            return False
+            
+        # Only interactive auth can have expired sessions
+        if self._current_source.type != CredentialType.INTERACTIVE:
+            return False
+            
+        # Has credentials but session is invalid/expired
+        if self._current_source.token and (self.session is None or self.session.user is None):
+            try:
+                # Try to verify if token is actually expired
+                user_response = self.supabase.auth.get_user()
+                return user_response.user is None
+            except Exception:
+                return True
+                
         return False
 
     def get_auth_type(self) -> Dict[str, str]:
