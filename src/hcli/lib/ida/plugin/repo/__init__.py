@@ -2,16 +2,20 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 
-@dataclass
-class PluginVersion:
-    version: str
+@dataclass(frozen=True)
+class PluginArchiveLocation:
     url: str
+    name: str
+    version: str
+    ida_versions: str
+    platforms: frozenset[str]
 
 
 @dataclass
 class Plugin:
     name: str
-    versions: list[PluginVersion]
+    # version -> list[PluginVersion]
+    locations_by_version: dict[str, list[PluginArchiveLocation]]
 
 
 class BasePluginRepo(ABC):
