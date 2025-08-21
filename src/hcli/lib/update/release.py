@@ -190,6 +190,8 @@ def get_available_versions(repo: GitHubRepo, process_tag: Callable[[str], Versio
             if tag_name is None:
                 continue
             version = process_tag(tag_name)
+            if (version is None):
+                continue
             version._origin_tag_name = tag_name
             yield version
         logging.info(f"Version's page#{i} loaded")
@@ -226,7 +228,10 @@ def get_latest_version(repo: GitHubRepo, process_tag: Callable[[str], Version] =
 
 
 def parse_tag(tag_name: str):
-    return Version(tag_name.lstrip("v").strip())
+    try:
+        return Version(tag_name.lstrip("v").strip())
+    except ValueError:
+        return None
 
 
 def get_assets(repo: GitHubRepo, tag_name: str, assets_mask=re.compile(".*")):
@@ -238,6 +243,7 @@ def get_assets(repo: GitHubRepo, tag_name: str, assets_mask=re.compile(".*")):
     assets = data.get("assets")
     if not assets:
         return []
+    print(assets)
     assets = (
         ReleaseAsset(
             asset.get("name"),
