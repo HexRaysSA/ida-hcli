@@ -1,0 +1,59 @@
+name: Screenshot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  actions: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  UV_PYTHON: '3.13'
+
+jobs:
+  screenshot:
+    name: Publish PyPi Package
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      is_release: ${{ steps.version.outputs.is_release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python with uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python and dependencies
+        run: |
+          uv python install "${{ env.UV_PYTHON }}"
+          uv sync --extra dev
+
+      - name: Install termshot
+        run: |
+          # Download and install termshot for amd64
+          curl -LsSf https://github.com/homeport/termshot/releases/download/v0.6.0/termshot_0.6.0_linux_amd64.tar.gz | tar -xzf - -C /tmp
+          sudo mv /tmp/termshot /usr/local/bin/
+          chmod +x /usr/local/bin/termshot
+          uv run hcli
+          termshot -f docs/assets/screenshot.png uv run hcli
+
+      - name: Commit
+        run: |
+          git add docs/assets/screenshot.png
+          git commit . -m 'new screenshot' 
+          git push 
+
+
