@@ -190,7 +190,7 @@ To set the execution policy to 'RemoteSigned', run:
 
 "@
     }
-    
+
     # Check TLS 1.2 support
     if ([System.Enum]::GetNames([System.Net.SecurityProtocolType]) -notcontains 'Tls12') {
         throw @"
@@ -200,13 +200,13 @@ Please download and install it first:
 
 "@
     }
-    
+
     Write-Verbose "Environment validation passed"
 }
 
 function Get-Architecture {
     <#
-    .SYNOPSIS  
+    .SYNOPSIS
     Validates system architecture for hcli installation
     .DESCRIPTION
     Since hcli only supports x86_64, this function validates the system is 64-bit
@@ -214,19 +214,19 @@ function Get-Architecture {
     #>
     [CmdletBinding()]
     param()
-    
+
     Write-Verbose "Validating system architecture for hcli compatibility..."
-    
+
     # Simple 64-bit check - sufficient since we only support x86_64
     if (-not [System.Environment]::Is64BitOperatingSystem) {
         throw "Error: hcli requires a 64-bit system. 32-bit systems are not supported."
     }
-    
+
     # Additional check for ARM64 systems (which report as 64-bit but aren't x86_64)
     if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64" -or $env:PROCESSOR_ARCHITEW6432 -eq "ARM64") {
         throw "Error: ARM64 systems are not currently supported. Only x86_64 (64-bit Intel/AMD) systems are supported."
     }
-    
+
     Write-Verbose "System validated as x86_64 compatible"
     return "x86_64"
 }
@@ -240,34 +240,34 @@ function Get-InstallDirectory {
     param(
         [string]$ForceDir
     )
-    
+
     Write-Verbose "Determining installation directory..."
-    
+
     # If forced directory is specified, use it
     if ($ForceDir) {
         Write-Verbose "Using forced installation directory: $ForceDir"
         return $ForceDir
     }
-    
+
     # Try XDG_BIN_HOME if set (for cross-platform compatibility)
     if ($env:XDG_BIN_HOME -and (Test-Path $env:XDG_BIN_HOME -PathType Container -ErrorAction SilentlyContinue)) {
         Write-Verbose "Using XDG_BIN_HOME: $env:XDG_BIN_HOME"
         return $env:XDG_BIN_HOME
     }
-    
+
     # Windows-standard user binaries location (highest priority for Windows)
     # Use .NET method as $env: might not be available in all contexts
     $localAppData = [System.Environment]::GetEnvironmentVariable('LOCALAPPDATA')
     if (-not $localAppData) {
         $localAppData = $env:LOCALAPPDATA
     }
-    
+
     if ($localAppData) {
         $windowsLocalBin = Join-Path $localAppData "Programs\hcli"
         Write-Verbose "Using Windows standard location: $windowsLocalBin"
         return $windowsLocalBin
     }
-    
+
     # Fallback to .local/bin for compatibility with Unix-like environments on Windows
     $localBin = Join-Path $env:USERPROFILE ".local\bin"
     Write-Verbose "Using .local/bin fallback: $localBin"
@@ -286,35 +286,35 @@ function Invoke-GitHubApiRequest {
         [string]$ErrorContext = "GitHub API request",
         [switch]$ReturnFullResponse
     )
-    
+
     Write-Verbose "Making request to: $Uri"
-    
+
     try {
         $headers = @{}
         if ($auth_token) {
             $headers["Authorization"] = "Bearer $auth_token"
             Write-Verbose "Using GitHub authentication token"
         }
-        
+
         if ($headers.Count -gt 0) {
             $response = Invoke-RestMethod -Uri $Uri -Headers $headers -ErrorAction Stop
         } else {
             $response = Invoke-RestMethod -Uri $Uri -ErrorAction Stop
         }
-        
+
         if ($ReturnFullResponse) {
             return $response
         }
-        
+
         if (-not $response.tag_name) {
             throw "Tag name not found in GitHub releases API response"
         }
-        
+
         # Remove 'v' prefix if present
         $version = $response.tag_name -replace '^v', ''
         Write-Verbose "Retrieved version: $version"
         return $version
-        
+
     } catch [System.Net.WebException] {
         throw "Failed to ${ErrorContext} from ${Uri}. Check your internet connection and try again. Error: $_"
     } catch {
@@ -331,10 +331,10 @@ function Get-LatestRelease {
     param(
         [string]$Repository
     )
-    
+
     $releases_url = "$github_api_base/repos/$Repository/releases"
     Write-Verbose "Fetching latest production release from: $releases_url"
-    
+
     $response = Invoke-GitHubApiRequest -Uri $releases_url -ErrorContext "fetch latest release information" -ReturnFullResponse
     
     # Filter out dev releases and get the first (latest) production release
