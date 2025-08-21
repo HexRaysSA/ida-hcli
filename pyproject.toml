@@ -91,7 +91,7 @@ build_command = """
     uv lock --upgrade-package "$PACKAGE_NAME"
     uv run hcli
     termshot -f docs/assets/screenshot.png uv run hcli
-    git add uv.lock
+    git add uv.lock docs/assets/screenshot.png
     uv build
 """
 dist_path = "dist/"
