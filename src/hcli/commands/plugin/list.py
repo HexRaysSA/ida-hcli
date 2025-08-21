@@ -15,10 +15,15 @@ logger = logging.getLogger(__name__)
 
 
 @click.command()
+@click.pass_context
 @async_command
-async def list_plugins() -> None:
+async def list_plugins(ctx) -> None:
     try:
-        token = os.getenv("GITHUB_TOKEN")
+        # Use token from context if provided, otherwise fall back to environment variable
+        token = ctx.obj.get("token") if ctx.obj else None
+        if not token:
+            token = os.getenv("GITHUB_TOKEN")
+
         if not token:
             console.print("[red]GitHub token required[/red]. Set GITHUB_TOKEN environment variable or provide --token")
             return

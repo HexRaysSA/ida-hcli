@@ -639,6 +639,7 @@ class GithubPluginRepo(BasePluginRepo):
             releases = get_releases_metadata(self.client, owner, repo).releases
             for release in releases:
                 for asset in release.assets:
+                    # TODO: check file extension
                     try:
                         buf = get_release_asset(owner, repo, release.tag_name, asset)
                     except ValueError:
