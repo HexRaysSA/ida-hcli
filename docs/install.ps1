@@ -283,7 +283,8 @@ function Invoke-GitHubApiRequest {
     param(
         [Parameter(Mandatory)]
         [string]$Uri,
-        [string]$ErrorContext = "GitHub API request"
+        [string]$ErrorContext = "GitHub API request",
+        [switch]$ReturnFullResponse
     )
     
     Write-Verbose "Making request to: $Uri"
@@ -299,6 +300,10 @@ function Invoke-GitHubApiRequest {
             $response = Invoke-RestMethod -Uri $Uri -Headers $headers -ErrorAction Stop
         } else {
             $response = Invoke-RestMethod -Uri $Uri -ErrorAction Stop
+        }
+        
+        if ($ReturnFullResponse) {
+            return $response
         }
         
         if (-not $response.tag_name) {
@@ -330,36 +335,19 @@ function Get-LatestRelease {
     $releases_url = "$github_api_base/repos/$Repository/releases"
     Write-Verbose "Fetching latest production release from: $releases_url"
     
-    try {
-        $headers = @{}
-        if ($auth_token) {
-            $headers["Authorization"] = "Bearer $auth_token"
-            Write-Verbose "Using GitHub authentication token"
-        }
-        
-        if ($headers.Count -gt 0) {
-            $response = Invoke-RestMethod -Uri $releases_url -Headers $headers -ErrorAction Stop
-        } else {
-            $response = Invoke-RestMethod -Uri $releases_url -ErrorAction Stop
-        }
-        
-        # Filter out dev releases and get the first (latest) production release
-        $productionRelease = $response | Where-Object { $_.tag_name -notmatch "dev" } | Select-Object -First 1
-        
-        if (-not $productionRelease -or -not $productionRelease.tag_name) {
-            throw "No production releases found (excluding dev versions)"
-        }
-        
-        # Remove 'v' prefix if present
-        $version = $productionRelease.tag_name -replace '^v', ''
-        Write-Verbose "Retrieved latest production version: $version"
-        return $version
-        
-    } catch [System.Net.WebException] {
-        throw "Failed to fetch latest release information from ${releases_url}. Check your internet connection and try again. Error: $_"
-    } catch {
-        throw "Failed to parse response from fetch latest release information: $_"
+    $response = Invoke-GitHubApiRequest -Uri $releases_url -ErrorContext "fetch latest release information" -ReturnFullResponse
+    
+    # Filter out dev releases and get the first (latest) production release
+    $productionRelease = $response | Where-Object { $_.tag_name -notmatch "dev" } | Select-Object -First 1
+    
+    if (-not $productionRelease -or -not $productionRelease.tag_name) {
+        throw "No production releases found (excluding dev versions)"
     }
+    
+    # Remove 'v' prefix if present
+    $version = $productionRelease.tag_name -replace '^v', ''
+    Write-Verbose "Retrieved latest production version: $version"
+    return $version
 }
 
 function Get-SpecificRelease {
@@ -422,72 +410,38 @@ function Download-Binary {
     if (Test-Path $DestinationPath) {
         $existingFile = Get-Item $DestinationPath -ErrorAction SilentlyContinue
         if ($existingFile -and ($existingFile.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
-            Write-Information "[DEBUG] Destination is a symbolic link, removing it first"
+            Write-Verbose "Destination is a symbolic link, removing it first"
             Remove-Item $DestinationPath -Force
         }
     }
     
-    # Create webclient with proper configuration
-    $webClient = New-Object System.Net.WebClient
-    
     try {
-        # Add authentication if available
+        # Prepare headers for authentication
+        $headers = @{}
         if ($auth_token) {
-            $webClient.Headers["Authorization"] = "Bearer $auth_token"
+            $headers["Authorization"] = "Bearer $auth_token"
             Write-Verbose "Added authorization header"
         }
         
         # Set TLS 1.2 for security
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         
-        # Download with progress indication using Invoke-WebRequest for better UX
-        try {
-            $headers = @{}
-            if ($auth_token) {
-                $headers["Authorization"] = "Bearer $auth_token"
-            }
-            
-            Write-Information "Downloading... (this may take a moment)"
-            Write-Information "[DEBUG] Download URL: $download_url"
-            Write-Information "[DEBUG] Destination: $DestinationPath"
-            Write-Information "[DEBUG] Headers count: $($headers.Count)"
-            
-            if ($headers.Count -gt 0) {
-                Write-Information "[DEBUG] Using Invoke-WebRequest with headers"
-                $response = Invoke-WebRequest -Uri $download_url -OutFile $DestinationPath -Headers $headers -UseBasicParsing -PassThru
-                Write-Information "[DEBUG] Response StatusCode: $($response.StatusCode)"
-                Write-Information "[DEBUG] Response ContentLength: $($response.RawContentLength)"
-            } else {
-                Write-Information "[DEBUG] Using Invoke-WebRequest without headers"
-                $response = Invoke-WebRequest -Uri $download_url -OutFile $DestinationPath -UseBasicParsing -PassThru
-                Write-Information "[DEBUG] Response StatusCode: $($response.StatusCode)"
-                Write-Information "[DEBUG] Response ContentLength: $($response.RawContentLength)"
-            }
-        } catch {
-            # Fallback to WebClient if Invoke-WebRequest fails
-            Write-Information "[DEBUG] Invoke-WebRequest failed with error: $_"
-            Write-Information "[DEBUG] Error type: $($_.Exception.GetType().FullName)"
-            Write-Information "[DEBUG] Falling back to WebClient"
-            $webClient.DownloadFile($download_url, $DestinationPath)
-            Write-Information "[DEBUG] WebClient download completed"
+        # Download using Invoke-WebRequest
+        Write-Information "Downloading... (this may take a moment)"
+        
+        if ($headers.Count -gt 0) {
+            $null = Invoke-WebRequest -Uri $download_url -OutFile $DestinationPath -Headers $headers -UseBasicParsing
+        } else {
+            $null = Invoke-WebRequest -Uri $download_url -OutFile $DestinationPath -UseBasicParsing
         }
         
         # Verify the file was downloaded
-        Write-Information "[DEBUG] Checking if file exists at: $DestinationPath"
         if (-not (Test-Path $DestinationPath)) {
             throw "Download appeared to succeed but file not found at destination"
         }
         
-        Write-Information "[DEBUG] File exists, checking size..."
-        $fileInfo = Get-Item $DestinationPath
-        $fileSize = $fileInfo.Length
-        Write-Information "[DEBUG] File size: $fileSize bytes"
-        Write-Information "[DEBUG] File attributes: $($fileInfo.Attributes)"
-        Write-Information "[DEBUG] File creation time: $($fileInfo.CreationTime)"
-        Write-Information "[DEBUG] File last write time: $($fileInfo.LastWriteTime)"
-        
+        $fileSize = (Get-Item $DestinationPath).Length
         if ($fileSize -eq 0) {
-            Write-Information "[DEBUG] ERROR: File is empty (0 bytes)"
             throw "Downloaded file is empty"
         }
         
@@ -497,11 +451,6 @@ function Download-Binary {
         throw "Failed to download binary from $download_url. This may be a network error or the release may not be available for your platform. Error: $_"
     } catch {
         throw "Download failed: $_"
-    } finally {
-        # Ensure WebClient is always disposed
-        if ($webClient) {
-            $webClient.Dispose()
-        }
     }
 }
 
@@ -539,6 +488,12 @@ function Send-EnvironmentChangeNotification {
         )
         
         Write-Verbose "Environment change notification sent (result: $broadcastResult)"
+    } catch [System.ComponentModel.Win32Exception] {
+        Write-Verbose "Windows API call failed for environment notification: $_"
+        # Don't throw here - PATH update succeeded even if notification failed
+    } catch [System.TypeLoadException] {
+        Write-Verbose "Could not load Windows API types for environment notification: $_"
+        # Don't throw here - PATH update succeeded even if notification failed
     } catch {
         Write-Verbose "Failed to send environment change notification: $_"
         # Don't throw here - PATH update succeeded even if notification failed
@@ -791,9 +746,15 @@ The new installation will take precedence. Existing installations may become ina
             Write-Verbose "No PATH shadowing detected"
         }
         
+    } catch [System.UnauthorizedAccessException] {
+        Write-Warning "Cannot check for PATH shadowing due to insufficient permissions. Installation will continue."
+        Write-Verbose "PATH shadowing check failed: $_"
+    } catch [System.Security.SecurityException] {
+        Write-Warning "Cannot check for PATH shadowing due to security restrictions. Installation will continue."
+        Write-Verbose "PATH shadowing check failed: $_"
     } catch {
         Write-Verbose "Failed to check PATH shadowing: $_"
-        # Don't fail installation on shadowing check errors
+        # Don't fail installation on other shadowing check errors
     }
 }
 
