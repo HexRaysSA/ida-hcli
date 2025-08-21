@@ -4,10 +4,12 @@ import rich_click as click
 
 
 @click.group()
+@click.option('--token', help='GitHub token for authentication')
 @click.pass_context
-def plugin(_ctx) -> None:
+def plugin(ctx, token) -> None:
     """Manage IDA Pro plugins."""
-    pass
+    ctx.ensure_object(dict)
+    ctx.obj['token'] = token
 
 
 from .list import list_plugins
