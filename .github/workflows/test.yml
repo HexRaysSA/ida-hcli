@@ -97,8 +97,11 @@ jobs:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
 
+      # TODO: this won't work on windows due to bash-isms
       - name: Run idat
-        run: ${{ runner.temp }}/app/ida/${{ matrix.os_ida.idat_path }} -a -A -c -t -L${{ runner.temp }}/ida.log
+        run: |
+          ${{ runner.temp }}/app/ida/${{ matrix.os_ida.idat_path }} -a -A -c -t -L"${{ runner.temp }}/ida.log" -S"${{ github.workspace }}/tests/scripts/hi.py" || echo "ida: $?"
+          cat "${{ runner.temp }}/ida.log"
 
       - name: Run tests
         run: uv run pytest -v tests/
