@@ -510,15 +510,23 @@ get_latest_release() {
         err "Failed to fetch release information from GitHub API: $_releases_url"
     fi
     
-    # Extract all tag names and filter out dev releases
+    # Extract all tag names and filter out dev releases and draft releases
     local _version
-    _version=$(grep -o '"tag_name":"[^"]*"' "$_tmp_file" | cut -d'"' -f4 | sed 's/^v//' | grep -v -i dev | head -n1)
-    
-    if [ -z "$_version" ]; then
-        # Try alternative parsing for different JSON formats
-        _version=$(grep -o '"tag_name": *"[^"]*"' "$_tmp_file" | cut -d'"' -f4 | sed 's/^v//' | grep -v -i dev | head -n1)
+    # Use a more robust approach to parse JSON and filter out draft releases
+    if command -v jq > /dev/null 2>&1; then
+        # If jq is available, use it for proper JSON parsing
+        _version=$(jq -r '.[] | select(.draft == false and (.tag_name | test("dev"; "i") | not)) | .tag_name' "$_tmp_file" | sed 's/^v//' | head -n1)
+    else
+        # Fallback to grep-based parsing with draft filtering
+        # First get all releases that are not drafts, then filter out dev releases
+        _version=$(grep -B5 -A1 '"draft": false' "$_tmp_file" | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4 | sed 's/^v//' | grep -v -i dev | head -n1)
+
+        if [ -z "$_version" ]; then
+            # Try alternative JSON format parsing
+            _version=$(grep -B5 -A1 '"draft":false' "$_tmp_file" | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4 | sed 's/^v//' | grep -v -i dev | head -n1)
+        fi
     fi
-    
+
     ignore rm -f "$_tmp_file"
     
     if [ -z "$_version" ]; then
