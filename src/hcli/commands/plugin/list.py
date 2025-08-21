@@ -8,6 +8,7 @@ import rich_click as click
 
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
+from rich.spinner import Spinner
 import hcli.lib.ida.plugin.repo.github
 
 logger = logging.getLogger(__name__)
