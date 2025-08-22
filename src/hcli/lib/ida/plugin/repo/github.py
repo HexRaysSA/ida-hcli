@@ -15,10 +15,8 @@ import rich.progress
 from pydantic import BaseModel, ConfigDict, Field
 
 from hcli.lib.ida.plugin import (
-    IDAPluginMetadata,
     discover_platforms_from_plugin_archive,
-    get_metadata_from_plugin_archive,
-    is_plugin_archive,
+    get_metadatas_with_paths_from_plugin_archive,
     validate_metadata_in_plugin_archive,
 )
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveLocation
@@ -433,30 +431,6 @@ def get_release_metadata(client: GitHubGraphQLClient, owner: str, repo: str, rel
     raise KeyError(f"Release {release_id} not found for {owner}/{repo}")
 
 
-def get_plugin_metadata(client: GitHubGraphQLClient, owner: str, repo: str, release_id: str) -> IDAPluginMetadata:
-    """Extract IDA plugin metadata from a release, trying assets first then source archive"""
-
-    release = get_release_metadata(client, owner, repo, release_id)
-
-    for asset in release.assets:
-        if asset.name.lower().endswith(".zip"):
-            try:
-                asset_data = get_release_asset(owner, repo, release_id, asset)
-                return get_metadata_from_plugin_archive(asset_data)
-            except (ValueError, KeyError) as e:
-                logging.debug(f"No plugin metadata found in asset {asset.name}: {e}")
-                continue
-
-    if release.zipball_url:
-        try:
-            source_data = get_source_archive(owner, repo, release.commit_hash, release.zipball_url)
-            return get_metadata_from_plugin_archive(source_data)
-        except ValueError as e:
-            logging.debug(f"No plugin metadata found in source archive: {e}")
-
-    raise ValueError(f"No IDA plugin metadata found in release {release_id} for {owner}/{repo}")
-
-
 INITIAL_REPOSITORIES = [
     "0rganizers/nmips",
     "0xdea/augur",
@@ -629,25 +603,22 @@ class PluginArchiveIndex:
         )
 
     def index_plugin_archive(self, buf: bytes, url: str):
-        if not is_plugin_archive(buf):
-            return
+        for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
+            try:
+                validate_metadata_in_plugin_archive(buf, metadata)
+            except ValueError:
+                return
 
-        try:
-            metadata = get_metadata_from_plugin_archive(buf)
-            validate_metadata_in_plugin_archive(buf)
-        except ValueError:
-            return
+            name = metadata.name
+            version = metadata.version
+            ida_versions = metadata.ida_versions or ">=0"
+            platforms: frozenset[str] = discover_platforms_from_plugin_archive(buf, name)
+            spec = (ida_versions, platforms)
 
-        name = metadata.name
-        version = metadata.version
-        ida_versions = metadata.ida_versions or ">=0"
-        platforms: frozenset[str] = discover_platforms_from_plugin_archive(buf, name)
-        spec = (ida_versions, platforms)
-
-        versions = self.index[name]
-        specs = versions[version]
-        specs[spec].append(url)
-        logger.debug("found plugin: %s %s IDA:%s %s %s", name, version, ida_versions, platforms, url)
+            versions = self.index[name]
+            specs = versions[version]
+            specs[spec].append(url)
+            logger.debug("found plugin: %s %s IDA:%s %s %s", name, version, ida_versions, platforms, url)
 
     def get_plugins(self) -> list[Plugin]:
         ret = []
