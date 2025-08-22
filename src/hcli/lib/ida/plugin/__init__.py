@@ -3,8 +3,9 @@ import logging
 import pathlib
 import re
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Optional
 
 import packaging.version
 from pydantic import AliasPath, BaseModel, Field, ValidationError
@@ -28,10 +29,10 @@ class IDAPluginMetadata(BaseModel):
     #######################
     # optional
     categories: list[str] = Field(validation_alias=AliasPath("plugin", "categories"), default_factory=list)
-    logo_path: Optional[str] = Field(validation_alias=AliasPath("plugin", "logoPath"), default=None)
+    logo_path: Optional[str] | None = Field(validation_alias=AliasPath("plugin", "logoPath"), default=None)
     # empty implies all versions
-    ida_versions: Optional[str] = Field(validation_alias=AliasPath("plugin", "idaVersions"), default=None)
-    description: Optional[str] = Field(validation_alias=AliasPath("plugin", "description"), default=None)
+    ida_versions: Optional[str] | None = Field(validation_alias=AliasPath("plugin", "idaVersions"), default=None)
+    description: Optional[str] | None = Field(validation_alias=AliasPath("plugin", "description"), default=None)
 
     python_dependencies: list[str] = Field(
         validation_alias=AliasPath("plugin", "pythonDependencies"), default_factory=list
