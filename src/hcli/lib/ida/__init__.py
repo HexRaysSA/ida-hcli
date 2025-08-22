@@ -4,13 +4,19 @@ import os
 import re
 import stat
 import shutil
+import logging
 import asyncio
 import tempfile
 from typing import List, Optional, NamedTuple
 from pathlib import Path
 from functools import total_ordering
 
+from pydantic import BaseModel, Field, AliasPath
+
 from hcli.lib.util.io import get_os
+
+
+logger = logging.getLogger(__name__)
 
 
 class DownloadResource(NamedTuple):
@@ -405,3 +411,58 @@ async def _copy_dir(src: str, dest: str) -> None:
         elif item.is_file():
             dest_item.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(item, dest_item)
+
+
+# describes contents of IDAUSR/ida-config.json
+class IDAConfigJson(BaseModel):
+    """IDA configuration $IDAUSR/ida-config.json"""
+
+    # like: "/Applications/IDA Professional 9.1.app/Contents/MacOS"
+    installation_directory: Path = Field(
+        validation_alias=AliasPath("Paths", "ida-install-dir")
+    )
+
+
+def get_ida_config_path() -> Path:
+    idausr = get_ida_user_dir()
+    if not idausr:
+        raise ValueError("$IDAUSR doesn't exist")
+
+    return Path(idausr) / "ida-config.json"
+
+
+def get_ida_config() -> IDAConfigJson:
+    ida_config_path = get_ida_config_path()
+    if not ida_config_path.exists():
+        raise ValueError("ida-config.json doesn't exist")
+
+    config = IDAConfigJson.model_validate_json(
+        ida_config_path.read_text(encoding="utf-8")
+    )
+
+    if not config.installation_directory.exists():
+        raise ValueError("ida-config.json invalid: ida-install-dir doesn't exist")
+
+    return config
+
+
+def find_current_ida_install_directory() -> Path:
+    config = get_ida_config()
+    logger.debug("current IDA installation: %s", config.installation_directory)
+    return config.installation_directory
+
+
+def find_current_idat_executable() -> Path:
+    install_directory = find_current_ida_install_directory()
+
+    os = get_os()
+    if os == "windows":
+        idat_path = install_directory / "idat.exe"
+    elif os in ("linux", "mac"):
+        idat_path = install_directory / "idat"
+    else:
+        raise NotImplementedError(f"os not supported: {os}")
+
+    logger.debug("idat path: %s", idat_path)
+
+    return idat_path

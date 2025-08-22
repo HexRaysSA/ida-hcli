@@ -12,15 +12,9 @@ from hcli.lib.constants import cli
 
 
 @click.command()
-@click.argument("plugin", required=False)
+@click.argument("plugin")
 @async_command
 async def install_plugin(plugin: str) -> None:
-    if not plugin:
-        query = await safe_ask_async(questionary.text("Enter search query:", style=cli.SELECT_STYLE))
-
-    if not query.strip():
-        console.print("[red]Plugin name cannot be empty[/red]")
-        return
 
     try:
         raise NotImplementedError("Plugin install")
