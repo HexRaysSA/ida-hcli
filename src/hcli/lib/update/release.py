@@ -53,8 +53,8 @@ class GitHubRepo:
 
 @dataclasses.dataclass
 class ReleaseAsset:
+    asset_id: int
     name: str
-    url: str
     size: int
 
     @property
@@ -62,8 +62,8 @@ class ReleaseAsset:
         return not (
             self.name is None
             or not self.name.strip(" ")
-            or self.url is None
-            or not self.url.strip(" ")
+            or self.asset_id is None
+            or self.asset_id <= 0
             or self.size is None
             or self.size <= 0
         )
@@ -111,7 +111,7 @@ def check_and_download_updates(
     if not assets:
         logging.error("No assets found")
         return
-    download_assets(assets, out_dir=downloads_dir, callback=download_callback)
+    download_assets(assets, repo, out_dir=downloads_dir, callback=download_callback)
     logging.info("Done!")
 
 
@@ -142,6 +142,7 @@ def is_dev_version(version_string: str) -> bool:
 
 
 def download_assets(
+    repo: GitHubRepo,
     assets: typing.Iterable[ReleaseAsset],
     out_dir=Path(),
     block_size=2**20,
@@ -149,17 +150,25 @@ def download_assets(
 ):
     logging.info(f"Start downloading assets: {tuple(asset.name for asset in assets)}")
     for asset in assets:
-        download_asset(asset, out_dir, block_size, lambda downloaded, _: callback(asset, downloaded))
+        download_asset(repo, asset, out_dir, block_size, lambda downloaded, _: callback(asset, downloaded))
 
 
 def download_asset(
-    asset: ReleaseAsset, out_dir=Path(), block_size=2**20, callback: Callable[[int, int], None] = lambda _, __: None
+    repo: GitHubRepo, asset: ReleaseAsset, out_dir=Path(), block_size=2**20, callback: Callable[[int, int], None] = lambda _, __: None
 ):
     logging.info(f"Start downloading asset: '{asset.name}'")
     if out_dir.is_file():
         out_dir = out_dir.parent
     out_dir.mkdir(parents=True, exist_ok=True)
-    response = requests.get(asset.url, stream=True, headers=AuthSession.header)
+    
+    # Construct GitHub API URL for asset download
+    asset_url = f"{ENV.HCLI_GITHUB_API_URL}/repos/{repo.user}/{repo.repo}/releases/assets/{asset.asset_id}"
+    
+    # Set proper headers for asset download
+    headers = AuthSession.header.copy()
+    headers["Accept"] = "application/octet-stream"
+    
+    response = requests.get(asset_url, stream=True, headers=headers)
     with open(out_dir.joinpath(asset.name), "wb") as file:
         for i, data in enumerate(response.iter_content(block_size)):
             file.write(data)
@@ -243,11 +252,10 @@ def get_assets(repo: GitHubRepo, tag_name: str, assets_mask=re.compile(".*")):
     assets = data.get("assets")
     if not assets:
         return []
-    print(assets)
     assets = (
         ReleaseAsset(
+            asset.get("id"),
             asset.get("name"),
-            asset.get("browser_download_url"),
             asset.get("size"),
         )
         for asset in assets
@@ -267,11 +275,12 @@ def is_already_installed(latest: Version, current: Version, compatibility_spec: 
     return True
 
 
-def update_asset(asset: ReleaseAsset, binary_path: str) -> bool:
+def update_asset(repo: GitHubRepo, asset: ReleaseAsset, binary_path: str) -> bool:
     """
     Download an asset to a temporary file and replace the running binary.
 
     Args:
+        repo: The GitHub repository information
         asset: The ReleaseAsset to download
         binary_path: Path to the current binary to replace
 
@@ -299,7 +308,7 @@ def update_asset(asset: ReleaseAsset, binary_path: str) -> bool:
             logging.info(f"Downloading {asset.name} to temporary directory: {tmp_dir_path}")
 
             # Use existing download_asset function
-            download_asset(asset, tmp_dir_path)
+            download_asset(repo, asset, tmp_dir_path)
 
             tmp_path = tmp_dir_path / asset.name
 
@@ -337,18 +346,3 @@ def update_asset(asset: ReleaseAsset, binary_path: str) -> bool:
         except OSError:
             pass
         return False
-
-
-def test():
-    rep = GitHubRepo.from_url(ENV.HCLI_GITHUB_URL)
-    print(get_compatible_version(rep, SimpleSpec(">=0.0.0")))
-    version = get_latest_version(rep, include_dev=True)
-    print(version)
-    tag = getattr(version, "_origin_tag_name", "0.0.0")
-    print(get_assets(rep, tag))
-    print(__file__)
-    pass
-
-
-if __name__ == "__main__":
-    test()
