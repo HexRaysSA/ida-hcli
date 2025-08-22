@@ -85,6 +85,9 @@ def is_installable(download: DownloadResource) -> bool:
 
 def get_ida_user_dir() -> Optional[str]:
     """Get the IDA Pro user directory."""
+    if "HCLI_IDAUSR" in os.environ:
+        return os.environ["HCLI_IDAUSR"]
+
     if get_os() == "windows":
         appdata = os.environ.get("APPDATA")
         if appdata:
