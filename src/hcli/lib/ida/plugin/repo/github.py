@@ -1,33 +1,18 @@
 # TODO: make all this async
 
-import os
-import sys
 import json
 import time
 import logging
 import urllib.error
-import urllib.parse
 import urllib.request
-from typing import Any, Dict, List, Tuple, Union, Literal, Optional
+from typing import Any, Dict, List, Tuple, Optional
 from pathlib import Path
-from datetime import datetime
-from dataclasses import dataclass
 
 import rich.progress
 from pydantic import Field, BaseModel, ConfigDict
 
 from hcli.lib.util.cache import get_cache_directory
-from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveLocation
-
-from hcli.lib.ida.plugin import (
-    IDAPluginMetadata,
-    get_metadata_from_plugin_archive,
-    get_metadatas_with_paths_from_plugin_archive,
-    is_plugin_archive,
-    validate_metadata_in_plugin_archive,
-    discover_platforms_from_plugin_archive,
-)
-
+from hcli.lib.ida.plugin.repo import Plugin, BasePluginRepo, PluginArchiveIndex
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +137,8 @@ class GitHubGraphQLClient:
 
         for i, (owner, repo) in enumerate(repos):
             alias = f"repo{i}"
-            query_parts.append(f"""
+            query_parts.append(
+                f"""
                 {alias}: repository(owner: "{owner}", name: "{repo}") {{
                     defaultBranchRef {{
                         target {{
@@ -199,7 +185,8 @@ class GitHubGraphQLClient:
                         }}
                     }}
                 }}
-            """)
+            """
+            )
 
         query = f"""
         query($first: Int!) {{
@@ -297,7 +284,9 @@ def warm_releases_metadata_cache(client: GitHubGraphQLClient, repos: List[Tuple[
     logging.debug(f"Warming cache for {len(repos_to_fetch)} repositories")
 
     BATCH_SIZE = 10
-    for i in rich.progress.track(range(0, len(repos_to_fetch), BATCH_SIZE), description="Warming cache", transient=True):
+    for i in rich.progress.track(
+        range(0, len(repos_to_fetch), BATCH_SIZE), description="Warming cache", transient=True
+    ):
         batch = repos_to_fetch[i : i + BATCH_SIZE]
         releases_batch = client.get_many_releases(batch)
 
@@ -407,9 +396,7 @@ def fetch_http_resource_size(url: str) -> int:
 def download_source_archive(zip_url: str) -> bytes:
     size = fetch_http_resource_size(zip_url)
     if size > 0 and size > MAX_DOWNLOAD_SIZE:
-        raise ValueError(
-            f"Source archive too large ({size}) - exceeds {MAX_DOWNLOAD_SIZE} limit"
-        )
+        raise ValueError(f"Source archive too large ({size}) - exceeds {MAX_DOWNLOAD_SIZE} limit")
 
     logging.info(f"Downloading source archive from {zip_url}")
     req = urllib.request.Request(zip_url)
@@ -436,30 +423,6 @@ def get_release_metadata(client: GitHubGraphQLClient, owner: str, repo: str, rel
             return release
 
     raise KeyError(f"Release {release_id} not found for {owner}/{repo}")
-
-
-def get_plugin_metadata(client: GitHubGraphQLClient, owner: str, repo: str, release_id: str) -> IDAPluginMetadata:
-    """Extract IDA plugin metadata from a release, trying assets first then source archive"""
-
-    release = get_release_metadata(client, owner, repo, release_id)
-
-    for asset in release.assets:
-        if asset.name.lower().endswith(".zip"):
-            try:
-                asset_data = get_release_asset(owner, repo, release_id, asset)
-                return get_metadata_from_plugin_archive(asset_data)
-            except (ValueError, KeyError) as e:
-                logging.debug(f"No plugin metadata found in asset {asset.name}: {e}")
-                continue
-
-    if release.zipball_url:
-        try:
-            source_data = get_source_archive(owner, repo, release.commit_hash, release.zipball_url)
-            return get_metadata_from_plugin_archive(source_data)
-        except ValueError as e:
-            logging.debug(f"No plugin metadata found in source archive: {e}")
-
-    raise ValueError(f"No IDA plugin metadata found in release {release_id} for {owner}/{repo}")
 
 
 INITIAL_REPOSITORIES = [
@@ -616,57 +579,6 @@ INITIAL_REPOSITORIES = [
     "zerotypic/wilhelm",
 ]
 
-from collections import defaultdict
-
-
-class PluginArchiveIndex:
-    """index a collection of plugin archive URLs by name/version/idaVersion/platform.
-
-    Plugins are uniquely identified by the name.
-    There may be multiple versions of a plugin.
-    Each version may have multiple distribution archives due to:
-      - different IDA versions (compiled against SDK for 7.4 versus 9.2)
-      - different platforms (compiled for Windows, macOS, Linux)
-    """
-
-    def __init__(self):
-        # name -> version -> tuple[idaVersion, set[platforms]] -> list[url]
-        self.index: dict[str, dict[str, dict[tuple[str, frozenset[str]], list[str]]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-
-    def index_plugin_archive(self, buf: bytes, url: str):
-        for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
-            try:
-                validate_metadata_in_plugin_archive(buf, metadata)
-            except ValueError:
-                return
-
-            name = metadata.name
-            version = metadata.version
-            ida_versions = metadata.ida_versions or ">=0"
-            platforms: frozenset[str] = discover_platforms_from_plugin_archive(buf, name)
-            spec =  (ida_versions, platforms)
-
-            versions = self.index[name]
-            specs = versions[version]
-            specs[spec].append(url)
-            logger.debug("found plugin: %s %s IDA:%s %s %s", name, version, ida_versions, platforms, url)
-
-    def get_plugins(self) -> list[Plugin]:
-        ret = []
-        for name, versions in self.index.items():
-            locations_by_version = defaultdict(list)
-            for version, specs in versions.items():
-                for spec, urls in specs.items():
-                    ida_versions, platforms = spec
-                    for url in urls:
-                        location = PluginArchiveLocation(url, name, version, ida_versions, platforms)
-                        locations_by_version[version].append(location)
-
-            plugin = Plugin(name, locations_by_version)
-            ret.append(plugin)
-
-        return ret
-
 
 class GithubPluginRepo(BasePluginRepo):
     def __init__(self, token: str):
@@ -703,7 +615,9 @@ class GithubPluginRepo(BasePluginRepo):
 
         # TODO: disallow different repos from providing the same plugin name
 
-        for owner, repo, tag_name, asset in rich.progress.track(assets, description="Fetching plugin assests", transient=True):
+        for owner, repo, tag_name, asset in rich.progress.track(
+            assets, description="Fetching plugin assests", transient=True
+        ):
             try:
                 buf = get_release_asset(owner, repo, tag_name, asset)
             except ValueError:
@@ -711,7 +625,9 @@ class GithubPluginRepo(BasePluginRepo):
 
             index.index_plugin_archive(buf, asset.download_url)
 
-        for owner, repo, commit_hash, url in rich.progress.track(source_archives, description="Fetching plugin source archives", transient=True):
+        for owner, repo, commit_hash, url in rich.progress.track(
+            source_archives, description="Fetching plugin source archives", transient=True
+        ):
             try:
                 buf = get_source_archive(owner, repo, commit_hash, url)
             except ValueError:

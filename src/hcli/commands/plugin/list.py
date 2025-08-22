@@ -8,7 +8,6 @@ import rich_click as click
 
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
-from rich.spinner import Spinner
 from hcli.lib.ida.plugin import ALL_PLATFORMS
 import hcli.lib.ida.plugin.repo.github
 
@@ -26,7 +25,7 @@ async def list_plugins(ctx) -> None:
             token = os.getenv("GITHUB_TOKEN")
 
         if not token:
-            console.print(f"[red]GitHub token required[/red]. Set GITHUB_TOKEN environment variable or provide --token")
+            console.print("[red]GitHub token required[/red]. Set GITHUB_TOKEN environment variable or provide --token")
             return
 
         assert token is not None

@@ -1,14 +1,14 @@
 """IDA Pro utilities for installation and path management."""
 
-import asyncio
 import os
 import re
-import shutil
 import stat
+import shutil
+import asyncio
 import tempfile
-from functools import total_ordering
+from typing import List, Optional, NamedTuple
 from pathlib import Path
-from typing import List, NamedTuple, Optional
+from functools import total_ordering
 
 from hcli.lib.util.io import get_os
 

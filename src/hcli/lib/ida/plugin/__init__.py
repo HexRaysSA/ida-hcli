@@ -1,13 +1,21 @@
 import io
 import re
-import zipfile
 import logging
 import pathlib
+import zipfile
+from typing import Iterator, Optional
 from pathlib import Path
-from typing import Optional, Iterator
 
 import packaging.version
-from pydantic import BaseModel, Field, AliasPath, ValidationError
+from pydantic import Field, AliasPath, BaseModel, ValidationError
+
+from hcli.lib.ida.plugin import (
+    IDAPluginMetadata,
+    is_plugin_archive,
+    get_metadata_from_plugin_archive,
+    validate_metadata_in_plugin_archive,
+    get_metadatas_with_paths_from_plugin_archive,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +23,7 @@ logger = logging.getLogger(__name__)
 # TODO: dedup with hcli.lib.ida.plugin
 class IDAPluginMetadata(BaseModel):
     """IDA Plugin metadata from ida-plugin.json"""
+
     metadata_version: int = Field(validation_alias="IDAMetadataDescriptorVersion")
 
     #######################
@@ -32,7 +41,9 @@ class IDAPluginMetadata(BaseModel):
     ida_versions: Optional[str] = Field(validation_alias=AliasPath("plugin", "idaVersions"), default=None)
     description: Optional[str] = Field(validation_alias=AliasPath("plugin", "description"), default=None)
 
-    python_dependencies: list[str] = Field(validation_alias=AliasPath("plugin", "pythonDependencies"), default_factory=list)
+    python_dependencies: list[str] = Field(
+        validation_alias=AliasPath("plugin", "pythonDependencies"), default_factory=list
+    )
 
 
 def get_metadatas_with_paths_from_plugin_archive(zip_data: bytes) -> Iterator[tuple[Path, IDAPluginMetadata]]:
@@ -44,7 +55,7 @@ def get_metadatas_with_paths_from_plugin_archive(zip_data: bytes) -> Iterator[tu
             with zip_file.open(file_path) as f:
                 try:
                     metadata = IDAPluginMetadata.model_validate_json(f.read().decode("utf-8"))
-                except (ValueError, ValidationError) as e:
+                except (ValueError, ValidationError):
                     continue
                 else:
                     yield Path(file_path), metadata
@@ -73,12 +84,14 @@ PLATFORM_LINUX = "linux-x86_64"
 PLATFORM_MACOS_INTEL = "macos-x86_64"
 PLATFORM_MACOS_ARM = "macos-aarch64"
 
-ALL_PLATFORMS = frozenset({
-    PLATFORM_WINDOWS,
-    PLATFORM_LINUX,
-    PLATFORM_MACOS_INTEL,
-    PLATFORM_MACOS_ARM,
-})
+ALL_PLATFORMS = frozenset(
+    {
+        PLATFORM_WINDOWS,
+        PLATFORM_LINUX,
+        PLATFORM_MACOS_INTEL,
+        PLATFORM_MACOS_ARM,
+    }
+)
 
 
 def does_path_exist_in_zip_archive(zip_data: bytes, path: str) -> bool:
