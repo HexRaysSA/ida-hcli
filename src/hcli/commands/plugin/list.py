@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import logging
-import os
 
 import rich_click as click
 
-import hcli.lib.ida.plugin.repo.github
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
 from hcli.lib.ida.plugin import ALL_PLATFORMS
@@ -20,20 +18,7 @@ logger = logging.getLogger(__name__)
 @async_command
 async def list_plugins(ctx) -> None:
     try:
-        # Use token from context if provided, otherwise fall back to environment variable
-        token = ctx.obj.get("token") if ctx.obj else None
-        if not token:
-            token = os.getenv("GITHUB_TOKEN")
-
-        if not token:
-            console.print("[red]GitHub token required[/red]. Set GITHUB_TOKEN environment variable or provide --token")
-            return
-
-        assert token is not None
-        assert isinstance(token, str)
-
-        plugin_repo = hcli.lib.ida.plugin.repo.github.GithubPluginRepo(token)
-
+        plugin_repo = ctx.obj["plugin_repo"]
         plugins = plugin_repo.get_plugins()
 
         for plugin in sorted(plugins, key=lambda p: p.name):
@@ -49,6 +34,9 @@ async def list_plugins(ctx) -> None:
                     )
                     console.print(f"    {location.url}")
                     console.print("")
+
+        if not plugins:
+            console.print("[grey69]No plugins found[/grey69]")
 
     except Exception as e:
         logger.warning("error: %s", e, exc_info=True)
