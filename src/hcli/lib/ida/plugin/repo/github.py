@@ -138,8 +138,7 @@ class GitHubGraphQLClient:
 
         for i, (owner, repo) in enumerate(repos):
             alias = f"repo{i}"
-            query_parts.append(
-                f"""
+            query_parts.append(f"""
                 {alias}: repository(owner: "{owner}", name: "{repo}") {{
                     defaultBranchRef {{
                         target {{
@@ -186,8 +185,7 @@ class GitHubGraphQLClient:
                         }}
                     }}
                 }}
-            """
-            )
+            """)
 
         query = f"""
         query($first: Int!) {{
