@@ -22,6 +22,7 @@ from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveLocati
 from hcli.lib.ida.plugin import (
     IDAPluginMetadata,
     get_metadata_from_plugin_archive,
+    get_metadatas_with_paths_from_plugin_archive,
     is_plugin_archive,
     validate_metadata_in_plugin_archive,
     discover_platforms_from_plugin_archive,
@@ -633,25 +634,22 @@ class PluginArchiveIndex:
         self.index: dict[str, dict[str, dict[tuple[str, frozenset[str]], list[str]]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
     def index_plugin_archive(self, buf: bytes, url: str):
-        if not is_plugin_archive(buf):
-            return
+        for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
+            try:
+                validate_metadata_in_plugin_archive(buf, metadata)
+            except ValueError:
+                return
 
-        try:
-            metadata = get_metadata_from_plugin_archive(buf)
-            validate_metadata_in_plugin_archive(buf)
-        except ValueError:
-            return
+            name = metadata.name
+            version = metadata.version
+            ida_versions = metadata.ida_versions or ">=0"
+            platforms: frozenset[str] = discover_platforms_from_plugin_archive(buf, name)
+            spec =  (ida_versions, platforms)
 
-        name = metadata.name
-        version = metadata.version
-        ida_versions = metadata.ida_versions or ">=0"
-        platforms: frozenset[str] = discover_platforms_from_plugin_archive(buf, name)
-        spec =  (ida_versions, platforms)
-
-        versions = self.index[name]
-        specs = versions[version]
-        specs[spec].append(url)
-        logger.debug("found plugin: %s %s IDA:%s %s %s", name, version, ida_versions, platforms, url)
+            versions = self.index[name]
+            specs = versions[version]
+            specs[spec].append(url)
+            logger.debug("found plugin: %s %s IDA:%s %s %s", name, version, ida_versions, platforms, url)
 
     def get_plugins(self) -> list[Plugin]:
         ret = []
