@@ -4,12 +4,8 @@ import logging
 import tempfile
 import subprocess
 import json
-import shutil
-import asyncio
 from pathlib import Path
 
-import aiofiles
-from pydantic import BaseModel, Field, AliasPath
 
 from hcli.lib.ida import find_current_idat_executable
 
@@ -39,8 +35,7 @@ print("__hcli__:" + json.dumps(shutil.which("python")))
 sys.exit()
 """
 
-
-async def find_current_python_executable() -> Path:
+def find_current_python_executable() -> Path:
     """find the python executable associated with the current IDA installation"""
     if "HCLI_CURRENT_IDA_PYTHON_EXE" in os.environ:
         return Path(os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"])
@@ -53,8 +48,7 @@ async def find_current_python_executable() -> Path:
         script_path = temp_path / "idat-sys-executable.py"
         log_path = temp_path / "ida.log"
 
-        async with aiofiles.open(script_path, 'w') as f:
-            await f.write(FIND_PYTHON_PY)
+        script_path.write_text(FIND_PYTHON_PY)
 
         cmd = [
             str(idat_path),
@@ -66,19 +60,15 @@ async def find_current_python_executable() -> Path:
             f"-S{str(script_path.absolute())}",
         ]
 
-        process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        _ = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
-        await process.communicate()
         logger.debug(f"idat command: {' '.join(cmd)}")
 
         if not log_path.exists():
             raise RuntimeError(f"Log file was not created: {log_path}")
 
-        async with aiofiles.open(log_path, 'r') as f:
-            log_content = await f.read()
-
-        for line in log_content.splitlines():
+        for line in log_path.read_text().splitlines():
             if not line.startswith("__hcli__:"):
                 continue
 
@@ -89,39 +79,34 @@ async def find_current_python_executable() -> Path:
         raise RuntimeError("Could not find __hcli__: prefix in log output")
 
 
-async def does_current_ida_have_pip(python_exe: Path) -> bool:
+def does_current_ida_have_pip(python_exe: Path) -> bool:
     """Check if pip is available in the given Python executable."""
     try:
-        process = await asyncio.create_subprocess_exec(
-            str(python_exe), "-m", "pip", "help",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+        process = subprocess.run(
+            [str(python_exe), "-m", "pip", "help"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=1.0
         )
-        try:
-            await asyncio.wait_for(process.communicate(), timeout=1.0)
-            return process.returncode == 0
-        except asyncio.TimeoutError:
-            process.kill()
-            await process.wait()
-            return False
-    except (FileNotFoundError, OSError):
+        return process.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return False
 
 
 class CantInstallPackagesError(ValueError): ...
 
 
-async def verify_pip_can_install_packages(python_exe: Path, packages: list[str]):
+def verify_pip_can_install_packages(python_exe: Path, packages: list[str]):
     """Check if the given Python packages (e.g., "foo>=v1.0,<3") can be installed.
 
     This allows pip to determine if there are any version conflicts
     """
-    process = await asyncio.create_subprocess_exec(
-        str(python_exe), "-m", "pip", "install", "--dry-run", *packages,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+    process = subprocess.run(
+        [str(python_exe), "-m", "pip", "install", "--dry-run"] + packages,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
     )
-    stdout, stderr = await process.communicate()
+    stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
         # error output might look like:
         #
@@ -148,14 +133,14 @@ async def verify_pip_can_install_packages(python_exe: Path, packages: list[str])
         raise CantInstallPackagesError(stdout.decode())
 
 
-async def pip_install_packages(python_exe: Path, packages: list[str]):
+def pip_install_packages(python_exe: Path, packages: list[str]):
     """Install the given Python packages (e.g., "foo>=v1.0,<3")."""
-    process = await asyncio.create_subprocess_exec(
-        str(python_exe), "-m", "pip", "install", *packages,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+    process = subprocess.run(
+        [str(python_exe), "-m", "pip", "install"] + packages,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
     )
-    stdout, stderr = await process.communicate()
+    stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
         # error output might look like:
         #
@@ -182,13 +167,13 @@ async def pip_install_packages(python_exe: Path, packages: list[str]):
         raise CantInstallPackagesError(stdout.decode())
 
 
-async def pip_freeze(python_exe: Path):
-    process = await asyncio.create_subprocess_exec(
-        str(python_exe), "-m", "pip", "freeze",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+def pip_freeze(python_exe: Path):
+    process = subprocess.run(
+        [str(python_exe), "-m", "pip", "freeze"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
     )
-    stdout, stderr = await process.communicate()
+    stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, [str(python_exe), "-m", "pip", "freeze"])
     return stdout.decode()

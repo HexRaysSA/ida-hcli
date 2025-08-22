@@ -7,14 +7,13 @@ import zipfile
 import tempfile
 from pathlib import Path
 
-import aiofiles
 import packaging.version
 
 from hcli.lib.ida import get_ida_user_dir
 from hcli.lib.ida.plugin import (
     IDAPluginMetadata,
     validate_metadata_in_plugin_archive,
-    validate_path_component,
+    validate_path,
     is_binary_plugin_archive,
     is_source_plugin_archive,
     get_metadata_from_plugin_archive,
@@ -31,7 +30,6 @@ from hcli.lib.ida.python import (
 logger = logging.getLogger(__name__)
 
 
-# TODO: dedup
 def get_plugins_directory() -> Path:
     """$IDAUSR/plugins/<name>"""
     ida_user_dir = get_ida_user_dir()
@@ -45,6 +43,22 @@ def get_plugins_directory() -> Path:
     return plugins_dir
 
 
+def validate_path_component(name: str):
+    if not name or name == "." or name == "..":
+        raise ValueError(f"Invalid path component: '{name}'.")
+
+    try:
+        name.encode("ascii")
+    except UnicodeEncodeError:
+        raise ValueError(f"Invalid path component: '{name}'. Must contain only ASCII characters")
+
+    if "\t" in name or "\n" in name or "\r" in name:
+        raise ValueError(f"Invalid path component: '{name}'. Cannot contain tabs or newlines")
+
+    if "/" in name or "\\" in name:
+        raise ValueError(f"Invalid path component: '{name}'. Cannot contain slashes")
+
+
 # TODO: dedup
 def get_plugin_directory(name: str) -> Path:
     """$IDAUSR/plugins/<name>"""
@@ -53,15 +67,14 @@ def get_plugin_directory(name: str) -> Path:
     return plugins_dir / name
 
 
-async def get_metadata_from_plugin_directory(plugin_path: Path) -> IDAPluginMetadata:
+def get_metadata_from_plugin_directory(plugin_path: Path) -> IDAPluginMetadata:
     for filename in ("ida-plugin.json", "ida-plugin.json.disabled"):
         metadata_file = plugin_path / filename
         if not metadata_file.exists():
             continue
 
         try:
-            async with aiofiles.open(metadata_file, 'r', encoding='utf-8') as f:
-                content = await f.read()
+            content = metadata_file.read_text(encoding='utf-8')
             return IDAPluginMetadata.model_validate_json(content)
         except Exception as e:
             logger.debug("failed to validate ida-plugin.json: %s", e)
@@ -71,7 +84,7 @@ async def get_metadata_from_plugin_directory(plugin_path: Path) -> IDAPluginMeta
 
 
 # TODO: keep this in sync with validate_metadata_in_plugin_archive
-async def validate_metadata_in_plugin_directory(plugin_path: Path):
+def validate_metadata_in_plugin_directory(plugin_path: Path):
     """validate the `ida-plugin.json` metadata within the given plugin directory.
 
     The following things must be checked:
@@ -91,7 +104,7 @@ async def validate_metadata_in_plugin_directory(plugin_path: Path):
         logger.debug("both ida-plugin.json and ida-plugin.json.disabled exists")
         raise ValueError("plugin corrupt: both enabled and disabled at the same time")
 
-    metadata = await get_metadata_from_plugin_directory(plugin_path)
+    metadata = get_metadata_from_plugin_directory(plugin_path)
 
     if metadata.metadata_version != 1:
         logger.debug("Invalid metadata version")
@@ -109,30 +122,6 @@ async def validate_metadata_in_plugin_directory(plugin_path: Path):
     if not metadata.entry_point:
         logger.debug("Missing entry point")
         raise ValueError("entry point required")
-
-    # expect paths to be:
-    # - relative
-    # - contain only ASCII
-    # - not contain traversals up
-    def validate_path(path: str, field_name: str) -> None:
-        if not path:
-            return
-
-        try:
-            _ = path.encode("ascii")
-        except UnicodeEncodeError:
-            logger.debug(f"Invalid {field_name} path: '{path}'")
-            raise ValueError(f"Invalid {field_name} path: '{path}'")
-
-        try:
-            path_obj = pathlib.PurePosixPath(path)
-        except Exception:
-            logger.debug(f"Invalid {field_name} path: '{path}'")
-            raise ValueError(f"Invalid {field_name} path: '{path}'")
-
-        if path_obj.is_absolute() or ".." in path_obj.parts:
-            logger.debug(f"Invalid {field_name} path: '{path}'")
-            raise ValueError(f"Invalid {field_name} path: '{path}'")
 
     validate_path(metadata.entry_point, "entry point")
     if metadata.logo_path:
@@ -176,7 +165,7 @@ async def validate_metadata_in_plugin_directory(plugin_path: Path):
     _ = packaging.version.parse(metadata.version)
 
 
-async def get_installed_plugin_paths() -> list[Path]:
+def get_installed_plugin_paths() -> list[Path]:
     plugins_dir = get_plugins_directory()
     installed_paths: list[Path] = []
 
@@ -193,12 +182,12 @@ async def get_installed_plugin_paths() -> list[Path]:
             continue
 
         try:
-            await validate_metadata_in_plugin_directory(plugin_path)
+            validate_metadata_in_plugin_directory(plugin_path)
         except ValueError as e:
             logger.debug(f"Invalid plugin metadata in {plugin_path}: {e}")
             continue
 
-        metadata = await get_metadata_from_plugin_directory(plugin_path)
+        metadata = get_metadata_from_plugin_directory(plugin_path)
         if metadata.name != plugin_path.name:
             logger.debug("plugin name and path mismatch")
             continue
@@ -208,13 +197,13 @@ async def get_installed_plugin_paths() -> list[Path]:
     return installed_paths
 
 
-async def get_installed_plugins() -> list[tuple[str, str]]:
+def get_installed_plugins() -> list[tuple[str, str]]:
     """fetch (name, version) pairs for currently installed plugins"""
     installed_plugins: list[tuple[str, str]] = []
 
-    for plugin_path in await get_installed_plugin_paths():
+    for plugin_path in get_installed_plugin_paths():
         try:
-            metadata = await get_metadata_from_plugin_directory(plugin_path)
+            metadata = get_metadata_from_plugin_directory(plugin_path)
             installed_plugins.append((metadata.name, metadata.version))
         except ValueError as e:
             logger.warning(f"Failed to read metadata from {plugin_path}: {e}")
@@ -223,7 +212,7 @@ async def get_installed_plugins() -> list[tuple[str, str]]:
     return installed_plugins
 
 
-async def can_install_plugin(metadata: IDAPluginMetadata) -> bool:
+def can_install_plugin(metadata: IDAPluginMetadata) -> bool:
     try:
         destination_path = get_plugin_directory(metadata.name)
     except ValueError as e:
@@ -236,24 +225,23 @@ async def can_install_plugin(metadata: IDAPluginMetadata) -> bool:
 
     # TODO: check for arch compatibility
     # TODO: check for version compatibility
-    # TODO: check python deps compatibility
 
     if metadata.python_dependencies:
         all_python_dependencies: list[str] = []
-        for existing_plugin_path in await get_installed_plugin_paths():
-            existing_metadata = await get_metadata_from_plugin_directory(existing_plugin_path)
+        for existing_plugin_path in get_installed_plugin_paths():
+            existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
             all_python_dependencies.extend(existing_metadata.python_dependencies)
 
         all_python_dependencies.extend(metadata.python_dependencies)
 
-        python_exe = await find_current_python_executable()
+        python_exe = find_current_python_executable()
 
-        if not await does_current_ida_have_pip(python_exe):
+        if not does_current_ida_have_pip(python_exe):
             logger.debug("pip not available")
             return False
 
         try:
-            await verify_pip_can_install_packages(python_exe, all_python_dependencies)
+            verify_pip_can_install_packages(python_exe, all_python_dependencies)
         except CantInstallPackagesError:
             logger.debug("can't install dependencies")
             return False
@@ -299,13 +287,13 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
             temp_path.rename(destination)
 
 
-async def _install_plugin_archive(zip_data: bytes):
-    validate_metadata_in_plugin_archive(zip_data)
-    metadata = get_metadata_from_plugin_archive(zip_data)
+def _install_plugin_archive(zip_data: bytes, name: str):
+    metadata = get_metadata_from_plugin_archive(zip_data, name)
+    validate_metadata_in_plugin_archive(zip_data, metadata)
 
     logger.info("installing plugin: %s (%s)", metadata.name, metadata.version)
 
-    if not await can_install_plugin(metadata):
+    if not can_install_plugin(metadata):
         logger.warning("can't install plugin")
         raise RuntimeError("Plugin installation is not possible")
 
@@ -317,7 +305,7 @@ async def _install_plugin_archive(zip_data: bytes):
     destination_path = get_plugin_directory(metadata.name)
 
     # path within the zip to ida-plugin.json
-    metadata_path = get_metadata_path_from_plugin_archive(zip_data)
+    metadata_path = get_metadata_path_from_plugin_archive(zip_data, name)
     plugin_subdirectory = metadata_path.parent
 
     # TODO: log steps (and revert if necessary)
@@ -325,16 +313,16 @@ async def _install_plugin_archive(zip_data: bytes):
 
     if metadata.python_dependencies:
         all_python_dependencies: list[str] = []
-        for existing_plugin_path in await get_installed_plugin_paths():
-            existing_metadata = await get_metadata_from_plugin_directory(existing_plugin_path)
+        for existing_plugin_path in get_installed_plugin_paths():
+            existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
             all_python_dependencies.extend(existing_metadata.python_dependencies)
 
         logger.debug("installing new python dependencies: %s", metadata.python_dependencies)
         all_python_dependencies.extend(metadata.python_dependencies)
 
-        python_exe = await find_current_python_executable()
+        python_exe = find_current_python_executable()
         try:
-            await pip_install_packages(python_exe, all_python_dependencies)
+            pip_install_packages(python_exe, all_python_dependencies)
         except CantInstallPackagesError:
             logger.debug("can't install dependencies")
             raise
@@ -342,39 +330,39 @@ async def _install_plugin_archive(zip_data: bytes):
     extract_zip_subdirectory_to(zip_data, plugin_subdirectory, destination_path)
 
 
-async def install_source_plugin_archive(zip_data: bytes):
-    return await _install_plugin_archive(zip_data)
+def install_source_plugin_archive(zip_data: bytes, name: str):
+    return _install_plugin_archive(zip_data, name)
 
 
-async def install_binary_plugin_archive(zip_data: bytes):
-    return await _install_plugin_archive(zip_data)
+def install_binary_plugin_archive(zip_data: bytes, name: str):
+    return _install_plugin_archive(zip_data, name)
 
 
-async def install_plugin_archive(zip_data: bytes):
-    if is_source_plugin_archive(zip_data):
-        await install_source_plugin_archive(zip_data)
-    elif is_binary_plugin_archive(zip_data):
-        await install_binary_plugin_archive(zip_data)
+def install_plugin_archive(zip_data: bytes, name: str):
+    if is_source_plugin_archive(zip_data, name):
+        install_source_plugin_archive(zip_data, name)
+    elif is_binary_plugin_archive(zip_data, name):
+        install_binary_plugin_archive(zip_data, name)
     else:
         raise ValueError("Invalid plugin archive")
 
 
-async def can_uninstall_plugin(name: str) -> bool:
-    if name not in [name for (name, _version) in await get_installed_plugins()]:
+def can_uninstall_plugin(name: str) -> bool:
+    if name not in [name for (name, _version) in get_installed_plugins()]:
         logger.warning(f"Plugin directory not installed: {name}")
         return False
 
     return True
 
 
-async def uninstall_plugin(name: str):
+def uninstall_plugin(name: str):
     # NOTE: keep this in sync with upgrade (checkpoint/rollback) which has an inlined copy.
 
-    if not await can_uninstall_plugin(name):
+    if not can_uninstall_plugin(name):
         raise ValueError("can't uninstall plugin")
 
     plugin_path = get_plugin_directory(name)
-    metadata = await get_metadata_from_plugin_directory(plugin_path)
+    metadata = get_metadata_from_plugin_directory(plugin_path)
     logger.info("uninstalling plugin: %s (%s)", name, metadata.version)
 
     # note that the pythonDependencies of the plugin aren't pruned.
@@ -385,14 +373,14 @@ async def uninstall_plugin(name: str):
     shutil.rmtree(plugin_path)
 
 
-async def is_plugin_installed(name: str) -> bool:
-    installed_plugins = [name for (name, _version) in await get_installed_plugins()]
+def is_plugin_installed(name: str) -> bool:
+    installed_plugins = [name for (name, _version) in get_installed_plugins()]
     logger.debug("installed plugins: %s", installed_plugins)
     return name in installed_plugins
 
 
-async def can_disable_plugin(name: str) -> bool:
-    if not await is_plugin_installed(name):
+def can_disable_plugin(name: str) -> bool:
+    if not is_plugin_installed(name):
         return False
 
     plugin_path = get_plugin_directory(name)
@@ -407,15 +395,15 @@ async def can_disable_plugin(name: str) -> bool:
     return True
 
 
-async def is_plugin_enabled(name: str):
-    if not await is_plugin_installed(name):
+def is_plugin_enabled(name: str):
+    if not is_plugin_installed(name):
         return False
 
     return (get_plugin_directory(name) / "ida-plugin.json").exists()
 
 
-async def disable_plugin(name: str):
-    if not await can_disable_plugin(name):
+def disable_plugin(name: str):
+    if not can_disable_plugin(name):
         raise ValueError(f"cannot disable plugin: {name}")
 
     plugin_path = get_plugin_directory(name)
@@ -423,7 +411,7 @@ async def disable_plugin(name: str):
     disabled_file = plugin_path / "ida-plugin.json.disabled"
 
     try:
-        metadata = await get_metadata_from_plugin_directory(plugin_path)
+        metadata = get_metadata_from_plugin_directory(plugin_path)
         logger.info("disabling plugin: %s (%s)", name, metadata.version)
         _ = metadata_file.rename(disabled_file)
     except Exception as e:
@@ -431,8 +419,8 @@ async def disable_plugin(name: str):
         raise ValueError(f"Failed to disable plugin {name}: {e}")
 
 
-async def can_enable_plugin(name: str) -> bool:
-    if not await is_plugin_installed(name):
+def can_enable_plugin(name: str) -> bool:
+    if not is_plugin_installed(name):
         return False
 
     plugin_path = get_plugin_directory(name)
@@ -447,8 +435,8 @@ async def can_enable_plugin(name: str) -> bool:
     return True
 
 
-async def enable_plugin(name: str):
-    if not await can_enable_plugin(name):
+def enable_plugin(name: str):
+    if not can_enable_plugin(name):
         raise ValueError(f"Cannot enable plugin: {name}")
 
     plugin_path = get_plugin_directory(name)
@@ -456,7 +444,7 @@ async def enable_plugin(name: str):
     metadata_file = plugin_path / "ida-plugin.json"
 
     try:
-        metadata = await get_metadata_from_plugin_directory(plugin_path)
+        metadata = get_metadata_from_plugin_directory(plugin_path)
         logger.info("enabling plugin: %s (%s)", name, metadata.version)
         _ = disabled_file.rename(metadata_file)
     except Exception as e:
@@ -464,18 +452,18 @@ async def enable_plugin(name: str):
         raise ValueError(f"Failed to enable plugin {name}: {e}")
 
 
-async def upgrade_plugin_archive(zip_data: bytes):
-    validate_metadata_in_plugin_archive(zip_data)
-    metadata = get_metadata_from_plugin_archive(zip_data)
+def upgrade_plugin_archive(zip_data: bytes, name: str):
+    metadata = get_metadata_from_plugin_archive(zip_data, name)
+    validate_metadata_in_plugin_archive(zip_data, metadata)
 
-    if not await is_plugin_installed(metadata.name):
+    if not is_plugin_installed(metadata.name):
         raise ValueError(f"plugin is not installed: {metadata.name}")
 
     # TODO: can install the plugin? IDA versions and stuff
     # TODO: implement rollback
 
     plugin_path = get_plugin_directory(metadata.name)
-    existing_metadata = await get_metadata_from_plugin_directory(plugin_path)
+    existing_metadata = get_metadata_from_plugin_directory(plugin_path)
 
     # use python setuptools/pip-style version parsing and comparison
     # to ensure that metadata.version is > existing_metadata.version
@@ -505,7 +493,7 @@ async def upgrade_plugin_archive(zip_data: bytes):
     plugin_path.rename(rollback_path)
 
     try:
-        await install_plugin_archive(zip_data)
+        install_plugin_archive(zip_data, name)
     except Exception as e:
         logger.debug("error during upgrade: install: %s", e)
         logger.debug("rolling back to prior version")
