@@ -253,10 +253,21 @@ downloader() {
             _curl_args="-SfL#"
         fi
         
-        if [ -n "${AUTH_TOKEN:-}" ]; then
-            curl $_curl_args --header "Authorization: Bearer ${AUTH_TOKEN}" "$1" -o "$2"
+        # Check if this is a GitHub API asset download URL
+        if echo "$1" | grep -q "/repos/.*/releases/assets/[0-9]*$"; then
+            # GitHub API asset download requires Accept: application/octet-stream header
+            if [ -n "${AUTH_TOKEN:-}" ]; then
+                curl $_curl_args --header "Authorization: Bearer ${AUTH_TOKEN}" --header "Accept: application/octet-stream" "$1" -o "$2"
+            else
+                curl $_curl_args --header "Accept: application/octet-stream" "$1" -o "$2"
+            fi
         else
-            curl $_curl_args "$1" -o "$2"
+            # Regular download (for GitHub API calls)
+            if [ -n "${AUTH_TOKEN:-}" ]; then
+                curl $_curl_args --header "Authorization: Bearer ${AUTH_TOKEN}" "$1" -o "$2"
+            else
+                curl $_curl_args "$1" -o "$2"
+            fi
         fi
     elif [ "$_dld" = "wget" ]; then
         local _wget_args="--quiet"
@@ -266,10 +277,21 @@ downloader() {
             _wget_args="--progress=bar"
         fi
 
-        if [ -n "${AUTH_TOKEN:-}" ]; then
-            wget $_wget_args --header "Authorization: Bearer ${AUTH_TOKEN}" "$1" -O "$2"
+        # Check if this is a GitHub API asset download URL
+        if echo "$1" | grep -q "/repos/.*/releases/assets/[0-9]*$"; then
+            # GitHub API asset download requires Accept: application/octet-stream header
+            if [ -n "${AUTH_TOKEN:-}" ]; then
+                wget $_wget_args --header "Authorization: Bearer ${AUTH_TOKEN}" --header "Accept: application/octet-stream" "$1" -O "$2"
+            else
+                wget $_wget_args --header "Accept: application/octet-stream" "$1" -O "$2"
+            fi
         else
-            wget $_wget_args "$1" -O "$2"
+            # Regular download (for GitHub API calls)
+            if [ -n "${AUTH_TOKEN:-}" ]; then
+                wget $_wget_args --header "Authorization: Bearer ${AUTH_TOKEN}" "$1" -O "$2"
+            else
+                wget $_wget_args "$1" -O "$2"
+            fi
         fi
     else
         err "Unknown downloader"
@@ -576,20 +598,55 @@ get_specific_release() {
     echo "$_found_version"
 }
 
-get_release_download_url() {
+get_asset_download_info() {
     local _version="$1"
     local _os="$2"
     local _arch="$3"
+    local _releases_url="$GITHUB_API_BASE/repos/$GITHUB_REPO/releases/tags/v$_version"
+    local _tmp_file
     
     local _platform_name
     _platform_name=$(get_platform_name "$_os" "$_arch")
-    
-    # Construct download URL for GitHub releases
     local _filename="$APP_NAME-$_platform_name-$_arch-$_version"
-    local _download_url="https://github.com/$GITHUB_REPO/releases/download/v$_version/$_filename"
     
-    say_verbose "Constructed download URL: $_download_url"
-    echo "$_download_url"
+    say_verbose "Fetching asset information from GitHub API"
+    say_verbose "URL: $_releases_url"
+    say_verbose "Looking for asset: $_filename"
+    
+    _tmp_file="$(ensure mktemp)" || return 1
+    
+    if ! downloader "$_releases_url" "$_tmp_file"; then
+        ignore rm -f "$_tmp_file"
+        err "Failed to fetch release information from GitHub API: $_releases_url"
+    fi
+    
+    # Extract asset ID for the specific filename
+    local _asset_id
+    if command -v jq > /dev/null 2>&1; then
+        # If jq is available, use it for proper JSON parsing
+        _asset_id=$(jq -r ".assets[] | select(.name == \"$_filename\") | .id" "$_tmp_file")
+    else
+        # Fallback to grep-based parsing
+        # Find the asset block and extract the id
+        _asset_id=$(grep -A 20 "\"name\": *\"$_filename\"" "$_tmp_file" | grep -o '"id": *[0-9]*' | head -n1 | cut -d' ' -f2)
+        
+        if [ -z "$_asset_id" ]; then
+            # Try alternative format
+            _asset_id=$(grep -A 20 "\"name\":\"$_filename\"" "$_tmp_file" | grep -o '"id":[0-9]*' | head -n1 | cut -d':' -f2)
+        fi
+    fi
+    
+    ignore rm -f "$_tmp_file"
+    
+    if [ -z "$_asset_id" ] || [ "$_asset_id" = "null" ]; then
+        err "Asset '$_filename' not found in release v$_version. Available assets can be seen at: https://github.com/$GITHUB_REPO/releases/tag/v$_version"
+    fi
+    
+    # Return asset download URL using GitHub API
+    local _asset_url="$GITHUB_API_BASE/repos/$GITHUB_REPO/releases/assets/$_asset_id"
+    say_verbose "Found asset ID: $_asset_id"
+    say_verbose "Asset download URL: $_asset_url"
+    echo "$_asset_url"
 }
 
 # =============================================================================
@@ -613,7 +670,7 @@ install_binary() {
     local _download_url
     
     _binary_name=$(get_binary_name "$_os" "$_arch")
-    _download_url=$(get_release_download_url "$_version" "$_os" "$_arch")
+    _download_url=$(get_asset_download_info "$_version" "$_os" "$_arch")
 
     # Check for existing installation first
     local _existing_installation

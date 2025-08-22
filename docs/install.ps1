@@ -380,10 +380,57 @@ function Get-SpecificRelease {
     }
 }
 
+function Get-AssetDownloadInfo {
+    <#
+    .SYNOPSIS
+    Gets asset ID and constructs GitHub API download URL for the binary
+    #>
+    [CmdletBinding()]
+    param(
+        [string]$Repository,
+        [string]$Version,
+        [string]$Architecture
+    )
+    
+    # Determine platform name and filename
+    $platform_name = switch ($Architecture) {
+        "x86_64" { "windows" }
+        default { throw "Unsupported architecture for download: $Architecture" }
+    }
+    
+    $filename = "$app_name-$platform_name-$Architecture-$Version.exe"
+    $releases_url = "$github_api_base/repos/$Repository/releases/tags/v$Version"
+    
+    Write-Verbose "Fetching asset information from GitHub API"
+    Write-Verbose "URL: $releases_url"
+    Write-Verbose "Looking for asset: $filename"
+    
+    try {
+        $response = Invoke-GitHubApiRequest -Uri $releases_url -ErrorContext "fetch release asset information" -ReturnFullResponse
+        
+        # Find the asset with matching filename
+        $asset = $response.assets | Where-Object { $_.name -eq $filename } | Select-Object -First 1
+        
+        if (-not $asset -or -not $asset.id) {
+            throw "Asset '$filename' not found in release v$Version. Available assets can be seen at: https://github.com/$Repository/releases/tag/v$Version"
+        }
+        
+        # Return GitHub API asset download URL
+        $asset_url = "$github_api_base/repos/$Repository/releases/assets/$($asset.id)"
+        Write-Verbose "Found asset ID: $($asset.id)"
+        Write-Verbose "Asset download URL: $asset_url"
+        
+        return $asset_url
+        
+    } catch {
+        throw "Failed to get asset information: $_"
+    }
+}
+
 function Download-Binary {
     <#
     .SYNOPSIS
-    Downloads the hcli binary for the detected platform
+    Downloads the hcli binary for the detected platform using GitHub API
     #>
     [CmdletBinding()]
     param(
@@ -393,15 +440,9 @@ function Download-Binary {
         [string]$DestinationPath
     )
     
-    # Determine platform name for download URL
-    $platform_name = switch ($Architecture) {
-        "x86_64" { "windows" }
-        default { throw "Unsupported architecture for download: $Architecture" }
-    }
+    # Get asset download URL from GitHub API
+    $download_url = Get-AssetDownloadInfo -Repository $Repository -Version $Version -Architecture $Architecture
     
-    # Construct GitHub releases download URL
-    $filename = "$app_name-$platform_name-$Architecture-$Version.exe"
-    $download_url = "https://github.com/$Repository/releases/download/v$Version/$filename"
     Write-Information "Downloading $app_name $Version ($Architecture)"
     Write-Verbose "  from: $download_url"
     Write-Verbose "  to: $DestinationPath"
@@ -416,11 +457,18 @@ function Download-Binary {
     }
     
     try {
-        # Prepare headers for authentication
+        # Prepare headers for authentication and asset download
         $headers = @{}
         if ($auth_token) {
             $headers["Authorization"] = "Bearer $auth_token"
             Write-Verbose "Added authorization header"
+        }
+        
+        # Check if this is a GitHub API asset download URL
+        if ($download_url -match "/repos/.*/releases/assets/\d+$") {
+            # GitHub API asset download requires Accept: application/octet-stream header
+            $headers["Accept"] = "application/octet-stream"
+            Write-Verbose "Added Accept: application/octet-stream header for GitHub API asset download"
         }
         
         # Set TLS 1.2 for security
@@ -817,7 +865,7 @@ function Install-Hcli {
         
         # Download binary
         $binary_path = Join-Path $install_dir "$app_name.exe"
-        Write-Title "Downloading Binary" " https://github.com/$github_repo/releases/download/v$version/$app_name-windows-$architecture-$version.exe"
+        Write-Title "Downloading Binary" " from GitHub API (asset download)"
         Download-Binary -Repository $github_repo -Version $version -Architecture $architecture -DestinationPath $binary_path
         
         # Install binary
