@@ -12,20 +12,11 @@ from typing import Optional
 import httpx
 from packaging.version import Version, parse
 from platformdirs import user_cache_dir
+from semantic_version import SimpleSpec
 
 from hcli import __version__
 from hcli.env import ENV
-
-
-async def get_latest_version(package_name: str, mode: str, include_prereleases: bool = False) -> Optional[Version]:
-    if is_binary() or "binary" == mode:
-        # For frozen binaries, use GitHub releases via BinaryUpdater
-        from hcli.lib.update.updater import BinaryUpdater
-
-        updater = BinaryUpdater(ENV.HCLI_GITHUB_URL, ENV.HCLI_BINARY_NAME)
-        return await updater.get_latest_version(include_prereleases=include_prereleases)
-    else:
-        return await get_latest_pypi_version(package_name)
+from hcli.lib.update.release import GitHubRepo, get_compatible_version
 
 
 async def get_latest_pypi_version(package_name: str) -> Optional[Version]:
@@ -96,7 +87,8 @@ class BackgroundUpdateChecker:
             check_interval_hours: Hours between update checks
             cache_enabled: Whether to use caching for update checks
         """
-        self.cache_dir = Path(user_cache_dir("hcli", "hex-rays"))
+        self.repo = GitHubRepo.from_url(ENV.HCLI_GITHUB_URL)
+        self.cache_dir = Path(user_cache_dir(ENV.HCLI_BINARY_NAME, "hex-rays"))
         self.cache_file = self.cache_dir / "update_check.json"
         self.check_interval = timedelta(hours=check_interval_hours)
         self.cache_enabled = cache_enabled
@@ -163,24 +155,20 @@ class BackgroundUpdateChecker:
     def _check_for_updates(self) -> None:
         """Background thread function to check for updates."""
         try:
-            import asyncio
-
-            # Run the async version check using get_latest_version instead of PyPI-only
-            latest_version = asyncio.run(get_latest_version("ida-hcli", "auto"))
+            include_dev = "dev" in ENV.HCLI_VERSION
+            current_version = ENV.HCLI_VERSION
+            latest_version = get_compatible_version(
+                self.repo, SimpleSpec(f">{current_version}"), include_dev=include_dev
+            )
 
             if latest_version is None:
                 self._save_cache(None, False)
+                self.result = self._format_no_update_message(current_version, str(latest_version))
                 return
 
-            current_version = __version__
-            update_available = compare_versions(current_version, latest_version)
+            self._save_cache(latest_version, True)
 
-            self._save_cache(latest_version, update_available)
-
-            if update_available:
-                self.result = self._format_update_message(current_version, str(latest_version))
-            elif ENV.HCLI_DEBUG:
-                self.result = self._format_no_update_message(current_version, str(latest_version))
+            self.result = self._format_update_message(current_version, str(latest_version))
 
         except Exception:
             # Silently ignore errors in background thread
@@ -204,6 +192,7 @@ class BackgroundUpdateChecker:
         """Start background update check if needed."""
         # First check if we have a recent cached result
         cached_result = self._load_cached_result()
+
         if cached_result:
             self.result = cached_result
             self.check_complete.set()

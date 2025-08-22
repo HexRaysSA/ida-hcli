@@ -6,19 +6,16 @@ import questionary
 import rich_click as click
 from semantic_version import SimpleSpec
 
-from hcli import __version__
+from hcli.commands.common import safe_ask_async
 from hcli.env import ENV
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
-from hcli.commands.common import safe_ask_async
-
 from hcli.lib.update.release import (
     GitHubRepo,
     get_compatible_version,
     get_assets,
     update_asset,
 )
-
 from hcli.lib.update.version import (
     is_binary,
 )
@@ -73,14 +70,14 @@ async def update(
             repo = GitHubRepo.from_url(ENV.HCLI_GITHUB_URL)
 
             # get current & latest
-            current_version = __version__
+            current_version = ENV.HCLI_VERSION
             operator = ">=" if force else ">"
             latest_version = get_compatible_version(
                 repo, SimpleSpec(f"{operator}{current_version}"), include_dev=include_prereleases
             )
 
             if latest_version is None:
-                console.print(f"[green]Already using the latest version ({__version__})[/green]")
+                console.print(f"[green]Already using the latest version ({current_version})[/green]")
                 return
 
             latest_tag = getattr(latest_version, "_origin_tag_name", None)
@@ -88,7 +85,7 @@ async def update(
             assets = get_assets(repo, latest_tag, re.compile(mask))
 
             if latest_tag and len(assets) == 1:
-                console.print(f"[yellow]Update available: {__version__} → {latest_version}[/yellow]")
+                console.print(f"[yellow]Update available: {current_version} → {latest_version}[/yellow]")
 
                 # Skip confirmation if auto_install is enabled
                 if not auto_install:
@@ -102,7 +99,7 @@ async def update(
 
                 binary_path = get_executable_path()
                 if not update_asset(assets[0], binary_path):
-                    console.print(f"[green]Already using the latest version ({__version__})[/green]")
+                    console.print(f"[green]Already using the latest version ({current_version})[/green]")
                 else:
                     console.print(f"[green]Successfully updated to {latest_version}[/green]")
                 return

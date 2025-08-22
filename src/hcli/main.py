@@ -1,10 +1,10 @@
 from __future__ import annotations
+
 import logging
 
 import rich_click as click
 from rich.logging import RichHandler
 
-from hcli import __version__
 from hcli.commands import register_commands
 from hcli.env import ENV
 from hcli.lib.console import console
@@ -62,8 +62,16 @@ class MainGroup(click.RichGroup):
                     console.print(f"[dim]{traceback.format_exc()}[/dim]")
             # raise click.Abort()
 
+@click.pass_context
+def handle_command_completion(_ctx, _result, **_kwargs):
+    """Handle command completion and show update notifications."""
+    # Show update message if available (result callback only runs on success)
+    update_msg = update_checker.get_result(timeout=2.0) if update_checker else None
+    if update_msg:
+        console.print(update_msg, markup=True)
 
-@click.group(help=get_help_text(), cls=MainGroup)
+
+@click.group(help=get_help_text(), cls=MainGroup, result_callback=handle_command_completion)
 @click.version_option(version=f"{ENV.HCLI_VERSION}{ENV.HCLI_VERSION_EXTRA}", package_name="ida-hcli")
 @click.option("--quiet", "-q", is_flag=True, help="Run without prompting the user")
 @click.option("--auth", "-a", help="Force authentication type (interactive|key)", default=None)
@@ -87,24 +95,12 @@ def cli(_ctx, quiet, auth, auth_credentials, verbose):
     _ctx.obj["verbose"] = verbose
 
     if verbose:
-        FORMAT = "%(message)s"
         handler = RichHandler(show_time=False, show_path=False, rich_tracebacks=True)
         logging.basicConfig(level=logging.DEBUG, format="%(message)s", datefmt="[%X]", handlers=[handler])
 
 
-@cli.result_callback()
-@click.pass_context
-def handle_command_completion(_ctx, _result, **_kwargs):
-    """Handle command completion and show update notifications."""
-    # Show update message if available (result callback only runs on success)
-    update_msg = update_checker.get_result(timeout=2.0) if update_checker else None
-    if update_msg:
-        console.print(update_msg, markup=True)
-
-
 # register subcommands
 register_commands(cli)
-
 # Register extensions dynamically
 for extension in get_extensions():
     extension["function"](cli)
