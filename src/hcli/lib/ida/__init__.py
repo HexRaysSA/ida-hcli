@@ -1,6 +1,8 @@
 """IDA Pro utilities for installation and path management."""
 
 import asyncio
+import asyncio.subprocess
+import logging
 import os
 import re
 import shutil
@@ -8,9 +10,13 @@ import stat
 import tempfile
 from functools import total_ordering
 from pathlib import Path
-from typing import List, NamedTuple, Optional
+from typing import NamedTuple, Optional
+
+from pydantic import AliasPath, BaseModel, Field
 
 from hcli.lib.util.io import get_os
+
+logger = logging.getLogger(__name__)
 
 
 class DownloadResource(NamedTuple):
@@ -170,7 +176,7 @@ def get_idat_path(ida_dir: str) -> str:
     return get_ida_path(ida_dir, "t")
 
 
-def find_standard_installations() -> List[str]:
+def find_standard_installations() -> list[str]:
     """Find standard IDA Pro installations."""
     prefix = get_ida_install_default_prefix()
     prefix_path = Path(prefix)
@@ -373,7 +379,7 @@ async def _install_ida_windows(installer: str, prefix: str) -> None:
         raise RuntimeError("Installer execution failed")
 
 
-def _get_installer_args(prefix: str) -> List[str]:
+def _get_installer_args(prefix: str) -> list[str]:
     """Get installer arguments."""
     args = ["--mode", "unattended", "--debugtrace", "debug.log"]
 
@@ -405,3 +411,54 @@ async def _copy_dir(src: str, dest: str) -> None:
         elif item.is_file():
             dest_item.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(item, dest_item)
+
+
+# describes contents of IDAUSR/ida-config.json
+class IDAConfigJson(BaseModel):
+    """IDA configuration $IDAUSR/ida-config.json"""
+
+    # like: "/Applications/IDA Professional 9.1.app/Contents/MacOS"
+    installation_directory: Path = Field(validation_alias=AliasPath("Paths", "ida-install-dir"))
+
+
+def get_ida_config_path() -> Path:
+    idausr = get_ida_user_dir()
+    if not idausr:
+        raise ValueError("$IDAUSR doesn't exist")
+
+    return Path(idausr) / "ida-config.json"
+
+
+def get_ida_config() -> IDAConfigJson:
+    ida_config_path = get_ida_config_path()
+    if not ida_config_path.exists():
+        raise ValueError("ida-config.json doesn't exist")
+
+    config = IDAConfigJson.model_validate_json(ida_config_path.read_text(encoding="utf-8"))
+
+    if not config.installation_directory.exists():
+        raise ValueError("ida-config.json invalid: ida-install-dir doesn't exist")
+
+    return config
+
+
+def find_current_ida_install_directory() -> Path:
+    config = get_ida_config()
+    logger.debug("current IDA installation: %s", config.installation_directory)
+    return config.installation_directory
+
+
+def find_current_idat_executable() -> Path:
+    install_directory = find_current_ida_install_directory()
+
+    os = get_os()
+    if os == "windows":
+        idat_path = install_directory / "idat.exe"
+    elif os in ("linux", "mac"):
+        idat_path = install_directory / "idat"
+    else:
+        raise NotImplementedError(f"os not supported: {os}")
+
+    logger.debug("idat path: %s", idat_path)
+
+    return idat_path
