@@ -9,13 +9,6 @@ from pathlib import Path
 import packaging.version
 from pydantic import Field, AliasPath, BaseModel, ValidationError
 
-from hcli.lib.ida.plugin import (
-    IDAPluginMetadata,
-    is_plugin_archive,
-    get_metadata_from_plugin_archive,
-    validate_metadata_in_plugin_archive,
-    get_metadatas_with_paths_from_plugin_archive,
-)
 
 logger = logging.getLogger(__name__)
 
