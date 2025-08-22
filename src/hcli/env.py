@@ -8,7 +8,7 @@ class ENV:
     """Environment configuration mirroring the Deno version."""
 
     HCLI_API_KEY: Optional[str] = os.getenv("HCLI_API_KEY")
-    HCLI_DEBUG: bool = os.getenv("HCLI_DEBUG", "").lower() == "true"
+    HCLI_DEBUG: bool = os.getenv("HCLI_DEBUG", "").lower() in ("true", "yes", "on", "1")
     HCLI_API_URL: str = os.getenv("HCLI_API_URL", "https://api.eu.hex-rays.com")
     HCLI_CLOUD_URL: str = os.getenv("HCLI_CLOUD_URL", "https://api.hcli.run")
     HCLI_PORTAL_URL: str = os.getenv("HCLI_PORTAL_URL", "https://my.hex-rays.com")

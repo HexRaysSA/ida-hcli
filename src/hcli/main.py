@@ -76,9 +76,8 @@ def handle_command_completion(_ctx, _result, **_kwargs):
 @click.option("--quiet", "-q", is_flag=True, help="Run without prompting the user")
 @click.option("--auth", "-a", help="Force authentication type (interactive|key)", default=None)
 @click.option("--auth-credentials", "-s", help="Force specific credentials by name", default=None)
-@click.option("--verbose", is_flag=True, help="Enable verbose logging")
 @click.pass_context
-def cli(_ctx, quiet, auth, auth_credentials, verbose):
+def cli(_ctx, quiet, auth, auth_credentials):
     """Main CLI entry point with background update checking."""
     global update_checker
 
@@ -92,9 +91,8 @@ def cli(_ctx, quiet, auth, auth_credentials, verbose):
     _ctx.obj["quiet"] = quiet
     _ctx.obj["auth"] = auth
     _ctx.obj["auth_credentials"] = auth_credentials
-    _ctx.obj["verbose"] = verbose
 
-    if verbose:
+    if ENV.HCLI_DEBUG:
         handler = RichHandler(show_time=False, show_path=False, rich_tracebacks=True)
         logging.basicConfig(level=logging.DEBUG, format="%(message)s", datefmt="[%X]", handlers=[handler])
 
