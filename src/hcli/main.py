@@ -20,7 +20,7 @@ update_checker: BackgroundUpdateChecker | None = None
 
 def get_help_text():
     """Generate help text with extensions information."""
-    base_help = f"[bold blue]{ENV.HCLI_BINARY_NAME.upper()}[/bold blue] [dim](v{ENV.HCLI_VERSION})[/dim]\n\n[yellow]Hex-Rays Command-line interface for managing IDA installation, licenses and more.[/yellow]"
+    base_help = f"[bold blue]{ENV.HCLI_BINARY_NAME.upper()}[/bold blue] [dim](v{ENV.HCLI_VERSION}{ENV.HCLI_VERSION_EXTRA})[/dim]\n\n[yellow]Hex-Rays Command-line interface for managing IDA installation, licenses and more.[/yellow]"
 
     # Check for available extensions
     extensions = get_extensions()
@@ -64,7 +64,7 @@ class MainGroup(click.RichGroup):
 
 
 @click.group(help=get_help_text(), cls=MainGroup)
-@click.version_option(version=__version__, package_name="ida-hcli")
+@click.version_option(version=f"{ENV.HCLI_VERSION}{ENV.HCLI_VERSION_EXTRA}", package_name="ida-hcli")
 @click.option("--quiet", "-q", is_flag=True, help="Run without prompting the user")
 @click.option("--auth", "-a", help="Force authentication type (interactive|key)", default=None)
 @click.option("--auth-credentials", "-s", help="Force specific credentials by name", default=None)

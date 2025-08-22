@@ -27,6 +27,7 @@ class ENV:
 
     HCLI_VERSION: str = os.getenv("HCLI_VERSION", __version__)
     HCLI_BINARY_NAME: str = os.getenv("HCLI_BINARY_NAME", "hcli")
+    HCLI_VERSION_EXTRA: str = os.getenv("HCLI_VERSION_EXTRA", "")
     HCLI_MODE: str = os.getenv("HCLI_MODE", "user")
     QUIET: bool = False
 
