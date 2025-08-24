@@ -2,6 +2,14 @@ from __future__ import annotations
 
 import rich_click as click
 
+from .enable import disable_plugin, enable_plugin
+from .install import install_plugin
+from .list import list_plugins
+from .search import search_plugins
+from .status import get_plugin_status
+from .uninstall import uninstall_plugin
+from .upgrade import upgrade_plugin
+
 
 @click.group()
 @click.option("--token", help="GitHub token for authentication")
@@ -14,15 +22,7 @@ def plugin(ctx, token, path) -> None:
     ctx.obj["path"] = path
 
 
-from .list import list_plugins
-from .search import search_plugins
-from .install import install_plugin
-from .enable import enable_plugin, disable_plugin
-from .upgrade import upgrade_plugin
-from .uninstall import uninstall_plugin
-
-# TODO: maybe make this `status` rather than list
-# since list might operate against the server or current state
+plugin.add_command(get_plugin_status, name="status")
 plugin.add_command(list_plugins, name="list")
 plugin.add_command(search_plugins, name="search")
 plugin.add_command(install_plugin, name="install")
