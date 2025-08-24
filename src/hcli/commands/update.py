@@ -12,14 +12,14 @@ from hcli.lib.commands import async_command
 from hcli.lib.console import console
 from hcli.lib.update.release import (
     GitHubRepo,
-    get_compatible_version,
     get_assets,
+    get_compatible_version,
     update_asset,
 )
 from hcli.lib.update.version import (
     is_binary,
 )
-from hcli.lib.util.io import get_os, get_arch, get_executable_path
+from hcli.lib.util.io import get_arch, get_executable_path, get_os
 
 
 @click.command()

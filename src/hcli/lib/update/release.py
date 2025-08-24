@@ -12,7 +12,7 @@ from typing import Callable
 from urllib.parse import urlparse
 
 import requests
-from semantic_version import Version, SimpleSpec
+from semantic_version import SimpleSpec, Version
 
 from hcli.env import ENV
 
@@ -154,20 +154,24 @@ def download_assets(
 
 
 def download_asset(
-    repo: GitHubRepo, asset: ReleaseAsset, out_dir=Path(), block_size=2**20, callback: Callable[[int, int], None] = lambda _, __: None
+    repo: GitHubRepo,
+    asset: ReleaseAsset,
+    out_dir=Path(),
+    block_size=2**20,
+    callback: Callable[[int, int], None] = lambda _, __: None,
 ):
     logging.info(f"Start downloading asset: '{asset.name}'")
     if out_dir.is_file():
         out_dir = out_dir.parent
     out_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Construct GitHub API URL for asset download
     asset_url = f"{ENV.HCLI_GITHUB_API_URL}/repos/{repo.user}/{repo.repo}/releases/assets/{asset.asset_id}"
-    
+
     # Set proper headers for asset download
     headers = AuthSession.header.copy()
     headers["Accept"] = "application/octet-stream"
-    
+
     response = requests.get(asset_url, stream=True, headers=headers)
     with open(out_dir.joinpath(asset.name), "wb") as file:
         for i, data in enumerate(response.iter_content(block_size)):
@@ -199,7 +203,7 @@ def get_available_versions(repo: GitHubRepo, process_tag: Callable[[str], Versio
             if tag_name is None:
                 continue
             version = process_tag(tag_name)
-            if (version is None):
+            if version is None:
                 continue
             version._origin_tag_name = tag_name
             yield version

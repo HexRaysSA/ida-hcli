@@ -1,6 +1,7 @@
 """File I/O and system utilities."""
 
 import asyncio
+import asyncio.subprocess
 import os
 import platform
 import shutil

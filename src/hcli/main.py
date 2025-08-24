@@ -62,6 +62,7 @@ class MainGroup(click.RichGroup):
                     console.print(f"[dim]{traceback.format_exc()}[/dim]")
             # raise click.Abort()
 
+
 @click.pass_context
 def handle_command_completion(_ctx, _result, **_kwargs):
     """Handle command completion and show update notifications."""
