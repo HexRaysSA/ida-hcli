@@ -1,10 +1,10 @@
-import re
 import io
-import shutil
 import logging
 import pathlib
-import zipfile
+import re
+import shutil
 import tempfile
+import zipfile
 from pathlib import Path
 
 import packaging.version
@@ -12,19 +12,19 @@ import packaging.version
 from hcli.lib.ida import get_ida_user_dir
 from hcli.lib.ida.plugin import (
     IDAPluginMetadata,
-    validate_metadata_in_plugin_archive,
-    validate_path,
-    is_binary_plugin_archive,
-    is_source_plugin_archive,
     get_metadata_from_plugin_archive,
     get_metadata_path_from_plugin_archive,
+    is_binary_plugin_archive,
+    is_source_plugin_archive,
+    validate_metadata_in_plugin_archive,
+    validate_path,
 )
 from hcli.lib.ida.python import (
     CantInstallPackagesError,
     does_current_ida_have_pip,
     find_current_python_executable,
-    verify_pip_can_install_packages,
     pip_install_packages,
+    verify_pip_can_install_packages,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ def get_metadata_from_plugin_directory(plugin_path: Path) -> IDAPluginMetadata:
             continue
 
         try:
-            content = metadata_file.read_text(encoding='utf-8')
+            content = metadata_file.read_text(encoding="utf-8")
             return IDAPluginMetadata.model_validate_json(content)
         except Exception as e:
             logger.debug("failed to validate ida-plugin.json: %s", e)
@@ -98,9 +98,7 @@ def validate_metadata_in_plugin_directory(plugin_path: Path):
       - entry point
       - logo path
     """
-    if (plugin_path / "ida-plugin.json").exists() and (
-        plugin_path / "ida-plugin.json.disabled"
-    ).exists():
+    if (plugin_path / "ida-plugin.json").exists() and (plugin_path / "ida-plugin.json.disabled").exists():
         logger.debug("both ida-plugin.json and ida-plugin.json.disabled exists")
         raise ValueError("plugin corrupt: both enabled and disabled at the same time")
 
@@ -108,9 +106,7 @@ def validate_metadata_in_plugin_directory(plugin_path: Path):
 
     if metadata.metadata_version != 1:
         logger.debug("Invalid metadata version")
-        raise ValueError(
-            f"Invalid metadata version: {metadata.metadata_version}. Expected: 1"
-        )
+        raise ValueError(f"Invalid metadata version: {metadata.metadata_version}. Expected: 1")
 
     # name contains only ASCII alphanumeric, underscores, dashes, spaces
     if not re.match(r"^[a-zA-Z0-9_\- ]+$", metadata.name):
@@ -132,12 +128,8 @@ def validate_metadata_in_plugin_directory(plugin_path: Path):
     if metadata.entry_point.endswith(".py"):
         # source plugin
         if not entry_point_path.exists():
-            logger.debug(
-                f"Entry point file not found in directory: '{metadata.entry_point}'"
-            )
-            raise ValueError(
-                f"Entry point file not found in directory: '{metadata.entry_point}'"
-            )
+            logger.debug(f"Entry point file not found in directory: '{metadata.entry_point}'")
+            raise ValueError(f"Entry point file not found in directory: '{metadata.entry_point}'")
     else:
         # binary plugin - check for various extensions
         if not entry_point_path.exists():
@@ -147,20 +139,14 @@ def validate_metadata_in_plugin_directory(plugin_path: Path):
                     found = True
                     break
             if not found:
-                logger.debug(
-                    f"Entry point file not found in directory: '{metadata.entry_point}'"
-                )
-                raise ValueError(
-                    f"Entry point file not found in directory: '{metadata.entry_point}'"
-                )
+                logger.debug(f"Entry point file not found in directory: '{metadata.entry_point}'")
+                raise ValueError(f"Entry point file not found in directory: '{metadata.entry_point}'")
 
     if metadata.logo_path:
         logo_path = plugin_path / metadata.logo_path
         if not logo_path.exists():
             logger.debug(f"Logo file not found in directory: '{metadata.logo_path}'")
-            raise ValueError(
-                f"Logo file not found in directory: '{metadata.logo_path}'"
-            )
+            raise ValueError(f"Logo file not found in directory: '{metadata.logo_path}'")
 
     _ = packaging.version.parse(metadata.version)
 
@@ -268,9 +254,7 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
                 if file_info.filename == plugin_dir_prefix:
                     continue
 
-                relative_path = pathlib.PurePosixPath(file_info.filename).relative_to(
-                    plugin_dir_prefix.rstrip("/")
-                )
+                relative_path = pathlib.PurePosixPath(file_info.filename).relative_to(plugin_dir_prefix.rstrip("/"))
                 if str(relative_path) == ".":
                     continue
 

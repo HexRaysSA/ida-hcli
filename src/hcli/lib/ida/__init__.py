@@ -1,20 +1,22 @@
 """IDA Pro utilities for installation and path management."""
 
+import asyncio
+import asyncio.subprocess
+import json
+import logging
 import os
 import re
-import stat
 import shutil
-import logging
-import asyncio
+import stat
+import subprocess
 import tempfile
-from typing import List, Optional, NamedTuple
-from pathlib import Path
 from functools import total_ordering
+from pathlib import Path
+from typing import List, NamedTuple, Optional
 
-from pydantic import BaseModel, Field, AliasPath
+from pydantic import AliasPath, BaseModel, Field
 
 from hcli.lib.util.io import get_os
-
 
 logger = logging.getLogger(__name__)
 
@@ -421,9 +423,7 @@ class IDAConfigJson(BaseModel):
     """IDA configuration $IDAUSR/ida-config.json"""
 
     # like: "/Applications/IDA Professional 9.1.app/Contents/MacOS"
-    installation_directory: Path = Field(
-        validation_alias=AliasPath("Paths", "ida-install-dir")
-    )
+    installation_directory: Path = Field(validation_alias=AliasPath("Paths", "ida-install-dir"))
 
 
 def get_ida_config_path() -> Path:
@@ -439,9 +439,7 @@ def get_ida_config() -> IDAConfigJson:
     if not ida_config_path.exists():
         raise ValueError("ida-config.json doesn't exist")
 
-    config = IDAConfigJson.model_validate_json(
-        ida_config_path.read_text(encoding="utf-8")
-    )
+    config = IDAConfigJson.model_validate_json(ida_config_path.read_text(encoding="utf-8"))
 
     if not config.installation_directory.exists():
         raise ValueError("ida-config.json invalid: ida-install-dir doesn't exist")

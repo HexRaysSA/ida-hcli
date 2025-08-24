@@ -1,18 +1,18 @@
 # TODO: make all this async
 
 import json
-import time
 import logging
+import time
 import urllib.error
 import urllib.request
-from typing import Any, Dict, List, Tuple, Optional
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import rich.progress
-from pydantic import Field, BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
+from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveIndex
 from hcli.lib.util.cache import get_cache_directory
-from hcli.lib.ida.plugin.repo import Plugin, BasePluginRepo, PluginArchiveIndex
 
 logger = logging.getLogger(__name__)
 
@@ -600,7 +600,6 @@ class GithubPluginRepo(BasePluginRepo):
         for owner, repo in rich.progress.track(sorted(repos), description="Fetching plugins", transient=True):
             releases = get_releases_metadata(self.client, owner, repo).releases
             for release in releases:
-
                 # source archives
                 source_archives.append((owner, repo, release.commit_hash, release.zipball_url))
 

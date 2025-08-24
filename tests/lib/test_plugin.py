@@ -1,10 +1,10 @@
+from fixtures import PLUGIN_DATA
+
 from hcli.lib.ida.plugin import (
-    is_plugin_archive,
     is_binary_plugin_archive,
+    is_plugin_archive,
     is_source_plugin_archive,
 )
-
-from fixtures import PLUGIN_DATA
 
 
 def test_source_plugin_archive():

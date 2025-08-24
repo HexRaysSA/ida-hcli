@@ -1,7 +1,13 @@
-import pytest
 from pathlib import Path
 
-from hcli.lib.ida.python import CantInstallPackagesError, does_current_ida_have_pip, find_current_python_executable, verify_pip_can_install_packages
+import pytest
+
+from hcli.lib.ida.python import (
+    CantInstallPackagesError,
+    does_current_ida_have_pip,
+    find_current_python_executable,
+    verify_pip_can_install_packages,
+)
 
 
 def test_find_current_python_executable_returns_path():

@@ -4,9 +4,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from hcli.lib.ida.plugin import (
-    validate_metadata_in_plugin_archive,
     discover_platforms_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
+    validate_metadata_in_plugin_archive,
 )
 
 logger = logging.getLogger(__name__)

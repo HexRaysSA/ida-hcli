@@ -9,9 +9,9 @@ def register_commands(cli: click.Group) -> None:
     from .download import download
     from .login import login
     from .logout import logout
+    from .plugin import plugin
     from .update import update
     from .whoami import whoami
-    from .plugin import plugin
     # placeholder for more commands
 
     cli.add_command(login)

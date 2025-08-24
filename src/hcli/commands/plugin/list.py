@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import os
 import logging
+import os
 from pathlib import Path
 
 import rich_click as click
 
+import hcli.lib.ida.plugin.repo.fs
+import hcli.lib.ida.plugin.repo.github
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
 from hcli.lib.ida.plugin import ALL_PLATFORMS
-import hcli.lib.ida.plugin.repo.fs
-import hcli.lib.ida.plugin.repo.github
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,9 @@ async def list_plugins(ctx) -> None:
                 for location in locations:
                     ida_versions_str = location.ida_versions if location.ida_versions != ">=0" else "all"
                     locations_str = ", ".join(location.platforms) if location.platforms != ALL_PLATFORMS else "all"
-                    console.print(f"    IDA: [yellow]{ida_versions_str}[/yellow], platforms: [yellow]{locations_str}[/yellow]")
+                    console.print(
+                        f"    IDA: [yellow]{ida_versions_str}[/yellow], platforms: [yellow]{locations_str}[/yellow]"
+                    )
                     console.print(f"    {location.url}")
                     console.print("")
 

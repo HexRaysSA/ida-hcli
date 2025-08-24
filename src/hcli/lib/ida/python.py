@@ -1,14 +1,12 @@
 # see also hcli.lib.util.python
-import os
-import logging
-import tempfile
-import subprocess
 import json
+import logging
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 
-
 from hcli.lib.ida import find_current_idat_executable
-
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +33,7 @@ print("__hcli__:" + json.dumps(shutil.which("python")))
 sys.exit()
 """
 
+
 def find_current_python_executable() -> Path:
     """find the python executable associated with the current IDA installation"""
     if "HCLI_CURRENT_IDA_PYTHON_EXE" in os.environ:
@@ -60,9 +59,7 @@ def find_current_python_executable() -> Path:
             f"-S{str(script_path.absolute())}",
         ]
 
-        _ = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
+        _ = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         logger.debug(f"idat command: {' '.join(cmd)}")
 
         if not log_path.exists():
@@ -83,10 +80,7 @@ def does_current_ida_have_pip(python_exe: Path) -> bool:
     """Check if pip is available in the given Python executable."""
     try:
         process = subprocess.run(
-            [str(python_exe), "-m", "pip", "help"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=1.0
+            [str(python_exe), "-m", "pip", "help"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1.0
         )
         return process.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
@@ -104,7 +98,7 @@ def verify_pip_can_install_packages(python_exe: Path, packages: list[str]):
     process = subprocess.run(
         [str(python_exe), "-m", "pip", "install", "--dry-run"] + packages,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
+        stderr=subprocess.PIPE,
     )
     stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
@@ -136,9 +130,7 @@ def verify_pip_can_install_packages(python_exe: Path, packages: list[str]):
 def pip_install_packages(python_exe: Path, packages: list[str]):
     """Install the given Python packages (e.g., "foo>=v1.0,<3")."""
     process = subprocess.run(
-        [str(python_exe), "-m", "pip", "install"] + packages,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
+        [str(python_exe), "-m", "pip", "install"] + packages, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
     stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
@@ -168,12 +160,8 @@ def pip_install_packages(python_exe: Path, packages: list[str]):
 
 
 def pip_freeze(python_exe: Path):
-    process = subprocess.run(
-        [str(python_exe), "-m", "pip", "freeze"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    stdout, stderr = process.stdout, process.stderr
+    process = subprocess.run([str(python_exe), "-m", "pip", "freeze"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, _ = process.stdout, process.stderr
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, [str(python_exe), "-m", "pip", "freeze"])
     return stdout.decode()

@@ -4,14 +4,14 @@ import tempfile
 
 import pytest
 
-from hcli.lib.util.cache import get_cache_directory
 from hcli.lib.ida.plugin.repo.github import (
     GitHubGraphQLClient,
-    parse_repository,
     get_release_asset,
-    get_source_archive,
     get_release_metadata,
+    get_source_archive,
+    parse_repository,
 )
+from hcli.lib.util.cache import get_cache_directory
 
 
 @pytest.fixture
@@ -45,7 +45,6 @@ def test_github_client_get_releases():
 
 
 def test_get_cache_directory_invalid_path_keys(temp_hcli_cache_dir):
-
     with pytest.raises(ValueError):
         get_cache_directory("")
 

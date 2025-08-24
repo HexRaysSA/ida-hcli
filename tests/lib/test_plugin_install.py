@@ -53,7 +53,6 @@ def temp_hcli_idausr_dir():
         yield
 
 
-
 def test_install_source_plugin_archive(temp_hcli_idausr_dir):
     plugin_path = PLUGIN_DATA / "plugin1" / "plugin1-v1.0.0.zip"
     buf = plugin_path.read_bytes()
@@ -66,7 +65,6 @@ def test_install_source_plugin_archive(temp_hcli_idausr_dir):
     assert (plugin_directory / "plugin1.py").exists()
 
     assert ("plugin1", "v1.0.0") in get_installed_plugins()
-
 
 
 def test_install_binary_plugin_archive(temp_hcli_idausr_dir):
@@ -86,7 +84,6 @@ def test_install_binary_plugin_archive(temp_hcli_idausr_dir):
     assert is_plugin_installed("zydisinfo")
 
 
-
 def test_uninstall(temp_hcli_idausr_dir):
     plugin_path = PLUGIN_DATA / "plugin1" / "plugin1-v1.0.0.zip"
     buf = plugin_path.read_bytes()
@@ -97,7 +94,6 @@ def test_uninstall(temp_hcli_idausr_dir):
     uninstall_plugin("plugin1")
     assert ("plugin1", "v1.0.0") not in get_installed_plugins()
     assert not is_plugin_installed("zydisinfo")
-
 
 
 def test_disable(temp_hcli_idausr_dir):
@@ -131,7 +127,6 @@ def test_disable(temp_hcli_idausr_dir):
     assert not is_plugin_installed("zydisinfo")
 
 
-
 def test_upgrade(temp_hcli_idausr_dir):
     v1 = (PLUGIN_DATA / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
     v2 = (PLUGIN_DATA / "plugin1" / "plugin1-v2.0.0.zip").read_bytes()
@@ -156,7 +151,6 @@ def initialize_idausr_with_venv(idausr_dir: Path):
     """Initialize an IDAUSR directory with a virtual environment at IDAUSR/venv."""
     venv_path = idausr_dir / "venv"
     _ = subprocess.run(["python", "-m", "venv", str(venv_path)], check=True)
-
 
 
 def test_plugin_python_dependencies(temp_hcli_idausr_dir):

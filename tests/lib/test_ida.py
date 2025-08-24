@@ -1,10 +1,10 @@
 from pathlib import Path
 
 from hcli.lib.ida import (
-    get_ida_config_path,
-    get_ida_config,
     find_current_ida_install_directory,
     find_current_idat_executable,
+    get_ida_config,
+    get_ida_config_path,
 )
 
 
@@ -19,7 +19,7 @@ def test_get_ida_config_path():
 def test_get_ida_config():
     result = get_ida_config()
     assert result is not None
-    assert hasattr(result, 'installation_directory')
+    assert hasattr(result, "installation_directory")
 
 
 # may fail if dev environment is not configured with IDA

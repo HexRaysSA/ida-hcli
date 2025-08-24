@@ -1,14 +1,13 @@
 import io
-import re
 import logging
 import pathlib
+import re
 import zipfile
-from typing import Iterator, Optional
 from pathlib import Path
+from typing import Iterator, Optional
 
 import packaging.version
-from pydantic import Field, AliasPath, BaseModel, ValidationError
-
+from pydantic import AliasPath, BaseModel, Field, ValidationError
 
 logger = logging.getLogger(__name__)
 

@@ -2,23 +2,22 @@
 
 from __future__ import annotations
 
-import os
 import logging
-import requests
+import os
 from pathlib import Path
 from urllib.parse import urlparse
 
+import requests
 import rich_click as click
 from packaging.version import Version
 from semantic_version import SimpleSpec
 
+import hcli.lib.ida.plugin.repo.fs
+import hcli.lib.ida.plugin.repo.github
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
-
 from hcli.lib.ida.plugin import PLATFORM_MACOS_ARM
 from hcli.lib.ida.plugin.install import install_plugin_archive
-import hcli.lib.ida.plugin.repo.github
-import hcli.lib.ida.plugin.repo.fs
 
 logger = logging.getLogger(__name__)
 
@@ -92,21 +91,26 @@ async def install_plugin(ctx, plugin_spec: str) -> None:
             for version, locations in plugin.locations_by_version.items():
                 for location in locations:
                     if wanted_version and wanted_version != version:
-                        logger.debug(f"Skipping plugin {plugin.name} version {version} because it is not the wanted version {wanted_version}")
+                        logger.debug(
+                            f"Skipping plugin {plugin.name} version {version} because it is not the wanted version {wanted_version}"
+                        )
                         continue
 
                     if current_platform not in location.platforms:
-                        logger.debug(f"Skipping plugin {plugin.name} version {version} because it is not compatible with the current platform {current_platform}")
+                        logger.debug(
+                            f"Skipping plugin {plugin.name} version {version} because it is not compatible with the current platform {current_platform}"
+                        )
                         continue
 
                     if not _is_ida_version_compatible(current_ida_version, location.ida_versions):
-                        logger.debug(f"Skipping plugin {plugin.name} version {version} because IDA version {current_ida_version} is not compatible with {location.ida_versions}")
+                        logger.debug(
+                            f"Skipping plugin {plugin.name} version {version} because IDA version {current_ida_version} is not compatible with {location.ida_versions}"
+                        )
                         continue
 
                     # fetch data, using https:// prefix or file:/// prefix
                     buf = await fetch_plugin_archive(location.url)
                     await install_plugin_archive(buf, plugin_name)
-
 
         if not plugins:
             console.print("[grey69]No plugins found[/grey69]")
