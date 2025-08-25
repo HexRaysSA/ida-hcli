@@ -269,7 +269,7 @@ async def install_ida(installer: str, install_dir: Optional[str]) -> Optional[st
             await _install_ida_windows(installer, prefix)
         else:
             print("Unsupported OS")
-            return None
+            raise Exception("Unsupported OS")
     except Exception as e:
         print(f"Installation failed: {e}")
         raise
