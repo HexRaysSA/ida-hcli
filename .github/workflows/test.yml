@@ -1,0 +1,108 @@
+name: test
+
+on:
+  push:
+    branches: [master, "plugin-manager"]
+    paths-ignore:
+      - "**.md"
+  pull_request:
+    branches: [master]
+    paths-ignore:
+      - "**.md"
+
+permissions: read-all
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests for ${{ matrix.os_ida.name}} using Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os_ida.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+        os_ida:
+          - name: IDA 9.1 on Linux
+            os: ubuntu-latest
+            ida_version: "9.1"
+            slug: "release/9.1/ida-essential/ida-essential_91_x64linux.run"
+            idat_path: "/idat"
+
+          - name: IDA 9.1 on Windows
+            os: windows-latest
+            ida_version: "9.1"
+            slug: "release/9.1/ida-essential/ida-essential_91_x64win.exe"
+            idat_path: "/idat.exe"
+
+          - name: IDA 9.1 on macOS (Intel)
+            os: macos-latest
+            ida_version: "9.1"
+            slug: "release/9.1/ida-essential/ida-essential_91_x64mac.app.zip"
+            idat_path: "/Content/MacOS/idat"
+
+          - name: IDA 9.1 on macOS (ARM)
+            os: macos-latest
+            ida_version: "9.1"
+            slug: "release/9.1/ida-essential/ida-essential_91_armmac.app.zip"
+            idat_path: "/Content/MacOS/idat"
+
+          - name: IDA 9.0 on Linux
+            os: ubuntu-latest
+            ida_version: "9.0"
+            slug: "release/9.0/ida-essential/ida-essential_90_x64linux.run"
+            idat_path: "/idat"
+
+          - name: IDA 9.0 on Windows
+            os: windows-latest
+            ida_version: "9.0"
+            slug: "release/9.0/ida-essential/ida-essential_90_x64win.exe"
+            idat_path: "/idat.exe"
+
+          - name: IDA 9.0 on macOS (Intel)
+            os: macos-latest
+            ida_version: "9.0"
+            slug: "release/9.0/ida-essential/ida-essential_90_x64mac.app.zip"
+            idat_path: "/Content/MacOS/idat"
+
+          - name: IDA 9.0 on macOS (ARM)
+            os: macos-latest
+            ida_version: "9.0"
+            slug: "release/9.0/ida-essential/ida-essential_90_armmac.app.zip"
+            idat_path: "/Content/MacOS/idat"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python with uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          uv sync --no-sources --extra dev --extra test
+
+      - name: Install IDA ${{ matrix.os_ida.ida_version }}
+        run: |
+          # TODO: add --set-default after v0.8.1-dev.3
+          uv run hcli ida install --download-id ${{ matrix.os_ida.slug }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir $RUNNER_TEMP/app/ida/
+        env:
+          HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
+          IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
+
+      - name: Run idat
+        run: ${{ runner.temp }}/app/ida/${{ matrix.os_ida.idat_path }} -a -A -c -t -L${{ runner.temp }}/ida.log
+
+      - name: Run tests
+        run: uv run pytest -v tests/
+        env:
+          HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
+          HCLI_INSTALL_DIR: ${{ runner.temp }}/app/ida/
