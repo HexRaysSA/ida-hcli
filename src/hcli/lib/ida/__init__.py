@@ -51,7 +51,7 @@ class IdaVersion:
             suffix = suffix_match if suffix_match else None
             return cls(major, minor, suffix)
 
-        return None  # unrecognized format
+        raise ValueError("Unrecognized format")
 
     def __str__(self):
         base = f"{self.major}.{self.minor}"
@@ -83,154 +83,178 @@ def is_installable(download: DownloadResource) -> bool:
     )
 
 
-def get_ida_user_dir() -> Optional[str]:
+def get_ida_user_dir() -> Path:
     """Get the IDA Pro user directory."""
     if "HCLI_IDAUSR" in os.environ:
-        return os.environ["HCLI_IDAUSR"]
+        return Path(os.environ["HCLI_IDAUSR"])
 
-    if get_os() == "windows":
+    os_ = get_os()
+    if os_ == "windows":
         appdata = os.environ.get("APPDATA")
-        if appdata:
-            return str(Path(appdata) / "Hex-Rays" / "IDA Pro")
-    else:
+        if not appdata:
+            raise ValueError("Failed to determine %APPDATA% location: environment variable not set")
+
+        return Path(appdata) / "Hex-Rays" / "IDA Pro"
+    elif os_ in ("linux", "mac"):
         home = os.environ.get("HOME")
-        if home:
-            return str(Path(home) / ".idapro")
-    return None
-
-
-def get_user_home_dir() -> Optional[str]:
-    """Get the user home directory."""
-    if get_os() == "windows":
-        return os.environ.get("APPDATA")
+        if not home:
+            raise ValueError("Failed to determine home directory: environment variable not set")
+        return Path(home) / ".idapro"
     else:
-        return os.environ.get("HOME")
+        raise ValueError(f"Unsupported operating system: {os}")
 
 
-def get_ida_install_default_prefix(ver: IdaVersion | None = None) -> str:
+def get_user_home_dir() -> Path:
+    """Get the user home directory."""
+    os_ = get_os()
+    if os_ == "windows":
+        appdata = os.environ.get("APPDATA")
+        if not appdata:
+            raise ValueError("Failed to determine %APPDATA% location: environment variable not set")
+
+        return Path(appdata)
+    elif os_ in ("linux", "mac"):
+        home = os.environ.get("HOME")
+        if not home:
+            raise ValueError("Failed to determine home directory: environment variable not set")
+        return Path(home)
+    else:
+        raise ValueError(f"Unsupported operating system: {os}")
+
+
+def get_ida_install_default_prefix(ver: IdaVersion) -> Path:
     """Get the default installation prefix for IDA Pro."""
     if get_os() == "windows":
-        return os.environ.get("ProgramFiles", r"C:\Program Files")
+        return Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
     elif get_os() == "linux":
-        import tempfile
-
-        return get_user_home_dir() or tempfile.gettempdir()
-    else:  # mac
-        return f"/Applications/IDA Professional {ver or IdaVersion(9, 0)}"
-
-
-async def get_ida_version(ida_dir: str) -> str:
-    """Get the version of an IDA installation."""
-    with tempfile.TemporaryDirectory(prefix="hcli_") as temp_dir:
-        try:
-            # Copy version.idc script to temp directory
-            version_script = Path(__file__).parent.parent.parent.parent.parent / "include" / "version.idc"
-            if not version_script.exists():
-                return "Unknown"
-
-            temp_script = Path(temp_dir) / "version.idc"
-            shutil.copy2(version_script, temp_script)
-
-            # Run ida with the version script
-            idat_path = get_idat_path(ida_dir)
-            if not idat_path or not Path(idat_path).exists():
-                return "Unknown"
-
-            process = await asyncio.create_subprocess_exec(
-                idat_path,
-                "-B",
-                f"-S{temp_script}",
-                str(temp_script),
-                cwd=temp_dir,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-
-            await process.communicate()
-
-            output_file = Path(temp_dir) / "ida_version"
-            if output_file.exists():
-                return output_file.read_text().strip()
-            else:
-                return "Unknown"
-
-        except Exception:
-            return "Unknown"
+        return get_user_home_dir() or Path(tempfile.gettempdir())
+    elif get_os() == "mac":
+        return Path(f"/Applications/IDA Professional {ver}")
+    else:
+        raise ValueError(f"Unsupported operating system: {os}")
 
 
-def get_ida_binary(ida_dir: str, suffix: str = "") -> str:
+def get_ida_path(ida_dir: Path) -> Path:
+    """Get the IDA application path from the installation directory."""
+    if get_os() == "mac":
+        return Path(ida_dir) / "Contents" / "MacOS"
+    else:
+        return Path(ida_dir)
+
+
+def get_ida_binary_path(ida_dir: Path, suffix: str = "") -> Path:
     """Get the IDA binary path."""
     if get_os() == "windows":
-        return str(Path(get_ida_path(ida_dir)) / f"ida{suffix}.exe")
+        return Path(get_ida_path(ida_dir)) / f"ida{suffix}.exe"
     else:
-        return str(Path(get_ida_path(ida_dir)) / f"ida{suffix}")
+        return Path(get_ida_path(ida_dir)) / f"ida{suffix}"
 
 
-def get_ida_path(ida_dir: str, suffix: str = "") -> str:
-    """Get the IDA executable path."""
-    if get_os() == "mac":
-        return str(Path(ida_dir) / "Contents" / "MacOS")
-    else:
-        return str(Path(ida_dir))
-
-
-def get_idat_path(ida_dir: str) -> str:
+def get_idat_path(ida_dir: Path) -> Path:
     """Get the IDA text-mode (idat) executable path."""
-    return get_ida_path(ida_dir, "t")
+    return get_ida_binary_path(ida_dir, "t")
 
 
-def find_standard_installations() -> list[str]:
+def find_standard_windows_installations() -> list[Path]:
+    """Find standard IDA Pro installations on Windows."""
+    ret = []
+
+    base_directory = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+
+    # Check the base directory for IDA installations
+    if base_directory.exists():
+        for entry in base_directory.iterdir():
+            if not entry.is_dir():
+                continue
+
+            if not entry.name.startswith("IDA Pro"):
+                continue
+
+            ret.append(entry)
+
+    return ret
+
+
+def find_standard_linux_installations() -> list[Path]:
+    """Find standard IDA Pro installations on Linux."""
+    # TODO: can also look in registered XDG applications, or maybe in /opt
+    ret = []
+    base_directory = get_user_home_dir() / ".local" / "share" / "applications"
+
+    if base_directory.exists():
+        for entry in base_directory.iterdir():
+            if not entry.is_dir():
+                continue
+
+            if not entry.name.startswith("IDA Pro"):
+                continue
+
+            ret.append(entry)
+
+    return ret
+
+
+def find_standard_mac_installations() -> list[Path]:
+    """Find standard IDA Pro installations on macOS."""
+    ret = []
+
+    base_directory = Path("/Applications")
+
+    # Check the base directory for IDA installations
+    if base_directory.exists():
+        for entry in base_directory.iterdir():
+            if not entry.is_dir():
+                continue
+
+            if not entry.name.startswith("IDA Pro"):
+                continue
+
+            ret.append(entry)
+
+    return ret
+
+
+def find_standard_installations() -> list[Path]:
     """Find standard IDA Pro installations."""
-    prefix = get_ida_install_default_prefix()
-    prefix_path = Path(prefix)
+    ret = set()
 
-    if not prefix_path.exists():
-        return []
-
-    ida_dirs = []
     try:
-        for entry in prefix_path.iterdir():
-            if entry.is_dir() and _is_ida_dir_entry(entry):
-                if get_os() == "mac":
-                    ida_dirs.append(str(entry / "Contents" / "MacOS"))
-                else:
-                    ida_dirs.append(str(entry))
-    except PermissionError:
+        ret.add(find_current_ida_install_directory())
+    except ValueError:
         pass
 
-    return ida_dirs
+    if get_os() == "windows":
+        ret.update(find_standard_windows_installations())
+    elif get_os() == "linux":
+        ret.update(find_standard_linux_installations())
+    elif get_os() == "mac":
+        ret.update(find_standard_mac_installations())
+    else:
+        raise ValueError(f"Unsupported operating system: {os}")
+
+    return list(ret)
 
 
-def _is_ida_dir_entry(path: Path) -> bool:
-    """Check if a directory entry looks like an IDA installation."""
-    name = path.name.lower()
-    return "ida" in name and "pro" in name
-
-
-def is_ida_dir(ida_dir: str) -> bool:
+def is_ida_dir(ida_dir: Path) -> bool:
     """Check if a directory contains a valid IDA installation."""
-    binary_path = Path(get_ida_binary(ida_dir))
+    binary_path = Path(get_ida_binary_path(ida_dir))
     return binary_path.exists()
 
 
-async def install_license(license_file: str, target_path: str) -> None:
+async def install_license(license_path: Path, target_path: Path) -> None:
     """Install a license file to an IDA directory."""
-    license_path = Path(license_file)
-    target_file = str(Path(target_path) / license_path.name)
+    target_file = target_path / license_path.name
     shutil.copy2(license_path, target_file)
 
 
-def get_license_dir(ida_dir: str) -> str:
+def get_license_dir(ida_dir: Path) -> Path:
     """Get the license directory for an IDA installation."""
-    if get_os() == "mac":
-        return str(Path(ida_dir) / "Contents" / "MacOS")
-    else:
-        return ida_dir
+    return get_ida_path(ida_dir)
 
 
-def accept_eula(install_dir: str) -> None:
+def accept_eula(install_dir: Path) -> None:
     # Accept the EULA (to be persistent across runs - you need to mount $HOME/.idapro as a volume)
-    os.environ["IDADIR"] = install_dir
+    os.environ["IDADIR"] = str(install_dir)
     import ida_domain  # noqa: F401
     import ida_registry
 
@@ -240,19 +264,18 @@ def accept_eula(install_dir: str) -> None:
     print("EULA accepted")
 
 
-async def install_ida(installer: str, install_dir: Optional[str]) -> Optional[str]:
+async def install_ida(installer: Path, install_dir: Optional[Path]) -> Optional[Path]:
     """
     Install IDA Pro from an installer.
 
     Returns the path to the installed IDA directory, or None if installation failed.
     """
-    # Determine installation prefix
     if not install_dir:
-        prefix = get_ida_install_default_prefix(IdaVersion.from_basename(installer))
+        prefix = get_ida_install_default_prefix(IdaVersion.from_basename(installer.name))
     else:
         prefix = install_dir
 
-    prefix_path = Path(prefix)
+    prefix_path = prefix
 
     print(f"Installing IDA in {prefix}")
 
@@ -293,12 +316,12 @@ async def install_ida(installer: str, install_dir: Optional[str]) -> Optional[st
 
     new_folders = folders_after - folders_before
     if new_folders:
-        return str(prefix_path / next(iter(new_folders)))
+        return prefix_path / next(iter(new_folders))
 
     return None
 
 
-async def _install_ida_mac(installer: str, prefix: str) -> None:
+async def _install_ida_mac(installer: Path, prefix: Path) -> None:
     """Install IDA on macOS."""
     if not shutil.which("unzip"):
         raise RuntimeError("unzip is required to install IDA on macOS")
@@ -315,14 +338,15 @@ async def _install_ida_mac(installer: str, prefix: str) -> None:
                 raise RuntimeError("Failed to unpack installer")
 
             # Find and run the installer
-            app_name = Path(installer).stem  # Remove .zip extension
+            app_name = installer.stem  # Remove .zip extension
             installer_path = Path(temp_unpack_dir) / app_name / "Contents" / "MacOS" / "osx-arm64"
 
             if not installer_path.exists():
                 raise RuntimeError("Installer executable not found")
 
             print(f"Running installer {app_name}...")
-            args = _get_installer_args(temp_install_dir)
+            temp_install_path = Path(temp_install_dir)
+            args = _get_installer_args(temp_install_path)
 
             process = await asyncio.create_subprocess_exec(str(installer_path), *args)
             await process.communicate()
@@ -331,17 +355,16 @@ async def _install_ida_mac(installer: str, prefix: str) -> None:
                 raise RuntimeError("Installer execution failed")
 
             # Find installed folder and copy to prefix
-            temp_install_path = Path(temp_install_dir)
             installed_folders = list(temp_install_path.iterdir())
 
             if not installed_folders:
                 raise RuntimeError("No installation found after running installer")
 
             install_folder = installed_folders[0]
-            await _copy_dir(str(install_folder), prefix)
+            await _copy_dir(install_folder, prefix)
 
 
-async def _install_ida_unix(installer: str, prefix: str) -> None:
+async def _install_ida_unix(installer: Path, prefix: Path) -> None:
     """Install IDA on Unix/Linux."""
     args = _get_installer_args(prefix)
 
@@ -357,8 +380,6 @@ async def _install_ida_unix(installer: str, prefix: str) -> None:
         os.chmod(installer_path, current_mode | stat.S_IXUSR)
 
     home_dir = get_user_home_dir()
-    if not home_dir:
-        raise RuntimeError("Could not determine user home directory")
     share_dir = Path(home_dir) / ".local" / "share" / "applications"
     share_dir.mkdir(parents=True, exist_ok=True)
 
@@ -371,7 +392,7 @@ async def _install_ida_unix(installer: str, prefix: str) -> None:
         raise RuntimeError("Installer execution failed")
 
 
-async def _install_ida_windows(installer: str, prefix: str) -> None:
+async def _install_ida_windows(installer: Path, prefix: Path) -> None:
     """Install IDA on Windows."""
     args = _get_installer_args(prefix)
 
@@ -382,7 +403,7 @@ async def _install_ida_windows(installer: str, prefix: str) -> None:
         raise RuntimeError("Installer execution failed")
 
 
-def _get_installer_args(prefix: str) -> list[str]:
+def _get_installer_args(prefix: Path) -> list[str]:
     """Get installer arguments."""
     args = ["--mode", "unattended", "--debugtrace", "debug.log"]
 
@@ -390,16 +411,13 @@ def _get_installer_args(prefix: str) -> list[str]:
         args.extend(["--install_python", "0"])
 
     if prefix:
-        args.extend(["--prefix", prefix])
+        args.extend(["--prefix", str(prefix)])
 
     return args
 
 
-async def _copy_dir(src: str, dest: str) -> None:
+async def _copy_dir(src_path: Path, dest_path: Path) -> None:
     """Copy directory recursively."""
-    src_path = Path(src)
-    dest_path = Path(dest)
-
     if not src_path.exists():
         return
 
