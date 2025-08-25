@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   tests:
-    name: Tests for ${{ matrix.os_ida.name}} using Python ${{ matrix.python-version }}
+    name: ${{ matrix.os_ida.name}}/py${{ matrix.python-version }}
     runs-on: ${{ matrix.os_ida.os }}
     strategy:
       fail-fast: false
