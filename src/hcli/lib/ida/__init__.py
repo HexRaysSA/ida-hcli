@@ -2,11 +2,13 @@
 
 import asyncio
 import asyncio.subprocess
+import json
 import logging
 import os
 import re
 import shutil
 import stat
+import subprocess
 import tempfile
 from functools import total_ordering
 from pathlib import Path
@@ -483,3 +485,106 @@ def find_current_idat_executable() -> Path:
     logger.debug("idat path: %s", idat_path)
 
     return idat_path
+
+
+def run_py_in_current_idapython(src: str) -> str:
+    idat_path = find_current_idat_executable()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        script_path = temp_path / "idat-script.py"
+        log_path = temp_path / "ida.log"
+
+        script_path.write_text(src)
+
+        # invoke like:
+        #
+        #     idat -a -A -c -t -L"/absolute/path/to/ida.log" -S"/absolute/path/to/idat-script.py"
+        #
+        # -a disable auto analysis
+        # -A autuonomous, no dialogs
+        # -c delete old database
+        # -t create an empty database
+        # -L"/absolute/path/to/ida.log"
+        # -S"/absolute/path/to/script.py"
+        cmd = [
+            str(idat_path),
+            "-a",  # disable auto analysis
+            "-A",  # autonomous, no dialogs
+            "-c",  # delete old database
+            "-t",  # create an empty database
+            f"-L{str(log_path.absolute())}",
+            f"-S{str(script_path.absolute())}",
+        ]
+
+        _ = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        logger.debug(f"idat command: {' '.join(cmd)}")
+
+        if not log_path.exists():
+            raise RuntimeError(f"Log file was not created: {log_path}")
+
+        for line in log_path.read_text().splitlines():
+            if not line.startswith("__hcli__:"):
+                continue
+
+            return json.loads(line[len("__hcli__:") :])
+
+        raise RuntimeError("Could not find __hcli__: prefix in log output")
+
+
+FIND_PLATFORM_PY = """
+# output like:
+#
+#     __hcli__:"windows-x86_64"
+import sys
+import json
+import platform
+
+system = platform.system()
+if system == "Windows":
+    plat = "windows-x86_64"
+elif system == "Linux":
+    plat = "linux-x86_64"
+elif system == "Darwin":
+    # via: https://stackoverflow.com/questions/7491391/
+    version = platform.uname().version
+    if "RELEASE_ARM64" in version:
+        plat = "macos-aarch64"
+    elif "RELEASE_X86_64" in version:
+        plat = "macos-x86_64"
+    else:
+        raise ValueError(f"Unsupported macOS version: {version}")
+else:
+    raise ValueError(f"Unsupported OS: {os_}")
+print("__hcli__:" + json.dumps(plat))
+sys.exit()
+"""
+
+
+def find_current_ida_platform() -> str:
+    """find the platform associated with the current IDA installation"""
+    if "HCLI_CURRENT_PLATFORM" in os.environ:
+        return os.environ["HCLI_CURRENT_PLATFORM"]
+
+    return run_py_in_current_idapython(FIND_PLATFORM_PY)
+
+
+FIND_VERSION_PY = """
+# output like:
+#
+#     __hcli__:"windows-x86_64"
+import sys
+import json
+import ida_kernwin
+print("__hcli__:" + json.dumps(ida_kernwin.get_kernel_version()))
+sys.exit()
+"""
+
+
+def find_current_ida_version() -> str:
+    """find the version of the current IDA installation"""
+    if "HCLI_CURRENT_VERSION" in os.environ:
+        return os.environ["HCLI_CURRENT_VERSION"]
+
+    return run_py_in_current_idapython(FIND_VERSION_PY)
