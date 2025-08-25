@@ -1,0 +1,47 @@
+name: style
+
+on:
+  push:
+    branches: [master, "plugin-manager"]
+    paths-ignore:
+      - "**.md"
+  pull_request:
+    branches: [master]
+    paths-ignore:
+      - "**.md"
+
+permissions: read-all
+
+concurrency:
+  group: style-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  code_style:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python with uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          uv sync --no-sources --extra dev
+
+      - name: Lint with ruff
+        run: |
+          uv run ruff format --check --line-length 120 src/ tests/
+          uv run ruff check src/ tests/
+          uv run ruff check --select I src/ tests/
+
+      - name: Lint with mypy
+        run: |
+          uv run mypy --check-untyped-defs --ignore-missing-imports src/ tests/

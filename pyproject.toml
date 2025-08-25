@@ -46,6 +46,11 @@ release-patch = "semantic-release version --patch --no-changelog"
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[dependency-groups]
+dev = [
+    "types-requests>=2.32.4.20250809",
+]
+
 [project.optional-dependencies]
 dev = [
     "mypy>=1.16.0",
