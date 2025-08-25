@@ -1,7 +1,12 @@
+import platform
 from pathlib import Path
+
+import pytest
 
 from hcli.lib.ida import (
     find_current_ida_install_directory,
+    find_current_ida_platform,
+    find_current_ida_version,
     find_current_idat_executable,
     get_ida_config,
     get_ida_config_path,
@@ -37,3 +42,36 @@ def test_find_current_idat_executable():
     assert result.exists()
     assert result.is_file()
     assert "idat" in result.name.lower()
+
+
+# Platform-specific tests for find_current_ida_platform()
+@pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific test")
+def test_find_current_ida_platform_windows():
+    """Test find_current_ida_platform() on Windows."""
+    result = find_current_ida_platform()
+    assert isinstance(result, str)
+    assert result == "windows-x86_64"
+
+
+@pytest.mark.skipif(platform.system() != "Linux", reason="Linux-specific test")
+def test_find_current_ida_platform_linux():
+    """Test find_current_ida_platform() on Linux."""
+    result = find_current_ida_platform()
+    assert isinstance(result, str)
+    assert result == "linux-x86_64"
+
+
+@pytest.mark.skipif(platform.system() != "Darwin", reason="macOS-specific test")
+def test_find_current_ida_platform_macos():
+    """Test find_current_ida_platform() on macOS."""
+    result = find_current_ida_platform()
+    assert isinstance(result, str)
+    assert result in ["macos-x86_64", "macos-aarch64"]
+
+
+# may fail if dev environment is not configured with IDA
+def test_find_current_ida_version():
+    """Test find_current_ida_version() returns expected version."""
+    result = find_current_ida_version()
+    assert isinstance(result, str)
+    assert result in ["9.1", "9.2"]

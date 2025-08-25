@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -12,11 +11,9 @@ import rich_click as click
 from packaging.version import Version
 from semantic_version import SimpleSpec
 
-import hcli.lib.ida.plugin.repo.fs
-import hcli.lib.ida.plugin.repo.github
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
-from hcli.lib.ida.plugin import PLATFORM_MACOS_ARM
+from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
 from hcli.lib.ida.plugin.install import install_plugin_archive
 
 logger = logging.getLogger(__name__)
@@ -73,8 +70,8 @@ async def install_plugin(ctx, plugin_spec: str) -> None:
 
         plugins = plugin_repo.get_plugins()
 
-        current_platform = PLATFORM_MACOS_ARM
-        current_ida_version = "9.1"
+        current_platform = find_current_ida_platform()
+        current_ida_version = find_current_ida_version()
 
         for plugin in sorted(plugins, key=lambda p: p.name):
             if plugin.name != plugin_name:

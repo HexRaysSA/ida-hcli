@@ -5,6 +5,8 @@ from pathlib import Path
 
 import rich_click as click
 
+import hcli.lib.ida.plugin.repo
+import hcli.lib.ida.plugin.repo.fs
 import hcli.lib.ida.plugin.repo.github
 from hcli.lib.console import console
 

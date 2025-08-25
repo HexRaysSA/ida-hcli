@@ -1,28 +1,15 @@
 # see also hcli.lib.util.python
-import json
 import logging
 import os
 import subprocess
-import tempfile
 from pathlib import Path
 
-from hcli.lib.ida import find_current_idat_executable
+from hcli.lib.ida import run_py_in_current_idapython
 
 logger = logging.getLogger(__name__)
 
 
 FIND_PYTHON_PY = """
-# invoke like:
-#
-#     idat -a -A -c -t -L"/absolute/path/to/ida.log" -S"/absolute/path/to/idat-find-python.py"
-#
-# -a disable auto analysis
-# -A autuonomous, no dialogs
-# -c delete old database
-# -t create an empty database
-# -L"/absolute/path/to/ida.log"
-# -S"/absolute/path/to/script.py"
-#
 # output like:
 #
 #     __hcli__:"/Users/user/code/hex-rays/ida-hcli/.venv/bin/python3"
@@ -39,41 +26,7 @@ def find_current_python_executable() -> Path:
     if "HCLI_CURRENT_IDA_PYTHON_EXE" in os.environ:
         return Path(os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"])
 
-    idat_path = find_current_idat_executable()
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-
-        script_path = temp_path / "idat-sys-executable.py"
-        log_path = temp_path / "ida.log"
-
-        script_path.write_text(FIND_PYTHON_PY)
-
-        cmd = [
-            str(idat_path),
-            "-a",  # disable auto analysis
-            "-A",  # autonomous, no dialogs
-            "-c",  # delete old database
-            "-t",  # create an empty database
-            f"-L{str(log_path.absolute())}",
-            f"-S{str(script_path.absolute())}",
-        ]
-
-        _ = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        logger.debug(f"idat command: {' '.join(cmd)}")
-
-        if not log_path.exists():
-            raise RuntimeError(f"Log file was not created: {log_path}")
-
-        for line in log_path.read_text().splitlines():
-            if not line.startswith("__hcli__:"):
-                continue
-
-            sys_executable = Path(json.loads(line[len("__hcli__:") :]))
-            logger.debug("sys.executable: %s", sys_executable)
-            return Path(sys_executable)
-
-        raise RuntimeError("Could not find __hcli__: prefix in log output")
+    return Path(run_py_in_current_idapython(FIND_PYTHON_PY))
 
 
 def does_current_ida_have_pip(python_exe: Path) -> bool:
