@@ -67,15 +67,7 @@ def fetch_plugin_archive(url: str) -> bytes:
 @async_command
 async def install_plugin(ctx, plugin_spec: str) -> None:
     try:
-        if ctx.obj.get("token"):
-            plugin_repo = hcli.lib.ida.plugin.repo.github.GithubPluginRepo(ctx.obj["token"])
-        elif ctx.obj.get("path"):
-            plugin_repo = hcli.lib.ida.plugin.repo.fs.FileSystemPluginRepo(Path(ctx.obj["path"]))
-        elif "GITHUB_TOKEN" in os.environ:
-            plugin_repo = hcli.lib.ida.plugin.repo.github.GithubPluginRepo(os.environ["GITHUB_TOKEN"])
-        else:
-            console.print("[red]GitHub token required[/red]. Set GITHUB_TOKEN environment variable or provide --token")
-            return
+        plugin_repo = ctx.obj["plugin_repo"]
 
         plugin_name, _, wanted_version = plugin_spec.partition("==")
 
@@ -109,8 +101,8 @@ async def install_plugin(ctx, plugin_spec: str) -> None:
                         continue
 
                     # fetch data, using https:// prefix or file:/// prefix
-                    buf = await fetch_plugin_archive(location.url)
-                    await install_plugin_archive(buf, plugin_name)
+                    buf = fetch_plugin_archive(location.url)
+                    install_plugin_archive(buf, plugin_name)
 
         if not plugins:
             console.print("[grey69]No plugins found[/grey69]")

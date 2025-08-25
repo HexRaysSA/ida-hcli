@@ -2,32 +2,48 @@
 
 from __future__ import annotations
 
-import questionary
+import logging
+from typing import Optional
+
 import rich_click as click
 
-from hcli.commands.common import safe_ask_async
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
-from hcli.lib.constants import cli
+from hcli.lib.ida.plugin import ALL_PLATFORMS
+
+logger = logging.getLogger(__name__)
 
 
 @click.command()
 @click.argument("query", required=False)
-@click.option("--limit", default=20, help="Maximum number of results to show")
+@click.pass_context
 @async_command
-async def search_plugins(query: str, limit: int) -> None:
-    """Search for plugins in the repository."""
-
-    if not query:
-        query = await safe_ask_async(questionary.text("Enter search query:", style=cli.SELECT_STYLE))
-
-    if not query.strip():
-        console.print("[red]Search query cannot be empty[/red]")
-        return
-
-    console.print(f"[bold]Searching for plugins matching '{query}'...[/bold]")
-
+async def search_plugins(ctx, query: Optional[str] = None) -> None:
     try:
-        raise NotImplementedError("Plugin search")
+        plugin_repo = ctx.obj["plugin_repo"]
+
+        plugins = plugin_repo.get_plugins()
+
+        for plugin in sorted(plugins, key=lambda p: p.name):
+            if query and query.lower() not in plugin.name.lower():
+                continue
+
+            console.print(f"[blue]{plugin.name}[/blue]")
+
+            for version, locations in plugin.locations_by_version.items():
+                console.print(f"  {version}:")
+                for location in locations:
+                    ida_versions_str = location.ida_versions if location.ida_versions != ">=0" else "all"
+                    locations_str = ", ".join(location.platforms) if location.platforms != ALL_PLATFORMS else "all"
+                    console.print(
+                        f"    IDA: [yellow]{ida_versions_str}[/yellow], platforms: [yellow]{locations_str}[/yellow]"
+                    )
+                    console.print(f"    {location.url}")
+                    console.print("")
+
+        if not plugins:
+            console.print("[grey69]No plugins found[/grey69]")
+
     except Exception as e:
-        console.print(f"[red]Search failed: {e}[/red]")
+        logger.warning("error: %s", e, exc_info=True)
+        console.print(f"[red]Error[/red]: {e}")
