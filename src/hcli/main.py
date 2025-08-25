@@ -45,14 +45,19 @@ class MainGroup(click.RichGroup):
 
             if isinstance(e, AuthenticationError):
                 console.print("[red]Authentication failed. Please check your credentials or use 'hcli login'.[/red]")
+                raise click.Abort()
             elif isinstance(e, NotFoundError):
                 console.print(f"[red]Resource not found: {e}[/red]")
+                raise click.Abort()
             elif isinstance(e, RateLimitError):
                 console.print("[red]Rate limit exceeded. Please try again later.[/red]")
+                raise click.Abort()
             elif isinstance(e, APIError):
                 console.print(f"[red]API Error: {e}[/red]")
+                raise click.Abort()
             elif isinstance(e, KeyboardInterrupt):
                 console.print("\n[yellow]Operation cancelled by user[/yellow]")
+                raise click.Abort()
             else:
                 console.print(f"[red]Unexpected error: {e}[/red]")
                 # Optionally include debug info in debug mode
@@ -60,7 +65,7 @@ class MainGroup(click.RichGroup):
                     import traceback
 
                     console.print(f"[dim]{traceback.format_exc()}[/dim]")
-            # raise click.Abort()
+            raise click.Abort()
 
 
 @click.pass_context

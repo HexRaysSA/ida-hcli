@@ -272,7 +272,7 @@ async def install_ida(installer: str, install_dir: Optional[str]) -> Optional[st
             return None
     except Exception as e:
         print(f"Installation failed: {e}")
-        return None
+        raise
 
     # Find newly created directories
     folders_after = set()
