@@ -186,10 +186,10 @@ async def download(
                 selected_keys = [asset.key for asset in filtered_assets]
             else:
                 # Get downloads from API
-                assets = await asset_api.get_files_tree("installers")
+                installer_assets = await asset_api.get_files_tree("installers")
 
                 # Interactive navigation
-                selected_asset = await select_asset(assets, "")
+                selected_asset = await select_asset(installer_assets, "")
 
                 if not selected_asset:
                     console.print("[yellow]Download cancelled[/yellow]")

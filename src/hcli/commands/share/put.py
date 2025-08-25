@@ -46,6 +46,7 @@ async def put(path: Path, acl: Optional[str], code: Optional[str], force: bool) 
     # Get user info for domain ACL
     auth_service = get_auth_service()
     user = auth_service.get_user()
+    assert user is not None, "User not found"
     domain = get_email_domain(user["email"]) if user else ""
 
     # Determine ACL if not provided
@@ -59,6 +60,8 @@ async def put(path: Path, acl: Optional[str], code: Optional[str], force: bool) 
         acl = await safe_ask_async(
             questionary.select("Pick a visibility 🔎", choices=choices, default="authenticated", style=cli.SELECT_STYLE)
         )
+
+    assert acl is not None, "ACL not selected"
 
     # Conflicts check
     if force and code:

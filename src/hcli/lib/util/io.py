@@ -54,14 +54,14 @@ def dir_exists(path: str) -> bool:
         return False
 
 
-def get_executable_path():
+def get_executable_path() -> Path:
     """Get the path of the current executable (works with PyInstaller)"""
     if getattr(sys, "frozen", False):
         # Running as PyInstaller executable
-        return sys.executable
+        return Path(sys.executable)
     else:
         # Running as Python script
-        return __file__
+        return Path(__file__)
 
 
 def get_binary_name() -> str:

@@ -73,7 +73,7 @@ class CLITester:
                 # Consider command successful if:
                 # 1. Exit status is 0, or
                 # 2. Exit status is None but we got some output (common for help commands)
-                success = exit_status == 0 or (exit_status is None and output.strip())
+                success = exit_status == 0 or (exit_status is None and len(output.strip()) > 0)
                 return success, output
 
         except pexpect.EOF:

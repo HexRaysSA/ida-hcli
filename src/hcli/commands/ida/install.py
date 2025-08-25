@@ -34,6 +34,7 @@ async def install(
     On Linux: /tmp/myida/ida
     On Mac: /tmp/myida/Contents/MacOS/ida
     """
+    install_dir_path = Path(install_dir)
     try:
         # download installer using the download command
         tmp_dir = get_temp_dir()
@@ -49,15 +50,16 @@ async def install(
             await download.callback(output_dir=tmp_dir, key=download_slug)
             # Find the downloaded installer file
             installer_path = Path(tmp_dir) / Path(download_slug).name
-            installer = str(installer_path)
+        else:
+            installer_path = Path(installer)
 
         # Download the file
-        console.print(f"[yellow]Installing {installer}...[/yellow]")
-        await install_ida(installer, install_dir)
+        console.print(f"[yellow]Installing {installer_path}...[/yellow]")
+        await install_ida(installer_path, install_dir_path)
 
         if eula:
             console.print("[yellow]Accepting EULA...[/yellow]")
-            accept_eula(get_ida_path(install_dir))
+            accept_eula(get_ida_path(install_dir_path))
 
         if license_id:
             # Call get_license command with the license ID
@@ -70,7 +72,7 @@ async def install(
             license_file = license_files[0].name
 
             # Copy license file to install dir
-            await install_license(str(Path(tmp_dir) / license_file), install_dir)
+            await install_license(Path(tmp_dir) / license_file, install_dir_path)
 
         console.print("[green]Installation complete![/green]")
 

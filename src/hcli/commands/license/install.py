@@ -41,7 +41,7 @@ async def install_license(file: Path, ida_dir: Optional[str]) -> None:
 
     # Select target directory
     if ida_dir:
-        target = ida_dir
+        target = Path(ida_dir)
     else:
         console.print("\n[bold]Where do you want to install the license?[/bold]")
         for option in options:
@@ -66,7 +66,7 @@ async def install_license(file: Path, ida_dir: Optional[str]) -> None:
         choice_num = int(selection.split(".")[0])
 
         if choice_num == 1 and user_dir:
-            target = user_dir
+            target = Path(user_dir)
         elif choice_num <= len(suggested) + (1 if user_dir else 0):
             # Standard installation
             idx = choice_num - (2 if user_dir else 1)
@@ -92,7 +92,7 @@ async def install_license(file: Path, ida_dir: Optional[str]) -> None:
 
     try:
         # Install the license
-        await ida_install_license(str(file), str(target_path))
+        await ida_install_license(file, target_path)
         console.print(f"[green]License installed successfully in {target_path}[/green]")
 
         # Show installed file info

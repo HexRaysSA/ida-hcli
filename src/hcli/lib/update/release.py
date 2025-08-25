@@ -8,7 +8,7 @@ import sys
 import tempfile
 import typing
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 from urllib.parse import urlparse
 
 import requests
@@ -70,7 +70,7 @@ class ReleaseAsset:
 
 
 class AuthSession:
-    header = dict()
+    header: dict[str, str] = dict()
 
     @classmethod
     def init(cls, repo: GitHubRepo):
@@ -85,7 +85,7 @@ def check_and_download_updates(
     current_version: Version = None,
     assets_mask=re.compile(".*"),
     downloads_dir=Path(),
-    download_callback: Callable[[ReleaseAsset, int], None] = None,
+    download_callback: Optional[Callable[[ReleaseAsset, int], None]] = None,
 ):
     if download_callback is None:
         download_callback = default_download_callback
@@ -111,7 +111,7 @@ def check_and_download_updates(
     if not assets:
         logging.error("No assets found")
         return
-    download_assets(assets, repo, out_dir=downloads_dir, callback=download_callback)
+    download_assets(repo, assets, out_dir=downloads_dir, callback=download_callback)
     logging.info("Done!")
 
 
@@ -188,7 +188,7 @@ def default_download_callback(asset: ReleaseAsset, downloaded: int):
     )
 
 
-def get_available_versions(repo: GitHubRepo, process_tag: Callable[[str], Version] = None):
+def get_available_versions(repo: GitHubRepo, process_tag: Optional[Callable[[str], Optional[Version]]] = None):
     if process_tag is None:
         process_tag = parse_tag
     logging.info(f"Searching for releases in 'https://github.com/{repo.user}/{repo.repo}/'...")
@@ -205,7 +205,7 @@ def get_available_versions(repo: GitHubRepo, process_tag: Callable[[str], Versio
             version = process_tag(tag_name)
             if version is None:
                 continue
-            version._origin_tag_name = tag_name
+            setattr(version, "_origin_tag_name", tag_name)
             yield version
         logging.info(f"Version's page#{i} loaded")
         if len(data) < page_size:
@@ -213,7 +213,9 @@ def get_available_versions(repo: GitHubRepo, process_tag: Callable[[str], Versio
             break
 
 
-def get_latest_version(repo: GitHubRepo, process_tag: Callable[[str], Version] = None, include_dev: bool = False):
+def get_latest_version(
+    repo: GitHubRepo, process_tag: Optional[Callable[[str], Optional[Version]]] = None, include_dev: bool = False
+):
     if process_tag is None:
         process_tag = parse_tag
 
@@ -228,7 +230,8 @@ def get_latest_version(repo: GitHubRepo, process_tag: Callable[[str], Version] =
         if tag_name is None:
             return
         version = process_tag(tag_name)
-        version._origin_tag_name = tag_name
+        if version is not None:
+            version._origin_tag_name = tag_name
         return version
     else:
         # Search through all releases to find latest stable
@@ -240,7 +243,7 @@ def get_latest_version(repo: GitHubRepo, process_tag: Callable[[str], Version] =
         return None
 
 
-def parse_tag(tag_name: str):
+def parse_tag(tag_name: str) -> Optional[Version]:
     try:
         return Version(tag_name.lstrip("v").strip())
     except ValueError:
@@ -279,7 +282,7 @@ def is_already_installed(latest: Version, current: Version, compatibility_spec: 
     return True
 
 
-def update_asset(repo: GitHubRepo, asset: ReleaseAsset, binary_path: str) -> bool:
+def update_asset(repo: GitHubRepo, asset: ReleaseAsset, binary_path: Path) -> bool:
     """
     Download an asset to a temporary file and replace the running binary.
 
@@ -295,7 +298,7 @@ def update_asset(repo: GitHubRepo, asset: ReleaseAsset, binary_path: str) -> boo
         logging.error(f"Invalid asset: {asset.name}")
         return False
 
-    binary_path = Path(binary_path).resolve()
+    binary_path = binary_path.resolve()
     if not binary_path.exists():
         logging.error(f"Binary not found: {binary_path}")
         return False
