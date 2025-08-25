@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -10,7 +11,14 @@ from hcli.commands.license.get import get_license
 from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command, enforce_login
 from hcli.lib.console import console
-from hcli.lib.ida import accept_eula, get_ida_path, install_ida, install_license
+from hcli.lib.ida import (
+    IDAConfigJson,
+    accept_eula,
+    get_ida_config_path,
+    get_ida_path,
+    install_ida,
+    install_license,
+)
 from hcli.lib.util.io import get_temp_dir
 
 
@@ -18,12 +26,19 @@ from hcli.lib.util.io import get_temp_dir
 @click.option("-l", "--license-id", "license_id", required=False, help="License pubhash")
 @click.option("-i", "--install-dir", "install_dir", required=True, help="Install dir")
 @click.option("-a", "--accept-eula", "eula", is_flag=True, help="Accept EULA", default=True)
+@click.option("--set-default", is_flag=True, help="Mark this IDA installation as the default", default=False)
 @click.argument("installer", required=False)
 @click.command()
 @click.pass_context
 @async_command
 async def install(
-    ctx, install_dir: str, eula: bool, installer: str, download_slug: Optional[str], license_id: Optional[str]
+    ctx,
+    install_dir: str,
+    eula: bool,
+    installer: str,
+    download_slug: Optional[str],
+    license_id: Optional[str],
+    set_default: bool,
 ) -> None:
     """Installs IDA unattended.
 
@@ -73,6 +88,30 @@ async def install(
 
             # Copy license file to install dir
             await install_license(Path(tmp_dir) / license_file, install_dir_path)
+
+        if set_default:
+            console.print("[yellow]Updating configuration (default installation)...[/yellow]")
+            config_path = get_ida_config_path()
+            if not config_path.exists():
+                config_path.parent.mkdir(parents=True, exist_ok=True)
+                _ = config_path.write_text(
+                    IDAConfigJson(installation_directory=install_dir_path.absolute()).model_dump_json(indent=4),
+                    encoding="utf-8",
+                )
+                console.print("[grey69]Wrote default ida-config.json[/grey69]")
+            else:
+                # we update this without Pydantic validation to ensure we always can make the changes
+                # and leave config validation to the code that requires interpretation of the file.
+                doc = json.loads(config_path.read_text(encoding="utf-8"))
+                if "Paths" not in doc:
+                    doc["Paths"] = {}
+                existing = doc["Paths"].get("ida-install-dir") or "(empty)"
+                new = str(install_dir_path.absolute())
+                doc["Paths"]["ida-install-dir"] = new
+                _ = config_path.write_text(json.dumps(doc), encoding="utf-8")
+                console.print("[grey69]Updated ida-config.json:[/grey69]")
+                console.print(f"[grey69]  default install path: {existing}[/grey69]")
+                console.print(f"[grey69]                     -> {new}[/grey69]")
 
         console.print("[green]Installation complete![/green]")
 

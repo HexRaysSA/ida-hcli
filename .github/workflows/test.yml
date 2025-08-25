@@ -92,8 +92,7 @@ jobs:
 
       - name: Install IDA ${{ matrix.os_ida.ida_version }}
         run: |
-          # TODO: add --set-default after v0.8.1-dev.3
-          uv run hcli ida install --download-id ${{ matrix.os_ida.slug }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir $RUNNER_TEMP/app/ida/
+          uv run hcli ida install --download-id ${{ matrix.os_ida.slug }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir $RUNNER_TEMP/app/ida/ --set-default
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
