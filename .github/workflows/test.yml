@@ -146,7 +146,7 @@ jobs:
 
       - name: Install IDA ${{ matrix.os_ida.ida_version }}
         run: |
-          uv run hcli ida install --download-id ${{ matrix.os_ida.slug }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir $RUNNER_TEMP/app/ida/ --set-default
+          uv run hcli ida install --download-id ${{ matrix.os_ida.slug }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
@@ -154,9 +154,9 @@ jobs:
 
       - name: Run idat
         if: ${{ matrix.os_ida.idat_path != '' }}
+        continue-on-error: true
         run: |
-          # TODO: this won't work on windows due to bash-isms
-          ${{ runner.temp }}/app/ida/${{ matrix.os_ida.idat_path }} -a -A -c -t -L"${{ runner.temp }}/ida.log" -S"${{ github.workspace }}/tests/scripts/hi.py" || echo "ida: $?"
+          ${{ runner.temp }}/app/ida/${{ matrix.os_ida.idat_path }} -a -A -c -t -L"${{ runner.temp }}/ida.log" -S"${{ github.workspace }}/tests/scripts/hi.py" | echo "ok"
 
       - name: Check idat output (unix)
         if: ${{ matrix.os_ida.idat_path != '' && matrix.os_ida.os != 'windows-latest' }}
