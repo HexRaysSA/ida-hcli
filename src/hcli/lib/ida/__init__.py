@@ -257,7 +257,10 @@ def get_license_dir(ida_dir: Path) -> Path:
 def accept_eula(install_dir: Path) -> None:
     # Accept the EULA (to be persistent across runs - you need to mount $HOME/.idapro as a volume)
     os.environ["IDADIR"] = str(install_dir)
-    import ida_domain  # noqa: F401
+    if True:
+        # force this to be imported first and not reordered by ruff
+        import idapro  # noqa: F401
+
     import ida_registry
 
     ida_registry.reg_write_int("EULA 90", 1)

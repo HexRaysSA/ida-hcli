@@ -770,26 +770,13 @@ wheels = [
 ]
 
 [[package]]
-name = "ida-domain"
-version = "0.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "idapro" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/fc/5f/7c3bf15394b8c52d82c858f51448f06efc84945da1da3e2cffa9c2f59c66/ida_domain-0.1.0.tar.gz", hash = "sha256:909348f9dd01f88efab99e674c2c07133cefc11d7e42ae44e381a766d96f8488", size = 70641, upload-time = "2025-08-15T09:21:20.191Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/d2/b7ad2519af305b3c7b2e5cadf30bad8197b8f9ec0058c5a7e0252a8d9d3f/ida_domain-0.1.0-py3-none-any.whl", hash = "sha256:2060d3f4f38f4ad2343fbadc2ec6f80f883f8d9333ab00956de351bda96410eb", size = 76571, upload-time = "2025-08-15T09:21:17.283Z" },
-]
-
-[[package]]
 name = "ida-hcli"
 version = "0.8.1.dev3"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "httpx" },
-    { name = "ida-domain" },
+    { name = "idapro" },
     { name = "packaging" },
     { name = "platformdirs" },
     { name = "pydantic" },
@@ -839,7 +826,7 @@ requires-dist = [
     { name = "bandit", marker = "extra == 'dev'" },
     { name = "click" },
     { name = "httpx" },
-    { name = "ida-domain", specifier = ">=0.1.0" },
+    { name = "idapro", specifier = ">=0.0.5" },
     { name = "mkdocs-click", marker = "extra == 'docs'", specifier = ">=0.9.0" },
     { name = "mkdocs-gen-files", marker = "extra == 'docs'", specifier = ">=0.5.0" },
     { name = "mkdocs-include-markdown-plugin", marker = "extra == 'docs'", specifier = ">=7.1.5" },
