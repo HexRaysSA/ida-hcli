@@ -30,7 +30,7 @@ jobs:
             ida_version: "9.1"
             slug: "release/9.1/ida-essential/ida-essential_91_x64linux.run"
             idat_path: "/idat"
-            default_path: "~/.local/share/applications/IDA Essential 9.1"
+            default_path: "/home/runner/.local/share/applications/IDA Essential 9.1"
 
           - name: IDA 9.1 on Windows
             os: windows-latest
@@ -58,7 +58,7 @@ jobs:
             ida_version: "9.0"
             slug: "release/9.0/ida-essential/ida-essential_90_x64linux.run"
             idat_path: "/idat"
-            default_path: "~/.local/share/applications/IDA Essential 9.0"
+            default_path: "/home/runner/.local/share/applications/IDA Essential 9.0"
 
           - name: IDA 9.0 on Windows
             os: windows-latest
