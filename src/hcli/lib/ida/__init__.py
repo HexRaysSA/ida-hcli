@@ -487,6 +487,12 @@ def find_current_ida_install_directory() -> Path:
 
 def find_current_idat_executable() -> Path:
     install_directory = find_current_ida_install_directory()
+
+    current_os = get_os()
+    if current_os == "mac" and install_directory.name == "MacOS":
+        # strip off trailing Contents/MacOS
+        install_directory = install_directory.parent.parent
+
     return get_idat_path(install_directory)
 
 
