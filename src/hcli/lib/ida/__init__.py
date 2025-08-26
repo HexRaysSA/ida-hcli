@@ -53,7 +53,7 @@ class IdaVersion:
             suffix = suffix_match if suffix_match else None
             return cls(major, minor, suffix)
 
-        raise ValueError("Unrecognized format")
+        raise ValueError(f"Unrecognized format: {basename}")
 
     def __str__(self):
         base = f"{self.major}.{self.minor}"
