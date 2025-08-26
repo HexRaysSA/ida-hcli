@@ -60,7 +60,8 @@ class MainGroup(click.RichGroup):
                     import traceback
 
                     console.print(f"[dim]{traceback.format_exc()}[/dim]")
-            # raise click.Abort()
+
+            raise click.Abort()
 
 
 @click.pass_context
