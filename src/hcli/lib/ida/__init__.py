@@ -266,7 +266,7 @@ def accept_eula(install_dir: Path) -> None:
     ida_registry.reg_write_int("EULA 90", 1)
     ida_registry.reg_write_int("EULA 91", 1)
     ida_registry.reg_write_int("EULA 92", 1)
-    print("EULA accepted")
+    logger.info("EULA accepted")
 
 
 async def install_ida(installer: Path, install_dir: Optional[Path]) -> Optional[Path]:
@@ -282,7 +282,7 @@ async def install_ida(installer: Path, install_dir: Optional[Path]) -> Optional[
 
     prefix_path = prefix
 
-    print(f"Installing IDA in {prefix}")
+    logger.info(f"Installing IDA in {prefix}")
 
     # Create prefix directory if it doesn't exist
     prefix_path.mkdir(parents=True, exist_ok=True)
@@ -308,8 +308,8 @@ async def install_ida(installer: Path, install_dir: Optional[Path]) -> Optional[
             print("Unsupported OS")
             return None
     except Exception as e:
-        print(f"Installation failed: {e}")
         return None
+        logger.error(f"[red]Installation failed: {e}[/red]")
 
     # Find newly created directories
     folders_after = set()
@@ -333,7 +333,7 @@ async def _install_ida_mac(installer: Path, prefix: Path) -> None:
 
     with tempfile.TemporaryDirectory(prefix="hcli_") as temp_unpack_dir:
         with tempfile.TemporaryDirectory(prefix="hcli_") as temp_install_dir:
-            print(f"Unpacking installer to {temp_unpack_dir}...")
+            logger.info(f"Unpacking installer to {temp_unpack_dir}...")
 
             # Unpack the installer
             process = await asyncio.create_subprocess_exec("unzip", "-qq", installer, "-d", temp_unpack_dir)
@@ -349,7 +349,7 @@ async def _install_ida_mac(installer: Path, prefix: Path) -> None:
             if not installer_path.exists():
                 raise RuntimeError("Installer executable not found")
 
-            print(f"Running installer {app_name}...")
+            logger.info(f"Running installer {app_name}...")
             temp_install_path = Path(temp_install_dir)
             args = _get_installer_args(temp_install_path)
 
@@ -380,7 +380,7 @@ async def _install_ida_unix(installer: Path, prefix: Path) -> None:
         installer_path = Path(f"./{installer}")
 
     if not os.access(installer_path, os.X_OK):
-        print(f"Setting executable permission on {installer_path}")
+        logger.info(f"Setting executable permission on {installer_path}")
         current_mode = os.stat(installer_path).st_mode
         os.chmod(installer_path, current_mode | stat.S_IXUSR)
 
