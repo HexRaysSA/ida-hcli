@@ -1,7 +1,5 @@
 """IDA Pro utilities for installation and path management."""
 
-import asyncio
-import asyncio.subprocess
 import json
 import logging
 import os
@@ -243,7 +241,7 @@ def is_ida_dir(ida_dir: Path) -> bool:
     return binary_path.exists()
 
 
-async def install_license(license_path: Path, target_path: Path) -> None:
+def install_license(license_path: Path, target_path: Path) -> None:
     """Install a license file to an IDA directory."""
     target_file = target_path / license_path.name
     shutil.copy2(license_path, target_file)
@@ -269,7 +267,7 @@ def accept_eula(install_dir: Path) -> None:
     logger.info("EULA accepted")
 
 
-async def install_ida(installer: Path, install_dir: Optional[Path]) -> Path:
+def install_ida(installer: Path, install_dir: Optional[Path]) -> Path:
     """
     Install IDA Pro from an installer.
 
@@ -298,11 +296,11 @@ async def install_ida(installer: Path, install_dir: Optional[Path]) -> Path:
     try:
         current_os = get_os()
         if current_os == "mac":
-            await _install_ida_mac(installer, prefix)
+            _install_ida_mac(installer, prefix)
         elif current_os == "linux":
-            await _install_ida_unix(installer, prefix)
+            _install_ida_unix(installer, prefix)
         elif current_os == "windows":
-            await _install_ida_windows(installer, prefix)
+            _install_ida_windows(installer, prefix)
         else:
             raise ValueError(f"unsupported OS: {current_os}")
     except Exception as e:
@@ -331,7 +329,7 @@ async def install_ida(installer: Path, install_dir: Optional[Path]) -> Path:
     return prefix_path
 
 
-async def _install_ida_mac(installer: Path, prefix: Path) -> None:
+def _install_ida_mac(installer: Path, prefix: Path) -> None:
     """Install IDA on macOS."""
     if not shutil.which("unzip"):
         raise RuntimeError("unzip is required to install IDA on macOS")
@@ -341,8 +339,7 @@ async def _install_ida_mac(installer: Path, prefix: Path) -> None:
             logger.info(f"Unpacking installer to {temp_unpack_dir}...")
 
             # Unpack the installer
-            process = await asyncio.create_subprocess_exec("unzip", "-qq", installer, "-d", temp_unpack_dir)
-            await process.communicate()
+            process = subprocess.run(["unzip", "-qq", str(installer), "-d", temp_unpack_dir], capture_output=True)
 
             if process.returncode != 0:
                 raise RuntimeError("Failed to unpack installer")
@@ -358,8 +355,7 @@ async def _install_ida_mac(installer: Path, prefix: Path) -> None:
             temp_install_path = Path(temp_install_dir)
             args = _get_installer_args(temp_install_path)
 
-            process = await asyncio.create_subprocess_exec(str(installer_path), *args)
-            await process.communicate()
+            process = subprocess.run([str(installer_path)] + args, capture_output=True)
 
             if process.returncode != 0:
                 raise RuntimeError("Installer execution failed")
@@ -371,10 +367,10 @@ async def _install_ida_mac(installer: Path, prefix: Path) -> None:
                 raise RuntimeError("No installation found after running installer")
 
             install_folder = installed_folders[0]
-            await _copy_dir(install_folder, prefix)
+            _copy_dir(install_folder, prefix)
 
 
-async def _install_ida_unix(installer: Path, prefix: Path) -> None:
+def _install_ida_unix(installer: Path, prefix: Path) -> None:
     """Install IDA on Unix/Linux."""
     args = _get_installer_args(prefix)
 
@@ -393,21 +389,17 @@ async def _install_ida_unix(installer: Path, prefix: Path) -> None:
     share_dir = Path(home_dir) / ".local" / "share" / "applications"
     share_dir.mkdir(parents=True, exist_ok=True)
 
-    process = await asyncio.create_subprocess_exec(
-        installer_path, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await process.communicate()
+    process = subprocess.run([str(installer_path)] + args, capture_output=True)
 
     if process.returncode != 0:
         raise RuntimeError("Installer execution failed")
 
 
-async def _install_ida_windows(installer: Path, prefix: Path) -> None:
+def _install_ida_windows(installer: Path, prefix: Path) -> None:
     """Install IDA on Windows."""
     args = _get_installer_args(prefix)
 
-    process = await asyncio.create_subprocess_exec("cmd", "/c", installer, *args)
-    await process.communicate()
+    process = subprocess.run(["cmd", "/c", str(installer)] + args, capture_output=True)
 
     if process.returncode != 0:
         raise RuntimeError("Installer execution failed")
@@ -426,7 +418,7 @@ def _get_installer_args(prefix: Path) -> list[str]:
     return args
 
 
-async def _copy_dir(src_path: Path, dest_path: Path) -> None:
+def _copy_dir(src_path: Path, dest_path: Path) -> None:
     """Copy directory recursively."""
     if not src_path.exists():
         return
