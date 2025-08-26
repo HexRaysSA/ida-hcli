@@ -269,11 +269,11 @@ def accept_eula(install_dir: Path) -> None:
     logger.info("EULA accepted")
 
 
-async def install_ida(installer: Path, install_dir: Optional[Path]) -> Optional[Path]:
+async def install_ida(installer: Path, install_dir: Optional[Path]) -> Path:
     """
     Install IDA Pro from an installer.
 
-    Returns the path to the installed IDA directory, or None if installation failed.
+    Returns the path to the installed IDA directory.
     """
     if not install_dir:
         prefix = get_ida_install_default_prefix(IdaVersion.from_basename(installer.name))
@@ -284,7 +284,6 @@ async def install_ida(installer: Path, install_dir: Optional[Path]) -> Optional[
 
     logger.info(f"Installing IDA in {prefix}")
 
-    # Create prefix directory if it doesn't exist
     prefix_path.mkdir(parents=True, exist_ok=True)
 
     # collect the existing directories
@@ -305,11 +304,10 @@ async def install_ida(installer: Path, install_dir: Optional[Path]) -> Optional[
         elif current_os == "windows":
             await _install_ida_windows(installer, prefix)
         else:
-            print("Unsupported OS")
-            return None
+            raise ValueError(f"unsupported OS: {current_os}")
     except Exception as e:
-        return None
         logger.error(f"[red]Installation failed: {e}[/red]")
+        raise
 
     folders_after = set()
     if prefix_path.exists():
