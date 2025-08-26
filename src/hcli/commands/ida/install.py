@@ -18,6 +18,8 @@ from hcli.lib.ida import (
     get_ida_path,
     install_ida,
     install_license,
+    get_default_ida_install_directory,
+    IdaVersion,
 )
 from hcli.lib.util.io import get_temp_dir
 
@@ -49,7 +51,6 @@ async def install(
     On Linux: /tmp/myida/ida
     On Mac: /tmp/myida/Contents/MacOS/ida
     """
-    install_dir_path = Path(install_dir)
     try:
         # download installer using the download command
         tmp_dir = get_temp_dir()
@@ -63,13 +64,17 @@ async def install(
 
         if download_slug:
             await download.callback(output_dir=tmp_dir, key=download_slug)
-            # Find the downloaded installer file
             installer_path = Path(tmp_dir) / Path(download_slug).name
         else:
             installer_path = Path(installer)
 
-        # Download the file
-        console.print(f"[yellow]Installing {installer_path}...[/yellow]")
+        if not install_dir:
+            install_dir_path = get_default_ida_install_directory(IdaVersion.from_basename(installer_path.name))
+        else:
+            install_dir_path = Path(install_dir)
+
+        console.print(f"[yellow]Installing {installer_path} to {install_dir_path}...[/yellow]")
+
         install_ida(installer_path, install_dir_path)
 
         if license_id:
