@@ -507,6 +507,8 @@ def find_current_idat_executable() -> Path:
 
 def run_py_in_current_idapython(src: str) -> str:
     idat_path = find_current_idat_executable()
+    if not idat_path.exists():
+        raise ValueError(f"can't find idat: {idat_path}")
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -536,8 +538,13 @@ def run_py_in_current_idapython(src: str) -> str:
             f"-S{str(script_path.absolute())}",
         ]
 
-        _ = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         logger.debug(f"idat command: {' '.join(cmd)}")
+        logger.debug(f"idat exit code: {result.returncode}")
+        if result.stdout:
+            logger.debug(f"idat stdout: {result.stdout}")
+        if result.stderr:
+            logger.debug(f"idat stderr: {result.stderr}")
 
         if not log_path.exists():
             raise RuntimeError(f"Log file was not created: {log_path}")
