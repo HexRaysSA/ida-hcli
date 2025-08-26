@@ -284,11 +284,14 @@ def get_license_dir(ida_dir: Path) -> Path:
 def accept_eula(install_dir: Path) -> None:
     # Accept the EULA (to be persistent across runs - you need to mount $HOME/.idapro as a volume)
     os.environ["IDADIR"] = str(install_dir)
-    if True:
-        # force this to be imported first and not reordered by ruff
-        import idapro  # noqa: F401
+    try:
+        if True:
+            # force this to be imported first and not reordered by ruff
+            import idapro  # noqa: F401
 
-    import ida_registry
+        import ida_registry
+    except Exception:
+        raise RuntimeError("idalib not available")
 
     ida_registry.reg_write_int("EULA 90", 1)
     ida_registry.reg_write_int("EULA 91", 1)
