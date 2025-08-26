@@ -83,7 +83,7 @@ class IdaVersion:
 
     def __str__(self):
         base = f"{self.product} {self.major}.{self.minor}"
-        return f"{base}.{self.suffix}" if self.suffix else base
+        return f"{base}{self.suffix}" if self.suffix else base
 
     def __lt__(self, other):
         if not isinstance(other, IdaVersion):
