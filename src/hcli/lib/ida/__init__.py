@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 from functools import total_ordering
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 from pydantic import AliasPath, BaseModel, Field
 
@@ -122,10 +122,10 @@ def get_user_home_dir() -> Path:
         raise ValueError(f"Unsupported operating system: {os}")
 
 
-def get_ida_install_default_prefix(ver: IdaVersion) -> Path:
-    """Get the default installation prefix for IDA Pro."""
+def get_default_ida_install_directory(ver: IdaVersion) -> Path:
+    """Get the default installation directory for IDA Pro."""
     if get_os() == "windows":
-        return Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+        return Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / f"IDA Professional {ver}"
     elif get_os() == "linux":
         return get_user_home_dir() or Path(tempfile.gettempdir())
     elif get_os() == "mac":
@@ -267,66 +267,51 @@ def accept_eula(install_dir: Path) -> None:
     logger.info("EULA accepted")
 
 
-def install_ida(installer: Path, install_dir: Optional[Path]) -> Path:
+def install_ida(installer: Path, install_dir: Path):
     """
     Install IDA Pro from an installer.
 
-    Returns the path to the installed IDA directory.
+    Args:
+      installer: path to the installer downloaded from the Hex-Rays portal.
+      install_dir: path to the installation directory, which should not already exist.
+
+    Installation directory should look like:
+      - %Program Files%\\IDA Professional 9.1\\
+      - /Applications/IDA Professional 9.1.app/
+      - /opt/ida-9.1/
+      - /tmp/ida-9.1/
+      - ...
     """
-    if not install_dir:
-        prefix = get_ida_install_default_prefix(IdaVersion.from_basename(installer.name))
-    else:
-        prefix = install_dir
+    if install_dir.exists():
+        raise ValueError("failed to install: destination directory already exists")
 
-    prefix_path = prefix
-
-    logger.info(f"Installing IDA in {prefix}")
-
-    prefix_path.mkdir(parents=True, exist_ok=True)
-
-    # collect the existing directories
-    # so we know if installation succeeded afterwards.
-    folders_before = set()
-    if prefix_path.exists():
-        try:
-            folders_before = {item.name for item in prefix_path.iterdir() if item.is_dir()}
-        except PermissionError:
-            pass
+    logger.info(f"Installing IDA in {install_dir}")
+    install_dir.mkdir(parents=True, exist_ok=False)
 
     try:
         current_os = get_os()
         if current_os == "mac":
-            _install_ida_mac(installer, prefix)
+            _install_ida_mac(installer, install_dir)
         elif current_os == "linux":
-            _install_ida_unix(installer, prefix)
+            _install_ida_unix(installer, install_dir)
         elif current_os == "windows":
-            _install_ida_windows(installer, prefix)
+            _install_ida_windows(installer, install_dir)
         else:
             raise ValueError(f"unsupported OS: {current_os}")
     except Exception as e:
         logger.error(f"[red]Installation failed: {e}[/red]")
         raise
 
-    folders_after = set()
-    if prefix_path.exists():
-        try:
-            folders_after = {item.name for item in prefix_path.iterdir() if item.is_dir()}
-        except PermissionError:
-            pass
-
-    new_folders = list(sorted(folders_after - folders_before))
-    if not new_folders:
+    if not len(list(install_dir.iterdir())):
         raise RuntimeError("installation failed: installation directory contents not created")
 
     has_ida_hlp = False
-    for _, _, files in os.walk(prefix_path):
+    for _, _, files in os.walk(install_dir):
         if "ida.hlp" in files:
             has_ida_hlp = True
 
     if not has_ida_hlp:
         raise RuntimeError("installation failed: ida.hlp not created")
-
-    return prefix_path
 
 
 def _install_ida_mac(installer: Path, prefix: Path) -> None:
