@@ -12,7 +12,6 @@ from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command, enforce_login
 from hcli.lib.console import console
 from hcli.lib.ida import (
-    IDAConfigJson,
     IdaVersion,
     accept_eula,
     get_default_ida_install_directory,
@@ -97,9 +96,7 @@ async def install(
             if not config_path.exists():
                 console.print("[yellow]Updating configuration (default installation)...[/yellow]")
                 config_path.parent.mkdir(parents=True, exist_ok=True)
-                _ = config_path.write_text(json.dumps(
-                    {"Paths": {"ida-install-dir": str(install_dir_path.absolute())}}
-                ))
+                _ = config_path.write_text(json.dumps({"Paths": {"ida-install-dir": str(install_dir_path.absolute())}}))
                 console.print("[grey69]Wrote default ida-config.json[/grey69]")
             else:
                 # we update this without Pydantic validation to ensure we always can make the changes

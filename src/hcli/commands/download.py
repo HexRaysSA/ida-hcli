@@ -232,6 +232,7 @@ async def download(
             console.print(f"[green]Successfully downloaded {len(downloaded_files)} file(s)[/green]")
         else:
             console.print("[red]No files were downloaded[/red]")
+            raise ValueError("no files downloaded")
 
     except Exception as e:
         console.print(f"[red]Download failed: {e}[/red]")
