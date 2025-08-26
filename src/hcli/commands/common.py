@@ -35,7 +35,7 @@ async def safe_ask_async(questionary_obj, exit_message: str = "Operation cancell
 def exit_with_messages(code: int = 1) -> None:
     if EXIT_MESSAGES:
         for msg in EXIT_MESSAGES:
-            print(msg)
+            console.print(msg)
     raise SystemExit(code)
 
 
