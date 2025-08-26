@@ -554,7 +554,7 @@ elif system == "Darwin":
     else:
         raise ValueError(f"Unsupported macOS version: {version}")
 else:
-    raise ValueError(f"Unsupported OS: {os_}")
+    raise ValueError(f"Unsupported OS: {system}")
 print("__hcli__:" + json.dumps(plat))
 sys.exit()
 """
