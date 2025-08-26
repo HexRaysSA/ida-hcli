@@ -41,13 +41,13 @@ jobs:
             os: macos-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-essential/ida-essential_91_x64mac.app.zip"
-            idat_path: "/Content/MacOS/idat"
+            idat_path: "/Contents/MacOS/idat"
 
           - name: IDA 9.1 on macOS (ARM)
             os: macos-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-essential/ida-essential_91_armmac.app.zip"
-            idat_path: "/Content/MacOS/idat"
+            idat_path: "/Contents/MacOS/idat"
 
           - name: IDA 9.0 on Linux
             os: ubuntu-latest
@@ -65,13 +65,13 @@ jobs:
             os: macos-latest
             ida_version: "9.0"
             slug: "release/9.0/ida-essential/ida-essential_90_x64mac.app.zip"
-            idat_path: "/Content/MacOS/idat"
+            idat_path: "/Contents/MacOS/idat"
 
           - name: IDA 9.0 on macOS (ARM)
             os: macos-latest
             ida_version: "9.0"
             slug: "release/9.0/ida-essential/ida-essential_90_armmac.app.zip"
-            idat_path: "/Content/MacOS/idat"
+            idat_path: "/Contents/MacOS/idat"
 
     steps:
       - name: Checkout
@@ -92,14 +92,16 @@ jobs:
 
       - name: Install IDA ${{ matrix.os_ida.ida_version }}
         run: |
-          # TODO: add --set-default after v0.8.1-dev.3
-          uv run hcli ida install --download-id ${{ matrix.os_ida.slug }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir $RUNNER_TEMP/app/ida/
+          uv run hcli ida install --download-id ${{ matrix.os_ida.slug }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir $RUNNER_TEMP/app/ida/ --set-default
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
 
+      # TODO: this won't work on windows due to bash-isms
       - name: Run idat
-        run: ${{ runner.temp }}/app/ida/${{ matrix.os_ida.idat_path }} -a -A -c -t -L${{ runner.temp }}/ida.log
+        run: |
+          ${{ runner.temp }}/app/ida/${{ matrix.os_ida.idat_path }} -a -A -c -t -L"${{ runner.temp }}/ida.log" -S"${{ github.workspace }}/tests/scripts/hi.py" || echo "ida: $?"
+          cat "${{ runner.temp }}/ida.log"
 
       - name: Run tests
         run: uv run pytest -v tests/

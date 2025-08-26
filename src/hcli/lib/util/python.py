@@ -1,6 +1,7 @@
 """Python detection and utility functions."""
 
 import asyncio
+import asyncio.subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional

@@ -831,6 +831,7 @@ test = [
 [package.dev-dependencies]
 dev = [
     { name = "types-pexpect" },
+    { name = "types-requests" },
 ]
 
 [package.metadata]
@@ -870,7 +871,10 @@ requires-dist = [
 provides-extras = ["dev", "test", "docs"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "types-pexpect", specifier = ">=4.9.0.20250809" }]
+dev = [
+    { name = "types-pexpect", specifier = ">=4.9.0.20250809" },
+    { name = "types-requests", specifier = ">=2.32.4.20250809" },
+]
 
 [[package]]
 name = "idapro"
@@ -2405,6 +2409,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7f/a2/29564e69dee62f0f887ba7bfffa82fa4975504952e6199b218d3b403becd/types_pexpect-4.9.0.20250809.tar.gz", hash = "sha256:17a53c785b847c90d0be9149b00b0254e6e92c21cd856e853dac810ddb20101f", size = 13240, upload-time = "2025-08-09T03:15:04.554Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cc/1b/4d557287e6672feb749cf0d8ef5eb19189aff043e73e509e3775febc1cf1/types_pexpect-4.9.0.20250809-py3-none-any.whl", hash = "sha256:d19d206b8a7c282dac9376f26f072e036d22e9cf3e7d8eba3f477500b1f39101", size = 17039, upload-time = "2025-08-09T03:15:03.528Z" },
+]
+
+[[package]]
+name = "types-requests"
+version = "2.32.4.20250809"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ed/b0/9355adb86ec84d057fea765e4c49cce592aaf3d5117ce5609a95a7fc3dac/types_requests-2.32.4.20250809.tar.gz", hash = "sha256:d8060de1c8ee599311f56ff58010fb4902f462a1470802cf9f6ed27bc46c4df3", size = 23027, upload-time = "2025-08-09T03:17:10.664Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2b/6f/ec0012be842b1d888d46884ac5558fd62aeae1f0ec4f7a581433d890d4b5/types_requests-2.32.4.20250809-py3-none-any.whl", hash = "sha256:f73d1832fb519ece02c85b1f09d5f0dd3108938e7d47e7f94bbfa18a6782b163", size = 20644, upload-time = "2025-08-09T03:17:09.716Z" },
 ]
 
 [[package]]
