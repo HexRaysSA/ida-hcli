@@ -93,14 +93,13 @@ async def install(
             install_license(Path(tmp_dir) / license_file, install_dir_path)
 
         if set_default:
-            console.print("[yellow]Updating configuration (default installation)...[/yellow]")
             config_path = get_ida_config_path()
             if not config_path.exists():
+                console.print("[yellow]Updating configuration (default installation)...[/yellow]")
                 config_path.parent.mkdir(parents=True, exist_ok=True)
-                _ = config_path.write_text(
-                    IDAConfigJson(installation_directory=install_dir_path.absolute()).model_dump_json(indent=4),
-                    encoding="utf-8",
-                )
+                _ = config_path.write_text(json.dumps(
+                    {"Paths": {"ida-install-dir": str(install_dir_path.absolute())}}
+                ))
                 console.print("[grey69]Wrote default ida-config.json[/grey69]")
             else:
                 # we update this without Pydantic validation to ensure we always can make the changes
