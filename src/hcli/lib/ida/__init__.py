@@ -331,7 +331,9 @@ def install_ida(installer: Path, install_dir: Path):
         logger.error(f"[red]Installation failed: {e}[/red]")
         raise
 
-    if not len(list(install_dir.iterdir())):
+    contents = list(install_dir.iterdir())
+    logger.debug("installed contents: %s", contents)
+    if not len(contents):
         raise RuntimeError("installation failed: installation directory contents not created")
 
     has_ida_hlp = False
