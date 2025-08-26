@@ -446,8 +446,6 @@ class IDAConfigJson(BaseModel):
 
 def get_ida_config_path() -> Path:
     idausr = get_ida_user_dir()
-    if not idausr:
-        raise ValueError("$IDAUSR doesn't exist")
 
     return Path(idausr) / "ida-config.json"
 
