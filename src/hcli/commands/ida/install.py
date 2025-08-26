@@ -45,7 +45,6 @@ async def install(
 
     If install_dir is /tmp/myida, the ida binary will be located:
 
-    \b
     On Windows: /tmp/myida/ida
     On Linux: /tmp/myida/ida
     On Mac: /tmp/myida/Contents/MacOS/ida
@@ -67,10 +66,10 @@ async def install(
         else:
             installer_path = Path(installer)
 
+        version = IdaVersion.from_installer_filename(installer_path.name)
+
         if not install_dir:
-            install_dir_path = get_default_ida_install_directory(
-                IdaVersion.from_installer_filename(installer_path.name)
-            )
+            install_dir_path = get_default_ida_install_directory(version)
         else:
             install_dir_path = Path(install_dir)
 
@@ -115,9 +114,14 @@ async def install(
         # this requires using ida_registry to set some keys
         # which requires idalib to be working
         # so it has to go after license and config installation
-        if eula:
-            console.print("[yellow]Accepting EULA...[/yellow]")
-            accept_eula(get_ida_path(install_dir_path))
+        if eula and version.product:
+            if version.product in ("IDA Free", "IDA Home", "IDA Classroom"):
+                # these products don't include idalib, which is used to write to the registry.
+                console.print("[yellow]Skipped EULA acceptance due to product features.[/yellow]")
+            else:
+                # maybe its safer to have an allow-list for products with idalib
+                console.print("[yellow]Accepting EULA...[/yellow]")
+                accept_eula(get_ida_path(install_dir_path))
 
         console.print("[green]Installation complete![/green]")
 
