@@ -17,6 +17,7 @@ from hcli.lib.ida import (
     get_default_ida_install_directory,
     get_ida_config_path,
     get_ida_path,
+    get_license_dir,
     install_ida,
     install_license,
 )
@@ -87,8 +88,10 @@ async def install(
                 raise FileNotFoundError(f"License file matching *{license_id}.hexlic not found in {tmp_dir}")
             license_file = license_files[0].name
 
+            license_dir_path = get_license_dir(install_dir_path)
+
             # Copy license file to install dir
-            install_license(Path(tmp_dir) / license_file, install_dir_path)
+            install_license(Path(tmp_dir) / license_file, license_dir_path)
 
         if set_default:
             config_path = get_ida_config_path()
