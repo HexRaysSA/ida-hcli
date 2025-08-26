@@ -26,7 +26,7 @@ from hcli.lib.util.io import get_temp_dir
 
 @click.option("-d", "--download-id", "download_slug", required=False, help="Installer slug")
 @click.option("-l", "--license-id", "license_id", required=False, help="License pubhash")
-@click.option("-i", "--install-dir", "install_dir", required=True, help="Install dir")
+@click.option("-i", "--install-dir", "install_dir", required=False, help="Install dir")
 @click.option("-a", "--accept-eula", "eula", is_flag=True, help="Accept EULA", default=True)
 @click.option("--set-default", is_flag=True, help="Mark this IDA installation as the default", default=False)
 @click.argument("installer", required=False)
@@ -35,7 +35,7 @@ from hcli.lib.util.io import get_temp_dir
 @async_command
 async def install(
     ctx,
-    install_dir: str,
+    install_dir: Optional[str],
     eula: bool,
     installer: str,
     download_slug: Optional[str],
