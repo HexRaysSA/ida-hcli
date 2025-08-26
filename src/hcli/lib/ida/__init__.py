@@ -485,18 +485,7 @@ def find_current_ida_install_directory() -> Path:
 
 def find_current_idat_executable() -> Path:
     install_directory = find_current_ida_install_directory()
-
-    os = get_os()
-    if os == "windows":
-        idat_path = install_directory / "idat.exe"
-    elif os in ("linux", "mac"):
-        idat_path = install_directory / "idat"
-    else:
-        raise NotImplementedError(f"os not supported: {os}")
-
-    logger.debug("idat path: %s", idat_path)
-
-    return idat_path
+    return get_idat_path(install_directory)
 
 
 def run_py_in_current_idapython(src: str) -> str:
