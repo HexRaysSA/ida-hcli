@@ -20,9 +20,9 @@ dependencies = [
     "platformdirs",
     "packaging",
     "questionary",
-    "ida-domain>=0.1.0",
     "semantic-version>=2.10.0",
     "requests>=2.32.4",
+    "idapro>=0.0.5",
 ]
 
 [project.urls]
