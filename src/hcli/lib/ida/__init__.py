@@ -328,7 +328,7 @@ def install_ida(installer: Path, install_dir: Path):
         else:
             raise ValueError(f"unsupported OS: {current_os}")
     except Exception as e:
-        logger.error(f"[red]Installation failed: {e}[/red]")
+        logger.error(f"Installation failed: {e}")
         raise
 
     contents = list(install_dir.iterdir())
@@ -362,9 +362,15 @@ def _install_ida_mac(installer: Path, prefix: Path) -> None:
 
             # Find and run the installer
             app_name = installer.stem  # Remove .zip extension
-            installer_path = Path(temp_unpack_dir) / app_name / "Contents" / "MacOS" / "osx-arm64"
 
-            if not installer_path.exists():
+            installer_path = None
+            for platform in ("osx-arm64", "osx-x86_64"):
+                candidate_path = Path(temp_unpack_dir) / app_name / "Contents" / "MacOS" / platform
+                if candidate_path.exists():
+                    installer_path = candidate_path
+                    break
+
+            if not installer_path:
                 raise RuntimeError("Installer executable not found")
 
             logger.info(f"Running installer {app_name}...")
