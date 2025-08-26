@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List
 
 import questionary
 
@@ -14,7 +14,7 @@ from hcli.lib.console import console
 from hcli.lib.constants import cli
 
 
-async def select_licenses(customer_id: str, predicate: Optional[Callable[[License], bool]] = None) -> List[License]:
+async def select_licenses(customer_id: str, predicate: Callable[[License], bool] | None = None) -> List[License]:
     """
     Select licenses interactively or return all matching licenses.
 
@@ -150,7 +150,7 @@ async def download_license_asset(
     lic: License,
     asset_type: str,
     target_dir: str,
-) -> Optional[str]:
+) -> str | None:
     """
     Download a specific license asset.
 

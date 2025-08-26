@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, TypeVar
+from typing import Any, Dict, TypeVar
 
 from platformdirs import user_config_dir
 
@@ -67,7 +67,7 @@ class ConfigStore:
         self._data[key] = value
         self._save_config()
 
-    def get_object(self, key: str, default: Optional[T] = None) -> Optional[T]:
+    def get_object(self, key: str, default: T | None = None) -> T | None:
         """Get object value from configuration."""
         return self._data.get(key, default)
 

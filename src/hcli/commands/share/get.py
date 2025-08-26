@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import rich_click as click
 
@@ -29,7 +28,7 @@ from hcli.lib.console import console
 )
 @click.option("-f", "--force", is_flag=True, help="Overwrite existing files")
 @async_command
-async def get(shortcode: str, output_dir: Optional[Path], output_file: Optional[Path], force: bool) -> None:
+async def get(shortcode: str, output_dir: Path | None, output_file: Path | None, force: bool) -> None:
     """Download a shared file using its shortcode."""
 
     # Validate options

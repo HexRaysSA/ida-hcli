@@ -3,7 +3,7 @@ Shared fixtures and utilities for integration tests.
 """
 
 import re
-from typing import Optional, Tuple
+from typing import Tuple
 
 import pexpect
 import pytest
@@ -34,7 +34,7 @@ class CLITester:
         self.timeout = timeout
 
     def run_command(
-        self, command: str, expected_output: Optional[str] = None, timeout: Optional[int] = None
+        self, command: str, expected_output: str | None = None, timeout: int | None = None
     ) -> Tuple[bool, str]:
         """Run a CLI command and optionally check for expected output."""
         if timeout is None:

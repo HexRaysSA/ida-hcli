@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import rich_click as click
 
 from hcli.commands.common import select_customer
@@ -29,9 +27,9 @@ from hcli.lib.console import console
 @click.option("--output-dir", "output_dir", default="./", help="Output directory for license files")
 @async_command
 async def get_license(
-    lid: Optional[str] = None,
-    plan: Optional[str] = None,
-    type: Optional[str] = None,
+    lid: str | None = None,
+    plan: str | None = None,
+    type: str | None = None,
     all: bool = False,
     output_dir: str = "./",
 ) -> None:

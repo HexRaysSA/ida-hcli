@@ -1,6 +1,6 @@
 """API Keys management client."""
 
-from typing import List, Optional
+from typing import List
 
 from pydantic import BaseModel
 
@@ -12,7 +12,7 @@ class ApiKey(BaseModel):
 
     name: str
     created_at: str
-    last_used_at: Optional[str]
+    last_used_at: str | None
     request_count: int
 
 

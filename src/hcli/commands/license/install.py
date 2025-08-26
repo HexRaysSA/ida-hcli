@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import questionary
 import rich_click as click
@@ -23,7 +22,7 @@ from hcli.lib.ida import (
 @click.argument("file", type=click.Path(exists=True, path_type=Path))
 @click.argument("ida_dir", required=False)
 @async_command
-async def install_license(file: Path, ida_dir: Optional[str]) -> None:
+async def install_license(file: Path, ida_dir: str | None) -> None:
     """Install a license file to an IDA Pro installation directory."""
     # Find IDA installations
     suggested = find_standard_installations()

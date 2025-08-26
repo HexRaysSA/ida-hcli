@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 import rich_click as click
 
@@ -35,11 +34,11 @@ from hcli.lib.util.io import get_temp_dir
 @async_command
 async def install(
     ctx,
-    install_dir: Optional[str],
+    install_dir: str | None,
     eula: bool,
     installer: str,
-    download_slug: Optional[str],
-    license_id: Optional[str],
+    download_slug: str | None,
+    license_id: str | None,
     set_default: bool,
 ) -> None:
     """Installs IDA unattended.

@@ -3,7 +3,7 @@ import json
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Union
 
 from supabase import Client, create_client
 from supabase.lib.client_options import SyncClientOptions
@@ -21,7 +21,7 @@ from hcli.lib.constants.auth import (
 class AuthService:
     """Singleton authentication service handling multiple credentials."""
 
-    _instance: Optional["AuthService"] = None
+    _instance: Union["AuthService", None] = None
 
     def __init__(self):
         if AuthService._instance is not None:
@@ -29,7 +29,7 @@ class AuthService:
 
         # Create custom storage class for Supabase
         class SyncSupportedStorage:
-            def get_item(self, key: str) -> Optional[str]:
+            def get_item(self, key: str) -> str | None:
                 return config_store.get_string(key) or None
 
             def set_item(self, key: str, value: str) -> None:
@@ -46,15 +46,15 @@ class AuthService:
         self.supabase: Client = create_client(ENV.HCLI_SUPABASE_URL, ENV.HCLI_SUPABASE_ANON_KEY, options)
 
         # Current session state (for active interactive auth)
-        self.session: Optional[Any] = None
-        self.user: Optional[Any] = None
-        self._server_thread: Optional[Thread] = None
-        self._oauth_result: Optional[Dict[str, str]] = None
+        self.session: Any | None = None
+        self.user: Any | None = None
+        self._server_thread: Thread | None = None
+        self._oauth_result: Dict[str, str] | None = None
 
         # Multi-source auth state
-        self._auth_config: Optional[CredentialsConfig] = None
-        self._current_source: Optional[Credentials] = None
-        self._forced_credentials: Optional[str] = None  # For --auth-source override
+        self._auth_config: CredentialsConfig | None = None
+        self._current_source: Credentials | None = None
+        self._forced_credentials: str | None = None  # For --auth-source override
 
     @classmethod
     def instance(cls) -> "AuthService":
@@ -63,7 +63,7 @@ class AuthService:
             cls._instance = cls()
         return cls._instance
 
-    def init(self, forced_credentials: Optional[str] = None) -> None:
+    def init(self, forced_credentials: str | None = None) -> None:
         """Initialize the auth service and load credentials."""
         self._forced_credentials = forced_credentials
         self._load_auth_config()
@@ -128,11 +128,11 @@ class AuthService:
             return []
         return list(self._auth_config.credentials.values())
 
-    def get_current_credentials(self) -> Optional[Credentials]:
+    def get_current_credentials(self) -> Credentials | None:
         """Get the currently active credentials."""
         return self._current_source
 
-    def get_default_credentials_name(self) -> Optional[str]:
+    def get_default_credentials_name(self) -> str | None:
         """Get the name of the default credentials."""
         return self._auth_config.default if self._auth_config else None
 
@@ -248,7 +248,7 @@ class AuthService:
         source_origin = "forced" if self._forced_credentials else "default"
         return {"type": self._current_source.type, "source": source_origin}
 
-    def get_api_key(self) -> Optional[str]:
+    def get_api_key(self) -> str | None:
         """Get API key from current source."""
         # Check environment variable first (legacy behavior)
         if ENV.HCLI_API_KEY:
@@ -258,7 +258,7 @@ class AuthService:
             return self._current_source.token
         return None
 
-    def get_user(self) -> Optional[Dict[str, str]]:
+    def get_user(self) -> Dict[str, str] | None:
         """Get current user information."""
         # Handle environment variable case
         if ENV.HCLI_API_KEY and not self._current_source:
@@ -285,14 +285,14 @@ class AuthService:
 
         return {"email": self._current_source.email}
 
-    def get_access_token(self) -> Optional[str]:
+    def get_access_token(self) -> str | None:
         """Get access token from current session."""
         return self.session.access_token if self.session else None
 
     # Auth flow methods (updated for multi-source)
     def _create_or_update_interactive_credentials(
-        self, email: str, token: str, name: Optional[str] = None
-    ) -> Optional[Credentials]:
+        self, email: str, token: str, name: str | None = None
+    ) -> Credentials | None:
         """Create new or update existing interactive credentials for the given email."""
         # Check if interactive credentials already exist for this email
         existing_source = None
@@ -325,7 +325,7 @@ class AuthService:
 
             return source
 
-    async def login_interactive(self, name: Optional[str] = None, force: bool = False) -> Optional[Credentials]:
+    async def login_interactive(self, name: str | None = None, force: bool = False) -> Credentials | None:
         """Login using OAuth flow and create new credentials."""
         await self._login_flow(prompt=force)
         if self.is_logged_in() and self.session and self.session.user:
@@ -334,7 +334,7 @@ class AuthService:
             return self._create_or_update_interactive_credentials(email, token, name)
         return None
 
-    async def login_otp(self, email: str, name: Optional[str] = None, force: bool = False) -> bool:
+    async def login_otp(self, email: str, name: str | None = None, force: bool = False) -> bool:
         """Login using OTP and create credentials."""
         if force:
             self.logout_current()
@@ -342,7 +342,7 @@ class AuthService:
         self.supabase.auth.sign_in_with_otp({"email": email})
         return True
 
-    def verify_otp(self, email: str, otp: str, name: Optional[str] = None) -> Optional[Credentials]:
+    def verify_otp(self, email: str, otp: str, name: str | None = None) -> Credentials | None:
         """Verify OTP and create credentials."""
         try:
             self.supabase.auth.verify_otp({"email": email, "token": otp, "type": "email"})
@@ -359,7 +359,7 @@ class AuthService:
             pass
         return None
 
-    async def add_api_key_credentials(self, name: str, token: str) -> Optional[Credentials]:
+    async def add_api_key_credentials(self, name: str, token: str) -> Credentials | None:
         """Add a new API key credentials."""
         # Get user email from API
         try:

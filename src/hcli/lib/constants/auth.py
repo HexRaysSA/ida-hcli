@@ -1,7 +1,7 @@
 """Authentication-related constants."""
 
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict
 
 from pydantic import BaseModel
 
@@ -26,7 +26,7 @@ class Credentials(BaseModel):
     last_used: str
 
     # Type-specific data
-    token: Optional[str] = None  # For INTERACTIVE type
+    token: str | None = None  # For INTERACTIVE type
 
     @classmethod
     def create_credentials(cls, name: str, credential_type: str, token: str, email: str | None = None) -> "Credentials":
@@ -53,7 +53,7 @@ class Credentials(BaseModel):
 class CredentialsConfig(BaseModel):
     """Complete credentials configuration."""
 
-    default: Optional[str] = None
+    default: str | None = None
     credentials: Dict[str, Credentials] = {}
 
     def add_credentials(self, source: Credentials) -> None:
@@ -72,7 +72,7 @@ class CredentialsConfig(BaseModel):
             return True
         return False
 
-    def get_default_credentials(self) -> Optional[Credentials]:
+    def get_default_credentials(self) -> Credentials | None:
         """Get the default credentials."""
         if self.default and self.default in self.credentials:
             return self.credentials[self.default]
@@ -85,7 +85,7 @@ class CredentialsConfig(BaseModel):
             return True
         return False
 
-    def find_credentials_by_email_and_type(self, email: str, credential_type: str) -> Optional[Credentials]:
+    def find_credentials_by_email_and_type(self, email: str, credential_type: str) -> Credentials | None:
         """Find credentials by email and type. Returns the first match."""
         for credentials in self.credentials.values():
             if credentials.email == email and credentials.type == credential_type:

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import rich_click as click
 from rich.table import Table
 
@@ -19,7 +17,7 @@ from hcli.lib.console import console
 )
 @auth_command()
 @async_command
-async def list_licenses(plan: Optional[str]) -> None:
+async def list_licenses(plan: str | None) -> None:
     """List available licenses with rich formatting."""
     # Select customer
     customer_obj = await select_customer()

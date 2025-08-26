@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Union
 from urllib.parse import urlparse
 
 import httpx
@@ -211,7 +211,7 @@ class APIClient:
         self,
         url: str,
         target_dir: Union[str, Path] = "./",
-        target_filename: Optional[str] = None,
+        target_filename: str | None = None,
         force: bool = False,
         auth: bool = False,
     ) -> str:
@@ -285,7 +285,7 @@ class APIClient:
 
 
 # Global API client instance
-_api_client: Optional[APIClient] = None
+_api_client: APIClient | None = None
 
 
 async def get_api_client() -> APIClient:

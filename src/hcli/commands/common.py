@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import questionary
 
 from hcli.lib.api.customer import Customer, customer
@@ -39,7 +37,7 @@ def exit_with_messages(code: int = 1) -> None:
     raise SystemExit(code)
 
 
-async def select_customer() -> Optional[Customer]:
+async def select_customer() -> Customer | None:
     """
     Select a customer interactively or return the single customer if only one exists.
 

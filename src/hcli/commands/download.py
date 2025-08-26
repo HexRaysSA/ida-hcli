@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import List, Optional
+from typing import List
 
 import questionary
 import rich_click as click
@@ -25,10 +25,10 @@ class BackNavigationResult:
 BACK_NAVIGATION = BackNavigationResult()
 
 
-async def select_asset(nodes: List[TreeNode], current_path: str = "") -> Optional[Asset]:
+async def select_asset(nodes: List[TreeNode], current_path: str = "") -> Asset | None:
     """Alternative traverse using questionary.select with hierarchical navigation."""
 
-    async def _traverse_recursive(current_nodes: List[TreeNode], path_stack: List[str]) -> Optional[Asset]:
+    async def _traverse_recursive(current_nodes: List[TreeNode], path_stack: List[str]) -> Asset | None:
         # Get folders and files at current level
         folders = [node for node in current_nodes if node.type == "folder" and node.children]
         files = [node for node in current_nodes if node.type == "file"]
@@ -149,8 +149,8 @@ async def download(
     force: bool = False,
     output_dir: str = "./",
     mode: str = "interactive",
-    pattern: Optional[str] = None,
-    key: Optional[str] = None,
+    pattern: str | None = None,
+    key: str | None = None,
 ) -> None:
     """Download IDA binaries, SDK, utilities and more.
 
@@ -204,7 +204,7 @@ async def download(
         for selected_key in selected_keys:
             console.print(f"[yellow]Getting download URL for: {selected_key}[/yellow]")
             try:
-                download_asset: Optional[Asset] = await asset_api.get_file("installers", selected_key)
+                download_asset: Asset | None = await asset_api.get_file("installers", selected_key)
                 if not download_asset:
                     console.print(f"[red]Asset '{selected_key}' not found[/red]")
                     continue

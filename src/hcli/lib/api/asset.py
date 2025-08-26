@@ -4,7 +4,7 @@ from __future__ import annotations  # only needed for Python <3.10
 
 import hashlib
 from pathlib import Path
-from typing import Dict, ForwardRef, List, Optional
+from typing import Dict, ForwardRef, List, Union
 
 import httpx
 from pydantic import BaseModel
@@ -22,21 +22,21 @@ TreeNodeType = ForwardRef("TreeNode")
 class TreeNode(BaseModel):
     name: str
     type: str = "file"
-    children: List["TreeNode"] | None = None
+    children: Union[List["TreeNode"], None] = None
     asset: Asset
 
 
 class Asset(BaseModel):
-    email: Optional[str] = None
+    email: str | None = None
     filename: str
     size: int = 0
     key: str
-    code: Optional[str] = None
-    created_at: Optional[str] = None
-    expires_at: Optional[str] = None
-    url: Optional[str] = None
+    code: str | None = None
+    created_at: str | None = None
+    expires_at: str | None = None
+    url: str | None = None
     version: int = 0
-    metadata: Optional[dict] = None
+    metadata: dict | None = None
 
 
 class PagedAsset(BaseModel):
@@ -51,8 +51,8 @@ class PagedAsset(BaseModel):
 class PagingFilter(BaseModel):
     """Paging filter parameters."""
 
-    limit: Optional[int] = 1000
-    offset: Optional[int] = 0
+    limit: int | None = 1000
+    offset: int | None = 0
 
 
 class UploadResponse(BaseModel):
@@ -73,7 +73,7 @@ class AssetAPI:
         user_email: str,
         acl_type: str = "authenticated",
         force: bool = False,
-        code: Optional[str] = None,
+        code: str | None = None,
     ) -> UploadResponse:
         """Upload a file for sharing."""
         file_path_obj = Path(file_path)
@@ -147,7 +147,7 @@ class AssetAPI:
         data = await client.get_json(f"/api/assets/{bucket}/{code}/versions")
         return Asset(**data)
 
-    async def get_files(self, bucket: str, filter_params: Optional[PagingFilter] = None) -> PagedAsset:
+    async def get_files(self, bucket: str, filter_params: PagingFilter | None = None) -> PagedAsset:
         """Get all shared files for the current user."""
         if filter_params is None:
             filter_params = PagingFilter()
@@ -158,12 +158,12 @@ class AssetAPI:
         )
         return PagedAsset(**data)
 
-    async def get_file(self, bucket: str, key: str) -> Optional[Asset]:
+    async def get_file(self, bucket: str, key: str) -> Asset | None:
         client = await get_api_client()
         data = await client.get_json(f"/api/assets/{bucket}/{key}")
         return Asset(**data)
 
-    async def get_files_tree(self, bucket: str, filter_params: Optional[PagingFilter] = None) -> List[TreeNode]:
+    async def get_files_tree(self, bucket: str, filter_params: PagingFilter | None = None) -> List[TreeNode]:
         """Get all shared files for the current user."""
         if filter_params is None:
             filter_params = PagingFilter()
@@ -179,7 +179,7 @@ def get_email_domain(email: str) -> str:
     return email.lower().split("@")[-1]
 
 
-def get_permissions_from_acl_type(acl_type: str, user_email: str) -> Dict[str, Optional[List[str]]]:
+def get_permissions_from_acl_type(acl_type: str, user_email: str) -> Dict[str, Union[List[str], None]]:
     if acl_type == "authenticated":
         return {
             "allowed_segments": ["authenticated"],

@@ -1,7 +1,7 @@
 """String processing utilities."""
 
 import re
-from typing import List, Optional
+from typing import List
 
 
 def abbreviate(text: str, max_length: int) -> str:
@@ -266,7 +266,7 @@ def similarity_ratio(s1: str, s2: str) -> float:
     return 1.0 - (distance / max_length)
 
 
-def find_best_match(target: str, candidates: List[str], threshold: float = 0.6) -> Optional[str]:
+def find_best_match(target: str, candidates: List[str], threshold: float = 0.6) -> str | None:
     """
     Find the best matching string from a list of candidates.
 

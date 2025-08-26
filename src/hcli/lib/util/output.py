@@ -2,7 +2,7 @@
 
 import json
 from enum import Enum
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Union
 
 
 class OutputFormat(Enum):
@@ -37,7 +37,7 @@ def get_by_path(obj: Any, path: str) -> Any:
 def output(
     value: Union[Dict[str, Any], Any] = None,
     format_type: OutputFormat = OutputFormat.TEXT,
-    filter_path: Optional[str] = None,
+    filter_path: str | None = None,
 ) -> None:
     """
     Output a value in the specified format.
@@ -76,7 +76,7 @@ def output_json(value: Any, indent: int = 2) -> None:
     print(json.dumps(value, indent=indent, default=str))
 
 
-def output_table(data: list, headers: Optional[list] = None, show_headers: bool = True) -> None:
+def output_table(data: list, headers: list | None = None, show_headers: bool = True) -> None:
     """
     Output data as a simple table.
 

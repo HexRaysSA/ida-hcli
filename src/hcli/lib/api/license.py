@@ -1,6 +1,6 @@
 """License API client."""
 
-from typing import List, Optional
+from typing import List, Union
 
 from pydantic import BaseModel
 
@@ -13,78 +13,78 @@ class Product(BaseModel):
     id: int
     code: str
     name: str
-    family: Optional[str] = None
+    family: str | None = None
     catalog: str
-    edition: Optional[str] = None
-    platform: Optional[str] = None
-    ui_label: Optional[str] = None
-    base_code: Optional[str] = None
-    update_code: Optional[str] = None
+    edition: str | None = None
+    platform: str | None = None
+    ui_label: str | None = None
+    base_code: str | None = None
+    update_code: str | None = None
     product_type: str
-    product_subtype: Optional[str] = None
+    product_subtype: str | None = None
 
 
 class Addon(BaseModel):
     """License addon information."""
 
-    id: Optional[int] = None
-    pubhash: Optional[str] = None
-    license_key: Optional[str] = None
-    seats: Optional[int] = None
-    password: Optional[str] = None
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    product_code: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    activation_owner: Optional[str] = None
-    activation_owner_type: Optional[str] = None
-    product: Optional["Product"] = None
+    id: int | None = None
+    pubhash: str | None = None
+    license_key: str | None = None
+    seats: int | None = None
+    password: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    product_code: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    activation_owner: str | None = None
+    activation_owner_type: str | None = None
+    product: Union["Product", None] = None
 
 
 class Edition(BaseModel):
     """Edition information."""
 
-    id: Optional[int] = None
-    tags: Optional[List[str]] = None
-    plan_id: Optional[str] = None
-    max_items: Optional[int] = None
-    plan_name: Optional[str] = None
-    edition_id: Optional[str] = None
-    edition_name: Optional[str] = None
-    build_edition_id: Optional[str] = None
-    build_product_id: Optional[str] = None
+    id: int | None = None
+    tags: List[str] | None = None
+    plan_id: str | None = None
+    max_items: int | None = None
+    plan_name: str | None = None
+    edition_id: str | None = None
+    edition_name: str | None = None
+    build_edition_id: str | None = None
+    build_product_id: str | None = None
 
 
 class License(BaseModel):
     """License information."""
 
-    id: Optional[int] = None
-    pubhash: Optional[str] = None
-    plan_id: Optional[str] = None
-    license_key: Optional[str] = None
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    license_type: Optional[str] = None
-    seats: Optional[int] = None
-    password: Optional[str] = None
-    product_code: Optional[str] = None
-    customer_id: Optional[int] = None
-    end_customer_id: Optional[int] = None
-    activation_owner: Optional[str] = None
-    activation_owner_type: Optional[str] = None
-    status: Optional[str] = None
-    comment: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    generation_date: Optional[str] = None
-    download_date: Optional[str] = None
-    addons: Optional[List["Addon"]] = None
-    edition: Optional["Edition"] = None
-    asset_types: Optional[List[str]] = None
-    format_version: Optional[str] = None
-    product_catalog: Optional[str] = None
-    end_customer_visible: Optional[bool] = None
+    id: int | None = None
+    pubhash: str | None = None
+    plan_id: str | None = None
+    license_key: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    license_type: str | None = None
+    seats: int | None = None
+    password: str | None = None
+    product_code: str | None = None
+    customer_id: int | None = None
+    end_customer_id: int | None = None
+    activation_owner: str | None = None
+    activation_owner_type: str | None = None
+    status: str | None = None
+    comment: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    generation_date: str | None = None
+    download_date: str | None = None
+    addons: Union[List["Addon"], None] = None
+    edition: Union["Edition", None] = None
+    asset_types: List[str] | None = None
+    format_version: str | None = None
+    product_catalog: str | None = None
+    end_customer_visible: bool | None = None
 
 
 class PagedResponse(BaseModel):
@@ -115,7 +115,7 @@ class LicenseAPI:
 
     async def download_license(
         self, customer_id: str, license_id: str, asset_type: str, target_dir: str = "./"
-    ) -> Optional[str]:
+    ) -> str | None:
         """Download a license file."""
         client = await get_api_client()
         download_url = await client.get_json(f"/api/licenses/{customer_id}/download/{asset_type}/{license_id}")

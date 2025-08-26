@@ -7,7 +7,6 @@ import sys
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 import httpx
 from packaging.version import Version, parse
@@ -19,7 +18,7 @@ from hcli.env import ENV
 from hcli.lib.update.release import GitHubRepo, get_compatible_version
 
 
-async def get_latest_pypi_version(package_name: str) -> Optional[Version]:
+async def get_latest_pypi_version(package_name: str) -> Version | None:
     """Get the latest version of a package from PyPI.
 
     Args:
@@ -92,8 +91,8 @@ class BackgroundUpdateChecker:
         self.cache_file = self.cache_dir / "update_check.json"
         self.check_interval = timedelta(hours=check_interval_hours)
         self.cache_enabled = cache_enabled
-        self.check_thread: Optional[threading.Thread] = None
-        self.result: Optional[str] = None
+        self.check_thread: threading.Thread | None = None
+        self.result: str | None = None
         self.check_complete = threading.Event()
 
     def should_check(self) -> bool:
@@ -113,7 +112,7 @@ class BackgroundUpdateChecker:
         except Exception:
             return True
 
-    def _save_cache(self, latest_version: Optional[Version], update_available: bool) -> None:
+    def _save_cache(self, latest_version: Version | None, update_available: bool) -> None:
         """Save check results to cache."""
         if not self.cache_enabled:
             return
@@ -129,7 +128,7 @@ class BackgroundUpdateChecker:
         except Exception:
             pass  # Silently ignore cache write errors
 
-    def _load_cached_result(self) -> Optional[str]:
+    def _load_cached_result(self) -> str | None:
         """Load cached update result if available and recent."""
         if not self.cache_enabled:
             return None
@@ -208,7 +207,7 @@ class BackgroundUpdateChecker:
 
         self.check_thread.start()
 
-    def get_result(self, timeout: float = 0.1) -> Optional[str]:
+    def get_result(self, timeout: float = 0.1) -> str | None:
         """Get update message if check completed.
 
         Args:

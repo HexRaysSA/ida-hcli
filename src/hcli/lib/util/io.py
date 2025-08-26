@@ -8,7 +8,6 @@ import shutil
 import sys
 import webbrowser
 from pathlib import Path
-from typing import Optional
 
 from hcli.env import ENV
 
@@ -246,7 +245,7 @@ def get_path_separator() -> str:
     return os.sep
 
 
-def get_home_dir() -> Optional[str]:
+def get_home_dir() -> str | None:
     """Get the user's home directory."""
     return str(Path.home()) if Path.home() else None
 

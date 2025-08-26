@@ -1,7 +1,7 @@
 import asyncio
 import sys
 from functools import wraps
-from typing import Callable, Optional
+from typing import Callable
 
 import rich_click as click
 
@@ -78,7 +78,7 @@ class BaseCommand(click.RichCommand):
 class AuthCommand(BaseCommand):
     """Command class that requires authentication."""
 
-    def __init__(self, *args, auth_type: Optional[str] = None, **kwargs):
+    def __init__(self, *args, auth_type: str | None = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.auth_type = auth_type
 
@@ -153,7 +153,7 @@ def base_command(*args, **kwargs):
     return click.command(*args, **kwargs)
 
 
-def auth_command(*args, auth_type: Optional[str] = None, **kwargs):
+def auth_command(*args, auth_type: str | None = None, **kwargs):
     """Decorator for creating an authenticated command."""
     kwargs.setdefault("cls", AuthCommand)
 

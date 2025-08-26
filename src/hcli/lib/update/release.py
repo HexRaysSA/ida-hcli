@@ -8,7 +8,7 @@ import sys
 import tempfile
 import typing
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 from urllib.parse import urlparse
 
 import requests
@@ -85,7 +85,7 @@ def check_and_download_updates(
     current_version: Version = None,
     assets_mask=re.compile(".*"),
     downloads_dir=Path(),
-    download_callback: Optional[Callable[[ReleaseAsset, int], None]] = None,
+    download_callback: Callable[[ReleaseAsset, int], None] | None = None,
 ):
     if download_callback is None:
         download_callback = default_download_callback
@@ -188,7 +188,7 @@ def default_download_callback(asset: ReleaseAsset, downloaded: int):
     )
 
 
-def get_available_versions(repo: GitHubRepo, process_tag: Optional[Callable[[str], Optional[Version]]] = None):
+def get_available_versions(repo: GitHubRepo, process_tag: Callable[[str], Version | None] | None = None):
     if process_tag is None:
         process_tag = parse_tag
     logging.info(f"Searching for releases in 'https://github.com/{repo.user}/{repo.repo}/'...")
@@ -214,7 +214,7 @@ def get_available_versions(repo: GitHubRepo, process_tag: Optional[Callable[[str
 
 
 def get_latest_version(
-    repo: GitHubRepo, process_tag: Optional[Callable[[str], Optional[Version]]] = None, include_dev: bool = False
+    repo: GitHubRepo, process_tag: Callable[[str], Version | None] | None = None, include_dev: bool = False
 ):
     if process_tag is None:
         process_tag = parse_tag
@@ -243,7 +243,7 @@ def get_latest_version(
         return None
 
 
-def parse_tag(tag_name: str) -> Optional[Version]:
+def parse_tag(tag_name: str) -> Version | None:
     try:
         return Version(tag_name.lstrip("v").strip())
     except ValueError:

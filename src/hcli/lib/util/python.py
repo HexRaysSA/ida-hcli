@@ -4,10 +4,9 @@ import asyncio
 import asyncio.subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 
-async def get_python_lib() -> Optional[str]:
+async def get_python_lib() -> str | None:
     """Get the Python library path using the find_libpython.py script."""
     python_bin = await get_python_bin()
     if not python_bin:
@@ -40,7 +39,7 @@ async def get_python_lib() -> Optional[str]:
             return None
 
 
-async def get_python_bin() -> Optional[str]:
+async def get_python_bin() -> str | None:
     """Get the available Python binary."""
     if await _is_python_available("python"):
         return "python"
@@ -64,7 +63,7 @@ async def _is_python_available(binary: str = "python") -> bool:
         return False
 
 
-def _get_find_libpython_script() -> Optional[Path]:
+def _get_find_libpython_script() -> Path | None:
     """Get the path to the find_libpython.py script."""
     # Try to find the script in the include directory
     # This assumes the script is in the include directory relative to the project root
@@ -92,7 +91,7 @@ def _get_find_libpython_script() -> Optional[Path]:
     return None
 
 
-async def get_python_version(binary: str = "python") -> Optional[str]:
+async def get_python_version(binary: str = "python") -> str | None:
     """Get the version of a Python binary."""
     try:
         process = await asyncio.create_subprocess_exec(
@@ -184,7 +183,7 @@ async def find_python_executables() -> list:
     return available
 
 
-async def get_python_lib_for_binary(binary: str) -> Optional[str]:
+async def get_python_lib_for_binary(binary: str) -> str | None:
     """Get the Python library path for a specific Python binary."""
     if not await _is_python_available(binary):
         return None

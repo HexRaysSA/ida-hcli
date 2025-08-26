@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import questionary
 import rich_click as click
@@ -31,7 +30,7 @@ def get_email_domain(email: str) -> str:
 @click.option("-c", "--code", help="Upload a new version for an existing code")
 @click.option("-f", "--force", is_flag=True, help="Upload a new version for an existing code")
 @async_command
-async def put(path: Path, acl: Optional[str], code: Optional[str], force: bool) -> None:
+async def put(path: Path, acl: str | None, code: str | None, force: bool) -> None:
     """Upload a shared file."""
 
     # Validate file exists

@@ -1,6 +1,6 @@
 """Customer API client."""
 
-from typing import List, Optional
+from typing import List
 
 from pydantic import BaseModel
 
@@ -8,26 +8,26 @@ from .common import get_api_client
 
 
 class Customer(BaseModel):
-    id: Optional[int] = None
-    email: Optional[str] = None
-    notes: Optional[str] = None
-    company: Optional[str] = None
-    country: Optional[str] = None
-    last_name: Optional[str] = None
-    created_at: Optional[str] = None
-    first_name: Optional[str] = None
-    updated_at: Optional[str] = None
-    vat_number: Optional[str] = None
-    acquired_at: Optional[str] = None
-    cf_reseller: Optional[bool] = None
-    cf_coupon_id: Optional[str] = None
-    cf_kyc_status: Optional[str] = None
-    net_term_days: Optional[int] = None
-    cf_customer_key: Optional[str] = None
-    cf_gdpr_deleted: Optional[bool] = None
-    cf_customer_category: Optional[str] = None
-    chargebee_customer_id: Optional[str] = None
-    cf_notifications_enabled: Optional[bool] = None
+    id: int | None = None
+    email: str | None = None
+    notes: str | None = None
+    company: str | None = None
+    country: str | None = None
+    last_name: str | None = None
+    created_at: str | None = None
+    first_name: str | None = None
+    updated_at: str | None = None
+    vat_number: str | None = None
+    acquired_at: str | None = None
+    cf_reseller: bool | None = None
+    cf_coupon_id: str | None = None
+    cf_kyc_status: str | None = None
+    net_term_days: int | None = None
+    cf_customer_key: str | None = None
+    cf_gdpr_deleted: bool | None = None
+    cf_customer_category: str | None = None
+    chargebee_customer_id: str | None = None
+    cf_notifications_enabled: bool | None = None
 
 
 class CustomerAPI:

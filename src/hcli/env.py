@@ -1,5 +1,4 @@
 import os
-from typing import Optional
 
 from . import __version__
 
@@ -7,7 +6,7 @@ from . import __version__
 class ENV:
     """Environment configuration mirroring the Deno version."""
 
-    HCLI_API_KEY: Optional[str] = os.getenv("HCLI_API_KEY")
+    HCLI_API_KEY: str | None = os.getenv("HCLI_API_KEY")
     HCLI_DEBUG: bool = os.getenv("HCLI_DEBUG", "").lower() in ("true", "yes", "on", "1")
     HCLI_API_URL: str = os.getenv("HCLI_API_URL", "https://api.eu.hex-rays.com")
     HCLI_CLOUD_URL: str = os.getenv("HCLI_CLOUD_URL", "https://api.hcli.run")
@@ -15,7 +14,7 @@ class ENV:
     HCLI_RELEASE_URL: str = os.getenv("HCLI_RELEASE_URL", "https://hcli.docs.hex-rays.com")
 
     # GitHub integration
-    HCLI_GITHUB_TOKEN: Optional[str] = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    HCLI_GITHUB_TOKEN: str | None = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
     HCLI_GITHUB_API_URL: str = os.getenv("GITHUB_API_URL", "https://api.github.com")
     HCLI_GITHUB_URL: str = os.getenv("HCLI_GITHUB_URL", "https://github.com/HexRaysSA/ida-hcli")
 
