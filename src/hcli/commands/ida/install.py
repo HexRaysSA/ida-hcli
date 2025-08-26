@@ -70,7 +70,7 @@ async def install(
 
         # Download the file
         console.print(f"[yellow]Installing {installer_path}...[/yellow]")
-        await install_ida(installer_path, install_dir_path)
+        install_ida(installer_path, install_dir_path)
 
         if license_id:
             # Call get_license command with the license ID
@@ -83,7 +83,7 @@ async def install(
             license_file = license_files[0].name
 
             # Copy license file to install dir
-            await install_license(Path(tmp_dir) / license_file, install_dir_path)
+            install_license(Path(tmp_dir) / license_file, install_dir_path)
 
         if set_default:
             console.print("[yellow]Updating configuration (default installation)...[/yellow]")

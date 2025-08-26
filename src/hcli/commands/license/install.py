@@ -92,7 +92,7 @@ async def install_license(file: Path, ida_dir: Optional[str]) -> None:
 
     try:
         # Install the license
-        await ida_install_license(file, target_path)
+        ida_install_license(file, target_path)
         console.print(f"[green]License installed successfully in {target_path}[/green]")
 
         # Show installed file info
