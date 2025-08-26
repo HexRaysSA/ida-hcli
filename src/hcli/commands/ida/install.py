@@ -72,10 +72,6 @@ async def install(
         console.print(f"[yellow]Installing {installer_path}...[/yellow]")
         await install_ida(installer_path, install_dir_path)
 
-        if eula:
-            console.print("[yellow]Accepting EULA...[/yellow]")
-            accept_eula(get_ida_path(install_dir_path))
-
         if license_id:
             # Call get_license command with the license ID
             await get_license.callback(lid=license_id, output_dir=tmp_dir)
@@ -112,6 +108,13 @@ async def install(
                 console.print("[grey69]Updated ida-config.json:[/grey69]")
                 console.print(f"[grey69]  default install path: {existing}[/grey69]")
                 console.print(f"[grey69]                     -> {new}[/grey69]")
+
+        # this requires using ida_registry to set some keys
+        # which requires idalib to be working
+        # so it has to go after license and config installation
+        if eula:
+            console.print("[yellow]Accepting EULA...[/yellow]")
+            accept_eula(get_ida_path(install_dir_path))
 
         console.print("[green]Installation complete![/green]")
 
