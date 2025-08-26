@@ -96,14 +96,14 @@ jobs:
             os: macos-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-home/ida-home-pc_91_armmac.app.zip"
-            idat_path: "/Contents/MacOS/idat"
+            idat_path: ""
             default_path: "/Applications/IDA Home 9.1.app"
 
           - name: IDA Free 9.1 on macOS (ARM)
             os: macos-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-free/ida-free-pc_91_armmac.app.zip"
-            idat_path: "/Contents/MacOS/idat"
+            idat_path: ""
             default_path: "/Applications/IDA Free 9.1.app"
 
           - name: IDA Classroom 9.1 on macOS (ARM)
@@ -152,31 +152,58 @@ jobs:
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
           HCLI_DEBUG: 1
 
-      # TODO: this won't work on windows due to bash-isms
       - name: Run idat
+        if: ${{ matrix.os_ida.idat_path != '' }}
         run: |
+          # TODO: this won't work on windows due to bash-isms
           ${{ runner.temp }}/app/ida/${{ matrix.os_ida.idat_path }} -a -A -c -t -L"${{ runner.temp }}/ida.log" -S"${{ github.workspace }}/tests/scripts/hi.py" || echo "ida: $?"
+
+      - name: Check idat output (unix)
+        if: ${{ matrix.os_ida.idat_path != '' && matrix.os_ida.os != 'windows-latest' }}
+        run: |
           cat "${{ runner.temp }}/ida.log"
           if [[ ! -f "${{ runner.temp }}/ida.log" ]]; then
             echo "ERROR: Log file does not exist"
             exit 1
           fi
 
+      - name: Check idat output (windows)
+        if: ${{ matrix.os_ida.idat_path != '' && matrix.os_ida.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          Get-Content "${{ runner.temp }}\ida.log"
+          if (!(Test-Path "${{ runner.temp }}\ida.log")) {
+            Write-Error "ERROR: Log file does not exist"
+            exit 1
+          }
+
       - name: Install IDA ${{ matrix.os_ida.ida_version }} (default location)
         run: |
           uv run hcli ida install --download-id ${{ matrix.os_ida.slug }} --license-id ${{ secrets.IDA_LICENSE_ID }} --set-default
-          # TODO: this won't work on Windows
-          if [[ ! -d "${{ matrix.os_ida.default_path }}" ]]; then
-            echo "ERROR: Default installation path does not exist: $default_path"
-            exit 1
-          fi
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
           HCLI_DEBUG: 1
+
+      - name: Check default install location (unix)
+        if: ${{ matrix.os_ida.os != 'windows-latest' }}
+        run: |
+          if [[ ! -d "${{ matrix.os_ida.default_path }}" ]]; then
+            echo "ERROR: Default installation path does not exist: ${{matrix.os_ida.default_path }}"
+            exit 1
+          fi
+
+      - name: Check default install location (windows)
+        if: ${{ matrix.os_ida.os == 'windows-latest' }}
+        run: |
+          if (!(Test-Path "${{ matrix.os_ida.default_path }}")) {
+            Write-Error "ERROR: Default installation path does not exist: ${{ matrix.os_ida.default_path }}"
+            exit 1
+          }
 
       - name: Run tests
         run: uv run pytest -v tests/
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           HCLI_INSTALL_DIR: ${{ runner.temp }}/app/ida/
+          HCLI_HAS_IDAT: ${{ matrix.os_ida.idat_path != '' }}
