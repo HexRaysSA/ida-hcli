@@ -86,7 +86,7 @@ jobs:
           - name: IDA 9.0 SP1 on macOS (ARM)
             os: macos-latest
             ida_version: "9.0sp1"
-            slug: "release/9.0/ida-pro/ida-pro_90sp1_armmac.app.zip"
+            slug: "release/9.0sp1/ida-pro/ida-pro_90sp1_armmac.app.zip"
             idat_path: "/Contents/MacOS/idat"
             default_path: "/Applications/IDA Professional 9.0sp1.app"
 
@@ -109,7 +109,7 @@ jobs:
           - name: IDA Classroom 9.1 on macOS (ARM)
             os: macos-latest
             ida_version: "9.1"
-            slug: "release/9.1/ida-classroom/ida-classroom-free_91_armmac.app.zip"
+            slug: "release/9.1/ida-free/ida-classroom-free_91_armmac.app.zip"
             idat_path: "/Contents/MacOS/idat"
             default_path: "/Applications/IDA Classroom 9.1.app"
 
