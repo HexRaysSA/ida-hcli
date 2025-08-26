@@ -121,7 +121,10 @@ async def install(
             else:
                 # maybe its safer to have an allow-list for products with idalib
                 console.print("[yellow]Accepting EULA...[/yellow]")
-                accept_eula(get_ida_path(install_dir_path))
+                try:
+                    accept_eula(get_ida_path(install_dir_path))
+                except RuntimeError:
+                    console.print("[red]Skipped EULA acceptance due to missing idalib.[/red]")
 
         console.print("[green]Installation complete![/green]")
 
