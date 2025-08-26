@@ -287,7 +287,8 @@ async def install_ida(installer: Path, install_dir: Optional[Path]) -> Optional[
     # Create prefix directory if it doesn't exist
     prefix_path.mkdir(parents=True, exist_ok=True)
 
-    # List directories before installation
+    # collect the existing directories
+    # so we know if installation succeeded afterwards.
     folders_before = set()
     if prefix_path.exists():
         try:
@@ -295,7 +296,6 @@ async def install_ida(installer: Path, install_dir: Optional[Path]) -> Optional[
         except PermissionError:
             pass
 
-    # Install based on OS
     try:
         current_os = get_os()
         if current_os == "mac":
@@ -311,7 +311,6 @@ async def install_ida(installer: Path, install_dir: Optional[Path]) -> Optional[
         return None
         logger.error(f"[red]Installation failed: {e}[/red]")
 
-    # Find newly created directories
     folders_after = set()
     if prefix_path.exists():
         try:
@@ -319,11 +318,19 @@ async def install_ida(installer: Path, install_dir: Optional[Path]) -> Optional[
         except PermissionError:
             pass
 
-    new_folders = folders_after - folders_before
-    if new_folders:
-        return prefix_path / next(iter(new_folders))
+    new_folders = list(sorted(folders_after - folders_before))
+    if not new_folders:
+        raise RuntimeError("installation failed: installation directory contents not created")
 
-    return None
+    has_ida_hlp = False
+    for _, _, files in os.walk(prefix_path):
+        if "ida.hlp" in files:
+            has_ida_hlp = True
+
+    if not has_ida_hlp:
+        raise RuntimeError("installation failed: ida.hlp not created")
+
+    return prefix_path
 
 
 async def _install_ida_mac(installer: Path, prefix: Path) -> None:
