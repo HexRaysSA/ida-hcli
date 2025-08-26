@@ -30,6 +30,7 @@ class TestAuthCommands:
 class TestInteractiveAuth:
     """Test interactive authentication commands."""
 
+    @pytest.mark.skipif(bool(os.getenv("HCLI_API_KEY")), reason="Skip interactive login when GITHUB_TOKEN is present")
     def test_interactive_login(self):
         """Test interactive login flow (demonstration only)."""
         try:
