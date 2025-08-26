@@ -89,7 +89,7 @@ class IdaVersion:
         if not isinstance(other, IdaVersion):
             return NotImplemented
         return (self.product, self.major, self.minor, self.suffix or "") < (
-            self.product,
+            other.product,
             other.major,
             other.minor,
             other.suffix or "",
