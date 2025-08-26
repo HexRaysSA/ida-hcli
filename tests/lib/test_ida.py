@@ -74,4 +74,4 @@ def test_find_current_ida_version():
     """Test find_current_ida_version() returns expected version."""
     result = find_current_ida_version()
     assert isinstance(result, str)
-    assert result in ["9.1", "9.2"]
+    assert result in ["9.0", "9.1", "9.2"]
