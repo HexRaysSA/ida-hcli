@@ -8,6 +8,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from functools import total_ordering
 from pathlib import Path
 from typing import NamedTuple
@@ -31,44 +32,68 @@ class DownloadResource(NamedTuple):
     arch: str
 
 
+@dataclass
 @total_ordering
 class IdaVersion:
-    def __init__(self, major: int, minor: int, suffix: str | None = None):
-        self.major = major
-        self.minor = minor
-        self.suffix = suffix  # e.g., 'sp1'
+    product: str
+    major: int
+    minor: int
+    suffix: str | None = None
 
     @classmethod
-    def from_basename(cls, basename: str):
-        if basename.startswith("ida8-") or basename.startswith("ida8_"):
-            return cls(8, 4)
+    def from_installer_filename(cls, filename: str):
+        """Parse IDA installer filename to extract version information.
 
-        match = re.search(r"_(\d{2})(sp\d+)?_", basename)
-        if match:
-            major = int(match.group(1)[0])
-            minor = int(match.group(1)[1])
-            suffix_match = match.group(2)
-            suffix = suffix_match if suffix_match else None
-            return cls(major, minor, suffix)
+        Args:
+            filename: IDA installer filename (e.g., 'ida-pro_92_x64linux.run')
 
-        raise ValueError(f"Unrecognized format: {basename}")
+        Raises:
+            ValueError: If filename format is not recognized
+        """
+        basename = filename
+        for ext in [".app.zip", ".run", ".exe"]:
+            if basename.endswith(ext):
+                basename = basename[: -len(ext)]
+                break
+
+        # filename pattern: ida-{product}_{version}_{platform}
+        match = re.match(r"^ida-([^_]+)_(\d{2})(sp\d+)?_", basename)
+        if not match:
+            raise ValueError(f"Unrecognized installer filename format: {filename}")
+
+        product_part = match.group(1)  # like: pro, home-pc, essential
+        version_major = int(match.group(2)[0])  # like: 9
+        version_minor = int(match.group(2)[1])  # like: 1
+        suffix = match.group(3) if match.group(3) else None  # like: sp1
+
+        product_mapping = {
+            "pro": "IDA Professional",
+            "home-pc": "IDA Home",
+            "home-arm": "IDA Home",
+            "home-mips": "IDA Home",
+            "home-ppc": "IDA Home",
+            "home-riscv": "IDA Home",
+            "free-pc": "IDA Free",
+            "essential": "IDA Essential",
+            "classroom-free": "IDA Classroom",
+        }
+
+        product = product_mapping.get(product_part, f"IDA {product_part.title()}")
+        return cls(product, version_major, version_minor, suffix)
 
     def __str__(self):
-        base = f"{self.major}.{self.minor}"
+        base = f"{self.product} {self.major}.{self.minor}"
         return f"{base}.{self.suffix}" if self.suffix else base
-
-    def __repr__(self):
-        return f"IdaVersion(major={self.major}, minor={self.minor}, suffix={self.suffix!r})"
-
-    def __eq__(self, other):
-        if not isinstance(other, IdaVersion):
-            return NotImplemented
-        return (self.major, self.minor, self.suffix or "") == (other.major, other.minor, other.suffix or "")
 
     def __lt__(self, other):
         if not isinstance(other, IdaVersion):
             return NotImplemented
-        return (self.major, self.minor, self.suffix or "") < (other.major, other.minor, other.suffix or "")
+        return (self.product, self.major, self.minor, self.suffix or "") < (
+            self.product,
+            other.major,
+            other.minor,
+            other.suffix or "",
+        )
 
 
 def is_installable(download: DownloadResource) -> bool:
@@ -124,12 +149,16 @@ def get_user_home_dir() -> Path:
 
 def get_default_ida_install_directory(ver: IdaVersion) -> Path:
     """Get the default installation directory for IDA Pro."""
+
+    # like "IDA Professional 9.1sp1"
+    app_directory_name = str(ver)
+
     if get_os() == "windows":
-        return Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / f"IDA Professional {ver}"
+        return Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / app_directory_name
     elif get_os() == "linux":
-        return get_user_home_dir() or Path(tempfile.gettempdir())
+        return get_user_home_dir() / ".local" / "share" / "applications" / app_directory_name
     elif get_os() == "mac":
-        return Path(f"/Applications/IDA Professional {ver}")
+        return Path("/Applications/") / f"{app_directory_name}.app"
     else:
         raise ValueError(f"Unsupported operating system: {os}")
 

@@ -13,13 +13,13 @@ from hcli.lib.commands import async_command, enforce_login
 from hcli.lib.console import console
 from hcli.lib.ida import (
     IDAConfigJson,
+    IdaVersion,
     accept_eula,
+    get_default_ida_install_directory,
     get_ida_config_path,
     get_ida_path,
     install_ida,
     install_license,
-    get_default_ida_install_directory,
-    IdaVersion,
 )
 from hcli.lib.util.io import get_temp_dir
 
@@ -69,7 +69,9 @@ async def install(
             installer_path = Path(installer)
 
         if not install_dir:
-            install_dir_path = get_default_ida_install_directory(IdaVersion.from_basename(installer_path.name))
+            install_dir_path = get_default_ida_install_directory(
+                IdaVersion.from_installer_filename(installer_path.name)
+            )
         else:
             install_dir_path = Path(install_dir)
 
