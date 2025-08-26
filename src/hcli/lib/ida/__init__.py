@@ -363,8 +363,14 @@ def _install_ida_mac(installer: Path, prefix: Path) -> None:
             if process.returncode != 0:
                 raise RuntimeError("Failed to unpack installer")
 
-            # Find and run the installer
-            app_name = installer.stem  # Remove .zip extension
+            entries = list(Path(temp_unpack_dir).iterdir())
+            if len(entries) != 1:
+                raise ValueError(f"unexpected contents of zip archive: {len(entries)} root directories")
+
+            # typically this is the app name, like `ida-pro_90_armmac.app`
+            # however the directory name might not be precisely the same as the zip archive filename
+            # such as in SP releases.
+            app_name = entries[0]
 
             installer_path = None
             for platform in ("osx-arm64", "osx-x86_64"):
