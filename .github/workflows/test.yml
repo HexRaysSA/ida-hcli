@@ -151,7 +151,6 @@ jobs:
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
-          HCLI_DEBUG: 1
 
       - name: Run idat
         if: ${{ matrix.os_ida.idat_path != '' }}
@@ -184,7 +183,6 @@ jobs:
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
-          HCLI_DEBUG: 1
 
       - name: Check default install location (unix)
         if: ${{ matrix.os_ida.os != 'windows-latest' }}
