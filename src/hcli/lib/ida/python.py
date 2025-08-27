@@ -4,6 +4,7 @@ import os
 import subprocess
 from pathlib import Path
 
+from hcli.env import ENV
 from hcli.lib.ida import run_py_in_current_idapython
 
 logger = logging.getLogger(__name__)
@@ -23,8 +24,8 @@ sys.exit()
 
 def find_current_python_executable() -> Path:
     """find the python executable associated with the current IDA installation"""
-    if "HCLI_CURRENT_IDA_PYTHON_EXE" in os.environ:
-        return Path(os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"])
+    if ENV.HCLI_CURRENT_IDA_PYTHON_EXE is not None:
+        return Path(ENV.HCLI_CURRENT_IDA_PYTHON_EXE)
 
     return Path(run_py_in_current_idapython(FIND_PYTHON_PY))
 

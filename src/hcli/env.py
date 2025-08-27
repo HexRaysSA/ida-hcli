@@ -32,6 +32,18 @@ class ENV:
 
     HCLI_DISABLE_UPDATES: bool = os.getenv("HCLI_DISABLE_UPDATES", "").lower() in ("true", "yes", "on", "1")
 
+    # IDA-specific environment variables
+    HCLI_IDAUSR: str | None = os.getenv("HCLI_IDAUSR")
+    HCLI_INSTALL_DIR: str | None = os.getenv("HCLI_INSTALL_DIR")
+    HCLI_CURRENT_PLATFORM: str | None = os.getenv("HCLI_CURRENT_PLATFORM")
+    HCLI_CURRENT_VERSION: str | None = os.getenv("HCLI_CURRENT_VERSION")
+    HCLI_CURRENT_IDA_PYTHON_EXE: str | None = os.getenv("HCLI_CURRENT_IDA_PYTHON_EXE")
+
+    # System environment variables
+    APPDATA: str | None = os.getenv("APPDATA")
+    HOME: str | None = os.getenv("HOME")
+    PROGRAM_FILES: str | None = os.getenv("ProgramFiles")
+
 
 # Constants
 CONFIG_API_KEY = "apiKey"

@@ -15,6 +15,7 @@ from typing import NamedTuple
 
 from pydantic import AliasPath, BaseModel, Field
 
+from hcli.env import ENV
 from hcli.lib.util.io import get_os
 
 logger = logging.getLogger(__name__)
@@ -110,18 +111,18 @@ def is_installable(download: DownloadResource) -> bool:
 
 def get_ida_user_dir() -> Path:
     """Get the IDA Pro user directory."""
-    if "HCLI_IDAUSR" in os.environ:
-        return Path(os.environ["HCLI_IDAUSR"])
+    if ENV.HCLI_IDAUSR is not None:
+        return Path(ENV.HCLI_IDAUSR)
 
     os_ = get_os()
     if os_ == "windows":
-        appdata = os.environ.get("APPDATA")
+        appdata = ENV.APPDATA
         if not appdata:
             raise ValueError("Failed to determine %APPDATA% location: environment variable not set")
 
         return Path(appdata) / "Hex-Rays" / "IDA Pro"
     elif os_ in ("linux", "mac"):
-        home = os.environ.get("HOME")
+        home = ENV.HOME
         if not home:
             raise ValueError("Failed to determine home directory: environment variable not set")
         return Path(home) / ".idapro"
@@ -133,13 +134,13 @@ def get_user_home_dir() -> Path:
     """Get the user home directory."""
     os_ = get_os()
     if os_ == "windows":
-        appdata = os.environ.get("APPDATA")
+        appdata = ENV.APPDATA
         if not appdata:
             raise ValueError("Failed to determine %APPDATA% location: environment variable not set")
 
         return Path(appdata)
     elif os_ in ("linux", "mac"):
-        home = os.environ.get("HOME")
+        home = ENV.HOME
         if not home:
             raise ValueError("Failed to determine home directory: environment variable not set")
         return Path(home)
@@ -154,7 +155,7 @@ def get_default_ida_install_directory(ver: IdaVersion) -> Path:
     app_directory_name = str(ver)
 
     if get_os() == "windows":
-        return Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / app_directory_name
+        return Path(ENV.PROGRAM_FILES or r"C:\Program Files") / app_directory_name
     elif get_os() == "linux":
         return get_user_home_dir() / ".local" / "share" / "applications" / app_directory_name
     elif get_os() == "mac":
@@ -188,7 +189,7 @@ def find_standard_windows_installations() -> list[Path]:
     """Find standard IDA Pro installations on Windows."""
     ret = []
 
-    base_directory = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+    base_directory = Path(ENV.PROGRAM_FILES or r"C:\Program Files")
 
     # Check the base directory for IDA installations
     if base_directory.exists():
@@ -495,8 +496,8 @@ def get_ida_config() -> IDAConfigJson:
 
 
 def find_current_ida_install_directory() -> Path:
-    if "HCLI_INSTALL_DIR" in os.environ:
-        return Path(os.environ["HCLI_INSTALL_DIR"])
+    if ENV.HCLI_INSTALL_DIR is not None:
+        return Path(ENV.HCLI_INSTALL_DIR)
 
     config = get_ida_config()
     logger.debug("current IDA installation: %s", config.installation_directory)
@@ -597,8 +598,8 @@ sys.exit()
 
 def find_current_ida_platform() -> str:
     """find the platform associated with the current IDA installation"""
-    if "HCLI_CURRENT_PLATFORM" in os.environ:
-        return os.environ["HCLI_CURRENT_PLATFORM"]
+    if ENV.HCLI_CURRENT_PLATFORM is not None:
+        return ENV.HCLI_CURRENT_PLATFORM
 
     return run_py_in_current_idapython(FIND_PLATFORM_PY)
 
@@ -617,7 +618,7 @@ sys.exit()
 
 def find_current_ida_version() -> str:
     """find the version of the current IDA installation"""
-    if "HCLI_CURRENT_VERSION" in os.environ:
-        return os.environ["HCLI_CURRENT_VERSION"]
+    if ENV.HCLI_CURRENT_VERSION is not None:
+        return ENV.HCLI_CURRENT_VERSION
 
     return run_py_in_current_idapython(FIND_VERSION_PY)
