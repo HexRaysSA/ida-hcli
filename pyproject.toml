@@ -48,6 +48,7 @@ build-backend = "setuptools.build_meta"
 
 [dependency-groups]
 dev = [
+    "ruff>=0.11.13",
     "types-pexpect>=4.9.0.20250809",
     "types-requests>=2.32.4.20250809",
 ]

@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version < '3.13'",
@@ -817,6 +817,7 @@ test = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "ruff" },
     { name = "types-pexpect" },
     { name = "types-requests" },
 ]
@@ -859,6 +860,7 @@ provides-extras = ["dev", "test", "docs"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "ruff", specifier = ">=0.11.13" },
     { name = "types-pexpect", specifier = ">=4.9.0.20250809" },
     { name = "types-requests", specifier = ">=2.32.4.20250809" },
 ]

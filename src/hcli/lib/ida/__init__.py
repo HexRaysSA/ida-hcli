@@ -495,8 +495,11 @@ def get_ida_config() -> IDAConfigJson:
 
 
 def find_current_ida_install_directory() -> Path:
-    if "HCLI_INSTALL_DIR" in os.environ:
-        return Path(os.environ["HCLI_INSTALL_DIR"])
+    if "HCLI_IDA_INSTALL_DIR" in os.environ:
+        return Path(os.environ["HCLI_IDA_INSTALL_DIR"])
+    
+    if "IDADIR" in os.environ:
+        return Path(os.environ["IDADIR"])
 
     config = get_ida_config()
     logger.debug("current IDA installation: %s", config.installation_directory)
