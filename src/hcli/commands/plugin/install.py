@@ -8,34 +8,13 @@ from urllib.parse import urlparse
 
 import requests
 import rich_click as click
-from packaging.version import Version
-from semantic_version import SimpleSpec
 
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
-from hcli.lib.ida.plugin.install import install_plugin_archive
+from hcli.lib.ida.plugin.install import install_plugin_archive, is_ida_version_compatible
 
 logger = logging.getLogger(__name__)
-
-
-def _is_ida_version_compatible(current_version: str, version_spec: str) -> bool:
-    """Check if current IDA version is compatible with the version specifier.
-
-    Args:
-        current_version: Current IDA version (e.g., "9.1")
-        version_spec: Version specifier (e.g., ">=8.0", "~=9.0", ">=0")
-
-    Returns:
-        True if current version satisfies the specifier
-    """
-    try:
-        current = Version(current_version)
-        spec = SimpleSpec(version_spec)
-        return current in spec
-    except Exception as e:
-        logger.debug(f"Error checking version compatibility: {e}")
-        return False
 
 
 def fetch_plugin_archive(url: str) -> bytes:
@@ -91,7 +70,7 @@ async def install_plugin(ctx, plugin_spec: str) -> None:
                         )
                         continue
 
-                    if not _is_ida_version_compatible(current_ida_version, location.ida_versions):
+                    if not is_ida_version_compatible(current_ida_version, location.ida_versions):
                         logger.debug(
                             f"Skipping plugin {plugin.name} version {version} because IDA version {current_ida_version} is not compatible with {location.ida_versions}"
                         )
