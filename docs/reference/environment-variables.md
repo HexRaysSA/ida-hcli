@@ -1,21 +1,5 @@
 # Environment Variables
 
-## IDA Pro Installation
-
-### `HCLI_IDA_INSTALL_DIR`
-Override the IDA Pro installation directory path.
-
-**Type:** String  
-**Default:** None (uses configuration file or auto-detection)  
-**Example:** `export HCLI_IDA_INSTALL_DIR=/opt/ida-pro`
-
-### `IDADIR`
-Alternative environment variable for IDA Pro installation directory (fallback).
-
-**Type:** String  
-**Default:** None  
-**Example:** `export IDADIR=/opt/ida-pro`
-
 ## Authentication Variables
 
 ### `HCLI_API_KEY`

@@ -42,8 +42,8 @@ else
     NO_MODIFY_PATH=0
 fi
 
-if [ -n "${HCLI_IDA_INSTALL_DIR:-}" ]; then
-    FORCE_INSTALL_DIR="$HCLI_IDA_INSTALL_DIR"
+if [ -n "${HCLI_INSTALL_DIR:-}" ]; then
+    FORCE_INSTALL_DIR="$HCLI_INSTALL_DIR"
 else
     FORCE_INSTALL_DIR=""
 fi
@@ -113,7 +113,7 @@ ENVIRONMENT VARIABLES:
     HCLI_PRINT_VERBOSE=1     Enable verbose output
     HCLI_PRINT_QUIET=1       Disable progress output  
     HCLI_NO_MODIFY_PATH=1    Don't modify PATH
-    HCLI_IDA_INSTALL_DIR=DIR Force installation directory
+    HCLI_INSTALL_DIR=DIR     Force installation directory
     HCLI_VERSION=VERSION     Install specific version instead of latest production release
     HCLI_GITHUB_TOKEN=TOKEN  GitHub token for authenticated downloads
     HCLI_GITHUB_REPO=REPO    Override GitHub repository (default: HexRaysSA/ida-hcli)
