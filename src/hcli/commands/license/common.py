@@ -165,7 +165,7 @@ async def download_license_asset(
     """
     try:
         if not lic.pubhash:
-            console.print(f"[red]License has no pubhash for asset {asset_type}[/red]")
+            console.print(f"[red]License has no ID for asset {asset_type}[/red]")
             return None
         filename = await license.download_license(customer_id, lic.pubhash, asset_type, target_dir)
         if filename:
