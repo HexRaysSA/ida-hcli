@@ -1,7 +1,6 @@
 """String processing utilities."""
 
 import re
-from typing import List
 
 
 def abbreviate(text: str, max_length: int) -> str:
@@ -200,7 +199,7 @@ def truncate_middle(text: str, max_length: int, separator: str = "...") -> str:
     return text[:start_length] + separator + text[-end_length:]
 
 
-def extract_words(text: str) -> List[str]:
+def extract_words(text: str) -> list[str]:
     """
     Extract words from text, ignoring punctuation.
 
@@ -266,7 +265,7 @@ def similarity_ratio(s1: str, s2: str) -> float:
     return 1.0 - (distance / max_length)
 
 
-def find_best_match(target: str, candidates: List[str], threshold: float = 0.6) -> str | None:
+def find_best_match(target: str, candidates: list[str], threshold: float = 0.6) -> str | None:
     """
     Find the best matching string from a list of candidates.
 
@@ -303,7 +302,7 @@ def normalize_whitespace(text: str) -> str:
     return " ".join(text.split())
 
 
-def wrap_text(text: str, width: int, indent: str = "") -> List[str]:
+def wrap_text(text: str, width: int, indent: str = "") -> list[str]:
     """
     Wrap text to specified width.
 

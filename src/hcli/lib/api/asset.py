@@ -4,7 +4,7 @@ from __future__ import annotations  # only needed for Python <3.10
 
 import hashlib
 from pathlib import Path
-from typing import Dict, ForwardRef, List, Optional, Union
+from typing import ForwardRef
 
 import httpx
 from pydantic import BaseModel
@@ -24,7 +24,7 @@ TreeNodeType = ForwardRef("TreeNode")
 class TreeNode(BaseModel):
     name: str
     type: str = "file"
-    children: Union[List["TreeNode"], None] = None
+    children: "list[TreeNode] | None" = None
     asset: Asset
 
 
@@ -47,7 +47,7 @@ class PagedAsset(BaseModel):
     offset: int
     limit: int
     total: int
-    items: List[Asset]
+    items: list[Asset]
 
 
 class Metadata(BaseModel):
@@ -62,7 +62,7 @@ class RequiredField(BaseModel):
 class Bucket(BaseModel):
     filename: str
     metadata: Metadata
-    requiredMetadata: Dict[str, RequiredField]
+    requiredMetadata: dict[str, RequiredField]
 
 
 class PagingFilter(BaseModel):
@@ -95,8 +95,8 @@ class AssetAPI:
         self,
         bucket: str,
         file_path: str,
-        allowed_segments: List[str] | None = None,
-        allowed_emails: List[str] | None = None,
+        allowed_segments: list[str] | None = None,
+        allowed_emails: list[str] | None = None,
         metadata: dict | None = None,
         force: bool = False,
         code: str | None = None,
@@ -192,7 +192,7 @@ class AssetAPI:
         data = await client.get_json(f"/api/assets/{bucket}/{key}")
         return Asset(**data)
 
-    async def get_files_tree(self, bucket: str, filter_params: PagingFilter | None = None) -> List[TreeNode]:
+    async def get_files_tree(self, bucket: str, filter_params: PagingFilter | None = None) -> list[TreeNode]:
         """Get all shared files for the current user."""
         if filter_params is None:
             filter_params = PagingFilter()
@@ -204,7 +204,7 @@ class AssetAPI:
         return [TreeNode(**item) for item in data]
 
 
-def get_permissions_from_acl_type(acl_type: str, user_email: str) -> Dict[str, Optional[List[str]]]:
+def get_permissions_from_acl_type(acl_type: str, user_email: str) -> dict[str, list[str] | None]:
     if acl_type == "authenticated":
         return {
             "allowed_segments": ["authenticated"],

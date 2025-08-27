@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 
 import questionary
 import rich_click as click
@@ -51,7 +50,7 @@ async def list_shares(limit: int, offset: int, interactive: bool) -> None:
         raise click.Abort()
 
 
-def display_files_table(files: List[Asset]) -> None:
+def display_files_table(files: list[Asset]) -> None:
     """Display files in a formatted table."""
     table = Table(show_header=True, header_style="bold magenta")
     table.add_column("Index", style="dim", width=5)
@@ -74,7 +73,7 @@ def display_files_table(files: List[Asset]) -> None:
     console.print(table)
 
 
-async def interactive_file_management(files: List[Asset]) -> None:
+async def interactive_file_management(files: list[Asset]) -> None:
     """Provide interactive file management options."""
 
     # First, let user select files using checkbox
@@ -114,7 +113,7 @@ async def interactive_file_management(files: List[Asset]) -> None:
         await perform_download_action(selected_files)
 
 
-async def perform_download_action(selected_files: List[Asset]) -> None:
+async def perform_download_action(selected_files: list[Asset]) -> None:
     """Perform download action on selected files."""
     # Get output directory
     output_dir = await safe_ask_async(questionary.text("Output directory", default="./"))
@@ -156,7 +155,7 @@ async def perform_download_action(selected_files: List[Asset]) -> None:
     console.print(f"\n[green]Download completed. Files saved to: {output_path}[/green]")
 
 
-async def perform_delete_action(selected_files: List[Asset]) -> None:
+async def perform_delete_action(selected_files: list[Asset]) -> None:
     """Perform delete action on selected files."""
     # Confirm deletion
     console.print(f"\n[red]You are about to delete {len(selected_files)} file(s):[/red]")

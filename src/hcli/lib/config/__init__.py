@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, TypeVar
+from typing import Any, TypeVar
 
 from platformdirs import user_config_dir
 
@@ -15,7 +15,7 @@ class ConfigStore:
     def __init__(self):
         self._config_dir = Path(user_config_dir("hcli", "hex-rays"))
         self._config_file = self._config_dir / "config.json"
-        self._data: Dict[str, Any] = {}
+        self._data: dict[str, Any] = {}
         self._load_config()
         self._migrate_config()
 

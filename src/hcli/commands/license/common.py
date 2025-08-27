@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, List
+from typing import Callable
 
 import questionary
 
@@ -14,13 +14,13 @@ from hcli.lib.console import console
 from hcli.lib.constants import cli
 
 
-async def select_licenses(customer_id: str, predicate: Callable[[License], bool] | None = None) -> List[License]:
+async def select_licenses(customer_id: str, predicate: Callable[[License], bool] | None = None) -> list[License]:
     """
     Select licenses interactively or return all matching licenses.
 
     Args:
         customer_id: Customer ID to get licenses for
-        predicate: Optional filter function for licenses
+        predicate: Filter function for licenses | None
 
     Returns:
         List of selected licenses
@@ -45,7 +45,7 @@ async def select_licenses(customer_id: str, predicate: Callable[[License], bool]
         all_licenses = legacy + subscription
 
         # Create choices for questionary
-        choices: List[questionary.Choice] = []
+        choices: list[questionary.Choice] = []
 
         # Add legacy licenses
         if legacy:
@@ -77,13 +77,13 @@ async def select_licenses(customer_id: str, predicate: Callable[[License], bool]
         return selected
 
 
-async def download_licenses(customer_id: str, licenses: List[License], target_dir: str) -> None:
+async def download_licenses(customer_id: str, licenses: list[License], target_dir: str) -> None:
     """
     Download multiple licenses.
 
     Args:
         customer_id: Customer ID
-        licenses: List of licenses to download
+        licenses: list of licenses to download
         target_dir: Target directory for downloads
     """
     for lic in licenses:
@@ -95,7 +95,7 @@ async def download_license(
     lic: License,
     target_dir: str,
     ask_assets: bool = True,
-) -> List[str]:
+) -> list[str]:
     """
     Download a single license.
 
@@ -106,9 +106,9 @@ async def download_license(
         ask_assets: Whether to ask which asset types to download
 
     Returns:
-        List of downloaded file paths
+        list of downloaded file paths
     """
-    results: List[str] = []
+    results: list[str] = []
     asset_types = lic.asset_types
 
     if not asset_types:

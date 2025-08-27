@@ -2,7 +2,7 @@
 
 import json
 from enum import Enum
-from typing import Any, Dict, Union
+from typing import Any
 
 
 class OutputFormat(Enum):
@@ -35,7 +35,7 @@ def get_by_path(obj: Any, path: str) -> Any:
 
 
 def output(
-    value: Union[Dict[str, Any], Any] = None,
+    value: dict[str, Any] | Any = None,
     format_type: OutputFormat = OutputFormat.TEXT,
     filter_path: str | None = None,
 ) -> None:
@@ -45,7 +45,7 @@ def output(
     Args:
         value: The value to output
         format_type: The output format (JSON or TEXT)
-        filter_path: Optional dot-separated path to filter the output
+        filter_path: dot-separated path to filter the output | None
     """
     if value is None:
         value = {}
@@ -81,8 +81,8 @@ def output_table(data: list, headers: list | None = None, show_headers: bool = T
     Output data as a simple table.
 
     Args:
-        data: List of dictionaries or lists representing rows
-        headers: Optional list of headers
+        data: list of dictionaries or lists representing rows
+        headers: list of headers | None
         show_headers: Whether to show headers
     """
     if not data:
@@ -126,7 +126,7 @@ def output_list(items: list, bullet: str = "•") -> None:
         print(f"{bullet} {item}")
 
 
-def output_key_value(data: Dict[str, Any], separator: str = ": ") -> None:
+def output_key_value(data: dict[str, Any], separator: str = ": ") -> None:
     """Output key-value pairs."""
     for key, value in data.items():
         print(f"{key}{separator}{value}")

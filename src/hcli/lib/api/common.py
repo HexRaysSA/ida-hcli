@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -98,7 +98,7 @@ class APIClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.client.aclose()
 
-    def _get_headers(self, auth: bool = True) -> Dict[str, str]:
+    def _get_headers(self, auth: bool = True) -> dict[str, str]:
         """Get headers with authentication if required."""
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
 
@@ -162,7 +162,7 @@ class APIClient:
         await self._handle_response(response)
         return response.json()
 
-    async def put_file(self, url: str, file_path: Union[str, Path]):
+    async def put_file(self, url: str, file_path: str | Path):
         """Upload file via PUT request with progress bar."""
         file_path = Path(file_path)
 
@@ -210,7 +210,7 @@ class APIClient:
     async def download_file(
         self,
         url: str,
-        target_dir: Union[str, Path] = "./",
+        target_dir: str | Path = "./",
         target_filename: str | None = None,
         force: bool = False,
         auth: bool = False,

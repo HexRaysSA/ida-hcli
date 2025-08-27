@@ -1,7 +1,5 @@
 """Customer API client."""
 
-from typing import List
-
 from pydantic import BaseModel
 
 from .common import get_api_client
@@ -33,7 +31,7 @@ class Customer(BaseModel):
 class CustomerAPI:
     """Customer API client."""
 
-    async def get_customers(self) -> List[Customer]:
+    async def get_customers(self) -> list[Customer]:
         """Get all customers."""
         client = await get_api_client()
         data = await client.get_json("/api/customers")

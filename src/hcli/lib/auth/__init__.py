@@ -3,7 +3,10 @@ import json
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
-from typing import Any, Dict, List, Union
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    pass
 
 from supabase import Client, create_client
 from supabase.lib.client_options import SyncClientOptions
@@ -21,7 +24,7 @@ from hcli.lib.constants.auth import (
 class AuthService:
     """Singleton authentication service handling multiple credentials."""
 
-    _instance: Union["AuthService", None] = None
+    _instance: "AuthService | None" = None
 
     def __init__(self):
         if AuthService._instance is not None:
@@ -49,7 +52,7 @@ class AuthService:
         self.session: Any | None = None
         self.user: Any | None = None
         self._server_thread: Thread | None = None
-        self._oauth_result: Dict[str, str] | None = None
+        self._oauth_result: dict[str, str] | None = None
 
         # Multi-source auth state
         self._auth_config: CredentialsConfig | None = None
@@ -122,7 +125,7 @@ class AuthService:
             return True
         return False
 
-    def list_credentials(self) -> List[Credentials]:
+    def list_credentials(self) -> list[Credentials]:
         """Get all available credentials."""
         if not self._auth_config:
             return []
@@ -236,7 +239,7 @@ class AuthService:
 
         return False
 
-    def get_auth_type(self) -> Dict[str, str]:
+    def get_auth_type(self) -> dict[str, str]:
         """Get the type of authentication being used."""
         # Environment variable takes precedence
         if ENV.HCLI_API_KEY:
@@ -258,7 +261,7 @@ class AuthService:
             return self._current_source.token
         return None
 
-    def get_user(self) -> Dict[str, str] | None:
+    def get_user(self) -> dict[str, str] | None:
         """Get current user information."""
         # Handle environment variable case
         if ENV.HCLI_API_KEY and not self._current_source:
