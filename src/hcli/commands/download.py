@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from typing import List
 
 import questionary
 import rich_click as click
@@ -25,10 +24,10 @@ class BackNavigationResult:
 BACK_NAVIGATION = BackNavigationResult()
 
 
-async def select_asset(nodes: List[TreeNode], current_path: str = "") -> Asset | None:
+async def select_asset(nodes: list[TreeNode], current_path: str = "") -> Asset | None:
     """Alternative traverse using questionary.select with hierarchical navigation."""
 
-    async def _traverse_recursive(current_nodes: List[TreeNode], path_stack: List[str]) -> Asset | None:
+    async def _traverse_recursive(current_nodes: list[TreeNode], path_stack: list[str]) -> Asset | None:
         # Get folders and files at current level
         folders = [node for node in current_nodes if node.type == "folder" and node.children]
         files = [node for node in current_nodes if node.type == "file"]
@@ -92,7 +91,7 @@ async def select_asset(nodes: List[TreeNode], current_path: str = "") -> Asset |
 
         return None
 
-    def _get_nodes_at_path(root_nodes: List[TreeNode], path_stack: List[str]) -> List[TreeNode]:
+    def _get_nodes_at_path(root_nodes: list[TreeNode], path_stack: list[str]) -> list[TreeNode]:
         """Helper to get nodes at a specific path in the tree."""
         current_nodes = root_nodes
         for path_part in path_stack:
@@ -106,7 +105,7 @@ async def select_asset(nodes: List[TreeNode], current_path: str = "") -> Asset |
     return await _traverse_recursive(nodes, [])
 
 
-def collect_all_assets(nodes: List[TreeNode]) -> List[Asset]:
+def collect_all_assets(nodes: list[TreeNode]) -> list[Asset]:
     """Recursively collect all assets from the tree nodes."""
     assets = []
 
@@ -119,7 +118,7 @@ def collect_all_assets(nodes: List[TreeNode]) -> List[Asset]:
     return assets
 
 
-def filter_assets_by_pattern(assets: List[Asset], pattern: str) -> List[Asset]:
+def filter_assets_by_pattern(assets: list[Asset], pattern: str) -> list[Asset]:
     """Filter assets by regex pattern matching their keys."""
     try:
         compiled_pattern = re.compile(pattern, re.IGNORECASE)

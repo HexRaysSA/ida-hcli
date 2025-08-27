@@ -1,7 +1,5 @@
 """License API client."""
 
-from typing import List, Union
-
 from pydantic import BaseModel
 
 from .common import get_api_client
@@ -39,14 +37,14 @@ class Addon(BaseModel):
     updated_at: str | None = None
     activation_owner: str | None = None
     activation_owner_type: str | None = None
-    product: Union["Product", None] = None
+    product: "Product | None" = None
 
 
 class Edition(BaseModel):
     """Edition information."""
 
     id: int | None = None
-    tags: List[str] | None = None
+    tags: list[str] | None = None
     plan_id: str | None = None
     max_items: int | None = None
     plan_name: str | None = None
@@ -79,9 +77,9 @@ class License(BaseModel):
     updated_at: str | None = None
     generation_date: str | None = None
     download_date: str | None = None
-    addons: Union[List["Addon"], None] = None
-    edition: Union["Edition", None] = None
-    asset_types: List[str] | None = None
+    addons: "list[Addon] | None" = None
+    edition: "Edition | None" = None
+    asset_types: list[str] | None = None
     format_version: str | None = None
     product_catalog: str | None = None
     end_customer_visible: bool | None = None
@@ -90,14 +88,14 @@ class License(BaseModel):
 class PagedResponse(BaseModel):
     """Paged response wrapper."""
 
-    items: List[License]
+    items: list[License]
     total: int
 
 
 class LicenseAPI:
     """License API client."""
 
-    async def get_licenses(self, customer_id: str) -> List[License]:
+    async def get_licenses(self, customer_id: str) -> list[License]:
         """Get licenses for a customer."""
         try:
             client = await get_api_client()

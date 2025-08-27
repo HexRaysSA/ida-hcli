@@ -1,7 +1,5 @@
 """API Keys management client."""
 
-from typing import List
-
 from pydantic import BaseModel
 
 from .common import get_api_client
@@ -25,7 +23,7 @@ class ApiKeyToken(BaseModel):
 class KeysAPI:
     """API Keys management client."""
 
-    async def get_keys(self) -> List[ApiKey]:
+    async def get_keys(self) -> list[ApiKey]:
         """Get all API keys for the current user."""
         client = await get_api_client()
         data = await client.get_json("/api/keys")

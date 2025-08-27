@@ -113,7 +113,7 @@ def get_ida_user_dir() -> Path:
     """Get the IDA Pro user directory."""
     if ENV.HCLI_IDAUSR is not None:
         return Path(ENV.HCLI_IDAUSR)
-    
+
     # Check for standard IDAUSR environment variable
     idausr = os.environ.get("IDAUSR")
     if idausr is not None:

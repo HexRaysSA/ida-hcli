@@ -1,7 +1,6 @@
 """Authentication-related constants."""
 
 from datetime import datetime
-from typing import Dict
 
 from pydantic import BaseModel
 
@@ -54,7 +53,7 @@ class CredentialsConfig(BaseModel):
     """Complete credentials configuration."""
 
     default: str | None = None
-    credentials: Dict[str, Credentials] = {}
+    credentials: dict[str, Credentials] = {}
 
     def add_credentials(self, source: Credentials) -> None:
         """Add an credentials."""
