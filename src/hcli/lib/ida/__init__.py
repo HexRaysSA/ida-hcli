@@ -116,13 +116,13 @@ def get_ida_user_dir() -> Path:
 
     os_ = get_os()
     if os_ == "windows":
-        appdata = ENV.APPDATA
+        appdata = os.environ.get("APPDATA")
         if not appdata:
             raise ValueError("Failed to determine %APPDATA% location: environment variable not set")
 
         return Path(appdata) / "Hex-Rays" / "IDA Pro"
     elif os_ in ("linux", "mac"):
-        home = ENV.HOME
+        home = os.environ.get("HOME")
         if not home:
             raise ValueError("Failed to determine home directory: environment variable not set")
         return Path(home) / ".idapro"
@@ -134,13 +134,13 @@ def get_user_home_dir() -> Path:
     """Get the user home directory."""
     os_ = get_os()
     if os_ == "windows":
-        appdata = ENV.APPDATA
+        appdata = os.environ.get("APPDATA")
         if not appdata:
             raise ValueError("Failed to determine %APPDATA% location: environment variable not set")
 
         return Path(appdata)
     elif os_ in ("linux", "mac"):
-        home = ENV.HOME
+        home = os.environ.get("HOME")
         if not home:
             raise ValueError("Failed to determine home directory: environment variable not set")
         return Path(home)
@@ -155,7 +155,7 @@ def get_default_ida_install_directory(ver: IdaVersion) -> Path:
     app_directory_name = str(ver)
 
     if get_os() == "windows":
-        return Path(ENV.PROGRAM_FILES or r"C:\Program Files") / app_directory_name
+        return Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / app_directory_name
     elif get_os() == "linux":
         return get_user_home_dir() / ".local" / "share" / "applications" / app_directory_name
     elif get_os() == "mac":
@@ -189,7 +189,7 @@ def find_standard_windows_installations() -> list[Path]:
     """Find standard IDA Pro installations on Windows."""
     ret = []
 
-    base_directory = Path(ENV.PROGRAM_FILES or r"C:\Program Files")
+    base_directory = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
 
     # Check the base directory for IDA installations
     if base_directory.exists():
