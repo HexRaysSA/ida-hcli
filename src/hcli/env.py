@@ -34,9 +34,9 @@ class ENV:
 
     # IDA-specific environment variables
     HCLI_IDAUSR: str | None = os.getenv("HCLI_IDAUSR")
-    HCLI_INSTALL_DIR: str | None = os.getenv("HCLI_INSTALL_DIR")
-    HCLI_CURRENT_PLATFORM: str | None = os.getenv("HCLI_CURRENT_PLATFORM")
-    HCLI_CURRENT_VERSION: str | None = os.getenv("HCLI_CURRENT_VERSION")
+    HCLI_CURRENT_IDA_INSTALL_DIR: str | None = os.getenv("HCLI_CURRENT_IDA_INSTALL_DIR")
+    HCLI_CURRENT_IDA_PLATFORM: str | None = os.getenv("HCLI_CURRENT_IDA_PLATFORM")
+    HCLI_CURRENT_IDA_VERSION: str | None = os.getenv("HCLI_CURRENT_IDA_VERSION")
     HCLI_CURRENT_IDA_PYTHON_EXE: str | None = os.getenv("HCLI_CURRENT_IDA_PYTHON_EXE")
 
 

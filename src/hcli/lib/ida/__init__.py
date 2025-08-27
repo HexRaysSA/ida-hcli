@@ -113,6 +113,11 @@ def get_ida_user_dir() -> Path:
     """Get the IDA Pro user directory."""
     if ENV.HCLI_IDAUSR is not None:
         return Path(ENV.HCLI_IDAUSR)
+    
+    # Check for standard IDAUSR environment variable
+    idausr = os.environ.get("IDAUSR")
+    if idausr is not None:
+        return Path(idausr)
 
     os_ = get_os()
     if os_ == "windows":
@@ -496,8 +501,8 @@ def get_ida_config() -> IDAConfigJson:
 
 
 def find_current_ida_install_directory() -> Path:
-    if ENV.HCLI_INSTALL_DIR is not None:
-        return Path(ENV.HCLI_INSTALL_DIR)
+    if ENV.HCLI_CURRENT_IDA_INSTALL_DIR is not None:
+        return Path(ENV.HCLI_CURRENT_IDA_INSTALL_DIR)
 
     config = get_ida_config()
     logger.debug("current IDA installation: %s", config.installation_directory)
@@ -598,8 +603,8 @@ sys.exit()
 
 def find_current_ida_platform() -> str:
     """find the platform associated with the current IDA installation"""
-    if ENV.HCLI_CURRENT_PLATFORM is not None:
-        return ENV.HCLI_CURRENT_PLATFORM
+    if ENV.HCLI_CURRENT_IDA_PLATFORM is not None:
+        return ENV.HCLI_CURRENT_IDA_PLATFORM
 
     return run_py_in_current_idapython(FIND_PLATFORM_PY)
 
@@ -618,7 +623,7 @@ sys.exit()
 
 def find_current_ida_version() -> str:
     """find the version of the current IDA installation"""
-    if ENV.HCLI_CURRENT_VERSION is not None:
-        return ENV.HCLI_CURRENT_VERSION
+    if ENV.HCLI_CURRENT_IDA_VERSION is not None:
+        return ENV.HCLI_CURRENT_IDA_VERSION
 
     return run_py_in_current_idapython(FIND_VERSION_PY)
