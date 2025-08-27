@@ -30,6 +30,8 @@ class ENV:
     HCLI_MODE: str = os.getenv("HCLI_MODE", "user")
     QUIET: bool = False
 
+    HCLI_DISABLE_UPDATES: bool = os.getenv("HCLI_DISABLE_UPDATES", "").lower() in ("true", "yes", "on", "1")
+
 
 # Constants
 CONFIG_API_KEY = "apiKey"

@@ -78,16 +78,18 @@ def handle_command_completion(_ctx, _result, **_kwargs):
 @click.option("--quiet", "-q", is_flag=True, help="Run without prompting the user")
 @click.option("--auth", "-a", help="Force authentication type (interactive|key)", default=None)
 @click.option("--auth-credentials", "-s", help="Force specific credentials by name", default=None)
+@click.option("--disable-updates", is_flag=True, help="Disable automatic update checking")
 @click.pass_context
-def cli(_ctx, quiet, auth, auth_credentials):
+def cli(_ctx, quiet, auth, auth_credentials, disable_updates: bool):
     """Main CLI entry point with background update checking."""
-    global update_checker
+    if not (disable_updates or ENV.HCLI_DISABLE_UPDATES):
+        global update_checker
 
-    # Initialize update checker
-    update_checker = BackgroundUpdateChecker()
+        # Initialize update checker
+        update_checker = BackgroundUpdateChecker()
 
-    # Start background check (non-blocking)
-    update_checker.start_check()
+        # Start background check (non-blocking)
+        update_checker.start_check()
 
     _ctx.ensure_object(dict)
     _ctx.obj["quiet"] = quiet
