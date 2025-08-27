@@ -16,7 +16,7 @@ from hcli.lib.constants import cli
 @click.option("-n", "--name", help="Custom name for the credentials")
 @async_command
 async def login(force: bool, name: str | None) -> None:
-    """Login to hex-rays portal and create new credentials."""
+    """Log in to the Hex-Rays portal and create new credentials."""
     auth_service = get_auth_service()
     auth_service.init()
 

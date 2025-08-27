@@ -7,7 +7,7 @@ from hcli.lib.auth import get_auth_service
 
 @click.command()
 def whoami() -> None:
-    """Display the current logged in user."""
+    """Display the currently logged-in user."""
     auth_service = get_auth_service()
 
     # Initialize auth service

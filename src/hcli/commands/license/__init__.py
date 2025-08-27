@@ -5,7 +5,7 @@ import rich_click as click
 
 @click.group()
 def license() -> None:
-    """Manage your licenses."""
+    """Manage IDA licenses."""
     pass
 
 

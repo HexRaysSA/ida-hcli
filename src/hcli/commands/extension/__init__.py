@@ -6,7 +6,7 @@ from hcli.commands.extension.create import create
 from hcli.commands.extension.list import list_extensions
 
 
-@click.group(help="Manage hcli extensions")
+@click.group(help="Manage hcli extensions.")
 def extension() -> None:
     pass
 

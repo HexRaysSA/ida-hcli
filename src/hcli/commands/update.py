@@ -53,7 +53,7 @@ async def update(
     check_only: bool = False,
     include_prereleases: bool = False,
 ) -> None:
-    """Check for updates to the CLI."""
+    """Check for hcli updates."""
 
     # Auto-detect mode if not specified
     if mode == "auto":
