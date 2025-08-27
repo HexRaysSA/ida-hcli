@@ -12,11 +12,7 @@ from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command, auth_command
 from hcli.lib.console import console
 from hcli.lib.constants import cli
-
-
-def get_email_domain(email: str) -> str:
-    """Extract domain from email address."""
-    return email.split("@")[-1] if "@" in email else ""
+from hcli.lib.util.string import get_email_domain
 
 
 @auth_command()

@@ -10,6 +10,7 @@ import httpx
 from pydantic import BaseModel
 
 from .common import get_api_client
+from hcli.lib.util.string import get_email_domain
 
 SHARED = "shared"
 INSTALLERS = "installers"
@@ -175,11 +176,7 @@ class AssetAPI:
         return [TreeNode(**item) for item in data]
 
 
-def get_email_domain(email: str) -> str:
-    return email.lower().split("@")[-1]
-
-
-def get_permissions_from_acl_type(acl_type: str, user_email: str) -> Dict[str, Union[List[str], None]]:
+def get_permissions_from_acl_type(acl_type: str, user_email: str) -> Dict[str, Optional[List[str]]]:
     if acl_type == "authenticated":
         return {
             "allowed_segments": ["authenticated"],
