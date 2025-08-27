@@ -64,7 +64,7 @@ async def put(path: Path, acl: str | None, code: str | None, force: bool) -> Non
         raise click.Abort()
 
     # Upload the file
-    result = await asset.upload_file(SHARED, str(path), user["email"], acl, force, code)
+    result = await asset.upload_shared_asset(SHARED, str(path), user["email"], acl, force, code)
 
     console.print("[green]✓ File uploaded successfully![/green]")
     console.print(f"[bold]Share Code:[/bold] {result.code}")
