@@ -4,13 +4,14 @@ from __future__ import annotations  # only needed for Python <3.10
 
 import hashlib
 from pathlib import Path
-from typing import Dict, ForwardRef, List, Union, Optional
+from typing import Dict, ForwardRef, List, Optional, Union
 
 import httpx
 from pydantic import BaseModel
 
 from hcli.env import ENV
 from hcli.lib.util.string import get_email_domain
+
 from .common import get_api_client
 
 SHARED = "shared"
@@ -63,6 +64,7 @@ class Bucket(BaseModel):
     metadata: Metadata
     requiredMetadata: Dict[str, RequiredField]
 
+
 class PagingFilter(BaseModel):
     """Paging filter parameters."""
 
@@ -72,6 +74,7 @@ class PagingFilter(BaseModel):
 
 class UploadResponse(BaseModel):
     """Upload response."""
+
     bucket: str
     key: str
     version: int
@@ -83,20 +86,20 @@ class UploadResponse(BaseModel):
 class AssetAPI:
     """File sharing API client."""
 
-    async def get_bucket(self, bucket:str):
+    async def get_bucket(self, bucket: str):
         client = await get_api_client()
         data = await client.get_json(f"/api/assets/buckets/{bucket}")
         return Bucket(**data)
 
     async def upload_asset(
-            self,
-            bucket: str,
-            file_path: str,
-            allowed_segments: List[str] | None = None,
-            allowed_emails: List[str] | None = None,
-            metadata: dict | None = None,
-            force: bool = False,
-            code: str | None = None,
+        self,
+        bucket: str,
+        file_path: str,
+        allowed_segments: List[str] | None = None,
+        allowed_emails: List[str] | None = None,
+        metadata: dict | None = None,
+        force: bool = False,
+        code: str | None = None,
     ) -> UploadResponse:
         """Upload a file for sharing."""
         file_path_obj = Path(file_path)
