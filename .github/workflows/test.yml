@@ -206,3 +206,4 @@ jobs:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           HCLI_INSTALL_DIR: ${{ runner.temp }}/app/ida/
           HCLI_HAS_IDAT: ${{ matrix.os_ida.idat_path != '' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
