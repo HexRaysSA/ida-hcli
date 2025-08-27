@@ -92,10 +92,9 @@ class AssetAPI:
             self,
             bucket: str,
             file_path: str,
-            user_email: str,
-            allowed_segments,
-            allowed_emails,
-            metadata,
+            allowed_segments: List[str] | None = None,
+            allowed_emails: List[str] | None = None,
+            metadata: dict | None = None,
             force: bool = False,
             code: str | None = None,
     ) -> UploadResponse:
@@ -119,73 +118,15 @@ class AssetAPI:
             "force": force,
             "status": "active",
             "checksum": checksum,
-            "allowed_segments": allowed_segments,
-            "allowed_emails": allowed_emails,
-            "metadata": metadata,
         }
 
-        if code:
-            upload_data["code"] = code
-
-        # ask for an upload url
-        response = await client.post_json(f"/api/assets/{bucket}", upload_data)
-        upload_url = response.get("url")
-        file_code = response.get("code")
-        key = response.get("key")
-        version = response.get("version")
-
-        if upload_url:
-            # Upload the file (without content parameter to use streaming)
-            await client.put_file(upload_url, file_path_obj)
-            # Confirm upload
-            response = await client.post_json(f"/api/assets/{bucket}/{key}", {})
-
-        return UploadResponse(
-            bucket=bucket,
-            key=key,
-            version=version,
-            code=file_code,
-            url=f"{ENV.HCLI_PORTAL_URL}/share/{file_code}",
-            download_url=f"{ENV.HCLI_API_URL}/api/assets/s/{file_code}",
-        )
-
-    async def upload_shared_asset(
-            self,
-            bucket: str,
-            file_path: str,
-            user_email: str,
-            acl_type: str = "authenticated",
-            force: bool = False,
-            code: str | None = None,
-    ) -> UploadResponse:
-        """Upload a file for sharing."""
-        file_path_obj = Path(file_path)
-        filename = file_path_obj.name
-        size = file_path_obj.stat().st_size
-
-        # Calculate SHA-256 checksum by streaming the file
-        checksum_obj = hashlib.sha256()
-        with open(file_path_obj, "rb") as f:
-            while chunk := f.read(8192):
-                checksum_obj.update(chunk)
-        checksum = checksum_obj.hexdigest()
-
-        client = await get_api_client()
-
-        # Request upload URL
-        # convert acl_type to allowed_segments & allowed_users
-        acl_fields = get_permissions_from_acl_type(acl_type, user_email)
-        upload_data = {
-            "filename": filename,
-            "size": size,
-            "force": force,
-            "status": "active",
-            "checksum": checksum,
-            **acl_fields,
-            "metadata": {
-                "acl_type": acl_type,
-            },
-        }
+        # Add optional fields if provided
+        if allowed_segments is not None:
+            upload_data["allowed_segments"] = allowed_segments
+        if allowed_emails is not None:
+            upload_data["allowed_emails"] = allowed_emails
+        if metadata is not None:
+            upload_data["metadata"] = metadata
 
         if code:
             upload_data["code"] = code

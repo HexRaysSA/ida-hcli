@@ -7,7 +7,7 @@ import rich_click as click
 from questionary import Choice
 
 from hcli.commands.common import safe_ask_async
-from hcli.lib.api.asset import SHARED, asset
+from hcli.lib.api.asset import SHARED, asset, get_permissions_from_acl_type
 from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command, auth_command
 from hcli.lib.console import console
@@ -64,7 +64,16 @@ async def put(path: Path, acl: str | None, code: str | None, force: bool) -> Non
         raise click.Abort()
 
     # Upload the file
-    result = await asset.upload_shared_asset(SHARED, str(path), user["email"], acl, force, code)
+    acl_fields = get_permissions_from_acl_type(acl, user["email"])
+    result = await asset.upload_asset(
+        SHARED,
+        str(path),
+        allowed_segments=acl_fields["allowed_segments"],
+        allowed_emails=acl_fields["allowed_emails"],
+        metadata={"acl_type": acl},
+        force=force,
+        code=code,
+    )
 
     console.print("[green]✓ File uploaded successfully![/green]")
     console.print(f"[bold]Share Code:[/bold] {result.code}")
