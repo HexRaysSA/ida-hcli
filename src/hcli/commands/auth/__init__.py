@@ -5,7 +5,7 @@ import rich_click as click
 
 @click.group()
 def auth() -> None:
-    """Authentication commands."""
+    """Manage hcli api keys."""
     pass
 
 

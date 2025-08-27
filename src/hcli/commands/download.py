@@ -152,7 +152,7 @@ async def download(
     pattern: str | None = None,
     key: str | None = None,
 ) -> None:
-    """Download IDA binaries, SDK, utilities and more.
+    """Download IDA binaries, SDKs, and utilities.
 
     KEY: The asset key for direct download eg. release/9.1/ida-pro/ida-pro_91_x64linux.run (optional)
 

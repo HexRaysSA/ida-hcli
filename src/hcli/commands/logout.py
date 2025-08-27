@@ -16,7 +16,7 @@ from hcli.lib.constants import cli
 @click.option("-a", "--all", "remove_all", is_flag=True, help="Remove all credentials")
 @async_command
 async def logout(name: str | None, remove_all: bool) -> None:
-    """Remove authentication credentials."""
+    """Log out and remove stored credentials."""
     auth_service = get_auth_service()
     auth_service.init()
 

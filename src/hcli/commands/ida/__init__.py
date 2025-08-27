@@ -5,7 +5,7 @@ import rich_click as click
 
 @click.group()
 def ida() -> None:
-    """Manage IDA installations"""
+    """Manage IDA installations."""
     pass
 
 
