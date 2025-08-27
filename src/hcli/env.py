@@ -39,11 +39,6 @@ class ENV:
     HCLI_CURRENT_VERSION: str | None = os.getenv("HCLI_CURRENT_VERSION")
     HCLI_CURRENT_IDA_PYTHON_EXE: str | None = os.getenv("HCLI_CURRENT_IDA_PYTHON_EXE")
 
-    # System environment variables
-    APPDATA: str | None = os.getenv("APPDATA")
-    HOME: str | None = os.getenv("HOME")
-    PROGRAM_FILES: str | None = os.getenv("ProgramFiles")
-
 
 # Constants
 CONFIG_API_KEY = "apiKey"
