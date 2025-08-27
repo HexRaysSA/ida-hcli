@@ -1,6 +1,5 @@
 # see also hcli.lib.util.python
 import logging
-import os
 import subprocess
 from pathlib import Path
 
