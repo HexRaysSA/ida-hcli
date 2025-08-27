@@ -201,7 +201,7 @@ jobs:
           }
 
       - name: Run tests
-        run: uv run pytest -v tests/
+        run: uv run pytest -v --log-cli-level=DEBUG tests/
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           HCLI_INSTALL_DIR: ${{ runner.temp }}/app/ida/
