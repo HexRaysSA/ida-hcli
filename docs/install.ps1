@@ -113,9 +113,9 @@ function Initialize-Configuration {
     }
     
     # Installation directory configuration  
-    if ($env:HCLI_INSTALL_DIR) {
-        $script:InstallDir = $env:HCLI_INSTALL_DIR
-        Write-Verbose "Using install dir from environment: $env:HCLI_INSTALL_DIR"
+    if ($env:HCLI_IDA_INSTALL_DIR) {
+        $script:InstallDir = $env:HCLI_IDA_INSTALL_DIR
+        Write-Verbose "Using install dir from environment: $env:HCLI_IDA_INSTALL_DIR"
     }
     
     # Version configuration
