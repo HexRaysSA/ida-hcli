@@ -40,3 +40,14 @@ root/
     ida-plugin.json (name: foo-plugin)  <-- name collides!
     foo-plugin.dll
 ```
+
+
+## Migrating Plugins to the Plugin Repository
+
+
+
+### Experience Reports
+
+#### IDA Terminal Plugin
+
+Just needed to do a release in GitHub.
