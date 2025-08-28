@@ -20,7 +20,7 @@ async def select_licenses(customer_id: str, predicate: Callable[[License], bool]
 
     Args:
         customer_id: Customer ID to get licenses for
-        predicate: Filter function for licenses | None
+        predicate: Optional filter function for licenses
 
     Returns:
         List of selected licenses
@@ -83,7 +83,7 @@ async def download_licenses(customer_id: str, licenses: list[License], target_di
 
     Args:
         customer_id: Customer ID
-        licenses: list of licenses to download
+        licenses: List of licenses to download
         target_dir: Target directory for downloads
     """
     for lic in licenses:
@@ -106,7 +106,7 @@ async def download_license(
         ask_assets: Whether to ask which asset types to download
 
     Returns:
-        list of downloaded file paths
+        List of downloaded file paths
     """
     results: list[str] = []
     asset_types = lic.asset_types
