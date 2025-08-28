@@ -1,9 +1,7 @@
 """CRC32 calculation utilities."""
 
-from typing import Union
 
-
-def crc32(data: Union[bytes, str], seed: int = 0xFFFFFFFF) -> str:
+def crc32(data: bytes | str, seed: int = 0xFFFFFFFF) -> str:
     """
     Calculate CRC32 checksum for the given data.
 
@@ -71,7 +69,7 @@ class Crc32Stream:
                     c = c >> 1
             self._bytes[n] = c & 0xFFFFFFFF
 
-    def append(self, data: Union[bytes, str]) -> str:
+    def append(self, data: bytes | str) -> str:
         """
         Append new data to the CRC32 stream and update the checksum.
 

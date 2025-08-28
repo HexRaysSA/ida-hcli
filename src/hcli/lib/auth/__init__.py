@@ -21,7 +21,7 @@ from hcli.lib.constants.auth import (
 class AuthService:
     """Singleton authentication service handling multiple credentials."""
 
-    _instance: Union["AuthService", None] = None
+    _instance: "AuthService | None" = None
 
     def __init__(self):
         if AuthService._instance is not None:
