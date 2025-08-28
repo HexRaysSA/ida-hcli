@@ -9,7 +9,10 @@ import rich_click as click
 
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
-from hcli.lib.ida.plugin.install import get_installed_plugins, is_plugin_enabled
+from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
+from hcli.lib.ida.plugin import parse_plugin_version
+from hcli.lib.ida.plugin.install import get_installed_plugins
+from hcli.lib.ida.plugin.repo import BasePluginRepo
 
 logger = logging.getLogger(__name__)
 
@@ -18,17 +21,26 @@ logger = logging.getLogger(__name__)
 @click.pass_context
 @async_command
 async def get_plugin_status(ctx) -> None:
+    plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
     try:
-        table = rich.table.Table()
+        current_platform = find_current_ida_platform()
+        current_ida_version = find_current_ida_version()
+
+        table = rich.table.Table(show_header=False, box=None)
         table.add_column("name", style="blue")
-        table.add_column("version", style="yellow")
+        table.add_column("version", style="default")
         table.add_column("status")
 
         for name, version in get_installed_plugins():
-            if is_plugin_enabled(name):
-                table.add_row(name, version, "")
-            else:
-                table.add_row(f"[grey69]{name}[/grey69]", f"[grey69]{version}[/grey69]", "disabled")
+            status = ""
+            try:
+                location = plugin_repo.find_compatible_plugin_from_spec(name, current_platform, current_ida_version)
+                if parse_plugin_version(location.version) > parse_plugin_version(version):
+                    status = f"upgradable to [yellow]{location.version}[/yellow]"
+            except (ValueError, KeyError):
+                status = "[grey69]not found in repository[/grey69]"
+
+            table.add_row(name, version, status)
 
         if table.row_count:
             console.print(table)
