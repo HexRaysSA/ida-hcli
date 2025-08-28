@@ -3,10 +3,7 @@ import json
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    pass
+from typing import Any
 
 from supabase import Client, create_client
 from supabase.lib.client_options import SyncClientOptions
@@ -24,7 +21,7 @@ from hcli.lib.constants.auth import (
 class AuthService:
     """Singleton authentication service handling multiple credentials."""
 
-    _instance: "AuthService | None" = None
+    _instance: Union["AuthService", None] = None
 
     def __init__(self):
         if AuthService._instance is not None:

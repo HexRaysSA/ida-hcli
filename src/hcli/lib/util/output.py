@@ -45,7 +45,7 @@ def output(
     Args:
         value: The value to output
         format_type: The output format (JSON or TEXT)
-        filter_path: dot-separated path to filter the output | None
+        filter_path: Optional dot-separated path to filter the output
     """
     if value is None:
         value = {}
@@ -81,8 +81,8 @@ def output_table(data: list, headers: list | None = None, show_headers: bool = T
     Output data as a simple table.
 
     Args:
-        data: list of dictionaries or lists representing rows
-        headers: list of headers | None
+        data: List of dictionaries or lists representing rows
+        headers: Optional list of headers
         show_headers: Whether to show headers
     """
     if not data:
