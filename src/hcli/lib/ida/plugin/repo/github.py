@@ -493,6 +493,7 @@ INITIAL_REPOSITORIES = [
     "herosi/pyclassinformer",
     "hexrayssa/ida-terminal-plugin",
     "hyuunnn/hyara",
+    "ida-community-plugins/hcli-ipyida",
     "idarlingteam/idarling",
     "idkhidden/idashare",
     "igogo-x86/hexrayspytools",
