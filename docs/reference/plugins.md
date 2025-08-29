@@ -166,3 +166,10 @@ In fact, I think we can do this in a new repository and reference the `ipyida` P
 https://github.com/ida-community-plugins/hcli-ipyida
 
 Took 45 minutes, including updating docs/references with lessons learned.
+
+
+#### milankovo/ida_export_scripts
+
+https://github.com/milankovo/ida_export_scripts
+
+Pure Python script with existing `ida-plugin.json`. Just needs a GitHub release.
