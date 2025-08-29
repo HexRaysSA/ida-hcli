@@ -526,6 +526,7 @@ INITIAL_REPOSITORIES = [
     "medigateio/ida_medigate",
     "merces/showcomments",
     "milankovo/hexinlay",
+    "milankovo/ida_export_scripts",
     "milankovo/instrlen",
     "milankovo/navcolor",
     "milankovo/yaravm",
