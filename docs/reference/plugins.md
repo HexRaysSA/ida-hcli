@@ -1,6 +1,41 @@
+# Plugin Manager
+
+plugins.hex-rays.com will watch for GitHub repositories (and other provider) that contain an `ida-plugin.json` file.
+For each repo, it will watch for releases. When it sees a release, it will inspect the release archives for either
+ source archives (pure-Python) or binary archives (containing .so/.dll/.dylib plugins).
+In either case, it'll expect to find an `ida-plugin.json` file in the archive describing the plugin.
+The service will index all the found archives and their metadata, and expose this to hcli
+ (and/or other plugin managers, like a GUI version within IDA).
+
+hcli will use plugins.hex-rays.com to list/search for plugins and retrieve the download URL (to the GitHub release archive).
+After various validation steps, hcli then extracts the archive subdirectory containing `ida-plugin.json` into `$IDAUSR/plugins/`,
+ and the plugin is installed.
+If there are Python dependencies declared within the metadata file, then these are installed via pip first.
+There are obvious upgrade and uninstallation routines, too.
+
 
 ## Plugin Archive Format
 
+A Plugin Archive is a ZIP archive that contains an IDA plugin and its associated `ida-plugin.json` metadata file.
+The metadata file should be found in the root subdirectory that contains all the plugin's files.
+
+For example:
+
+```
+plugin.zip
+├── ida-plugin.json
+└── plugin.py
+```
+
+Or for a native plugin:
+
+```
+plugin.zip
+├── ida-plugin.json
+├── plugin.so
+├── plugin.dylib
+└── plugin.dll
+```
 
 
 ### Source Archives and Binary Archives
@@ -43,11 +78,7 @@ And the entry stub:
 from ida_plugin1.ida_plugin import PLUGIN_ENTRY
 ```
 
-
-
-
-
-### "Fat" Archives
+### "Fat" Binary Plugin Archives
 
 Plugin archives can contain multiple compiled versions of a plugin, e.g., `foo-plugin.so` and `foo-plugin.dylib`.
 In this case, the entry point must specify the bare path to the plugin, e.g., `foo-plugin`, and IDA will append the appropriate extension based on the platform.
@@ -88,6 +119,19 @@ root/
     foo-plugin.dll
 ```
 
+### (uncommon) Multi-Plugin Archives
+
+Because the `ida-plugin.json` file marks the root of a plugin within the archive, an archive can contain multiple plugins:
+
+```
+plugins.zip
+├── plugin1
+│   ├── plugin1.py
+│   └── ida-plugin.json
+└── plugin2
+    ├── plugin2.py
+    └── ida-plugin.json
+```
 
 ## Migrating Plugins to the Plugin Repository
 
