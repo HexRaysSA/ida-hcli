@@ -96,31 +96,32 @@ def test_get_python_dependencies_from_plugin_directory_inline():
         plugin_dir.mkdir()
 
         # Create ida-plugin.json with inline dependencies
-        metadata_content = """{
-  "IDAMetadataDescriptorVersion": 1,
-  "plugin": {
-    "name": "plugin1", 
-    "version": "v4.0.0",
-    "entryPoint": "plugin1.py",
-    "description": "test plugin",
-    "pythonDependencies": "inline"
-  }
-}"""
+        metadata_content = textwrap.dedent("""{
+            "IDAMetadataDescriptorVersion": 1,
+            "plugin": {
+              "name": "plugin1", 
+              "version": "v4.0.0",
+              "entryPoint": "plugin1.py",
+              "description": "test plugin",
+              "pythonDependencies": "inline"
+            }
+        }""")
         (plugin_dir / "ida-plugin.json").write_text(metadata_content)
 
         # Create Python file with PEP 723 metadata
-        python_content = """# /// script
-# dependencies = [
-#   "requests>=2.28.0",
-#   "pydantic>=2.0.0",
-# ]
-# ///
+        python_content = textwrap.dedent("""
+            # /// script
+            # dependencies = [
+            #   "requests>=2.28.0",
+            #   "pydantic>=2.0.0",
+            # ]
+            # ///
 
-import ida_idaapi
+            import ida_idaapi
 
-def PLUGIN_ENTRY():
-    return None
-"""
+            def PLUGIN_ENTRY():
+                return None
+        """).strip()
         (plugin_dir / "plugin1.py").write_text(python_content)
 
         # Test functionality
@@ -138,24 +139,25 @@ def test_get_python_dependencies_from_plugin_directory_list():
         plugin_dir.mkdir()
 
         # Create ida-plugin.json with traditional list dependencies
-        metadata_content = """{
-  "IDAMetadataDescriptorVersion": 1,
-  "plugin": {
-    "name": "plugin1", 
-    "version": "v3.0.0",
-    "entryPoint": "plugin1.py",
-    "description": "test plugin",
-    "pythonDependencies": ["requests>=2.28.0", "pydantic>=2.0.0"]
-  }
-}"""
+        metadata_content = textwrap.dedent("""{
+            "IDAMetadataDescriptorVersion": 1,
+            "plugin": {
+              "name": "plugin1", 
+              "version": "v3.0.0",
+              "entryPoint": "plugin1.py",
+              "description": "test plugin",
+              "pythonDependencies": ["requests>=2.28.0", "pydantic>=2.0.0"]
+            }
+        }""")
         (plugin_dir / "ida-plugin.json").write_text(metadata_content)
 
         # Create Python file (content doesn't matter for this test)
-        python_content = """import ida_idaapi
+        python_content = textwrap.dedent("""
+            import ida_idaapi
 
-def PLUGIN_ENTRY():
-    return None
-"""
+            def PLUGIN_ENTRY():
+                return None
+        """).strip()
         (plugin_dir / "plugin1.py").write_text(python_content)
 
         # Test functionality
