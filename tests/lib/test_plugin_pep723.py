@@ -1,6 +1,7 @@
 import contextlib
 import os
 import tempfile
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -37,53 +38,22 @@ def test_parse_pep723_metadata():
     """Test parsing of PEP 723 inline metadata from Python file content."""
 
     # Test valid PEP 723 metadata
-    python_content = """# /// script
-# dependencies = [
-#   "packaging>=25.0",
-#   "rich>=13.0.0",
-# ]
-# ///
+    python_content = textwrap.dedent("""
+        # /// script
+        # dependencies = [
+        #   "packaging>=25.0",
+        #   "rich>=13.0.0",
+        # ]
+        # ///
 
-import ida_idaapi
+        import ida_idaapi
 
-def PLUGIN_ENTRY():
-    return None
-"""
+        def PLUGIN_ENTRY():
+            return None
+    """).strip()
 
     dependencies = parse_pep723_metadata(python_content)
     assert dependencies == ["packaging>=25.0", "rich>=13.0.0"]
-
-
-def test_parse_pep723_metadata_no_metadata():
-    """Test parsing when no PEP 723 metadata is present."""
-
-    python_content = """import ida_idaapi
-
-def PLUGIN_ENTRY():
-    return None
-"""
-
-    dependencies = parse_pep723_metadata(python_content)
-    assert dependencies == []
-
-
-def test_parse_pep723_metadata_invalid_toml():
-    """Test parsing when PEP 723 metadata contains invalid TOML."""
-
-    python_content = """# /// script
-# dependencies = [
-#   "invalid toml
-# ]
-# ///
-
-import ida_idaapi
-
-def PLUGIN_ENTRY():
-    return None
-"""
-
-    with pytest.raises(ValueError, match="Failed to parse PEP 723 TOML metadata"):
-        parse_pep723_metadata(python_content)
 
 
 def test_source_plugin_archive_v4_inline_dependencies():

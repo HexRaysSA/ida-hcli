@@ -94,7 +94,7 @@ def parse_pep723_metadata(python_file_content: str) -> list[str]:
         raise ValueError(f"Failed to parse PEP 723 TOML metadata: {e}") from e
 
 
-def get_file_content_from_plugin_archive(zip_data: bytes, plugin_name: str, relative_path: str) -> str:
+def get_file_content_from_plugin_archive(zip_data: bytes, plugin_name: str, relative_path: str) -> bytes:
     """Get file content from a plugin archive relative to the plugin's metadata file.
     
     Args:
@@ -103,23 +103,15 @@ def get_file_content_from_plugin_archive(zip_data: bytes, plugin_name: str, rela
         relative_path: Path relative to the plugin's metadata file
         
     Returns:
-        The file content as a string
-        
-    Raises:
-        ValueError: If plugin or file is not found, or file cannot be decoded
+        The file content as bytes
     """
     metadata_path = get_metadata_path_from_plugin_archive(zip_data, plugin_name)
     plugin_dir = metadata_path.parent
     file_path = plugin_dir / relative_path
 
     with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
-        try:
-            with zip_file.open(str(file_path)) as f:
-                return f.read().decode("utf-8")
-        except KeyError:
-            raise ValueError(f"File not found in archive: {file_path}")
-        except UnicodeDecodeError as e:
-            raise ValueError(f"Failed to decode file {file_path}: {e}") from e
+        with zip_file.open(str(file_path)) as f:
+            return f.read()
 
 
 def get_python_dependencies_from_plugin_archive(zip_data: bytes, metadata: IDAPluginMetadata) -> list[str]:
@@ -138,7 +130,8 @@ def get_python_dependencies_from_plugin_archive(zip_data: bytes, metadata: IDAPl
             raise ValueError("Entry point must be a Python file (.py) for inline dependencies")
 
         try:
-            python_content = get_file_content_from_plugin_archive(zip_data, metadata.name, metadata.entry_point)
+            python_content_bytes = get_file_content_from_plugin_archive(zip_data, metadata.name, metadata.entry_point)
+            python_content = python_content_bytes.decode("utf-8")
             return parse_pep723_metadata(python_content)
         except ValueError:
             # Re-raise ValueError from helper functions
@@ -168,13 +161,8 @@ def get_python_dependencies_from_plugin_directory(plugin_path: Path, metadata: I
 
         entry_point_path = plugin_path / metadata.entry_point
 
-        try:
-            python_content = entry_point_path.read_text(encoding="utf-8")
-            return parse_pep723_metadata(python_content)
-        except FileNotFoundError:
-            raise ValueError(f"Entry point file not found: {entry_point_path}")
-        except UnicodeDecodeError as e:
-            raise ValueError(f"Failed to decode Python file {entry_point_path}: {e}") from e
+        python_content = entry_point_path.read_text(encoding="utf-8")
+        return parse_pep723_metadata(python_content)
     else:
         # Return the list of dependencies directly
         if isinstance(metadata.python_dependencies, list):
