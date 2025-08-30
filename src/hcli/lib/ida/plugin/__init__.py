@@ -129,13 +129,9 @@ def get_python_dependencies_from_plugin_archive(zip_data: bytes, metadata: IDAPl
         if not metadata.entry_point.endswith(".py"):
             raise ValueError("Entry point must be a Python file (.py) for inline dependencies")
 
-        try:
-            python_content_bytes = get_file_content_from_plugin_archive(zip_data, metadata.name, metadata.entry_point)
-            python_content = python_content_bytes.decode("utf-8")
-            return parse_pep723_metadata(python_content)
-        except ValueError:
-            # Re-raise ValueError from helper functions
-            raise
+        python_content_bytes = get_file_content_from_plugin_archive(zip_data, metadata.name, metadata.entry_point)
+        python_content = python_content_bytes.decode("utf-8")
+        return parse_pep723_metadata(python_content)
     else:
         # Return the list of dependencies directly
         if isinstance(metadata.python_dependencies, list):
