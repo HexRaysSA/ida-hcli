@@ -11,12 +11,7 @@ from typing import Optional
 if sys.version_info >= (3, 11):
     import tomllib
 else:
-    try:
-        import tomli as tomllib
-    except ImportError:
-        raise ImportError(
-            "tomli is required for Python < 3.11. Install it with: pip install tomli"
-        ) from None
+    import tomli as tomllib
 
 import packaging.version
 import semantic_version
@@ -61,8 +56,6 @@ def parse_pep723_metadata(python_file_content: str) -> list[str]:
     Raises:
         ValueError: If metadata block is found but contains invalid TOML or unexpected data format
     """
-    # Look for PEP 723 metadata block
-    # The block starts with # /// script and ends with # ///
     pattern = r"#\s*///\s*script\s*\n(.*?)#\s*///\s*\n"
     match = re.search(pattern, python_file_content, re.DOTALL | re.MULTILINE)
 
@@ -71,16 +64,14 @@ def parse_pep723_metadata(python_file_content: str) -> list[str]:
 
     metadata_block = match.group(1)
 
-    # Remove comment prefixes from each line
     lines = []
     for line in metadata_block.split("\n"):
         line = line.strip()
         if line.startswith("#"):
             line = line[1:].strip()
-        if line:  # Skip empty lines
+        if line:
             lines.append(line)
 
-    # Join lines and parse as TOML
     toml_content = "\n".join(lines)
 
     try:
@@ -125,7 +116,6 @@ def get_python_dependencies_from_plugin_archive(zip_data: bytes, metadata: IDAPl
                    if file is not found, or if dependencies format is unexpected
     """
     if isinstance(metadata.python_dependencies, str) and metadata.python_dependencies == "inline":
-        # Parse PEP 723 metadata from entry point
         if not metadata.entry_point.endswith(".py"):
             raise ValueError("Entry point must be a Python file (.py) for inline dependencies")
 
@@ -133,7 +123,6 @@ def get_python_dependencies_from_plugin_archive(zip_data: bytes, metadata: IDAPl
         python_content = python_content_bytes.decode("utf-8")
         return parse_pep723_metadata(python_content)
     else:
-        # Return the list of dependencies directly
         if isinstance(metadata.python_dependencies, list):
             return metadata.python_dependencies
         else:
@@ -151,7 +140,6 @@ def get_python_dependencies_from_plugin_directory(plugin_path: Path, metadata: I
                    if file is not found, or if dependencies format is unexpected
     """
     if isinstance(metadata.python_dependencies, str) and metadata.python_dependencies == "inline":
-        # Parse PEP 723 metadata from entry point
         if not metadata.entry_point.endswith(".py"):
             raise ValueError("Entry point must be a Python file (.py) for inline dependencies")
 
@@ -160,7 +148,6 @@ def get_python_dependencies_from_plugin_directory(plugin_path: Path, metadata: I
         python_content = entry_point_path.read_text(encoding="utf-8")
         return parse_pep723_metadata(python_content)
     else:
-        # Return the list of dependencies directly
         if isinstance(metadata.python_dependencies, list):
             return metadata.python_dependencies
         else:
