@@ -82,8 +82,8 @@ def PLUGIN_ENTRY():
     return None
 """
 
-    dependencies = parse_pep723_metadata(python_content)
-    assert dependencies == []
+    with pytest.raises(ValueError, match="Failed to parse PEP 723 TOML metadata"):
+        parse_pep723_metadata(python_content)
 
 
 def test_source_plugin_archive_v4_inline_dependencies():

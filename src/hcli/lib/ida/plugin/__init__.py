@@ -2,11 +2,21 @@ import io
 import logging
 import pathlib
 import re
-import tomllib
+import sys
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        raise ImportError(
+            "tomli is required for Python < 3.11. Install it with: pip install tomli"
+        ) from None
 
 import packaging.version
 import semantic_version
@@ -37,7 +47,7 @@ class IDAPluginMetadata(BaseModel):
     ida_versions: Optional[str] | None = Field(validation_alias=AliasPath("plugin", "idaVersions"), default=None)
     description: Optional[str] | None = Field(validation_alias=AliasPath("plugin", "description"), default=None)
 
-    python_dependencies: Union[list[str], str] = Field(
+    python_dependencies: list[str] | str = Field(
         validation_alias=AliasPath("plugin", "pythonDependencies"), default_factory=list
     )
 
@@ -46,7 +56,10 @@ def parse_pep723_metadata(python_file_content: str) -> list[str]:
     """Parse PEP 723 inline script metadata from Python file content.
 
     Returns a list of dependencies found in the PEP 723 metadata block,
-    or an empty list if no metadata is found.
+    or an empty list if no metadata block is found.
+    
+    Raises:
+        ValueError: If metadata block is found but contains invalid TOML or unexpected data format
     """
     # Look for PEP 723 metadata block
     # The block starts with # /// script and ends with # ///
@@ -76,11 +89,37 @@ def parse_pep723_metadata(python_file_content: str) -> list[str]:
         if isinstance(dependencies, list):
             return dependencies
         else:
-            logger.warning("PEP 723 dependencies is not a list: %s", type(dependencies))
-            return []
+            raise ValueError(f"PEP 723 dependencies must be a list, got {type(dependencies).__name__}")
     except tomllib.TOMLDecodeError as e:
-        logger.warning("Failed to parse PEP 723 TOML metadata: %s", e)
-        return []
+        raise ValueError(f"Failed to parse PEP 723 TOML metadata: {e}") from e
+
+
+def get_file_content_from_plugin_archive(zip_data: bytes, plugin_name: str, relative_path: str) -> str:
+    """Get file content from a plugin archive relative to the plugin's metadata file.
+    
+    Args:
+        zip_data: The zip archive data
+        plugin_name: The name of the plugin 
+        relative_path: Path relative to the plugin's metadata file
+        
+    Returns:
+        The file content as a string
+        
+    Raises:
+        ValueError: If plugin or file is not found, or file cannot be decoded
+    """
+    metadata_path = get_metadata_path_from_plugin_archive(zip_data, plugin_name)
+    plugin_dir = metadata_path.parent
+    file_path = plugin_dir / relative_path
+
+    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
+        try:
+            with zip_file.open(str(file_path)) as f:
+                return f.read().decode("utf-8")
+        except KeyError:
+            raise ValueError(f"File not found in archive: {file_path}")
+        except UnicodeDecodeError as e:
+            raise ValueError(f"Failed to decode file {file_path}: {e}") from e
 
 
 def get_python_dependencies_from_plugin_archive(zip_data: bytes, metadata: IDAPluginMetadata) -> list[str]:
@@ -88,37 +127,28 @@ def get_python_dependencies_from_plugin_archive(zip_data: bytes, metadata: IDAPl
 
     If pythonDependencies is "inline", parse PEP 723 metadata from the entry point.
     Otherwise, return the pythonDependencies list directly.
+    
+    Raises:
+        ValueError: If entry point is not a Python file for inline dependencies,
+                   if file is not found, or if dependencies format is unexpected
     """
     if isinstance(metadata.python_dependencies, str) and metadata.python_dependencies == "inline":
         # Parse PEP 723 metadata from entry point
         if not metadata.entry_point.endswith(".py"):
-            logger.warning("Entry point is not a Python file, cannot parse inline dependencies")
-            return []
+            raise ValueError("Entry point must be a Python file (.py) for inline dependencies")
 
-        # Get plugin directory path from metadata path
-        metadata_path = get_metadata_path_from_plugin_archive(zip_data, metadata.name)
-        plugin_dir = metadata_path.parent
-        entry_point_path = plugin_dir / metadata.entry_point
-
-        # Read the Python file content
-        with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
-            try:
-                with zip_file.open(str(entry_point_path)) as f:
-                    python_content = f.read().decode("utf-8")
-                    return parse_pep723_metadata(python_content)
-            except KeyError:
-                logger.error("Entry point file not found: %s", entry_point_path)
-                return []
-            except UnicodeDecodeError as e:
-                logger.error("Failed to decode Python file: %s", e)
-                return []
+        try:
+            python_content = get_file_content_from_plugin_archive(zip_data, metadata.name, metadata.entry_point)
+            return parse_pep723_metadata(python_content)
+        except ValueError:
+            # Re-raise ValueError from helper functions
+            raise
     else:
         # Return the list of dependencies directly
         if isinstance(metadata.python_dependencies, list):
             return metadata.python_dependencies
         else:
-            logger.warning("Unexpected python_dependencies type: %s", type(metadata.python_dependencies))
-            return []
+            raise ValueError(f"Unexpected python_dependencies type: {type(metadata.python_dependencies).__name__}")
 
 
 def get_python_dependencies_from_plugin_directory(plugin_path: Path, metadata: IDAPluginMetadata) -> list[str]:
@@ -126,12 +156,15 @@ def get_python_dependencies_from_plugin_directory(plugin_path: Path, metadata: I
 
     If pythonDependencies is "inline", parse PEP 723 metadata from the entry point.
     Otherwise, return the pythonDependencies list directly.
+    
+    Raises:
+        ValueError: If entry point is not a Python file for inline dependencies,
+                   if file is not found, or if dependencies format is unexpected
     """
     if isinstance(metadata.python_dependencies, str) and metadata.python_dependencies == "inline":
         # Parse PEP 723 metadata from entry point
         if not metadata.entry_point.endswith(".py"):
-            logger.warning("Entry point is not a Python file, cannot parse inline dependencies")
-            return []
+            raise ValueError("Entry point must be a Python file (.py) for inline dependencies")
 
         entry_point_path = plugin_path / metadata.entry_point
 
@@ -139,18 +172,15 @@ def get_python_dependencies_from_plugin_directory(plugin_path: Path, metadata: I
             python_content = entry_point_path.read_text(encoding="utf-8")
             return parse_pep723_metadata(python_content)
         except FileNotFoundError:
-            logger.error("Entry point file not found: %s", entry_point_path)
-            return []
+            raise ValueError(f"Entry point file not found: {entry_point_path}")
         except UnicodeDecodeError as e:
-            logger.error("Failed to decode Python file: %s", e)
-            return []
+            raise ValueError(f"Failed to decode Python file {entry_point_path}: {e}") from e
     else:
         # Return the list of dependencies directly
         if isinstance(metadata.python_dependencies, list):
             return metadata.python_dependencies
         else:
-            logger.warning("Unexpected python_dependencies type: %s", type(metadata.python_dependencies))
-            return []
+            raise ValueError(f"Unexpected python_dependencies type: {type(metadata.python_dependencies).__name__}")
 
 
 def get_metadatas_with_paths_from_plugin_archive(zip_data: bytes) -> Iterator[tuple[Path, IDAPluginMetadata]]:
