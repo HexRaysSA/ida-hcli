@@ -600,7 +600,33 @@ def find_current_ida_platform() -> str:
     if "HCLI_CURRENT_PLATFORM" in os.environ:
         return os.environ["HCLI_CURRENT_PLATFORM"]
 
-    return run_py_in_current_idapython(FIND_PLATFORM_PY)
+    # Try to determine platform using idat (if available)
+    try:
+        return run_py_in_current_idapython(FIND_PLATFORM_PY)
+    except ValueError as e:
+        if "can't find idat" in str(e):
+            # Fallback to platform detection without idat
+            # This happens for IDA versions that don't have idat (Free/Home)
+            import platform
+            import sys
+            
+            system = platform.system().lower()
+            if system == "windows":
+                return "windows-x86_64"
+            elif system == "linux":
+                return "linux-x86_64"
+            elif system == "darwin":
+                # Detect ARM vs Intel on macOS
+                machine = platform.machine().lower()
+                if machine in ("arm64", "aarch64"):
+                    return "macos-aarch64"
+                else:
+                    return "macos-x86_64"
+            else:
+                raise ValueError(f"Unsupported OS: {system}")
+        else:
+            # Re-raise if it's a different error
+            raise
 
 
 FIND_VERSION_PY = """
