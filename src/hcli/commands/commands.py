@@ -23,7 +23,7 @@ def collect_all_commands(group: click.Group, parent_path: str = "") -> list[str]
     return commands
 
 
-@click.command(name="commands", hidden=True)
+@click.command(name="commands")
 @click.pass_context
 def commands(ctx: click.Context):
     """List all available command combinations."""
