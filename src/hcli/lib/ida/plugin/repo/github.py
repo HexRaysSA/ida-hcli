@@ -517,6 +517,7 @@ INITIAL_REPOSITORIES = [
     "l4ys/lazyida",
     "lac-japan/ida_plugin_antidebugseeker",
     "mahaloz/decomp2dbg",
+    "mahmoudimus/ida-sigmaker",
     "mandiant/capa",
     "mandiant/fidl",
     "mandiant/flare-emu",
