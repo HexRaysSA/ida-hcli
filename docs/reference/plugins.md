@@ -234,3 +234,12 @@ This demonstrates `ida-plugin.json` file doesn't receive much love today, and it
 The author does releases, but only via tags.
 So, need to add support for Python source plugins versioned with bare tags, rather than GitHub releases.
 
+
+#### VirusTotal/vt-ida-plugin
+
+https://github.com/VirusTotal/vt-ida-plugin
+
+Doesn't have an `ida-plugin.json`. Python dependencies: `requests`.
+Trivial metadata file, located in subdirectory `./plugin/`.
+
+https://github.com/ida-community-plugins/vt-ida-plugin
