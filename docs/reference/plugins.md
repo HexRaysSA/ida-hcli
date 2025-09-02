@@ -217,3 +217,20 @@ Took 45 minutes, including updating docs/references with lessons learned.
 https://github.com/milankovo/ida_export_scripts
 
 Pure Python script with existing `ida-plugin.json`. Just needs a GitHub release.
+
+
+#### mahmoudimus/ida-sigmaker
+
+https://github.com/mahmoudimus/ida-sigmaker
+
+ida-plugin.json had two issues:
+- incorrect path for entrypoint
+- path to a missing logo file
+
+Both fixed in https://github.com/mahmoudimus/ida-sigmaker/pull/12
+
+This demonstrates `ida-plugin.json` file doesn't receive much love today, and its easily out of date.
+
+The author does releases, but only via tags.
+So, need to add support for Python source plugins versioned with bare tags, rather than GitHub releases.
+
