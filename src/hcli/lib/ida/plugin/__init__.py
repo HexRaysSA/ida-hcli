@@ -256,12 +256,12 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAPluginMeta
     name = metadata.name
 
     if metadata.metadata_version != 1:
-        logger.debug("Invalid metadata version")
+        logger.debug("Invalid metadata version: %s", metadata.metadata_version)
         raise ValueError(f"Invalid metadata version: {metadata.metadata_version}. Expected: 1")
 
     # name contains only ASCII alphanumeric, underscores, dashes, spaces
     if not re.match(r"^[a-zA-Z0-9_\- ]+$", metadata.name):
-        logger.debug("Invalid name format")
+        logger.debug("Invalid name format: %s", metadata.name)
         raise ValueError(
             f"Invalid name format: '{metadata.name}'. Must contain only ASCII alphanumeric, underscores, dashes"
         )
@@ -276,6 +276,7 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAPluginMeta
 
     if metadata.entry_point.endswith(".py"):
         if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.entry_point):
+            logger.debug("Missing python entry point file: %s", metadata.entry_point)
             raise ValueError(f"Entry point file not found in archive: '{metadata.entry_point}'")
     else:
         # binary plugin
@@ -284,16 +285,22 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAPluginMeta
             if does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.entry_point + ext):
                 has_bare_name = True
         if not has_bare_name:
+            logger.debug("Missing native entry point file: %s", metadata.entry_point)
             raise ValueError(f"Binary plugin file not found in archive: '{metadata.entry_point}'")
 
     if metadata.logo_path:
         if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.logo_path):
+            logger.debug("Missing logo file: %s", metadata.logo_path)
             raise ValueError(f"Logo file not found in archive: '{metadata.logo_path}'")
 
     # we'd want to validate that there are some platforms,
     # however this is recursive.
     # _ = discover_platforms_from_plugin_archive(zip_data, name)
-    _ = packaging.version.parse(metadata.version)
+    try:
+        _ = packaging.version.parse(metadata.version)
+    except Exception as e:
+        logger.debug("failed to parse version: %s", metadata.version)
+        raise
 
 
 def is_plugin_archive(zip_data: bytes, name: str) -> bool:

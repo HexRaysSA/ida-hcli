@@ -80,6 +80,26 @@ class GitHubRelease(BaseModel):
         )
 
 
+class GitHubTag(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    tag_name: str
+    commit_hash: str
+    zipball_url: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "GitHubTag":
+        target = data["target"]
+        if "target" in target:
+            target = target["target"]
+
+        return cls(
+            tag_name=data["name"],
+            commit_hash=target["oid"],
+            zipball_url=target["zipballUrl"],
+        )
+
+
 class GitHubCommit(BaseModel):
     commit_hash: str
     committed_date: str
@@ -97,6 +117,7 @@ class GitHubCommit(BaseModel):
 class GitHubReleases(BaseModel):
     default_branch: GitHubCommit
     releases: list[GitHubRelease]
+    tags: list[GitHubTag]
 
 
 class GitHubGraphQLClient:
@@ -184,6 +205,25 @@ class GitHubGraphQLClient:
                             }}
                         }}
                     }}
+                    refs(refPrefix: "refs/tags/", first: 25, orderBy: {{field: TAG_COMMIT_DATE, direction: DESC}}) {{
+                        nodes {{
+                            name
+                            target {{
+                                ... on Commit {{
+                                    zipballUrl
+                                    oid
+                                }}
+                                ... on Tag {{
+                                    target {{
+                                        ... on Commit {{
+                                            zipballUrl
+                                            oid
+                                        }}
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
                 }}
             """)
 
@@ -204,9 +244,11 @@ class GitHubGraphQLClient:
                 continue
 
             releases_data = repo_data["releases"]["nodes"]
+            tags_data = repo_data["refs"]["nodes"]
             result[(owner, repo)] = GitHubReleases(
                 default_branch=GitHubCommit.from_dict(repo_data["defaultBranchRef"]["target"]),
                 releases=[GitHubRelease.from_dict(release_data, owner, repo) for release_data in releases_data],
+                tags=[GitHubTag.from_dict(tag_data) for tag_data in tags_data],
             )
 
         return result
@@ -601,8 +643,8 @@ class GithubPluginRepo(BasePluginRepo):
         source_archives = []
 
         for owner, repo in rich.progress.track(sorted(repos), description="Fetching plugins", transient=True):
-            releases = get_releases_metadata(self.client, owner, repo).releases
-            for release in releases:
+            md = get_releases_metadata(self.client, owner, repo)
+            for release in md.releases:
                 # source archives
                 source_archives.append((owner, repo, release.commit_hash, release.zipball_url))
 
@@ -612,6 +654,12 @@ class GithubPluginRepo(BasePluginRepo):
                         continue
 
                     assets.append((owner, repo, release.tag_name, asset))
+
+            for tag in md.tags:
+                if not tag.tag_name.startswith("v"):
+                    continue
+                logger.debug("found tag: %s/%s %s", owner, repo, tag.tag_name)
+                source_archives.append((owner, repo, tag.commit_hash, tag.zipball_url))
 
         index = PluginArchiveIndex()
 
