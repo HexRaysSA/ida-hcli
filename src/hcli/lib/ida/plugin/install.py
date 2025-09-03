@@ -16,6 +16,7 @@ from hcli.lib.ida.plugin import (
     get_metadata_from_plugin_archive,
     get_metadata_path_from_plugin_archive,
     is_binary_plugin_archive,
+    is_ida_version_compatible,
     is_source_plugin_archive,
     validate_metadata_in_plugin_archive,
     validate_path,
@@ -199,7 +200,9 @@ def get_installed_plugins() -> list[tuple[str, str]]:
     return installed_plugins
 
 
-def can_install_plugin(zip_data: bytes, metadata: IDAPluginMetadata, current_platform: str, current_version: str) -> bool:
+def can_install_plugin(
+    zip_data: bytes, metadata: IDAPluginMetadata, current_platform: str, current_version: str
+) -> bool:
     name = metadata.name
     try:
         destination_path = get_plugin_directory(name)
@@ -215,8 +218,10 @@ def can_install_plugin(zip_data: bytes, metadata: IDAPluginMetadata, current_pla
     if current_platform not in platforms:
         logger.warning(f"Current platform not supported: {current_platform}")
         return False
-    
-    # TODO: check for version compatibility
+
+    if metadata.ida_versions and not is_ida_version_compatible(current_version, metadata.ida_versions):
+        logger.warning(f"Current IDA version not supported: {current_version}")
+        return False
 
     if metadata.python_dependencies:
         all_python_dependencies: list[str] = []
