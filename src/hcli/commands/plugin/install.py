@@ -9,14 +9,11 @@ from urllib.parse import urlparse
 
 import requests
 import rich_click as click
-import semantic_version
 
-from hcli.lib.commands import async_command
 from hcli.lib.console import console
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
-from hcli.lib.ida.plugin import get_metadata_from_plugin_archive, get_metadatas_with_paths_from_plugin_archive, parse_plugin_version
-from hcli.lib.ida.plugin.install import install_plugin_archive, is_ida_version_compatible
-from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin
+from hcli.lib.ida.plugin import get_metadata_from_plugin_archive, get_metadatas_with_paths_from_plugin_archive
+from hcli.lib.ida.plugin.install import install_plugin_archive
 
 logger = logging.getLogger(__name__)
 
@@ -41,47 +38,10 @@ def fetch_plugin_archive(url: str) -> bytes:
         raise ValueError(f"Unsupported URL scheme: {parsed_url.scheme}")
 
 
-def find_compatible_plugin_from_spec(
-    plugin_repo: BasePluginRepo, plugin_spec: str, current_platform: str, current_version: str
-) -> bytes:
-    plugin_name: str = re.split("=><!~", plugin_spec)[0]
-    wanted_spec = semantic_version.SimpleSpec(plugin_spec[len(plugin_name):] or ">=0")
-
-    plugins = [plugin for plugin in plugin_repo.get_plugins() if plugin.name == plugin_name]
-    if not plugins:
-        raise ValueError(f"plugin not found: {plugin_name}")
-    if len(plugins) > 1:
-        raise RuntimeError("too many plugins found")
-
-    plugin: Plugin = plugins[0]
-
-    versions = reversed(sorted(plugin.locations_by_version.keys(), key=parse_plugin_version))
-    for version in versions:
-        version_spec = parse_plugin_version(version)
-        if version_spec not in wanted_spec:
-            logger.debug("skipping: %s not in %s", version_spec, wanted_spec)
-            continue
-
-        logger.debug("found matching version: %s", version)
-        for i, location in enumerate(plugin.locations_by_version[version]):
-            if current_platform not in location.platforms:
-                logger.debug("skipping location %d: unsupported platforms: %s", i, location.platforms)
-                continue
-
-            if not is_ida_version_compatible(current_version, location.ida_versions):
-                logger.debug("skipping location %d: unsupported IDA versions: %s", i, location.ida_versions)
-                continue
-
-            return fetch_plugin_archive(location.url)
-
-    raise KeyError("failed to find compatible plugin")
-
-
 @click.command()
 @click.pass_context
 @click.argument("plugin")
-@async_command
-async def install_plugin(ctx, plugin: str) -> None:
+def install_plugin(ctx, plugin: str) -> None:
     plugin_spec = plugin
     try:
         current_platform = find_current_ida_platform()
@@ -115,9 +75,9 @@ async def install_plugin(ctx, plugin: str) -> None:
         else:
             logger.info("finding plugin in repository")
             plugin_name = re.split("=><!~", plugin_spec)[0]
-            buf = find_compatible_plugin_from_spec(
-                ctx.obj["plugin_repo"], plugin_spec, current_platform, current_ida_version
-            )
+            plugin_repo = ctx.obj["plugin_repo"]
+            location = plugin_repo.find_compatible_plugin_from_spec(plugin_spec, current_platform, current_ida_version)
+            buf = fetch_plugin_archive(location.url)
 
         install_plugin_archive(buf, plugin_name)
 
