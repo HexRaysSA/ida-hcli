@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 class IDAPluginMetadata(BaseModel):
     """IDA Plugin metadata from ida-plugin.json"""
 
+    schema_: str | None = Field(validation_alias="$schema")
     metadata_version: int = Field(validation_alias="IDAMetadataDescriptorVersion")
 
     #######################

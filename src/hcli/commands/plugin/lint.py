@@ -21,6 +21,10 @@ def lint_plugin_directory(path: str) -> None:
         metadata = get_metadata_from_plugin_directory(plugin_path)
         validate_metadata_in_plugin_directory(plugin_path)
 
+        if not metadata.schema_:
+            console.print("[yellow]Recommendation[/yellow]: ida-plugin.json: provide $schema")
+            console.print("  like: https://raw.githubusercontent.com/HexRaysSA/ida-hcli/refs/heads/v0.9.0/docs/reference/ida-plugin.schema.json")
+
         if not metadata.ida_versions:
             console.print("[yellow]Recommendation[/yellow]: ida-plugin.json: provide plugin.idaVersions")
 
