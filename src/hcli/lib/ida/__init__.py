@@ -606,7 +606,15 @@ def find_current_ida_platform() -> str:
     if ENV.HCLI_CURRENT_IDA_PLATFORM is not None:
         return ENV.HCLI_CURRENT_IDA_PLATFORM
 
-    return run_py_in_current_idapython(FIND_PLATFORM_PY)
+    os_ = get_os()
+    if os_ == "windows":
+        return "windows-x86_64"
+    elif os_ == "linux":
+        return "linux-x86_64"
+    elif os_ == "mac":
+        return run_py_in_current_idapython(FIND_PLATFORM_PY)
+    else:
+        raise ValueError(f"Unsupported OS: {os_}")
 
 
 FIND_VERSION_PY = """
