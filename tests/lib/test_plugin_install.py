@@ -24,6 +24,17 @@ from hcli.lib.ida.plugin.install import (
 from hcli.lib.ida.python import pip_freeze
 
 
+def has_idat():
+    """Check if idat is available (same logic as in test_ida.py)"""
+    if "HCLI_HAS_IDAT" not in os.environ:
+        return True
+
+    if os.environ["HCLI_HAS_IDAT"].lower() in ("", "0", "false", "f"):
+        return False
+
+    return True
+
+
 @contextlib.contextmanager
 def temp_env_var(key: str, value: str):
     _orig = os.environ.get(key, "")
@@ -53,6 +64,7 @@ def temp_hcli_idausr_dir():
         yield
 
 
+@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_install_source_plugin_archive(temp_hcli_idausr_dir):
     plugin_path = PLUGIN_DATA / "plugin1" / "plugin1-v1.0.0.zip"
     buf = plugin_path.read_bytes()
@@ -67,6 +79,7 @@ def test_install_source_plugin_archive(temp_hcli_idausr_dir):
     assert ("plugin1", "v1.0.0") in get_installed_plugins()
 
 
+@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_install_binary_plugin_archive(temp_hcli_idausr_dir):
     plugin_path = PLUGIN_DATA / "zydisinfo" / "zydisinfo-v1.0.0.zip"
     buf = plugin_path.read_bytes()
@@ -84,6 +97,7 @@ def test_install_binary_plugin_archive(temp_hcli_idausr_dir):
     assert is_plugin_installed("zydisinfo")
 
 
+@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_uninstall(temp_hcli_idausr_dir):
     plugin_path = PLUGIN_DATA / "plugin1" / "plugin1-v1.0.0.zip"
     buf = plugin_path.read_bytes()
@@ -96,6 +110,7 @@ def test_uninstall(temp_hcli_idausr_dir):
     assert not is_plugin_installed("zydisinfo")
 
 
+@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_disable(temp_hcli_idausr_dir):
     plugin_path = PLUGIN_DATA / "plugin1" / "plugin1-v1.0.0.zip"
     buf = plugin_path.read_bytes()
@@ -127,6 +142,7 @@ def test_disable(temp_hcli_idausr_dir):
     assert not is_plugin_installed("zydisinfo")
 
 
+@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_upgrade(temp_hcli_idausr_dir):
     v1 = (PLUGIN_DATA / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
     v2 = (PLUGIN_DATA / "plugin1" / "plugin1-v2.0.0.zip").read_bytes()
@@ -161,6 +177,7 @@ def initialize_idausr_with_venv(idausr_dir: Path):
     _ = subprocess.run([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
 
 
+@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_plugin_python_dependencies(temp_hcli_idausr_dir):
     idausr = Path(os.environ["HCLI_IDAUSR"])
     initialize_idausr_with_venv(idausr)
