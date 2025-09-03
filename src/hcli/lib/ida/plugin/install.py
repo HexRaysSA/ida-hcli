@@ -15,6 +15,8 @@ from hcli.lib.ida.plugin import (
     discover_platforms_from_plugin_archive,
     get_metadata_from_plugin_archive,
     get_metadata_path_from_plugin_archive,
+    get_python_dependencies_from_plugin_archive,
+    get_python_dependencies_from_plugin_directory,
     is_binary_plugin_archive,
     is_ida_version_compatible,
     is_source_plugin_archive,
@@ -223,13 +225,16 @@ def can_install_plugin(
         logger.warning(f"Current IDA version not supported: {current_version}")
         return False
 
-    if metadata.python_dependencies:
+    # Get Python dependencies using helper function
+    python_dependencies = get_python_dependencies_from_plugin_archive(zip_data, metadata)
+    if python_dependencies:
         all_python_dependencies: list[str] = []
         for existing_plugin_path in get_installed_plugin_paths():
             existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
-            all_python_dependencies.extend(existing_metadata.python_dependencies)
+            existing_deps = get_python_dependencies_from_plugin_directory(existing_plugin_path, existing_metadata)
+            all_python_dependencies.extend(existing_deps)
 
-        all_python_dependencies.extend(metadata.python_dependencies)
+        all_python_dependencies.extend(python_dependencies)
 
         python_exe = find_current_python_executable()
 
@@ -309,14 +314,17 @@ def _install_plugin_archive(zip_data: bytes, name: str):
     # TODO: log steps (and revert if necessary)
     # TODO: install idaPluginDependencies
 
-    if metadata.python_dependencies:
+    # Get Python dependencies using helper function
+    python_dependencies = get_python_dependencies_from_plugin_archive(zip_data, metadata)
+    if python_dependencies:
         all_python_dependencies: list[str] = []
         for existing_plugin_path in get_installed_plugin_paths():
             existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
-            all_python_dependencies.extend(existing_metadata.python_dependencies)
+            existing_deps = get_python_dependencies_from_plugin_directory(existing_plugin_path, existing_metadata)
+            all_python_dependencies.extend(existing_deps)
 
-        logger.debug("installing new python dependencies: %s", metadata.python_dependencies)
-        all_python_dependencies.extend(metadata.python_dependencies)
+        logger.debug("installing new python dependencies: %s", python_dependencies)
+        all_python_dependencies.extend(python_dependencies)
 
         python_exe = find_current_python_executable()
         try:

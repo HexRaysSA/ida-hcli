@@ -24,6 +24,7 @@ dependencies = [
     "requests>=2.32.4",
     "idapro>=0.0.5",
     "pip>=25.2",
+    "tomli>=1.2.0; python_version<'3.11'",
 ]
 
 [project.urls]
