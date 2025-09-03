@@ -14,6 +14,7 @@ from .enable import disable_plugin, enable_plugin
 from .install import install_plugin
 from .list import list_plugins
 from .search import search_plugins
+from .status import get_plugin_status
 from .uninstall import uninstall_plugin
 from .upgrade import upgrade_plugin
 
@@ -55,8 +56,7 @@ def plugin(ctx, repo: str | None) -> None:
     ctx.obj["plugin_repo"] = plugin_repo
 
 
-# TODO: maybe make this `status` rather than list
-# since list might operate against the server or current state
+plugin.add_command(get_plugin_status, name="status")
 plugin.add_command(list_plugins, name="list")
 plugin.add_command(search_plugins, name="search")
 plugin.add_command(install_plugin, name="install")
