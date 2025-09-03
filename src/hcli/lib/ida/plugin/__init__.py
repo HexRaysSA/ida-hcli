@@ -101,7 +101,9 @@ def get_file_content_from_plugin_archive(zip_data: bytes, plugin_name: str, rela
     file_path = plugin_dir / relative_path
 
     with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
-        with zip_file.open(str(file_path)) as f:
+        # zip files always use forward slashes
+        zip_path = file_path.as_posix()
+        with zip_file.open(zip_path) as f:
             return f.read()
 
 
@@ -212,7 +214,8 @@ def does_plugin_path_exist_in_plugin_archive(zip_data: bytes, plugin_name: str, 
     metadata_path = get_metadata_path_from_plugin_archive(zip_data, plugin_name)
     plugin_root_path = Path(metadata_path).parent
     candidate_path = plugin_root_path / Path(relative_path)
-    return does_path_exist_in_zip_archive(zip_data, str(candidate_path))
+    # zip files always use forward slashes
+    return does_path_exist_in_zip_archive(zip_data, candidate_path.as_posix())
 
 
 def discover_platforms_from_plugin_archive(zip_data: bytes, name: str) -> frozenset[str]:
