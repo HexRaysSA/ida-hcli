@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class PluginArchiveLocation:
     url: str
+    sha256: str
     name: str
     version: str
     ida_versions: str
@@ -62,11 +63,19 @@ class BasePluginRepo(ABC):
             logger.debug("found matching version: %s", version)
             for i, location in enumerate(plugin.locations_by_version[version]):
                 if current_platform not in location.platforms:
-                    logger.debug("skipping location %d: unsupported platforms: %s", i, location.platforms)
+                    logger.debug(
+                        "skipping location %d: unsupported platforms: %s",
+                        i,
+                        location.platforms,
+                    )
                     continue
 
                 if not is_ida_version_compatible(current_version, location.ida_versions):
-                    logger.debug("skipping location %d: unsupported IDA versions: %s", i, location.ida_versions)
+                    logger.debug(
+                        "skipping location %d: unsupported IDA versions: %s",
+                        i,
+                        location.ida_versions,
+                    )
                     continue
 
                 return location
@@ -85,8 +94,8 @@ class PluginArchiveIndex:
     """
 
     def __init__(self):
-        # name -> version -> tuple[idaVersion, set[platforms]] -> list[url]
-        self.index: dict[str, dict[str, dict[tuple[str, frozenset[str]], list[str]]]] = defaultdict(
+        # name -> version -> tuple[idaVersion, set[platforms]] -> list[tuple[url, sha256]]
+        self.index: dict[str, dict[str, dict[tuple[str, frozenset[str]], list[tuple[str, str]]]]] = defaultdict(
             lambda: defaultdict(lambda: defaultdict(list))
         )
 
@@ -97,6 +106,10 @@ class PluginArchiveIndex:
             except ValueError:
                 return
 
+            h = hashlib.sha256()
+            h.update(buf)
+            sha256 = h.hexdigest()
+
             name = metadata.name
             version = metadata.version
             ida_versions = metadata.ida_versions or ">=0"
@@ -105,8 +118,15 @@ class PluginArchiveIndex:
 
             versions = self.index[name]
             specs = versions[version]
-            specs[spec].append(url)
-            logger.debug("found plugin: %s %s IDA:%s %s %s", name, version, ida_versions, platforms, url)
+            specs[spec].append((url, sha256))
+            logger.debug(
+                "found plugin: %s %s IDA:%s %s %s",
+                name,
+                version,
+                ida_versions,
+                platforms,
+                url,
+            )
 
     def get_plugins(self) -> list[Plugin]:
         ret = []
@@ -115,8 +135,15 @@ class PluginArchiveIndex:
             for version, specs in versions.items():
                 for spec, urls in specs.items():
                     ida_versions, platforms = spec
-                    for url in urls:
-                        location = PluginArchiveLocation(url, name, version, ida_versions, platforms)
+                    for url, sha256 in urls:
+                        location = PluginArchiveLocation(
+                            url=url,
+                            sha256=sha256,
+                            name=name,
+                            version=version,
+                            ida_versions=ida_versions,
+                            platforms=platforms,
+                        )
                         locations_by_version[version].append(location)
 
             plugin = Plugin(name, locations_by_version)
