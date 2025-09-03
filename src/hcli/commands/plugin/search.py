@@ -10,7 +10,7 @@ from hcli.lib.commands import async_command
 from hcli.lib.console import console
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
 from hcli.lib.ida.plugin import ALL_PLATFORMS, is_ida_version_compatible
-from hcli.lib.ida.plugin.repo import Plugin, PluginArchiveLocation
+from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveLocation
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +56,17 @@ async def search_plugins(ctx, query: str | None = None) -> None:
         console.print(f"[grey69]current version:[/grey69] {current_version}")
         console.print()
 
-        plugin_repo = ctx.obj["plugin_repo"]
+        plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
 
-        plugins = plugin_repo.get_plugins()
+        plugins: list[Plugin] = plugin_repo.get_plugins()
+        incompatible_plugins: list[str] = []
 
         for plugin in sorted(plugins, key=lambda p: p.name):
             if query and query.lower() not in plugin.name.lower():
                 continue
 
             if not is_compatible_plugin(plugin, current_platform, current_version):
+                incompatible_plugins.append(plugin.name)
                 continue
 
             console.print(f"[blue]{plugin.name}[/blue]")
@@ -90,6 +92,11 @@ async def search_plugins(ctx, query: str | None = None) -> None:
 
         if not plugins:
             console.print("[grey69]No plugins found[/grey69]")
+
+        if incompatible_plugins:
+            console.print("[grey69]Incompatible plugins:[/grey69]")
+            for incompatible_plugin in sorted(set(incompatible_plugins)):
+                console.print(f"- [blue]{incompatible_plugin}[/blue]")
 
     except Exception as e:
         logger.warning("error: %s", e, exc_info=True)
