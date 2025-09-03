@@ -2,6 +2,7 @@ from fixtures import PLUGIN_DATA
 
 from hcli.lib.ida.plugin import (
     is_binary_plugin_archive,
+    is_ida_version_compatible,
     is_plugin_archive,
     is_source_plugin_archive,
 )
@@ -23,3 +24,15 @@ def test_binary_plugin_archive():
     assert is_plugin_archive(buf, "zydisinfo")
     assert not is_source_plugin_archive(buf, "zydisinfo")
     assert is_binary_plugin_archive(buf, "zydisinfo")
+
+
+def test_is_ida_version_compatible():
+    assert is_ida_version_compatible("9.0", ">=0")
+    assert is_ida_version_compatible("9.0", ">=9")
+    assert is_ida_version_compatible("9.1", ">=9")
+    assert is_ida_version_compatible("9.0sp1", ">=9")
+    assert is_ida_version_compatible("9.0", ">=9.0")
+    assert is_ida_version_compatible("9.0", ">=9.0.0")
+    assert is_ida_version_compatible("9.0", ">=9.0,<9.1")
+    assert is_ida_version_compatible("9.0sp1", ">=9.0,<9.1")
+    assert is_ida_version_compatible("9.0sp1", ">=9.0,<9.1,!=9.0")
