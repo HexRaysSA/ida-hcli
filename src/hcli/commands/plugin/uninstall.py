@@ -2,27 +2,37 @@
 
 from __future__ import annotations
 
-import questionary
+import logging
+
 import rich_click as click
 
-from hcli.commands.common import safe_ask_async
-from hcli.lib.commands import async_command
 from hcli.lib.console import console
-from hcli.lib.constants import cli
+from hcli.lib.ida.plugin.install import (
+    can_uninstall_plugin,
+    is_plugin_installed,
+    uninstall_plugin as uninstall_plugin_impl,
+)
+
+logger = logging.getLogger(__name__)
 
 
 @click.command()
-@click.argument("plugin", required=False)
-@async_command
-async def uninstall_plugin(plugin: str) -> None:
-    if not plugin:
-        query = await safe_ask_async(questionary.text("Enter search query:", style=cli.SELECT_STYLE))
+@click.argument("plugin")
+def uninstall_plugin(plugin: str) -> None:
+    if not is_plugin_installed(plugin):
+        console.print(f"[red]Plugin is not installed: {plugin}[/red]")
+        raise click.Abort()
 
-    if not query.strip():
-        console.print("[red]Plugin name cannot be empty[/red]")
+    if not can_uninstall_plugin(plugin):
+        console.print(f"[red]Plugin cannot be uninstalled: {plugin}[/red]")
+        click.Abort()
         return
 
     try:
-        raise NotImplementedError("Plugin uninstall")
+        uninstall_plugin_impl(plugin)
     except Exception as e:
+        logger.error("failed to uninstall: %s", e, exc_info=True)
         console.print(f"[red]uninstall failed: {e}[/red]")
+        raise click.Abort()
+
+    console.print(f"[green]Plugin uninstalled: {plugin}[/green]")
