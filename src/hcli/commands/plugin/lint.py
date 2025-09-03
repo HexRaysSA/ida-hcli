@@ -9,7 +9,7 @@ import rich_click as click
 from pydantic import ValidationError
 
 from hcli.lib.console import console
-from hcli.lib.ida.plugin import IDAPluginMetadata
+from hcli.lib.ida.plugin import IDAPluginMetadata, parse_ida_version_spec, parse_plugin_version
 from hcli.lib.ida.plugin.install import validate_metadata_in_plugin_directory
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,12 @@ def lint_plugin_directory(path: str) -> None:
 
         click.Abort()
         return
+
+    if not parse_plugin_version(metadata.version):
+        console.print("[red]Error[/red]: plugin version should look like 'X.Y.Z'")
+
+    if metadata.ida_versions and not parse_ida_version_spec(metadata.ida_versions):
+        console.print("[red]Error[/red]: idaVersion should look like 'X.YspZ'")
 
     try:
         # Additional validation
