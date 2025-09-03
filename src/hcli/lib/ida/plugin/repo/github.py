@@ -590,6 +590,7 @@ class GithubPluginRepo(BasePluginRepo):
     def _get_repos(self):
         return [parse_repository(repo) for repo in INITIAL_REPOSITORIES]
 
+    @functools.cache
     def get_plugins(self) -> list[Plugin]:
         repos = self._get_repos()
 
