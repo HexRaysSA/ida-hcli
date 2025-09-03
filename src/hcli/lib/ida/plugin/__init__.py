@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 import packaging.version
+import semantic_version
 from pydantic import AliasPath, BaseModel, Field, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -138,6 +139,25 @@ def discover_platforms_from_plugin_archive(zip_data: bytes, name: str) -> frozen
             raise ValueError("failed to discover platforms: entry point not found")
     else:
         raise ValueError("not a valid plugin archive")
+
+
+def is_ida_version_compatible(current_version: str, version_spec: str) -> bool:
+    """Check if current IDA version is compatible with the version specifier.
+
+    Args:
+        current_version: Current IDA version (e.g., "9.1")
+        version_spec: Version specifier (e.g., ">=8.0", "~=9.0", ">=0")
+
+    Returns:
+        True if current version satisfies the specifier
+    """
+    try:
+        current = packaging.version.Version(current_version)
+        spec = semantic_version.SimpleSpec(version_spec)
+        return current in spec
+    except Exception as e:
+        logger.debug(f"Error checking version compatibility: {e}")
+        return False
 
 
 # expect paths to be:
