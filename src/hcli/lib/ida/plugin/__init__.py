@@ -139,6 +139,33 @@ def discover_platforms_from_plugin_archive(zip_data: bytes, name: str) -> frozen
         raise ValueError("not a valid plugin archive")
 
 
+# expect paths to be:
+# - relative
+# - contain only ASCII
+# - not contain traversals up
+def validate_path(path: str, field_name: str) -> None:
+    if not path:
+        return
+
+    try:
+        _ = path.encode("ascii")
+    except UnicodeEncodeError:
+        logger.debug(f"Invalid {field_name} path: '{path}'")
+        raise ValueError(f"Invalid {field_name} path: '{path}'")
+
+    # Use PurePosixPath for consistent path handling in zip archives
+    try:
+        path_obj = pathlib.PurePosixPath(path)
+    except Exception:
+        logger.debug(f"Invalid {field_name} path: '{path}'")
+        raise ValueError(f"Invalid {field_name} path: '{path}'")
+
+    # Check if path is absolute or contains parent directory references
+    if path_obj.is_absolute() or ".." in path_obj.parts:
+        logger.debug(f"Invalid {field_name} path: '{path}'")
+        raise ValueError(f"Invalid {field_name} path: '{path}'")
+
+
 def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAPluginMetadata):
     """validate the `ida-plugin.json` metadata within the given plugin archive.
 
@@ -169,32 +196,6 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAPluginMeta
     if not metadata.entry_point:
         logger.debug("Missing entry point")
         raise ValueError("entry point required")
-
-    # expect paths to be:
-    # - relative
-    # - contain only ASCII
-    # - not contain traversals up
-    def validate_path(path: str, field_name: str) -> None:
-        if not path:
-            return
-
-        try:
-            _ = path.encode("ascii")
-        except UnicodeEncodeError:
-            logger.debug(f"Invalid {field_name} path: '{path}'")
-            raise ValueError(f"Invalid {field_name} path: '{path}'")
-
-        # Use PurePosixPath for consistent path handling in zip archives
-        try:
-            path_obj = pathlib.PurePosixPath(path)
-        except Exception:
-            logger.debug(f"Invalid {field_name} path: '{path}'")
-            raise ValueError(f"Invalid {field_name} path: '{path}'")
-
-        # Check if path is absolute or contains parent directory references
-        if path_obj.is_absolute() or ".." in path_obj.parts:
-            logger.debug(f"Invalid {field_name} path: '{path}'")
-            raise ValueError(f"Invalid {field_name} path: '{path}'")
 
     validate_path(metadata.entry_point, "entry point")
     if metadata.logo_path:
