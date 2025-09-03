@@ -6,9 +6,11 @@ import logging
 from pathlib import Path
 
 import rich_click as click
+from pydantic import ValidationError
 
 from hcli.lib.console import console
-from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, validate_metadata_in_plugin_directory
+from hcli.lib.ida.plugin import IDAPluginMetadata
+from hcli.lib.ida.plugin.install import validate_metadata_in_plugin_directory
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +19,38 @@ logger = logging.getLogger(__name__)
 @click.argument("path")
 def lint_plugin_directory(path: str) -> None:
     plugin_path = Path(path)
+
+    metadata_file = None
+    for filename in ("ida-plugin.json", "ida-plugin.json.disabled"):
+        candidate_file = plugin_path / filename
+        if candidate_file.exists():
+            metadata_file = candidate_file
+            break
+
+    if not metadata_file:
+        console.print(f"[red]Error[/red]: ida-plugin.json not found in {plugin_path}")
+        return
+
     try:
-        metadata = get_metadata_from_plugin_directory(plugin_path)
+        content = metadata_file.read_text(encoding="utf-8")
+        metadata = IDAPluginMetadata.model_validate_json(content)
+    except ValidationError as e:
+        console.print("[red]Error[/red]: ida-plugin.json validation failed")
+        for error in e.errors():
+            field_path = ".".join(str(loc) for loc in error["loc"])
+            error_msg = error["msg"]
+            error_type = error["type"]
+
+            if error_type == "missing":
+                console.print(f"  [red]Missing required field[/red]: {field_path}")
+            else:
+                console.print(f"  [red]Invalid value[/red] for {field_path}: {error_msg}")
+
+        click.Abort()
+        return
+
+    try:
+        # Additional validation
         validate_metadata_in_plugin_directory(plugin_path)
 
         if not metadata.schema_:
@@ -42,3 +74,6 @@ def lint_plugin_directory(path: str) -> None:
     except Exception as e:
         logger.warning("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
+
+        click.Abort()
+        return
