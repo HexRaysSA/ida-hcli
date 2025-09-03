@@ -1,12 +1,17 @@
 import hashlib
 import logging
+import re
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 
+import semantic_version
+
 from hcli.lib.ida.plugin import (
     discover_platforms_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
+    is_ida_version_compatible,
+    parse_plugin_version,
     validate_metadata_in_plugin_archive,
 )
 
@@ -32,6 +37,41 @@ class Plugin:
 class BasePluginRepo(ABC):
     @abstractmethod
     def get_plugins(self) -> list[Plugin]: ...
+
+    def find_compatible_plugin_from_spec(
+        self, plugin_spec: str, current_platform: str, current_version: str
+    ) -> PluginArchiveLocation:
+        plugin_name: str = re.split("=><!~", plugin_spec)[0]
+        wanted_spec = semantic_version.SimpleSpec(plugin_spec[len(plugin_name) :] or ">=0")
+
+        plugins = [plugin for plugin in self.get_plugins() if plugin.name == plugin_name]
+        if not plugins:
+            raise ValueError(f"plugin not found: {plugin_name}")
+        if len(plugins) > 1:
+            raise RuntimeError("too many plugins found")
+
+        plugin: Plugin = plugins[0]
+
+        versions = reversed(sorted(plugin.locations_by_version.keys(), key=parse_plugin_version))
+        for version in versions:
+            version_spec = parse_plugin_version(version)
+            if version_spec not in wanted_spec:
+                logger.debug("skipping: %s not in %s", version_spec, wanted_spec)
+                continue
+
+            logger.debug("found matching version: %s", version)
+            for i, location in enumerate(plugin.locations_by_version[version]):
+                if current_platform not in location.platforms:
+                    logger.debug("skipping location %d: unsupported platforms: %s", i, location.platforms)
+                    continue
+
+                if not is_ida_version_compatible(current_version, location.ida_versions):
+                    logger.debug("skipping location %d: unsupported IDA versions: %s", i, location.ida_versions)
+                    continue
+
+                return location
+
+        raise KeyError(f"plugin not found: {plugin_spec}")
 
 
 class PluginArchiveIndex:
