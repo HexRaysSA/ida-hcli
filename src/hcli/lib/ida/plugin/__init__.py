@@ -141,6 +141,58 @@ def discover_platforms_from_plugin_archive(zip_data: bytes, name: str) -> frozen
         raise ValueError("not a valid plugin archive")
 
 
+def parse_plugin_version(version: str) -> semantic_version.Version:
+    normalized_version = version
+    normalized_version = normalized_version.lstrip("v")
+    return semantic_version.Version(normalized_version, partial=True)
+
+
+def parse_ida_version(version: str) -> semantic_version.Version:
+    if re.match(r"\d\.\d\.\d", version):
+        raise ValueError("invalid version string: three components, like X.Y.Z")
+
+    # now we're guaranteed to only have one (X) or two (X.Y) component versions
+
+    # negative lookbehind, pattern, negative lookahead
+    normalized_version = re.sub(r"(?<![.sp])(\d+)(?![.])", r"\1.0.0", version)
+    normalized_version = re.sub(r"(?<![.sp])(\d+)\.(\d+)(?![.])", r"\1.\2.0", normalized_version)
+
+    # now we have three component versions, all ending with ".0"
+
+    # map X.Y.0spZ to X.Y.Z
+    # because if we use X.Y.0+spZ, the "+spZ" is not compared,
+    # as its considered "build metadata"
+    normalized_version = re.sub(r"\.0sp(\d+)", r".\1", normalized_version)
+
+    if normalized_version != version:
+        logger.debug("normalized %s -> %s", version, normalized_version)
+
+    return semantic_version.Version(normalized_version)
+
+
+def parse_ida_version_spec(spec: str) -> semantic_version.SimpleSpec:
+    if re.match(r"\d\.\d\.\d", spec):
+        raise ValueError("invalid spec string: three components, like X.Y.Z")
+
+    # now we're guaranteed to only have one (X) or two (X.Y) component versions
+
+    # negative lookbehind, pattern, negative lookahead
+    normalized_spec = re.sub(r"(?<![.sp])(\d+)(?![.])", r"\1.0.0", spec)
+    normalized_spec = re.sub(r"(?<![.sp])(\d+)\.(\d+)(?![.])", r"\1.\2.0", normalized_spec)
+
+    # now we have three component versions, all ending with ".0"
+
+    # map X.Y.0spZ to X.Y.Z
+    # because if we use X.Y.0+spZ, the "+spZ" is not compared,
+    # as its considered "build metadata"
+    normalized_spec = re.sub(r"\.0sp(\d+)", r".\1", normalized_spec)
+
+    if normalized_spec != spec:
+        logger.debug("normalized %s -> %s", spec, normalized_spec)
+
+    return semantic_version.SimpleSpec(normalized_spec)
+
+
 def is_ida_version_compatible(current_version: str, version_spec: str) -> bool:
     """Check if current IDA version is compatible with the version specifier.
 
@@ -155,39 +207,8 @@ def is_ida_version_compatible(current_version: str, version_spec: str) -> bool:
     Returns:
         True if current version satisfies the specifier
     """
-
-    if re.match(r"\d\.\d\.\d", current_version):
-        raise ValueError("invalid version string: three components, like X.Y.Z")
-
-    if re.match(r"\d\.\d\.\d", version_spec):
-        raise ValueError("invalid spec string: three components, like X.Y.Z")
-
-    # now we're guaranteed to only have one (X) or two (X.Y) component versions
-
-    # negative lookbehind, pattern, negative lookahead
-    normalized_current = re.sub(r"(?<![.sp])(\d+)(?![.])", r"\1.0.0", current_version)
-    normalized_current = re.sub(r"(?<![.sp])(\d+)\.(\d+)(?![.])", r"\1.\2.0", normalized_current)
-
-    normalized_spec = re.sub(r"(?<![.sp])(\d+)(?![.])", r"\1.0.0", version_spec)
-    normalized_spec = re.sub(r"(?<![.sp])(\d+)\.(\d+)(?![.])", r"\1.\2.0", normalized_spec)
-
-    # now we have three component versions, all ending with ".0"
-
-    # map X.Y.0spZ to X.Y.Z
-    # because if we use X.Y.0+spZ, the "+spZ" is not compared,
-    # as its considered "build metadata"
-    normalized_current = re.sub(r"\.0sp(\d+)", r".\1", normalized_current)
-    normalized_spec = re.sub(r"\.0sp(\d+)", r".\1", normalized_spec)
-
-    if normalized_current != current_version:
-        logger.debug("normalized %s -> %s", current_version, normalized_current)
-
-    if normalized_spec != version_spec:
-        logger.debug("normalized %s -> %s", version_spec, normalized_spec)
-
-    cur = semantic_version.Version(normalized_current)
-    spec = semantic_version.SimpleSpec(normalized_spec)
-
+    cur = parse_ida_version(current_version)
+    spec = parse_ida_version_spec(version_spec)
     return cur in spec
 
 

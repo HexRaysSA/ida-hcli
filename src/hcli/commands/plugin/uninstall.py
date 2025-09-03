@@ -10,6 +10,8 @@ from hcli.lib.console import console
 from hcli.lib.ida.plugin.install import (
     can_uninstall_plugin,
     is_plugin_installed,
+)
+from hcli.lib.ida.plugin.install import (
     uninstall_plugin as uninstall_plugin_impl,
 )
 
@@ -37,4 +39,4 @@ def uninstall_plugin(plugin: str) -> None:
         click.Abort()
         return
 
-    console.print(f"[green]Plugin uninstalled: {plugin}[/green]")
+    console.print(f"[green]Uninstalled[/green] plugin: [blue]{plugin}[/blue]")
