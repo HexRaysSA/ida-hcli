@@ -9,9 +9,10 @@ from pathlib import Path
 
 import packaging.version
 
-from hcli.lib.ida import get_ida_user_dir
+from hcli.lib.ida import find_current_ida_platform, find_current_ida_version, get_ida_user_dir
 from hcli.lib.ida.plugin import (
     IDAPluginMetadata,
+    discover_platforms_from_plugin_archive,
     get_metadata_from_plugin_archive,
     get_metadata_path_from_plugin_archive,
     is_binary_plugin_archive,
@@ -198,9 +199,10 @@ def get_installed_plugins() -> list[tuple[str, str]]:
     return installed_plugins
 
 
-def can_install_plugin(metadata: IDAPluginMetadata) -> bool:
+def can_install_plugin(zip_data: bytes, metadata: IDAPluginMetadata, current_platform: str, current_version: str) -> bool:
+    name = metadata.name
     try:
-        destination_path = get_plugin_directory(metadata.name)
+        destination_path = get_plugin_directory(name)
     except ValueError as e:
         logger.error(f"Can't install plugin: {str(e)}")
         return False
@@ -209,7 +211,11 @@ def can_install_plugin(metadata: IDAPluginMetadata) -> bool:
         logger.warning(f"Plugin directory already exists: {destination_path}")
         return False
 
-    # TODO: check for arch compatibility
+    platforms = discover_platforms_from_plugin_archive(zip_data, name)
+    if current_platform not in platforms:
+        logger.warning(f"Current platform not supported: {current_platform}")
+        return False
+    
     # TODO: check for version compatibility
 
     if metadata.python_dependencies:
@@ -277,7 +283,10 @@ def _install_plugin_archive(zip_data: bytes, name: str):
 
     logger.info("installing plugin: %s (%s)", metadata.name, metadata.version)
 
-    if not can_install_plugin(metadata):
+    current_platform = find_current_ida_platform()
+    current_version = find_current_ida_version()
+
+    if not can_install_plugin(zip_data, metadata, current_platform, current_version):
         logger.warning("can't install plugin")
         raise RuntimeError("Plugin installation is not possible")
 
