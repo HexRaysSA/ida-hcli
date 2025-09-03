@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,18 @@ from hcli.lib.ida.python import (
 )
 
 
+def has_idat():
+    """Check if idat is available (same logic as in test_ida.py)"""
+    if "HCLI_HAS_IDAT" not in os.environ:
+        return True
+
+    if os.environ["HCLI_HAS_IDAT"].lower() in ("", "0", "false", "f"):
+        return False
+
+    return True
+
+
+@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_find_current_python_executable_returns_path():
     """Test that find_current_python_executable returns a valid path."""
     result = find_current_python_executable()
@@ -19,11 +32,13 @@ def test_find_current_python_executable_returns_path():
     assert "python" in result.name.lower()
 
 
+@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_does_current_ida_have_pip():
     python_exe = find_current_python_executable()
     assert does_current_ida_have_pip(python_exe)
 
 
+@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_verify_pip_can_install_packages():
     python_exe = find_current_python_executable()
 
