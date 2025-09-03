@@ -144,6 +144,10 @@ def discover_platforms_from_plugin_archive(zip_data: bytes, name: str) -> frozen
 def is_ida_version_compatible(current_version: str, version_spec: str) -> bool:
     """Check if current IDA version is compatible with the version specifier.
 
+    Note that all IDA versions are expected to have at most two components,
+    like "9" or "9.1". Service packs are also supported: "9.1sp".
+    Three components are NOT supported: "9.1.0"
+
     Args:
         current_version: Current IDA version (e.g., "9.1")
         version_spec: Version specifier (e.g., ">=8.0", "~=9.0", ">=0")
@@ -151,14 +155,29 @@ def is_ida_version_compatible(current_version: str, version_spec: str) -> bool:
     Returns:
         True if current version satisfies the specifier
     """
-    # normalize version formats from "X.Y" to "X.Y.0" for proper semantic versioning
-    # then ormalize version formats from "X" to "X.0.0" for proper semantic versioning
-    # TODO: handle sp1 and friends
-    normalized_current = re.sub(r"^(\d+)\.(\d+)$", r"\1.\2.0", current_version)
-    normalized_current = re.sub(r"^(\d+)$", r"\1.0.0", normalized_current)
 
-    normalized_spec = re.sub(r"(\d+)\.(\d+)(?![.\d])", r"\1.\2.0", version_spec)
-    normalized_spec = re.sub(r"(?<=[><=~!])\s*(\d+)(?![.\d])", r"\1.0.0", normalized_spec)
+    if re.match(r"\d\.\d\.\d", current_version):
+        raise ValueError("invalid version string: three components, like X.Y.Z")
+
+    if re.match(r"\d\.\d\.\d", version_spec):
+        raise ValueError("invalid spec string: three components, like X.Y.Z")
+
+    # now we're guaranteed to only have one (X) or two (X.Y) component versions
+
+    # negative lookbehind, pattern, negative lookahead
+    normalized_current = re.sub(r"(?<![.sp])(\d+)(?![.])", r"\1.0.0", current_version)
+    normalized_current = re.sub(r"(?<![.sp])(\d+)\.(\d+)(?![.])", r"\1.\2.0", normalized_current)
+
+    normalized_spec = re.sub(r"(?<![.sp])(\d+)(?![.])", r"\1.0.0", version_spec)
+    normalized_spec = re.sub(r"(?<![.sp])(\d+)\.(\d+)(?![.])", r"\1.\2.0", normalized_spec)
+
+    # now we have three component versions, all ending with ".0"
+
+    # map X.Y.0spZ to X.Y.Z
+    # because if we use X.Y.0+spZ, the "+spZ" is not compared,
+    # as its considered "build metadata"
+    normalized_current = re.sub(r"\.0sp(\d+)", r".\1", normalized_current)
+    normalized_spec = re.sub(r"\.0sp(\d+)", r".\1", normalized_spec)
 
     if normalized_current != current_version:
         logger.debug("normalized %s -> %s", current_version, normalized_current)
@@ -166,11 +185,10 @@ def is_ida_version_compatible(current_version: str, version_spec: str) -> bool:
     if normalized_spec != version_spec:
         logger.debug("normalized %s -> %s", version_spec, normalized_spec)
 
-    try:
-        return semantic_version.Version(normalized_current) in semantic_version.SimpleSpec(normalized_spec)
-    except Exception as e:
-        logger.debug(f"Error checking version compatibility: {e}")
-        return False
+    cur = semantic_version.Version(normalized_current)
+    spec = semantic_version.SimpleSpec(normalized_spec)
+
+    return cur in spec
 
 
 # expect paths to be:
