@@ -788,6 +788,7 @@ dependencies = [
     { name = "rich-click" },
     { name = "semantic-version" },
     { name = "supabase" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
 
 [package.optional-dependencies]
@@ -858,6 +859,7 @@ requires-dist = [
     { name = "semantic-version", specifier = ">=2.10.0" },
     { name = "supabase" },
     { name = "taskipy", marker = "extra == 'dev'", specifier = ">=1.14.1" },
+    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=1.2.0" },
 ]
 provides-extras = ["dev", "test", "docs"]
 
