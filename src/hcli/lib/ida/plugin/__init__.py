@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class IDAPluginMetadata(BaseModel):
     """IDA Plugin metadata from ida-plugin.json"""
 
-    schema_: str | None = Field(validation_alias="$schema")
+    schema_: str | None = Field(validation_alias="$schema", default=None)
     metadata_version: int = Field(validation_alias="IDAMetadataDescriptorVersion")
 
     #######################
@@ -151,10 +151,23 @@ def is_ida_version_compatible(current_version: str, version_spec: str) -> bool:
     Returns:
         True if current version satisfies the specifier
     """
+    # normalize version formats from "X.Y" to "X.Y.0" for proper semantic versioning
+    # then ormalize version formats from "X" to "X.0.0" for proper semantic versioning
+    # TODO: handle sp1 and friends
+    normalized_current = re.sub(r"^(\d+)\.(\d+)$", r"\1.\2.0", current_version)
+    normalized_current = re.sub(r"^(\d+)$", r"\1.0.0", normalized_current)
+
+    normalized_spec = re.sub(r"(\d+)\.(\d+)(?![.\d])", r"\1.\2.0", version_spec)
+    normalized_spec = re.sub(r"(?<=[><=~!])\s*(\d+)(?![.\d])", r"\1.0.0", normalized_spec)
+
+    if normalized_current != current_version:
+        logger.debug("normalized %s -> %s", current_version, normalized_current)
+
+    if normalized_spec != version_spec:
+        logger.debug("normalized %s -> %s", version_spec, normalized_spec)
+
     try:
-        current = packaging.version.Version(current_version)
-        spec = semantic_version.SimpleSpec(version_spec)
-        return current in spec
+        return semantic_version.Version(normalized_current) in semantic_version.SimpleSpec(normalized_spec)
     except Exception as e:
         logger.debug(f"Error checking version compatibility: {e}")
         return False
