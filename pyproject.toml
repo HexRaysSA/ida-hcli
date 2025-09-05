@@ -1,6 +1,6 @@
 [project]
 name = "ida-hcli"
-version = "0.8.3-dev.3"
+version = "0.8.3-dev.4"
 description = "HCLI - Hex-Rays CLI Utility"
 requires-python = ">=3.10"
 license = "MIT"
