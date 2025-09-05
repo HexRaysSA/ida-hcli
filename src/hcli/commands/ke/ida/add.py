@@ -110,11 +110,23 @@ def _add_auto_discovered_instances() -> None:
 
         # Add selected installations
         added_count = 0
+        added_instances = []
         for suggested_name, installation_path in selected:
             if add_instance_to_config(suggested_name, installation_path):
                 added_count += 1
+                added_instances.append((suggested_name, installation_path))
 
         console.print(f"[green]Added {added_count} IDA instance(s)[/green]")
+
+        # Set default if no default exists and instances were added
+        if added_count > 0:
+            default_instance = config_store.get_string("ke.ida.default", "")
+            if not default_instance:
+                # Sort added instances alphabetically and pick the last one
+                sorted_instances = sorted(added_instances, key=lambda x: x[0])
+                last_instance_name = sorted_instances[-1][0]
+                config_store.set_string("ke.ida.default", last_instance_name)
+                console.print(f"[green]Set '{last_instance_name}' as default IDA instance[/green]")
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Selection cancelled[/yellow]")
