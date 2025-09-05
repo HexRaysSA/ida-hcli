@@ -627,3 +627,47 @@ def find_current_ida_version() -> str:
         return ENV.HCLI_CURRENT_IDA_VERSION
 
     return run_py_in_current_idapython(FIND_VERSION_PY)
+
+
+def generate_instance_name(path: Path) -> str:
+    """Generate a reasonable instance name from installation path."""
+    # For macOS: "IDA Professional 9.2.app" -> "ida-pro-9.2"
+    # For others: "IDA Professional 9.2" -> "ida-pro-9.2"
+    name = path.name
+
+    # Remove .app extension for macOS
+    if name.endswith(".app"):
+        name = name[:-4]
+
+    # Convert to lowercase and replace spaces with dashes
+    name = name.lower().replace(" ", "-")
+
+    # Shorten common patterns
+    name = name.replace("ida-professional", "ida-pro")
+    name = name.replace("ida-home", "ida-home")
+    name = name.replace("ida-free", "ida-free")
+
+    return name
+
+
+def add_instance_to_config(name: str, path: Path) -> bool:
+    """Add an IDA instance to the configuration.
+
+    Returns:
+        True if the instance was added, False if it already exists.
+    """
+    from hcli.lib.config import config_store
+
+    # Get existing instances
+    instances: dict[str, str] = config_store.get_object("ke.ida.instances", {}) or {}
+
+    if name in instances:
+        return False  # Already exists
+
+    # Store the absolute path as string
+    instances[name] = str(path.absolute())
+
+    # Save back to config
+    config_store.set_object("ke.ida.instances", instances)
+
+    return True

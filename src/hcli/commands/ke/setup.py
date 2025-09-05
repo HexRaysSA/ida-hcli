@@ -10,7 +10,9 @@ from pathlib import Path
 import rich_click as click
 
 from hcli.lib.commands import async_command
+from hcli.lib.config import config_store
 from hcli.lib.console import console
+from hcli.lib.ida import add_instance_to_config, find_standard_installations, generate_instance_name, is_ida_dir
 from hcli.lib.util.io import get_hcli_executable_path
 
 
@@ -24,7 +26,7 @@ def setup_macos_protocol_handler() -> None:
         # Create AppleScript application
         applescript_content = f'''
 on open location this_URL
-    do shell script "{hcli_path} open " & quoted form of this_URL
+    do shell script "{hcli_path} ke open " & quoted form of this_URL
 end open location
 
 on run
@@ -112,7 +114,7 @@ def setup_windows_protocol_handler() -> None:
         from winreg import HKEY_CURRENT_USER, REG_SZ  # type: ignore[import-untyped,attr-defined]
 
         hcli_path = get_hcli_executable_path()
-        command = f'"{hcli_path}" open "%1"'
+        command = f'"{hcli_path}" ke open "%1"'
 
         # Create registry entries for ida:// protocol
         with winreg.CreateKey(HKEY_CURRENT_USER, r"SOFTWARE\Classes\ida") as key:  # type: ignore[attr-defined]
@@ -149,7 +151,7 @@ def setup_linux_protocol_handler() -> None:
         # Create desktop entry
         desktop_entry_content = f"""[Desktop Entry]
 Name=HCLI URL Handler
-Exec={hcli_path} open %u
+Exec={hcli_path} ke open %u
 Type=Application
 NoDisplay=true
 MimeType=x-scheme-handler/ida;
@@ -216,6 +218,68 @@ async def setup(force: bool = False) -> None:
         console.print("[green]✓ Protocol handler setup complete![/green]")
         console.print("[yellow]You can now click ida:// links and they will open with hcli.[/yellow]")
 
+        # Check if IDA instances are registered
+        await _check_and_setup_ida_instances()
+
     except Exception as e:
         console.print(f"[red]Setup failed: {e}[/red]")
         raise
+
+
+async def _check_and_setup_ida_instances() -> None:
+    """Check for registered IDA instances and auto-discover if none exist."""
+    # Check if any IDA instances are already registered
+    instances: dict[str, str] = config_store.get_object("ke.ida.instances", {}) or {}
+
+    if instances:
+        console.print(f"[green]✓ Found {len(instances)} registered IDA instance(s)[/green]")
+        default_instance = config_store.get_string("ke.ida.default", "")
+        if default_instance:
+            console.print(f"[green]✓ Default IDA instance: {default_instance}[/green]")
+        else:
+            console.print("[yellow]! No default IDA instance set. Use 'hcli ke ida switch' to set one.[/yellow]")
+        return
+
+    console.print("\n[blue]Checking for IDA Pro installations...[/blue]")
+
+    # Try to auto-discover IDA installations
+    try:
+        installations = find_standard_installations()
+        valid_installations = [inst for inst in installations if is_ida_dir(inst)]
+
+        if not valid_installations:
+            console.print("[yellow]! No IDA Pro installations found.[/yellow]")
+            _print_ida_setup_instructions()
+            return
+
+        console.print(f"[green]✓ Found {len(valid_installations)} IDA installation(s)[/green]")
+
+        # Auto-register the discovered installations
+        added_count = 0
+        for installation in valid_installations:
+            instance_name = generate_instance_name(installation)
+            if add_instance_to_config(instance_name, installation):
+                added_count += 1
+
+        if added_count > 0:
+            console.print(f"[green]✓ Automatically registered {added_count} IDA instance(s)[/green]")
+
+            # Set the first one as default if no default exists
+            first_instance = generate_instance_name(valid_installations[0])
+            config_store.set_string("ke.ida.default", first_instance)
+            console.print(f"[green]✓ Set '{first_instance}' as default IDA instance[/green]")
+        else:
+            console.print("[yellow]! All discovered IDA instances were already registered[/yellow]")
+
+    except Exception as e:
+        console.print(f"[yellow]! Could not auto-discover IDA installations: {e}[/yellow]")
+        _print_ida_setup_instructions()
+
+
+def _print_ida_setup_instructions() -> None:
+    """Print instructions for manually setting up IDA instances."""
+    console.print("\n[yellow]To use ida:// links, you need to register IDA Pro instances:[/yellow]")
+    console.print("  • Auto-discover: [cyan]hcli ke ida add --auto[/cyan]")
+    console.print("  • Manual: [cyan]hcli ke ida add <name> <path>[/cyan]")
+    console.print("  • Example: [cyan]hcli ke ida add ida-pro '/Applications/IDA Professional 9.2.app'[/cyan]")
+    console.print("  • Set default: [cyan]hcli ke ida switch <name>[/cyan]")

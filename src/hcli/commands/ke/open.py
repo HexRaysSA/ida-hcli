@@ -64,14 +64,32 @@ async def open_url(url: str | None) -> None:
         console.print(f"[red]File not found: {full_path}[/red]")
         raise click.Abort()
 
-    # Get IDA binary
-    try:
-        ida_dir = get_default_ida_install_directory(IdaVersion("IDA Professional", 9, 2))
-        ida_bin = get_ida_binary_path(ida_dir)
-    except Exception as e:
-        console.print(f"[red]IDA Pro not found: {e}[/red]")
-        console.print(f"[yellow]URL resolution successful: {url} -> {full_path}[/yellow]")
-        raise click.Abort()
+    # Get IDA binary - try ke ida configuration first, then fallback to default
+    ida_bin = None
+
+    # First try to use ke ida configuration
+    default_instance = config_store.get_string("ke.ida.default", "")
+    if default_instance:
+        instances: dict[str, str] = config_store.get_object("ke.ida.instances", {}) or {}
+        if default_instance in instances:
+            ida_dir_path = Path(instances[default_instance])
+            try:
+                ida_bin = get_ida_binary_path(ida_dir_path)
+            except Exception:
+                console.print(
+                    f"[yellow]Default ke ida instance '{default_instance}' is invalid, trying fallback[/yellow]"
+                )
+
+    # Fallback to standard discovery
+    if not ida_bin:
+        try:
+            ida_dir = get_default_ida_install_directory(IdaVersion("IDA Professional", 9, 2))
+            ida_bin = get_ida_binary_path(ida_dir)
+        except Exception as e:
+            console.print(f"[red]IDA Pro not found: {e}[/red]")
+            console.print("[yellow]Consider registering IDA instances with 'hcli ke ida add --auto'[/yellow]")
+            console.print(f"[yellow]URL resolution successful: {url} -> {full_path}[/yellow]")
+            raise click.Abort()
 
     # Log the URL to a temp file
     log_file = "/tmp/hcli_urls.log"

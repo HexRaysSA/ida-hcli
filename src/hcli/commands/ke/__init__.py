@@ -9,8 +9,12 @@ def ke() -> None:
     pass
 
 
+from .ida import ida  # noqa: E402
+from .open import open_url  # noqa: E402
 from .setup import setup  # noqa: E402
 from .source import source  # noqa: E402
 
+ke.add_command(ida)
+ke.add_command(open_url, name="open")
 ke.add_command(source)
 ke.add_command(setup)
