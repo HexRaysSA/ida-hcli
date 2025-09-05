@@ -71,6 +71,30 @@ def get_binary_name() -> str:
         return ENV.HCLI_BINARY_NAME
 
 
+def get_hcli_executable_path() -> str:
+    """Get the path to the hcli executable."""
+    # Check if we're running from a frozen binary
+    if getattr(sys, "frozen", False):
+        return sys.executable
+
+    # Check if hcli is in PATH
+    hcli_path = shutil.which("hcli")
+    if hcli_path:
+        return hcli_path
+
+    # Check if uv is available (development environment)
+    uv_path = shutil.which("uv")
+    if uv_path:
+        return f'"{uv_path}" run hcli'
+
+    # Fallback to python -m hcli
+    python_path = shutil.which("python") or shutil.which("python3")
+    if python_path:
+        return f'"{python_path}" -m hcli'
+
+    raise RuntimeError("Could not find hcli executable")
+
+
 async def remove_dir(path: str) -> bool:
     """Remove a directory and all its contents."""
     try:
