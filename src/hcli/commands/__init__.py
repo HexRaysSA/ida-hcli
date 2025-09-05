@@ -10,14 +10,12 @@ def register_commands(cli: click.Group) -> None:
     from .login import login
     from .logout import logout
     from .open import open_url
-    from .setup import setup
     from .update import update
     from .whoami import whoami
     # placeholder for more commands
 
     cli.add_command(login)
     cli.add_command(logout)
-    cli.add_command(setup)
     cli.add_command(whoami)
     cli.add_command(update)
     cli.add_command(download)

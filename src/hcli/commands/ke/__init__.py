@@ -9,6 +9,8 @@ def ke() -> None:
     pass
 
 
+from .setup import setup  # noqa: E402
 from .source import source  # noqa: E402
 
 ke.add_command(source)
+ke.add_command(setup)
