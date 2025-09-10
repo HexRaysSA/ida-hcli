@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict
 
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
-    discover_platforms_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
     is_ida_version_compatible,
     parse_plugin_version,
@@ -117,7 +116,7 @@ class PluginArchiveIndex:
             name = metadata.plugin.name
             version = metadata.plugin.version
             ida_versions = metadata.plugin.ida_versions or ">=0"
-            platforms: frozenset[str] = discover_platforms_from_plugin_archive(buf, name)
+            platforms = frozenset(metadata.plugin.platforms)
             spec = (ida_versions, platforms)
 
             versions = self.index[name]
