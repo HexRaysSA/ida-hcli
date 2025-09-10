@@ -3,9 +3,9 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from dataclasses import dataclass
 
 import semantic_version
+from pydantic import BaseModel, ConfigDict
 
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
@@ -19,8 +19,9 @@ from hcli.lib.ida.plugin import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class PluginArchiveLocation:
+class PluginArchiveLocation(BaseModel):
+    model_config = ConfigDict(serialize_by_alias=True, frozen=True)
+
     url: str
     sha256: str
     name: str
@@ -30,11 +31,12 @@ class PluginArchiveLocation:
     metadata: IDAMetadataDescriptor
 
 
-@dataclass
-class Plugin:
+class Plugin(BaseModel):
+    model_config = ConfigDict(serialize_by_alias=True)
+
     name: str
     # version -> list[PluginVersion]
-    locations_by_version: dict[str, list[PluginArchiveLocation]]
+    versions: dict[str, list[PluginArchiveLocation]]
 
 
 class BasePluginRepo(ABC):
@@ -55,7 +57,7 @@ class BasePluginRepo(ABC):
 
         plugin: Plugin = plugins[0]
 
-        versions = reversed(sorted(plugin.locations_by_version.keys(), key=parse_plugin_version))
+        versions = reversed(sorted(plugin.versions.keys(), key=parse_plugin_version))
         for version in versions:
             version_spec = parse_plugin_version(version)
             if version_spec not in wanted_spec:
@@ -63,7 +65,7 @@ class BasePluginRepo(ABC):
                 continue
 
             logger.debug("found matching version: %s", version)
-            for i, location in enumerate(plugin.locations_by_version[version]):
+            for i, location in enumerate(plugin.versions[version]):
                 if current_platform not in location.platforms:
                     logger.debug(
                         "skipping location %d: unsupported platforms: %s",
@@ -97,9 +99,9 @@ class PluginArchiveIndex:
 
     def __init__(self):
         # name -> version -> tuple[idaVersion, set[platforms]] -> list[tuple[url, sha256]]
-        self.index: dict[str, dict[str, dict[tuple[str, frozenset[str]], list[tuple[str, str, IDAMetadataDescriptor]]]]] = defaultdict(
-            lambda: defaultdict(lambda: defaultdict(list))
-        )
+        self.index: dict[
+            str, dict[str, dict[tuple[str, frozenset[str]], list[tuple[str, str, IDAMetadataDescriptor]]]]
+        ] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
     def index_plugin_archive(self, buf: bytes, url: str):
         for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
@@ -140,10 +142,9 @@ class PluginArchiveIndex:
         # sort alphabetically by name
         for name, versions in sorted(self.index.items(), key=lambda p: p[0]):
             locations_by_version = defaultdict(list)
-            
+
             # sort by version
             for version, specs in sorted(versions.items(), key=lambda p: parse_plugin_version(p[0])):
-
                 # sorted arbitrarily (but stably)
                 for spec, urls in sorted(specs.items()):
                     ida_versions, platforms = spec
@@ -161,7 +162,7 @@ class PluginArchiveIndex:
                         )
                         locations_by_version[version].append(location)
 
-            plugin = Plugin(name, locations_by_version)
+            plugin = Plugin(name=name, versions=locations_by_version)
             ret.append(plugin)
 
         return ret

@@ -6,12 +6,14 @@ from pathlib import Path
 import rich_click as click
 
 import hcli.lib.ida.plugin.repo
+import hcli.lib.ida.plugin.repo.file
 import hcli.lib.ida.plugin.repo.fs
 import hcli.lib.ida.plugin.repo.github
 from hcli.lib.console import console
 
 from .install import install_plugin
 from .lint import lint_plugin_directory
+from .repo import repo
 from .search import search_plugins
 from .status import get_plugin_status
 from .uninstall import uninstall_plugin
@@ -19,7 +21,9 @@ from .upgrade import upgrade_plugin
 
 
 @click.group()
-@click.option("--repo", help="'github' or path to directory containing plugins")
+@click.option(
+    "--repo", help="'github', or path to directory containing plugins, or path to JSON file, or URL to JSON file"
+)
 @click.pass_context
 def plugin(ctx, repo: str | None) -> None:
     """Manage IDA Pro plugins."""
@@ -42,15 +46,10 @@ def plugin(ctx, repo: str | None) -> None:
             console.print("[red]Repository doesn't exist[/red]. Provide `--repo github` or `--repo /path/to/plugins/`.")
             raise click.Abort()
 
-        if not path.is_dir():
-            console.print(
-                "[red]Repository not a directory[/red]. Provide `--repo github` or `--repo /path/to/plugins/`."
-            )
-            raise click.Abort()
-
-        # TODO: simple snapshot repository as JSON file
-
-        plugin_repo = hcli.lib.ida.plugin.repo.fs.FileSystemPluginRepo(path)
+        if path.is_dir():
+            plugin_repo = hcli.lib.ida.plugin.repo.fs.FileSystemPluginRepo(path)
+        else:
+            plugin_repo = hcli.lib.ida.plugin.repo.file.JSONFilePluginRepo.from_file(path)
 
     ctx.obj["plugin_repo"] = plugin_repo
 
@@ -61,3 +60,4 @@ plugin.add_command(install_plugin, name="install")
 plugin.add_command(lint_plugin_directory, name="lint")
 plugin.add_command(upgrade_plugin, name="upgrade")
 plugin.add_command(uninstall_plugin, name="uninstall")
+plugin.add_command(repo, name="repo")
