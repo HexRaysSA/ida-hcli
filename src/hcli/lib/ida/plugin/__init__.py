@@ -45,6 +45,7 @@ ALL_PLATFORMS: frozenset[str] = frozenset(
 def parse_plugin_version(version: str) -> semantic_version.Version:
     normalized_version = version
     normalized_version = normalized_version.lstrip("v")
+    # we want to use Version, instead of SimpleSpec, because it is sortable
     return semantic_version.Version(normalized_version, partial=True)
 
 
@@ -109,6 +110,7 @@ class URLs(BaseModel):
     # URL of GitHub repository containing the source code for the plugin.
     # Uses the form: https://github.com/org/project
     repository: str
+    # TODO(ai): add a validator for this url pattern, org and project can be variable
 
     # URL of website describing the plugin, if different from the GitHub repo.
     homepage: str | None = None
@@ -388,10 +390,12 @@ def get_metadatas_with_paths_from_plugin_archive(
             if not file_path.endswith("ida-plugin.json"):
                 continue
 
+            logger.debug("found metadata path: %s", file_path)
             with zip_file.open(file_path) as f:
                 try:
                     metadata = IDAMetadataDescriptor.model_validate_json(f.read().decode("utf-8"))
-                except (ValueError, ValidationError):
+                except (ValueError, ValidationError) as e:
+                    logger.debug("failed to validate: %s", e)
                     continue
                 else:
                     yield Path(file_path), metadata

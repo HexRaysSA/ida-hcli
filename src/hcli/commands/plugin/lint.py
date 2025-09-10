@@ -94,6 +94,7 @@ def _lint_plugin_directory(plugin_path: Path) -> None:
 
 def _lint_plugin_archive(archive_path: Path) -> None:
     """Lint plugins in a .zip archive."""
+    logger.debug("reading plugin archive from %s", archive_path)
     try:
         zip_data = archive_path.read_bytes()
     except Exception as e:
@@ -105,6 +106,9 @@ def _lint_plugin_archive(archive_path: Path) -> None:
     except Exception as e:
         console.print(f"[red]Error[/red]: Failed to read plugins from archive {archive_path}: {e}")
         return
+    else:
+        for path, meta in plugins_found:
+            logger.debug("found plugin %s at %s", meta.plugin.name, path)
 
     if not plugins_found:
         console.print(f"[red]Error[/red]: No valid plugins found in archive {archive_path}")
@@ -114,7 +118,6 @@ def _lint_plugin_archive(archive_path: Path) -> None:
         source_name = f"{archive_path}:{metadata_path}"
 
         try:
-            # Validate metadata within archive
             validate_metadata_in_plugin_archive(zip_data, metadata)
             _validate_and_lint_metadata(metadata, source_name)
 
