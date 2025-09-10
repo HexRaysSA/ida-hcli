@@ -39,7 +39,7 @@ def is_compatible_plugin_version(
 def is_compatible_plugin(plugin: Plugin, current_platform: str, current_version: str) -> bool:
     return any(
         is_compatible_plugin_version(plugin, version, locations, current_platform, current_version)
-        for version, locations in plugin.locations_by_version.items()
+        for version, locations in plugin.versions.items()
     )
 
 
@@ -71,7 +71,7 @@ async def search_plugins(ctx, query: str | None = None) -> None:
 
             console.print(f"[blue]{plugin.name}[/blue]")
 
-            for version, locations in plugin.locations_by_version.items():
+            for version, locations in plugin.versions.items():
                 if not is_compatible_plugin_version(plugin, version, locations, current_platform, current_version):
                     continue
 
