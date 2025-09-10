@@ -1,5 +1,6 @@
 import contextlib
 import os
+import platform
 import shutil
 import subprocess
 import tempfile
@@ -64,8 +65,40 @@ def temp_hcli_idausr_dir():
         yield
 
 
+@pytest.fixture
+def hook_current_platform():
+    # hook current platform so IDA doesn't need to be installed to test the the installation of plugins
+
+    system = platform.system()
+    if system == "Windows":
+        plat = "windows-x86_64"
+    elif system == "Linux":
+        plat = "linux-x86_64"
+    elif system == "Darwin":
+        # via: https://stackoverflow.com/questions/7491391/
+        version = platform.uname().version
+        if "RELEASE_ARM64" in version:
+            plat = "macos-aarch64"
+        elif "RELEASE_X86_64" in version:
+            plat = "macos-x86_64"
+        else:
+            raise ValueError(f"Unsupported macOS version: {version}")
+    else:
+        raise ValueError(f"Unsupported OS: {system}")
+
+    with temp_env_var("HCLI_CURRENT_IDA_PLATFORM", plat):
+        yield
+
+
+@pytest.fixture
+def hook_current_version():
+    # hook current platform so IDA doesn't need to be installed to test the the installation of plugins
+    with temp_env_var("HCLI_CURRENT_IDA_VERSION", "9.1"):
+        yield
+
+
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_install_source_plugin_archive(temp_hcli_idausr_dir):
+def test_install_source_plugin_archive(temp_hcli_idausr_dir, hook_current_platform, hook_current_version):
     plugin_path = PLUGIN_DATA / "plugin1" / "plugin1-v1.0.0.zip"
     buf = plugin_path.read_bytes()
 
@@ -80,7 +113,7 @@ def test_install_source_plugin_archive(temp_hcli_idausr_dir):
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_install_binary_plugin_archive(temp_hcli_idausr_dir):
+def test_install_binary_plugin_archive(temp_hcli_idausr_dir, hook_current_platform, hook_current_version):
     plugin_path = PLUGIN_DATA / "zydisinfo" / "zydisinfo-v1.0.0.zip"
     buf = plugin_path.read_bytes()
 
@@ -98,7 +131,7 @@ def test_install_binary_plugin_archive(temp_hcli_idausr_dir):
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_uninstall(temp_hcli_idausr_dir):
+def test_uninstall(temp_hcli_idausr_dir, hook_current_platform, hook_current_version):
     plugin_path = PLUGIN_DATA / "plugin1" / "plugin1-v1.0.0.zip"
     buf = plugin_path.read_bytes()
 
@@ -111,7 +144,7 @@ def test_uninstall(temp_hcli_idausr_dir):
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_disable(temp_hcli_idausr_dir):
+def test_disable(temp_hcli_idausr_dir, hook_current_platform, hook_current_version):
     plugin_path = PLUGIN_DATA / "plugin1" / "plugin1-v1.0.0.zip"
     buf = plugin_path.read_bytes()
 
@@ -143,7 +176,7 @@ def test_disable(temp_hcli_idausr_dir):
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_upgrade(temp_hcli_idausr_dir):
+def test_upgrade(temp_hcli_idausr_dir, hook_current_platform, hook_current_version):
     v1 = (PLUGIN_DATA / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
     v2 = (PLUGIN_DATA / "plugin1" / "plugin1-v2.0.0.zip").read_bytes()
 
@@ -178,7 +211,7 @@ def initialize_idausr_with_venv(idausr_dir: Path):
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_plugin_python_dependencies(temp_hcli_idausr_dir):
+def test_plugin_python_dependencies(temp_hcli_idausr_dir, hook_current_platform, hook_current_version):
     idausr = Path(os.environ["HCLI_IDAUSR"])
     initialize_idausr_with_venv(idausr)
 
