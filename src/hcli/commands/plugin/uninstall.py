@@ -27,8 +27,7 @@ def uninstall_plugin(plugin: str) -> None:
 
     if not can_uninstall_plugin(plugin):
         console.print(f"[red]Plugin cannot be uninstalled: {plugin}[/red]")
-        click.Abort()
-        return
+        raise click.Abort()
 
     try:
         uninstall_plugin_impl(plugin)

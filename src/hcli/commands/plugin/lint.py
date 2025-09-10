@@ -110,8 +110,7 @@ def _lint_plugin_directory(plugin_path: Path) -> None:
             else:
                 console.print(f"  [red]Invalid value[/red] for {field_path}: {error_msg}")
 
-        click.Abort()
-        return
+        raise click.Abort()
 
     try:
         # Additional validation
@@ -122,8 +121,7 @@ def _lint_plugin_directory(plugin_path: Path) -> None:
         logger.warning("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
 
-        click.Abort()
-        return
+        raise click.Abort()
 
 
 def _lint_plugin_archive(archive_path: Path) -> None:
@@ -133,13 +131,13 @@ def _lint_plugin_archive(archive_path: Path) -> None:
         zip_data = archive_path.read_bytes()
     except Exception as e:
         console.print(f"[red]Error[/red]: Failed to read archive {archive_path}: {e}")
-        return
+        raise click.Abort()
 
     try:
         plugins_found = list(get_metadatas_with_paths_from_plugin_archive(zip_data))
     except Exception as e:
         console.print(f"[red]Error[/red]: Failed to read plugins from archive {archive_path}: {e}")
-        return
+        raise click.Abort()
     else:
         for path, meta in plugins_found:
             logger.debug("found plugin %s at %s", meta.plugin.name, path)
@@ -170,6 +168,7 @@ def _lint_plugin_archive(archive_path: Path) -> None:
         except Exception as e:
             logger.warning("error: %s", e, exc_info=True)
             console.print(f"[red]Error[/red] ({source_name}): {e}")
+            raise click.Abort()
 
 
 @click.command()
