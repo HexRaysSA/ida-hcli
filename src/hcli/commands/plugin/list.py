@@ -24,7 +24,7 @@ async def list_plugins(ctx) -> None:
         for plugin in sorted(plugins, key=lambda p: p.name):
             console.print(f"[blue]{plugin.name}[/blue]")
 
-            for version, locations in plugin.locations_by_version.items():
+            for version, locations in plugin.versions.items():
                 console.print(f"  {version}:")
                 for location in locations:
                     ida_versions_str = location.ida_versions if location.ida_versions != ">=0" else "all"
