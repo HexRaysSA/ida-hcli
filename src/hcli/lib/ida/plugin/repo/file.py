@@ -45,14 +45,12 @@ class JSONFilePluginRepo(BasePluginRepo):
         parsed_url = urlparse(url)
 
         if parsed_url.scheme == "file":
-            # Handle file:// URLs
             file_path = Path(parsed_url.path)
             if not file_path.exists():
                 raise FileNotFoundError(f"File not found: {file_path}")
             return cls.from_bytes(file_path.read_bytes())
 
-        elif parsed_url.scheme in ("http", "https"):
-            # Handle HTTP(S) URLs
+        elif parsed_url.scheme == "https":
             response = requests.get(url, timeout=30.0)
             response.raise_for_status()
             return cls.from_bytes(response.content)

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class PluginArchiveLocation(BaseModel):
-    model_config = ConfigDict(serialize_by_alias=True, frozen=True)
+    model_config = ConfigDict(serialize_by_alias=True, frozen=True)  # type: ignore
 
     url: str
     sha256: str
@@ -31,7 +31,7 @@ class PluginArchiveLocation(BaseModel):
 
 
 class Plugin(BaseModel):
-    model_config = ConfigDict(serialize_by_alias=True)
+    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
 
     name: str
     # version -> list[PluginVersion]
