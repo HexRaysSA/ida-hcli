@@ -13,7 +13,7 @@ from functools import total_ordering
 from pathlib import Path
 from typing import NamedTuple
 
-from pydantic import AliasPath, BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from hcli.env import ENV
 from hcli.lib.util.io import get_os
@@ -478,12 +478,35 @@ def _copy_dir(src_path: Path, dest_path: Path) -> None:
             shutil.copy2(item, dest_item)
 
 
+class PathsConfig(BaseModel):
+    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+
+    # like: "/Applications/IDA Professional 9.1.app/Contents/MacOS"
+    installation_directory: Path | None = Field(alias="ida-install-dir", default=None)
+
+
+class PluginRepositoryConfig(BaseModel):
+    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+
+    url: str = Field(
+        default="https://raw.githubusercontent.com/HexRaysSA/plugin-repository/refs/heads/main/plugin-repository.json"
+    )
+
+
+class SettingsConfig(BaseModel):
+    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+
+    # plugin name -> key -> value
+    plugins: dict[str, dict[str, str | int]] = Field(default_factory=dict)
+    plugin_repository: PluginRepositoryConfig = Field(alias="plugin-repository", default_factory=lambda: PluginRepositoryConfig())
+
+
 # describes contents of IDAUSR/ida-config.json
 class IDAConfigJson(BaseModel):
     """IDA configuration $IDAUSR/ida-config.json"""
 
-    # like: "/Applications/IDA Professional 9.1.app/Contents/MacOS"
-    installation_directory: Path = Field(validation_alias=AliasPath("Paths", "ida-install-dir"))
+    paths: PathsConfig = Field(alias="Paths", default_factory=lambda: PathsConfig())
+    settings: SettingsConfig = Field(alias="Settings", default_factory=lambda: SettingsConfig())
 
 
 def get_ida_config_path() -> Path:
@@ -497,12 +520,7 @@ def get_ida_config() -> IDAConfigJson:
     if not ida_config_path.exists():
         raise ValueError("ida-config.json doesn't exist")
 
-    config = IDAConfigJson.model_validate_json(ida_config_path.read_text(encoding="utf-8"))
-
-    if not config.installation_directory.exists():
-        raise ValueError("ida-config.json invalid: ida-install-dir doesn't exist")
-
-    return config
+    return IDAConfigJson.model_validate_json(ida_config_path.read_text(encoding="utf-8"))
 
 
 def find_current_ida_install_directory() -> Path:
@@ -515,8 +533,14 @@ def find_current_ida_install_directory() -> Path:
         return Path(env)
 
     config = get_ida_config()
-    logger.debug("current IDA installation: %s", config.installation_directory)
-    return config.installation_directory
+    if not config.paths.installation_directory:
+        raise ValueError("failed to determine current IDA installation directory")
+
+    if not config.paths.installation_directory.exists():
+        raise ValueError("ida-config.json invalid: ida-install-dir doesn't exist")
+
+    logger.debug("current IDA installation: %s", config.paths.installation_directory)
+    return config.paths.installation_directory
 
 
 def find_current_idat_executable() -> Path:
