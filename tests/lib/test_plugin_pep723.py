@@ -69,7 +69,7 @@ def test_get_python_dependencies_from_plugin_archive_inline():
     buf = plugin_path.read_bytes()
 
     metadata = get_metadata_from_plugin_archive(buf, "plugin1")
-    assert metadata.python_dependencies == "inline"
+    assert metadata.plugin.python_dependencies == "inline"
 
     dependencies = get_python_dependencies_from_plugin_archive(buf, metadata)
     assert dependencies == ["packaging>=25.0", "rich>=13.0.0"]
@@ -81,7 +81,7 @@ def test_get_python_dependencies_from_plugin_archive_list():
     buf = plugin_path.read_bytes()
 
     metadata = get_metadata_from_plugin_archive(buf, "plugin1")
-    assert isinstance(metadata.python_dependencies, list)
+    assert isinstance(metadata.plugin.python_dependencies, list)
 
     dependencies = get_python_dependencies_from_plugin_archive(buf, metadata)
     assert dependencies == ["packaging==25.0"]
@@ -101,7 +101,9 @@ def test_get_python_dependencies_from_plugin_directory_inline():
               "version": "v4.0.0",
               "entryPoint": "plugin1.py",
               "description": "test plugin",
-              "pythonDependencies": "inline"
+              "pythonDependencies": "inline",
+              "authors": [{"name": "Willi Ballenthin"}],
+              "urls": {"repository": "https://github.com/HexRaysSA/ida-hcli"}
             }
         }""")
         (plugin_dir / "ida-plugin.json").write_text(metadata_content)
@@ -124,7 +126,7 @@ def test_get_python_dependencies_from_plugin_directory_inline():
 
         # Test functionality
         metadata = get_metadata_from_plugin_directory(plugin_dir)
-        assert metadata.python_dependencies == "inline"
+        assert metadata.plugin.python_dependencies == "inline"
 
         dependencies = get_python_dependencies_from_plugin_directory(plugin_dir, metadata)
         assert dependencies == ["requests>=2.28.0", "pydantic>=2.0.0"]
@@ -144,7 +146,9 @@ def test_get_python_dependencies_from_plugin_directory_list():
               "version": "v3.0.0",
               "entryPoint": "plugin1.py",
               "description": "test plugin",
-              "pythonDependencies": ["requests>=2.28.0", "pydantic>=2.0.0"]
+              "pythonDependencies": ["requests>=2.28.0", "pydantic>=2.0.0"],
+              "authors": [{"name": "Willi Ballenthin"}],
+              "urls": {"repository": "https://github.com/HexRaysSA/ida-hcli"}
             }
         }""")
         (plugin_dir / "ida-plugin.json").write_text(metadata_content)
@@ -160,7 +164,7 @@ def test_get_python_dependencies_from_plugin_directory_list():
 
         # Test functionality
         metadata = get_metadata_from_plugin_directory(plugin_dir)
-        assert isinstance(metadata.python_dependencies, list)
+        assert isinstance(metadata.plugin.python_dependencies, list)
 
         dependencies = get_python_dependencies_from_plugin_directory(plugin_dir, metadata)
         assert dependencies == ["requests>=2.28.0", "pydantic>=2.0.0"]

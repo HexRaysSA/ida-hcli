@@ -7,6 +7,13 @@
     "description": "an IDAPython source plugin",
     "pythonDependencies": [
       "packaging==25.0"
-    ]
+    ],
+    "urls": {
+      "repository": "https://github.com/HexRaysSA/ida-hcli"
+    },
+    "authors": [{
+      "name": "Willi Ballenthin",
+      "email": "wballenthin@hex-rays.com"
+    }]
   }
 }

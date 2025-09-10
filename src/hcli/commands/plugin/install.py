@@ -53,7 +53,7 @@ def install_plugin(ctx, plugin: str) -> None:
             items = list(get_metadatas_with_paths_from_plugin_archive(buf))
             if len(items) != 1:
                 raise ValueError("plugin archive must contain a single plugin for local file system installation")
-            plugin_name = items[0][1].name
+            plugin_name = items[0][1].plugin.name
 
         elif plugin_spec.startswith("file://"):
             logger.info("installing from the local file system")
@@ -62,7 +62,7 @@ def install_plugin(ctx, plugin: str) -> None:
             items = list(get_metadatas_with_paths_from_plugin_archive(buf))
             if len(items) != 1:
                 raise ValueError("plugin archive must contain a single plugin for local file system installation")
-            plugin_name = items[0][1].name
+            plugin_name = items[0][1].plugin.name
 
         elif plugin_spec.startswith("https://"):
             logger.info("installing from HTTP URL")
@@ -70,7 +70,7 @@ def install_plugin(ctx, plugin: str) -> None:
             items = list(get_metadatas_with_paths_from_plugin_archive(buf))
             if len(items) != 1:
                 raise ValueError("plugin archive must contain a single plugin for HTTP URL installation")
-            plugin_name = items[0][1].name
+            plugin_name = items[0][1].plugin.name
 
         else:
             logger.info("finding plugin in repository")
@@ -83,7 +83,7 @@ def install_plugin(ctx, plugin: str) -> None:
 
         metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 
-        console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.version}")
+        console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}")
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
