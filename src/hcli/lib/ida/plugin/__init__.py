@@ -262,8 +262,8 @@ class IDAMetadataDescriptor(BaseModel):
 
     model_config = ConfigDict(serialize_by_alias=True)
 
-    schema_: str | None = Field(alias="$schema", default=None)
-    metadata_version: int = Field(alias="IDAMetadataDescriptorVersion")
+    schema_: str | None = Field(alias="$schema", default=None, exclude=True)
+    metadata_version: Literal[2] = Field(alias="IDAMetadataDescriptorVersion")  # must be 2
     plugin: PluginMetadata
 
 
@@ -522,9 +522,6 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAMetadataDe
     """validate the `ida-plugin.json` metadata within the given plugin archive.
 
     The following things must be checked:
-    - metadata version must be "1"
-    - the following fields must contain only ASCII. alphanumeric, underscores, dashes, spaces.
-      - name
     - the following paths must contain relative paths, no paths like ".." or similar escapes:
       - entry point
       - logo path
@@ -533,21 +530,6 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAMetadataDe
       - logo path
     """
     name = metadata.plugin.name
-
-    if metadata.metadata_version != 1:
-        logger.debug("Invalid metadata version: %s", metadata.metadata_version)
-        raise ValueError(f"Invalid metadata version: {metadata.metadata_version}. Expected: 1")
-
-    # name contains only ASCII alphanumeric, underscores, dashes, spaces
-    if not re.match(r"^[a-zA-Z0-9_\- ]+$", metadata.plugin.name):
-        logger.debug("Invalid name format: %s", metadata.plugin.name)
-        raise ValueError(
-            f"Invalid name format: '{metadata.plugin.name}'. Must contain only ASCII alphanumeric, underscores, dashes"
-        )
-
-    if not metadata.plugin.entry_point:
-        logger.debug("Missing entry point")
-        raise ValueError("entry point required")
 
     validate_path(metadata.plugin.entry_point, "entry point")
     if metadata.plugin.logo_path:
@@ -571,15 +553,6 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAMetadataDe
         if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.logo_path):
             logger.debug("Missing logo file: %s", metadata.plugin.logo_path)
             raise ValueError(f"Logo file not found in archive: '{metadata.plugin.logo_path}'")
-
-    # we'd want to validate that there are some platforms,
-    # however this is recursive.
-    # _ = discover_platforms_from_plugin_archive(zip_data, name)
-    try:
-        _ = packaging.version.parse(metadata.plugin.version)
-    except Exception:
-        logger.debug("failed to parse version: %s", metadata.plugin.version)
-        raise
 
 
 def is_plugin_archive(zip_data: bytes, name: str) -> bool:
