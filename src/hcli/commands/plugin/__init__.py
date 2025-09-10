@@ -10,6 +10,7 @@ import hcli.lib.ida.plugin.repo.file
 import hcli.lib.ida.plugin.repo.fs
 import hcli.lib.ida.plugin.repo.github
 from hcli.lib.console import console
+from hcli.lib.ida import get_ida_config
 
 from .install import install_plugin
 from .lint import lint_plugin_directory
@@ -31,8 +32,19 @@ def plugin(ctx, repo: str | None) -> None:
     ctx.ensure_object(dict)
 
     plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo
-    # TODO: plugins.hex-rays.com repo, and use this as default
-    if repo is None or repo == "github":
+    if repo is None:
+        config = get_ida_config()
+
+        url = config.settings.plugin_repository.url
+        if not url:
+            console.print(
+                "[red]Missing plugin repository URL[/red]. Provide this in ida-config.json (.Settings.plugin-repository.url)"
+            )
+            raise click.Abort()
+
+        plugin_repo = hcli.lib.ida.plugin.repo.file.JSONFilePluginRepo.from_url(url)
+
+    elif repo == "github":
         try:
             token = os.environ["GITHUB_TOKEN"]
         except KeyError:
