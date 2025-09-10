@@ -90,14 +90,8 @@ def _validate_and_lint_metadata(metadata: IDAMetadataDescriptor, source_name: st
 
 def _lint_plugin_directory(plugin_path: Path) -> None:
     """Lint a plugin in a directory."""
-    metadata_file = None
-    for filename in ("ida-plugin.json", "ida-plugin.json.disabled"):
-        candidate_file = plugin_path / filename
-        if candidate_file.exists():
-            metadata_file = candidate_file
-            break
-
-    if not metadata_file:
+    metadata_file = plugin_path / "ida-plugin.json"
+    if not metadata_file.exists():
         console.print(f"[red]Error[/red]: ida-plugin.json not found in {plugin_path}")
         return
 

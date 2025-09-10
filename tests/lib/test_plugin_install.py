@@ -10,14 +10,9 @@ import pytest
 from fixtures import PLUGIN_DATA
 
 from hcli.lib.ida.plugin.install import (
-    can_disable_plugin,
-    can_enable_plugin,
-    disable_plugin,
-    enable_plugin,
     get_installed_plugins,
     get_plugin_directory,
     install_plugin_archive,
-    is_plugin_enabled,
     is_plugin_installed,
     uninstall_plugin,
     upgrade_plugin_archive,
@@ -137,38 +132,6 @@ def test_uninstall(temp_hcli_idausr_dir, hook_current_platform, hook_current_ver
 
     install_plugin_archive(buf, "plugin1")
     assert ("plugin1", "v1.0.0") in get_installed_plugins()
-
-    uninstall_plugin("plugin1")
-    assert ("plugin1", "v1.0.0") not in get_installed_plugins()
-    assert not is_plugin_installed("zydisinfo")
-
-
-@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_disable(temp_hcli_idausr_dir, hook_current_platform, hook_current_version):
-    plugin_path = PLUGIN_DATA / "plugin1" / "plugin1-v1.0.0.zip"
-    buf = plugin_path.read_bytes()
-
-    install_plugin_archive(buf, "plugin1")
-    assert ("plugin1", "v1.0.0") in get_installed_plugins()
-    assert is_plugin_installed("plugin1")
-
-    assert is_plugin_enabled("plugin1")
-    assert can_disable_plugin("plugin1")
-    assert not can_enable_plugin("plugin1")
-    disable_plugin("plugin1")
-    assert is_plugin_installed("plugin1")
-    assert not is_plugin_enabled("plugin1")
-    assert not can_disable_plugin("plugin1")
-    assert can_enable_plugin("plugin1")
-
-    assert not is_plugin_enabled("plugin1")
-    assert not can_disable_plugin("plugin1")
-    assert can_enable_plugin("plugin1")
-    enable_plugin("plugin1")
-    assert is_plugin_installed("plugin1")
-    assert is_plugin_enabled("plugin1")
-    assert can_disable_plugin("plugin1")
-    assert not can_enable_plugin("plugin1")
 
     uninstall_plugin("plugin1")
     assert ("plugin1", "v1.0.0") not in get_installed_plugins()

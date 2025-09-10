@@ -1,7 +1,6 @@
 import io
 import logging
 import pathlib
-import re
 import shutil
 import tempfile
 import zipfile
@@ -12,7 +11,6 @@ import packaging.version
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version, get_ida_user_dir
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
-    discover_platforms_from_plugin_archive,
     get_metadata_from_plugin_archive,
     get_metadata_path_from_plugin_archive,
     get_python_dependencies_from_plugin_archive,
@@ -72,19 +70,16 @@ def get_plugin_directory(name: str) -> Path:
 
 
 def get_metadata_from_plugin_directory(plugin_path: Path) -> IDAMetadataDescriptor:
-    for filename in ("ida-plugin.json", "ida-plugin.json.disabled"):
-        metadata_file = plugin_path / filename
-        if not metadata_file.exists():
-            continue
+    metadata_file = plugin_path / "ida-plugin.json"
+    if not metadata_file.exists():
+        raise ValueError(f"ida-plugin.json not found in {plugin_path}")
 
-        try:
-            content = metadata_file.read_text(encoding="utf-8")
-            return IDAMetadataDescriptor.model_validate_json(content)
-        except Exception as e:
-            logger.debug("failed to validate ida-plugin.json: %s", e)
-            raise ValueError(f"Failed to parse ida-plugin.json in {plugin_path}: {e}")
-
-    raise ValueError(f"ida-plugin.json not found in {plugin_path}")
+    try:
+        content = metadata_file.read_text(encoding="utf-8")
+        return IDAMetadataDescriptor.model_validate_json(content)
+    except Exception as e:
+        logger.debug("failed to validate ida-plugin.json: %s", e)
+        raise ValueError(f"Failed to parse ida-plugin.json in {plugin_path}: {e}")
 
 
 # TODO: keep this in sync with validate_metadata_in_plugin_archive
@@ -99,10 +94,6 @@ def validate_metadata_in_plugin_directory(plugin_path: Path):
       - entry point
       - logo path
     """
-    if (plugin_path / "ida-plugin.json").exists() and (plugin_path / "ida-plugin.json.disabled").exists():
-        logger.debug("both ida-plugin.json and ida-plugin.json.disabled exists")
-        raise ValueError("plugin corrupt: both enabled and disabled at the same time")
-
     metadata = get_metadata_from_plugin_directory(plugin_path)
 
     validate_path(metadata.plugin.entry_point, "entry point")
@@ -147,8 +138,7 @@ def get_installed_plugin_paths() -> list[Path]:
             continue
 
         metadata_file = plugin_path / "ida-plugin.json"
-        disabled_file = plugin_path / "ida-plugin.json.disabled"
-        if not metadata_file.exists() and not disabled_file.exists():
+        if not metadata_file.exists():
             continue
 
         try:
@@ -196,7 +186,7 @@ def can_install_plugin(
         logger.warning(f"Plugin directory already exists: {destination_path}")
         return False
 
-    platforms = discover_platforms_from_plugin_archive(zip_data, name)
+    platforms = metadata.plugin.platforms
     if current_platform not in platforms:
         logger.warning(f"Current platform not supported: {current_platform}")
         return False
@@ -363,79 +353,6 @@ def is_plugin_installed(name: str) -> bool:
     installed_plugins = [name for (name, _version) in get_installed_plugins()]
     logger.debug("installed plugins: %s", installed_plugins)
     return name in installed_plugins
-
-
-def can_disable_plugin(name: str) -> bool:
-    if not is_plugin_installed(name):
-        return False
-
-    plugin_path = get_plugin_directory(name)
-
-    if (plugin_path / "ida-plugin.json.disabled").exists():
-        return False
-
-    if not (plugin_path / "ida-plugin.json").exists():
-        # I think this should be impossible, but still...
-        return False
-
-    return True
-
-
-def is_plugin_enabled(name: str):
-    if not is_plugin_installed(name):
-        return False
-
-    return (get_plugin_directory(name) / "ida-plugin.json").exists()
-
-
-def disable_plugin(name: str):
-    if not can_disable_plugin(name):
-        raise ValueError(f"cannot disable plugin: {name}")
-
-    plugin_path = get_plugin_directory(name)
-    metadata_file = plugin_path / "ida-plugin.json"
-    disabled_file = plugin_path / "ida-plugin.json.disabled"
-
-    try:
-        metadata = get_metadata_from_plugin_directory(plugin_path)
-        logger.info("disabling plugin: %s (%s)", name, metadata.plugin.version)
-        _ = metadata_file.rename(disabled_file)
-    except Exception as e:
-        logger.error(f"Failed to disable plugin {name}: {e}")
-        raise ValueError(f"Failed to disable plugin {name}: {e}")
-
-
-def can_enable_plugin(name: str) -> bool:
-    if not is_plugin_installed(name):
-        return False
-
-    plugin_path = get_plugin_directory(name)
-
-    if (plugin_path / "ida-plugin.json").exists():
-        return False
-
-    if not (plugin_path / "ida-plugin.json.disabled").exists():
-        # I think this should be impossible, but still...
-        return False
-
-    return True
-
-
-def enable_plugin(name: str):
-    if not can_enable_plugin(name):
-        raise ValueError(f"Cannot enable plugin: {name}")
-
-    plugin_path = get_plugin_directory(name)
-    disabled_file = plugin_path / "ida-plugin.json.disabled"
-    metadata_file = plugin_path / "ida-plugin.json"
-
-    try:
-        metadata = get_metadata_from_plugin_directory(plugin_path)
-        logger.info("enabling plugin: %s (%s)", name, metadata.plugin.version)
-        _ = disabled_file.rename(metadata_file)
-    except Exception as e:
-        logger.error(f"Failed to enable plugin {name}: {e}")
-        raise ValueError(f"Failed to enable plugin {name}: {e}")
 
 
 def upgrade_plugin_archive(zip_data: bytes, name: str):
