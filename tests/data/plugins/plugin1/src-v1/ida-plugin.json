@@ -2,10 +2,9 @@
   "IDAMetadataDescriptorVersion": 1,
   "plugin": {
     "name": "plugin1",
-    "version": "v4.0.0",
+    "version": "v1.0.0",
     "entryPoint": "plugin1.py",
-    "description": "an IDAPython source plugin with inline dependencies",
-    "pythonDependencies": "inline",
+    "description": "an IDAPython source plugin",
     "urls": {
       "repository": "https://github.com/HexRaysSA/ida-hcli"
     },
