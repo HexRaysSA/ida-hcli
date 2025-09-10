@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import semantic_version
 
 from hcli.lib.ida.plugin import (
+    IDAMetadataDescriptor,
     discover_platforms_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
     is_ida_version_compatible,
@@ -26,6 +27,7 @@ class PluginArchiveLocation:
     version: str
     ida_versions: str
     platforms: frozenset[str]
+    metadata: IDAMetadataDescriptor
 
 
 @dataclass
@@ -95,7 +97,7 @@ class PluginArchiveIndex:
 
     def __init__(self):
         # name -> version -> tuple[idaVersion, set[platforms]] -> list[tuple[url, sha256]]
-        self.index: dict[str, dict[str, dict[tuple[str, frozenset[str]], list[tuple[str, str]]]]] = defaultdict(
+        self.index: dict[str, dict[str, dict[tuple[str, frozenset[str]], list[tuple[str, str, IDAMetadataDescriptor]]]]] = defaultdict(
             lambda: defaultdict(lambda: defaultdict(list))
         )
 
@@ -118,7 +120,7 @@ class PluginArchiveIndex:
 
             versions = self.index[name]
             specs = versions[version]
-            specs[spec].append((url, sha256))
+            specs[spec].append((url, sha256, metadata))
             logger.debug(
                 "found plugin: %s %s IDA:%s %s %s",
                 name,
@@ -129,13 +131,25 @@ class PluginArchiveIndex:
             )
 
     def get_plugins(self) -> list[Plugin]:
+        """
+        Fetch all plugins and their locations, indexed by name/version/ida version/platforms.
+        The results are stably sorted.
+        """
         ret = []
-        for name, versions in self.index.items():
+
+        # sort alphabetically by name
+        for name, versions in sorted(self.index.items(), key=lambda p: p[0]):
             locations_by_version = defaultdict(list)
-            for version, specs in versions.items():
-                for spec, urls in specs.items():
+            
+            # sort by version
+            for version, specs in sorted(versions.items(), key=lambda p: parse_plugin_version(p[0])):
+
+                # sorted arbitrarily (but stably)
+                for spec, urls in sorted(specs.items()):
                     ida_versions, platforms = spec
-                    for url, sha256 in urls:
+
+                    # sorted arbitrarily (but stably)
+                    for url, sha256, metadata in sorted(urls):
                         location = PluginArchiveLocation(
                             url=url,
                             sha256=sha256,
@@ -143,6 +157,7 @@ class PluginArchiveIndex:
                             version=version,
                             ida_versions=ida_versions,
                             platforms=platforms,
+                            metadata=metadata,
                         )
                         locations_by_version[version].append(location)
 
