@@ -478,7 +478,7 @@ class IDAConfigJson(BaseModel):
     """IDA configuration $IDAUSR/ida-config.json"""
 
     # like: "/Applications/IDA Professional 9.1.app/Contents/MacOS"
-    installation_directory: Path = Field(validation_alias=AliasPath("Paths", "ida-install-dir"), min_length=1)
+    installation_directory: Path = Field(validation_alias=AliasPath("Paths", "ida-install-dir"))
 
 
 def get_ida_config_path() -> Path:

@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from hcli.lib.console import console
 from hcli.lib.ida.plugin import (
-    IDAPluginMetadata,
+    IDAMetadataDescriptor,
     get_metadatas_with_paths_from_plugin_archive,
     parse_ida_version_spec,
     parse_plugin_version,
@@ -21,12 +21,12 @@ from hcli.lib.ida.plugin.install import validate_metadata_in_plugin_directory
 logger = logging.getLogger(__name__)
 
 
-def _validate_and_lint_metadata(metadata: IDAPluginMetadata, source_name: str) -> None:
+def _validate_and_lint_metadata(metadata: IDAMetadataDescriptor, source_name: str) -> None:
     """Validate a single plugin metadata and show lint recommendations."""
-    if not parse_plugin_version(metadata.version):
+    if not parse_plugin_version(metadata.plugin.version):
         console.print(f"[red]Error[/red] ({source_name}): plugin version should look like 'X.Y.Z'")
 
-    if metadata.ida_versions and not parse_ida_version_spec(metadata.ida_versions):
+    if metadata.plugin.ida_versions and not parse_ida_version_spec(metadata.plugin.ida_versions):
         console.print(f"[red]Error[/red] ({source_name}): idaVersion should look like 'X.YspZ'")
 
     if not metadata.schema_:
@@ -35,16 +35,16 @@ def _validate_and_lint_metadata(metadata: IDAPluginMetadata, source_name: str) -
             "  like: https://raw.githubusercontent.com/HexRaysSA/ida-hcli/refs/heads/v0.9.0/docs/reference/ida-plugin.schema.json"
         )
 
-    if not metadata.ida_versions:
+    if not metadata.plugin.ida_versions:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.idaVersions")
 
-    if not metadata.description:
+    if not metadata.plugin.description:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.description")
 
-    if not metadata.categories:
+    if not metadata.plugin.categories:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.categories")
 
-    if not metadata.logo_path:
+    if not metadata.plugin.logo_path:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.logoPath")
 
 
@@ -63,7 +63,7 @@ def _lint_plugin_directory(plugin_path: Path) -> None:
 
     try:
         content = metadata_file.read_text(encoding="utf-8")
-        metadata = IDAPluginMetadata.model_validate_json(content)
+        metadata = IDAMetadataDescriptor.model_validate_json(content)
     except ValidationError as e:
         console.print("[red]Error[/red]: ida-plugin.json validation failed")
         for error in e.errors():

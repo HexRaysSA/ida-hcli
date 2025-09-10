@@ -1,0 +1,17 @@
+{
+    "$schema": "https://gist.githubusercontent.com/milankovo/a1ee7254053e384735010d1da9d91bcc/raw/d1dec1ba08c7c42e13f4ee3a9fcf23951b34e895/ida-plugin.schema.json",
+    "IDAMetadataDescriptorVersion": 1,
+    "plugin": {
+        "name": "zydisinfo",
+        "entryPoint": "zydisinfo",
+        "idaVersions": ">=9.0",
+        "version": "v1.0.0",
+        "urls": {
+            "repository": "https://github.com/HexRaysSA/ida-hcli"
+        },
+        "authors": [{
+            "name": "Willi Ballenthin",
+            "email": "wballenthin@hex-rays.com"
+        }]
+    }
+}

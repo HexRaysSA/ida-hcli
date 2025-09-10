@@ -11,7 +11,7 @@ import packaging.version
 
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version, get_ida_user_dir
 from hcli.lib.ida.plugin import (
-    IDAPluginMetadata,
+    IDAMetadataDescriptor,
     discover_platforms_from_plugin_archive,
     get_metadata_from_plugin_archive,
     get_metadata_path_from_plugin_archive,
@@ -71,7 +71,7 @@ def get_plugin_directory(name: str) -> Path:
     return plugins_dir / name
 
 
-def get_metadata_from_plugin_directory(plugin_path: Path) -> IDAPluginMetadata:
+def get_metadata_from_plugin_directory(plugin_path: Path) -> IDAMetadataDescriptor:
     for filename in ("ida-plugin.json", "ida-plugin.json.disabled"):
         metadata_file = plugin_path / filename
         if not metadata_file.exists():
@@ -79,7 +79,7 @@ def get_metadata_from_plugin_directory(plugin_path: Path) -> IDAPluginMetadata:
 
         try:
             content = metadata_file.read_text(encoding="utf-8")
-            return IDAPluginMetadata.model_validate_json(content)
+            return IDAMetadataDescriptor.model_validate_json(content)
         except Exception as e:
             logger.debug("failed to validate ida-plugin.json: %s", e)
             raise ValueError(f"Failed to parse ida-plugin.json in {plugin_path}: {e}")
@@ -113,46 +113,46 @@ def validate_metadata_in_plugin_directory(plugin_path: Path):
         raise ValueError(f"Invalid metadata version: {metadata.metadata_version}. Expected: 1")
 
     # name contains only ASCII alphanumeric, underscores, dashes, spaces
-    if not re.match(r"^[a-zA-Z0-9_\- ]+$", metadata.name):
+    if not re.match(r"^[a-zA-Z0-9_\- ]+$", metadata.plugin.name):
         logger.debug("Invalid name format")
         raise ValueError(
-            f"Invalid name format: '{metadata.name}'. Must contain only ASCII alphanumeric, underscores, dashes"
+            f"Invalid name format: '{metadata.plugin.name}'. Must contain only ASCII alphanumeric, underscores, dashes"
         )
 
-    if not metadata.entry_point:
+    if not metadata.plugin.entry_point:
         logger.debug("Missing entry point")
         raise ValueError("entry point required")
 
-    validate_path(metadata.entry_point, "entry point")
-    if metadata.logo_path:
-        validate_path(metadata.logo_path, "logo path")
+    validate_path(metadata.plugin.entry_point, "entry point")
+    if metadata.plugin.logo_path:
+        validate_path(metadata.plugin.logo_path, "logo path")
 
-    entry_point_path = plugin_path / metadata.entry_point
+    entry_point_path = plugin_path / metadata.plugin.entry_point
 
-    if metadata.entry_point.endswith(".py"):
+    if metadata.plugin.entry_point.endswith(".py"):
         # source plugin
         if not entry_point_path.exists():
-            logger.debug(f"Entry point file not found in directory: '{metadata.entry_point}'")
-            raise ValueError(f"Entry point file not found in directory: '{metadata.entry_point}'")
+            logger.debug(f"Entry point file not found in directory: '{metadata.plugin.entry_point}'")
+            raise ValueError(f"Entry point file not found in directory: '{metadata.plugin.entry_point}'")
     else:
         # binary plugin - check for various extensions
         if not entry_point_path.exists():
             found = False
             for extension in (".so", ".dll", ".dylib"):
-                if (plugin_path / (metadata.entry_point + extension)).exists():
+                if (plugin_path / (metadata.plugin.entry_point + extension)).exists():
                     found = True
                     break
             if not found:
-                logger.debug(f"Entry point file not found in directory: '{metadata.entry_point}'")
-                raise ValueError(f"Entry point file not found in directory: '{metadata.entry_point}'")
+                logger.debug(f"Entry point file not found in directory: '{metadata.plugin.entry_point}'")
+                raise ValueError(f"Entry point file not found in directory: '{metadata.plugin.entry_point}'")
 
-    if metadata.logo_path:
-        logo_path = plugin_path / metadata.logo_path
+    if metadata.plugin.logo_path:
+        logo_path = plugin_path / metadata.plugin.logo_path
         if not logo_path.exists():
-            logger.debug(f"Logo file not found in directory: '{metadata.logo_path}'")
-            raise ValueError(f"Logo file not found in directory: '{metadata.logo_path}'")
+            logger.debug(f"Logo file not found in directory: '{metadata.plugin.logo_path}'")
+            raise ValueError(f"Logo file not found in directory: '{metadata.plugin.logo_path}'")
 
-    _ = packaging.version.parse(metadata.version)
+    _ = packaging.version.parse(metadata.plugin.version)
 
 
 def get_installed_plugin_paths() -> list[Path]:
@@ -178,7 +178,7 @@ def get_installed_plugin_paths() -> list[Path]:
             continue
 
         metadata = get_metadata_from_plugin_directory(plugin_path)
-        if metadata.name != plugin_path.name:
+        if metadata.plugin.name != plugin_path.name:
             logger.debug("plugin name and path mismatch")
             continue
 
@@ -194,7 +194,7 @@ def get_installed_plugins() -> list[tuple[str, str]]:
     for plugin_path in get_installed_plugin_paths():
         try:
             metadata = get_metadata_from_plugin_directory(plugin_path)
-            installed_plugins.append((metadata.name, metadata.version))
+            installed_plugins.append((metadata.plugin.name, metadata.plugin.version))
         except ValueError as e:
             logger.warning(f"Failed to read metadata from {plugin_path}: {e}")
             continue
@@ -203,9 +203,9 @@ def get_installed_plugins() -> list[tuple[str, str]]:
 
 
 def can_install_plugin(
-    zip_data: bytes, metadata: IDAPluginMetadata, current_platform: str, current_version: str
+    zip_data: bytes, metadata: IDAMetadataDescriptor, current_platform: str, current_version: str
 ) -> bool:
-    name = metadata.name
+    name = metadata.plugin.name
     try:
         destination_path = get_plugin_directory(name)
     except ValueError as e:
@@ -221,7 +221,7 @@ def can_install_plugin(
         logger.warning(f"Current platform not supported: {current_platform}")
         return False
 
-    if metadata.ida_versions and not is_ida_version_compatible(current_version, metadata.ida_versions):
+    if metadata.plugin.ida_versions and not is_ida_version_compatible(current_version, metadata.plugin.ida_versions):
         logger.warning(f"Current IDA version not supported: {current_version}")
         return False
 
@@ -291,7 +291,7 @@ def _install_plugin_archive(zip_data: bytes, name: str):
     metadata = get_metadata_from_plugin_archive(zip_data, name)
     validate_metadata_in_plugin_archive(zip_data, metadata)
 
-    logger.info("installing plugin: %s (%s)", metadata.name, metadata.version)
+    logger.info("installing plugin: %s (%s)", metadata.plugin.name, metadata.plugin.version)
 
     current_platform = find_current_ida_platform()
     current_version = find_current_ida_version()
@@ -305,7 +305,7 @@ def _install_plugin_archive(zip_data: bytes, name: str):
     # note: there's a potential for collision here:
     # user1/plugin destination directory ($IDAUSER/plugins/plugin) collides with user2/plugin
     # we could fix this by prefixing the user/org name, like user1--plugin
-    destination_path = get_plugin_directory(metadata.name)
+    destination_path = get_plugin_directory(metadata.plugin.name)
 
     # path within the zip to ida-plugin.json
     metadata_path = get_metadata_path_from_plugin_archive(zip_data, name)
@@ -369,7 +369,7 @@ def uninstall_plugin(name: str):
 
     plugin_path = get_plugin_directory(name)
     metadata = get_metadata_from_plugin_directory(plugin_path)
-    logger.info("uninstalling plugin: %s (%s)", name, metadata.version)
+    logger.info("uninstalling plugin: %s (%s)", name, metadata.plugin.version)
 
     # note that the pythonDependencies of the plugin aren't pruned.
     # we could re-collect all the deps requested by other plugins
@@ -418,7 +418,7 @@ def disable_plugin(name: str):
 
     try:
         metadata = get_metadata_from_plugin_directory(plugin_path)
-        logger.info("disabling plugin: %s (%s)", name, metadata.version)
+        logger.info("disabling plugin: %s (%s)", name, metadata.plugin.version)
         _ = metadata_file.rename(disabled_file)
     except Exception as e:
         logger.error(f"Failed to disable plugin {name}: {e}")
@@ -451,7 +451,7 @@ def enable_plugin(name: str):
 
     try:
         metadata = get_metadata_from_plugin_directory(plugin_path)
-        logger.info("enabling plugin: %s (%s)", name, metadata.version)
+        logger.info("enabling plugin: %s (%s)", name, metadata.plugin.version)
         _ = disabled_file.rename(metadata_file)
     except Exception as e:
         logger.error(f"Failed to enable plugin {name}: {e}")
@@ -462,30 +462,30 @@ def upgrade_plugin_archive(zip_data: bytes, name: str):
     metadata = get_metadata_from_plugin_archive(zip_data, name)
     validate_metadata_in_plugin_archive(zip_data, metadata)
 
-    if not is_plugin_installed(metadata.name):
-        raise ValueError(f"plugin is not installed: {metadata.name}")
+    if not is_plugin_installed(metadata.plugin.name):
+        raise ValueError(f"plugin is not installed: {metadata.plugin.name}")
 
     # TODO: can install the plugin? IDA versions and stuff
     # TODO: implement rollback
 
-    plugin_path = get_plugin_directory(metadata.name)
+    plugin_path = get_plugin_directory(metadata.plugin.name)
     existing_metadata = get_metadata_from_plugin_directory(plugin_path)
 
     # use python setuptools/pip-style version parsing and comparison
     # to ensure that metadata.version is > existing_metadata.version
     try:
         # TODO: validate this during metadata validation
-        new_version = packaging.version.parse(metadata.version)
-        existing_version = packaging.version.parse(existing_metadata.version)
+        new_version = packaging.version.parse(metadata.plugin.version)
+        existing_version = packaging.version.parse(existing_metadata.plugin.version)
     except packaging.version.InvalidVersion:
         raise ValueError("failed to parse plugin versions")
 
     if new_version <= existing_version:
         logger.warning(
-            f"New version {metadata.version} is not greater than existing version {existing_metadata.version}"
+            f"New version {metadata.plugin.version} is not greater than existing version {existing_metadata.plugin.version}"
         )
         raise ValueError(
-            f"Cannot upgrade plugin {metadata.name}: new version {metadata.version} is not greater than existing version {existing_metadata.version}"
+            f"Cannot upgrade plugin {metadata.plugin.name}: new version {metadata.plugin.version} is not greater than existing version {existing_metadata.plugin.version}"
         )
 
     # as long as uninstallation is as simple as removing the directory
@@ -493,7 +493,7 @@ def upgrade_plugin_archive(zip_data: bytes, name: str):
 
     # note: this could conflict with a malicious plugin name, like `foo.rollback`
     # maybe put this into a different directory (XDG_CACHE_HOME?)
-    rollback_path = plugin_path.parent / (metadata.name + ".rollback")
+    rollback_path = plugin_path.parent / (metadata.plugin.name + ".rollback")
     if rollback_path.exists():
         raise RuntimeError("rollback path already exists for some reason")
     plugin_path.rename(rollback_path)

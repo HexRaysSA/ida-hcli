@@ -110,9 +110,9 @@ class PluginArchiveIndex:
             h.update(buf)
             sha256 = h.hexdigest()
 
-            name = metadata.name
-            version = metadata.version
-            ida_versions = metadata.ida_versions or ">=0"
+            name = metadata.plugin.name
+            version = metadata.plugin.version
+            ida_versions = metadata.plugin.ida_versions or ">=0"
             platforms: frozenset[str] = discover_platforms_from_plugin_archive(buf, name)
             spec = (ida_versions, platforms)
 

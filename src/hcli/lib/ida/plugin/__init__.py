@@ -6,7 +6,7 @@ import sys
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Optional
+from typing import Literal
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -15,178 +15,16 @@ else:
 
 import packaging.version
 import semantic_version
-from pydantic import AliasPath, BaseModel, Field, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 logger = logging.getLogger(__name__)
-
-
-# TODO: dedup with hcli.lib.ida.plugin
-class IDAPluginMetadata(BaseModel):
-    """IDA Plugin metadata from ida-plugin.json"""
-
-    schema_: str | None = Field(validation_alias="$schema", default=None)
-    metadata_version: int = Field(validation_alias="IDAMetadataDescriptorVersion")
-
-    #######################
-    # required
-    name: str = Field(validation_alias=AliasPath("plugin", "name"))
-    # TODO: must validate via: packaging.version.parse
-    version: str = Field(validation_alias=AliasPath("plugin", "version"))
-    entry_point: str = Field(validation_alias=AliasPath("plugin", "entryPoint"))
-
-    #######################
-    # optional
-    categories: list[str] = Field(validation_alias=AliasPath("plugin", "categories"), default_factory=list)
-    logo_path: Optional[str] | None = Field(validation_alias=AliasPath("plugin", "logoPath"), default=None)
-    # empty implies all versions
-    ida_versions: Optional[str] | None = Field(validation_alias=AliasPath("plugin", "idaVersions"), default=None)
-    description: Optional[str] | None = Field(validation_alias=AliasPath("plugin", "description"), default=None)
-
-    python_dependencies: list[str] | str = Field(
-        validation_alias=AliasPath("plugin", "pythonDependencies"), default_factory=list
-    )
-
-
-def parse_pep723_metadata(python_file_content: str) -> list[str]:
-    """Parse PEP 723 inline script metadata from Python file content.
-
-    Returns a list of dependencies found in the PEP 723 metadata block,
-    or an empty list if no metadata block is found.
-    
-    Raises:
-        ValueError: If metadata block is found but contains invalid TOML or unexpected data format
-    """
-    pattern = r"#\s*///\s*script\s*\n(.*?)#\s*///\s*\n"
-    match = re.search(pattern, python_file_content, re.DOTALL | re.MULTILINE)
-
-    if not match:
-        return []
-
-    metadata_block = match.group(1)
-
-    lines = []
-    for line in metadata_block.split("\n"):
-        line = line.strip()
-        if line.startswith("#"):
-            line = line[1:].strip()
-        if line:
-            lines.append(line)
-
-    toml_content = "\n".join(lines)
-
-    try:
-        metadata = tomllib.loads(toml_content)
-        dependencies = metadata.get("dependencies", [])
-        if isinstance(dependencies, list):
-            return dependencies
-        else:
-            raise ValueError(f"PEP 723 dependencies must be a list, got {type(dependencies).__name__}")
-    except tomllib.TOMLDecodeError as e:
-        raise ValueError(f"Failed to parse PEP 723 TOML metadata: {e}") from e
-
-
-def get_file_content_from_plugin_archive(zip_data: bytes, plugin_name: str, relative_path: str) -> bytes:
-    """Get file content from a plugin archive relative to the plugin's metadata file.
-    
-    Args:
-        zip_data: The zip archive data
-        plugin_name: The name of the plugin 
-        relative_path: Path relative to the plugin's metadata file
-        
-    Returns:
-        The file content as bytes
-    """
-    metadata_path = get_metadata_path_from_plugin_archive(zip_data, plugin_name)
-    plugin_dir = metadata_path.parent
-    file_path = plugin_dir / relative_path
-
-    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
-        # zip files always use forward slashes
-        zip_path = file_path.as_posix()
-        with zip_file.open(zip_path) as f:
-            return f.read()
-
-
-def get_python_dependencies_from_plugin_archive(zip_data: bytes, metadata: IDAPluginMetadata) -> list[str]:
-    """Get Python dependencies from a plugin archive.
-
-    If pythonDependencies is "inline", parse PEP 723 metadata from the entry point.
-    Otherwise, return the pythonDependencies list directly.
-    
-    Raises:
-        ValueError: If entry point is not a Python file for inline dependencies,
-                   if file is not found, or if dependencies format is unexpected
-    """
-    if isinstance(metadata.python_dependencies, str) and metadata.python_dependencies == "inline":
-        if not metadata.entry_point.endswith(".py"):
-            raise ValueError("Entry point must be a Python file (.py) for inline dependencies")
-
-        python_content_bytes = get_file_content_from_plugin_archive(zip_data, metadata.name, metadata.entry_point)
-        python_content = python_content_bytes.decode("utf-8")
-        return parse_pep723_metadata(python_content)
-    else:
-        if isinstance(metadata.python_dependencies, list):
-            return metadata.python_dependencies
-        else:
-            raise ValueError(f"Unexpected python_dependencies type: {type(metadata.python_dependencies).__name__}")
-
-
-def get_python_dependencies_from_plugin_directory(plugin_path: Path, metadata: IDAPluginMetadata) -> list[str]:
-    """Get Python dependencies from a plugin directory.
-
-    If pythonDependencies is "inline", parse PEP 723 metadata from the entry point.
-    Otherwise, return the pythonDependencies list directly.
-    
-    Raises:
-        ValueError: If entry point is not a Python file for inline dependencies,
-                   if file is not found, or if dependencies format is unexpected
-    """
-    if isinstance(metadata.python_dependencies, str) and metadata.python_dependencies == "inline":
-        if not metadata.entry_point.endswith(".py"):
-            raise ValueError("Entry point must be a Python file (.py) for inline dependencies")
-
-        entry_point_path = plugin_path / metadata.entry_point
-
-        python_content = entry_point_path.read_text(encoding="utf-8")
-        return parse_pep723_metadata(python_content)
-    else:
-        if isinstance(metadata.python_dependencies, list):
-            return metadata.python_dependencies
-        else:
-            raise ValueError(f"Unexpected python_dependencies type: {type(metadata.python_dependencies).__name__}")
-
-
-def get_metadatas_with_paths_from_plugin_archive(zip_data: bytes) -> Iterator[tuple[Path, IDAPluginMetadata]]:
-    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
-        for file_path in zip_file.namelist():
-            if not file_path.endswith("ida-plugin.json"):
-                continue
-
-            with zip_file.open(file_path) as f:
-                try:
-                    metadata = IDAPluginMetadata.model_validate_json(f.read().decode("utf-8"))
-                except (ValueError, ValidationError):
-                    continue
-                else:
-                    yield Path(file_path), metadata
-
-
-def get_metadata_path_from_plugin_archive(zip_data: bytes, name: str) -> Path:
-    for path, metadata in get_metadatas_with_paths_from_plugin_archive(zip_data):
-        if metadata.name == name:
-            return path
-
-    raise ValueError(f"plugin '{name}' not found in zip archive")
-
-
-def get_metadata_from_plugin_archive(zip_data: bytes, name: str) -> IDAPluginMetadata:
-    """Extract ida-plugin.json metadata for plugin with the given name from zip archive without extracting"""
-
-    for _path, metadata in get_metadatas_with_paths_from_plugin_archive(zip_data):
-        if metadata.name == name:
-            return metadata
-
-    raise ValueError(f"plugin '{name}' not found in zip archive")
 
 
 PLATFORM_WINDOWS = "windows-x86_64"
@@ -194,7 +32,7 @@ PLATFORM_LINUX = "linux-x86_64"
 PLATFORM_MACOS_INTEL = "macos-x86_64"
 PLATFORM_MACOS_ARM = "macos-aarch64"
 
-ALL_PLATFORMS = frozenset(
+ALL_PLATFORMS: frozenset[str] = frozenset(
     {
         PLATFORM_WINDOWS,
         PLATFORM_LINUX,
@@ -202,59 +40,6 @@ ALL_PLATFORMS = frozenset(
         PLATFORM_MACOS_ARM,
     }
 )
-
-
-def does_path_exist_in_zip_archive(zip_data: bytes, path: str) -> bool:
-    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
-        return path in zip_file.namelist()
-
-
-def does_plugin_path_exist_in_plugin_archive(zip_data: bytes, plugin_name: str, relative_path: str) -> bool:
-    """does the given path exist relative to the metadata file of the given plugin?"""
-    metadata_path = get_metadata_path_from_plugin_archive(zip_data, plugin_name)
-    plugin_root_path = Path(metadata_path).parent
-    candidate_path = plugin_root_path / Path(relative_path)
-    # zip files always use forward slashes
-    return does_path_exist_in_zip_archive(zip_data, candidate_path.as_posix())
-
-
-def discover_platforms_from_plugin_archive(zip_data: bytes, name: str) -> frozenset[str]:
-    if is_source_plugin_archive(zip_data, name):
-        return ALL_PLATFORMS
-    elif is_binary_plugin_archive(zip_data, name):
-        metadata = get_metadata_from_plugin_archive(zip_data, name)
-        if metadata.entry_point.lower().endswith(".so"):
-            return frozenset({PLATFORM_LINUX})
-        elif metadata.entry_point.lower().endswith(".dylib"):
-            # assume universal binary
-            return frozenset({PLATFORM_MACOS_INTEL, PLATFORM_MACOS_ARM})
-        elif metadata.entry_point.lower().endswith(".dll"):
-            return frozenset({PLATFORM_WINDOWS})
-        else:
-            # entrypoint should be a bare filename
-            # and we need to test for the existence of files with candidate extensions (.so, .dylib, .dll)
-            platforms = set()
-            extensions = [
-                (".so", {PLATFORM_LINUX}),
-                (".dll", {PLATFORM_WINDOWS}),
-                ("_aarch64.dylib", {PLATFORM_MACOS_ARM}),
-                ("_x86_64.dylib", {PLATFORM_MACOS_INTEL}),
-            ]
-            for ext, plats in extensions:
-                if does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.entry_point + ext):
-                    platforms.update(plats)
-
-            # check for universal binary
-            if not platforms.intersection({PLATFORM_MACOS_INTEL, PLATFORM_MACOS_ARM}):
-                if does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.entry_point + ".dylib"):
-                    platforms.update({PLATFORM_MACOS_INTEL, PLATFORM_MACOS_ARM})
-
-            if platforms:
-                return frozenset(platforms)
-
-            raise ValueError("failed to discover platforms: entry point not found")
-    else:
-        raise ValueError("not a valid plugin archive")
 
 
 def parse_plugin_version(version: str) -> semantic_version.Version:
@@ -309,6 +94,380 @@ def parse_ida_version_spec(spec: str) -> semantic_version.SimpleSpec:
     return semantic_version.SimpleSpec(normalized_spec)
 
 
+class Contact(BaseModel):
+    name: str | None = None
+    email: str | None = None
+
+    @model_validator(mode="after")
+    def check_at_least_one(self):
+        if not self.name and not self.email:
+            raise ValueError("name or email must be present")
+        return self
+
+
+class URLs(BaseModel):
+    # URL of GitHub repository containing the source code for the plugin.
+    # Uses the form: https://github.com/org/project
+    repository: str
+
+    # URL of website describing the plugin, if different from the GitHub repo.
+    homepage: str | None = None
+
+    @field_validator("repository", mode="after")
+    @classmethod
+    def validate_github_url(cls, v: str) -> str:
+        github_pattern = r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/?$"
+        if not re.match(github_pattern, v):
+            raise ValueError("Repository must be a valid GitHub URL in the format: https://github.com/org/project")
+        return v
+
+
+class PluginMetadata(BaseModel):
+    model_config = ConfigDict(serialize_by_alias=True)
+
+    ###########################################################################
+    # required
+
+    # The name will be used to identify the plugin.
+    #
+    # The project name must consist of ASCII letters, digits, underscores "_", hyphens "-".
+    # It must not start or end with an underscore or hyphen.
+    #
+    # Two plugins with the same name cannot be installed at the same time;
+    # therefore, this should be globally unique.
+    #
+    # This is used by IDA Pro when loading the plugin to derived a namespaced identifier.
+    # The namespace name is generated by converting all non alphanumeric characters
+    # of the plugin name to underscores (_) and prepending __plugins__ to it.
+    # For example "my plugin" would become __plugins__my_plugin.
+    name: str
+
+    # Specify the version of your plugin. It must follow the x.y.z format (e.g., 1.0.0).
+    # Examples:
+    #   - "1.0.0"
+    version: str
+
+    # The filename of the "main" file for the plugin.
+    # It should be stored in the same directory as its ida-plugin.json file.
+    # If the entryPoint has no file extension,
+    #  IDA will assume it is a native plugin and append the appropriate file extension
+    #  for dynamic shared objects for the host platform (.dll, .so, .dylib).
+    # For IDAPython plugins, this should typically be a .py file (e.g., my-first-plugin.py).
+    entry_point: str = Field(alias="entryPoint")
+
+    # A list of URLs associated with your project.
+    urls: URLs
+
+    ###########################################################################
+    # optional
+
+    # This should be a one-line description of your project,
+    # to show as the “headline” of your project page on the plugin repository,
+    # and other places such as lists of search results.
+    description: str | None = None
+
+    # Used to improve discoverability in the plugin repository by providing major categories.
+    categories: list[
+        Literal["disassembly-and-processor-modules"]
+        | Literal["file-parsers-and-loaders"]
+        | Literal["decompilation"]
+        | Literal["debugging-and-tracing"]
+        | Literal["deobfuscation"]
+        | Literal["collaboration-and-productivity"]
+        | Literal["integration-with-third-parties-interoperability"]
+        | Literal["api-scripting-and-automation"]
+        | Literal["ui-ux-and-visualization"]
+        | Literal["malware-analysis"]
+        | Literal["vulnerability-research-and-exploit-development"]
+        | Literal["other"]
+    ] = Field(default_factory=list)
+
+    # Used to improve discoverability in the plugin repository by providing search terms.
+    keywords: list[str] = Field(default_factory=list)
+
+    # License for the plugin.
+    # Examples:
+    #   - "Apache 2.0"
+    #   - "MIT"
+    #   - "BSD 3-Clause"
+    license: str | None = None
+
+    # Both of these fields contain lists of people identified by a name and/or an email address.
+    # There must be at least one author or maintainer provided for each plugin.
+    authors: list[Contact] = Field(default_factory=list)
+    maintainers: list[Contact] = Field(default_factory=list)
+
+    # Declare which versions of IDA your plugin supports.
+    # You can specify a single version (e.g., 9.0) or a version range (e.g., >=9.0)
+    #  using the semantic versioning scheme.
+    ida_versions: str | None = Field(alias="idaVersions", default=">=0")
+    platforms: list[
+        Literal["windows-x86_64"] | Literal["linux-x86_64"] | Literal["macos-aarch64"] | Literal["macos-x86_64"]
+    ] = Field(default_factory=lambda: list(sorted(ALL_PLATFORMS)))
+
+    # Include an image to visually represent your plugin on its page at plugins.hex-rays.com.
+    # This should be a relative path to an image file within your plugin’s repository.
+    # The recommended aspect ratio for the image is 16:9.
+    logo_path: str | None = Field(alias="logoPath", default=None)
+
+    # If your project has dependencies, list them like this:
+    # pythonDependencies = [
+    #   "httpx",
+    #   "gidgethub[httpx]>4.0.0",
+    #   "pkg3>=1.0,<=2.0",
+    # ]
+    # The dependency syntax is intended to be used by pip.
+    python_dependencies: list[str] | str = Field(alias="pythonDependencies", default_factory=list)
+
+    @field_validator("name", mode="after")
+    @classmethod
+    def is_ok_name(cls, v: str) -> str:
+        if not re.match(r"^[a-zA-Z0-9_-]+$", v):
+            raise ValueError("Name must consist of ASCII letters, digits, underscores, and hyphens only")
+
+        if v.startswith(("_", "-")) or v.endswith(("_", "-")):
+            raise ValueError("Name must not start or end with underscore or hyphen")
+
+        return v
+
+    @field_validator("version", mode="after")
+    @classmethod
+    def is_ok_version(cls, value: str) -> str:
+        try:
+            _ = parse_plugin_version(value)
+        except Exception as e:
+            raise ValueError("failed to parse version") from e
+        return value
+
+    @field_validator("ida_versions", mode="after")
+    @classmethod
+    def is_ok_ida_version(cls, value: str) -> str:
+        try:
+            _ = parse_ida_version_spec(value)
+        except Exception as e:
+            raise ValueError("failed to parse version") from e
+        return value
+
+    @model_validator(mode="after")
+    def check_at_least_one_contact(self):
+        if not self.authors and not self.maintainers:
+            raise ValueError("authors or maintainers must be present")
+        return self
+
+
+class IDAMetadataDescriptor(BaseModel):
+    """Metadata from ida-plugin.json"""
+
+    model_config = ConfigDict(serialize_by_alias=True)
+
+    schema_: str | None = Field(alias="$schema", default=None)
+    metadata_version: int = Field(alias="IDAMetadataDescriptorVersion")
+    plugin: PluginMetadata
+
+
+def parse_pep723_metadata(python_file_content: str) -> list[str]:
+    """Parse PEP 723 inline script metadata from Python file content.
+
+    Returns a list of dependencies found in the PEP 723 metadata block,
+    or an empty list if no metadata block is found.
+
+    Raises:
+        ValueError: If metadata block is found but contains invalid TOML or unexpected data format
+    """
+    pattern = r"#\s*///\s*script\s*\n(.*?)#\s*///\s*\n"
+    match = re.search(pattern, python_file_content, re.DOTALL | re.MULTILINE)
+
+    if not match:
+        return []
+
+    metadata_block = match.group(1)
+
+    lines = []
+    for line in metadata_block.split("\n"):
+        line = line.strip()
+        if line.startswith("#"):
+            line = line[1:].strip()
+        if line:
+            lines.append(line)
+
+    toml_content = "\n".join(lines)
+
+    try:
+        metadata = tomllib.loads(toml_content)
+        dependencies = metadata.get("dependencies", [])
+        if isinstance(dependencies, list):
+            return dependencies
+        else:
+            raise ValueError(f"PEP 723 dependencies must be a list, got {type(dependencies).__name__}")
+    except tomllib.TOMLDecodeError as e:
+        raise ValueError(f"Failed to parse PEP 723 TOML metadata: {e}") from e
+
+
+def get_file_content_from_plugin_archive(zip_data: bytes, plugin_name: str, relative_path: str) -> bytes:
+    """Get file content from a plugin archive relative to the plugin's metadata file.
+
+    Args:
+        zip_data: The zip archive data
+        plugin_name: The name of the plugin
+        relative_path: Path relative to the plugin's metadata file
+
+    Returns:
+        The file content as bytes
+    """
+    metadata_path = get_metadata_path_from_plugin_archive(zip_data, plugin_name)
+    plugin_dir = metadata_path.parent
+    file_path = plugin_dir / relative_path
+
+    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
+        # zip files always use forward slashes
+        zip_path = file_path.as_posix()
+        with zip_file.open(zip_path) as f:
+            return f.read()
+
+
+def get_python_dependencies_from_plugin_archive(zip_data: bytes, metadata: IDAMetadataDescriptor) -> list[str]:
+    """Get Python dependencies from a plugin archive.
+
+    If pythonDependencies is "inline", parse PEP 723 metadata from the entry point.
+    Otherwise, return the pythonDependencies list directly.
+
+    Raises:
+        ValueError: If entry point is not a Python file for inline dependencies,
+                   if file is not found, or if dependencies format is unexpected
+    """
+    if isinstance(metadata.plugin.python_dependencies, str) and metadata.plugin.python_dependencies == "inline":
+        if not metadata.plugin.entry_point.endswith(".py"):
+            raise ValueError("Entry point must be a Python file (.py) for inline dependencies")
+
+        python_content_bytes = get_file_content_from_plugin_archive(
+            zip_data, metadata.plugin.name, metadata.plugin.entry_point
+        )
+        python_content = python_content_bytes.decode("utf-8")
+        return parse_pep723_metadata(python_content)
+    else:
+        if isinstance(metadata.plugin.python_dependencies, list):
+            return metadata.plugin.python_dependencies
+        else:
+            raise ValueError(
+                f"Unexpected python_dependencies type: {type(metadata.plugin.python_dependencies).__name__}"
+            )
+
+
+def get_python_dependencies_from_plugin_directory(plugin_path: Path, metadata: IDAMetadataDescriptor) -> list[str]:
+    """Get Python dependencies from a plugin directory.
+
+    If pythonDependencies is "inline", parse PEP 723 metadata from the entry point.
+    Otherwise, return the pythonDependencies list directly.
+
+    Raises:
+        ValueError: If entry point is not a Python file for inline dependencies,
+                   if file is not found, or if dependencies format is unexpected
+    """
+    if isinstance(metadata.plugin.python_dependencies, str) and metadata.plugin.python_dependencies == "inline":
+        if not metadata.plugin.entry_point.endswith(".py"):
+            raise ValueError("Entry point must be a Python file (.py) for inline dependencies")
+
+        entry_point_path = plugin_path / metadata.plugin.entry_point
+
+        python_content = entry_point_path.read_text(encoding="utf-8")
+        return parse_pep723_metadata(python_content)
+    else:
+        if isinstance(metadata.plugin.python_dependencies, list):
+            return metadata.plugin.python_dependencies
+        else:
+            raise ValueError(
+                f"Unexpected python_dependencies type: {type(metadata.plugin.python_dependencies).__name__}"
+            )
+
+
+def get_metadatas_with_paths_from_plugin_archive(
+    zip_data: bytes,
+) -> Iterator[tuple[Path, IDAMetadataDescriptor]]:
+    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
+        for file_path in zip_file.namelist():
+            if not file_path.endswith("ida-plugin.json"):
+                continue
+
+            with zip_file.open(file_path) as f:
+                try:
+                    metadata = IDAMetadataDescriptor.model_validate_json(f.read().decode("utf-8"))
+                except (ValueError, ValidationError):
+                    continue
+                else:
+                    yield Path(file_path), metadata
+
+
+def get_metadata_path_from_plugin_archive(zip_data: bytes, name: str) -> Path:
+    for path, metadata in get_metadatas_with_paths_from_plugin_archive(zip_data):
+        if metadata.plugin.name == name:
+            return path
+
+    raise ValueError(f"plugin '{name}' not found in zip archive")
+
+
+def get_metadata_from_plugin_archive(zip_data: bytes, name: str) -> IDAMetadataDescriptor:
+    """Extract ida-plugin.json metadata for plugin with the given name from zip archive without extracting"""
+
+    for _path, metadata in get_metadatas_with_paths_from_plugin_archive(zip_data):
+        if metadata.plugin.name == name:
+            return metadata
+
+    raise ValueError(f"plugin '{name}' not found in zip archive")
+
+
+def does_path_exist_in_zip_archive(zip_data: bytes, path: str) -> bool:
+    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
+        return path in zip_file.namelist()
+
+
+def does_plugin_path_exist_in_plugin_archive(zip_data: bytes, plugin_name: str, relative_path: str) -> bool:
+    """does the given path exist relative to the metadata file of the given plugin?"""
+    metadata_path = get_metadata_path_from_plugin_archive(zip_data, plugin_name)
+    plugin_root_path = Path(metadata_path).parent
+    candidate_path = plugin_root_path / Path(relative_path)
+    # zip files always use forward slashes
+    return does_path_exist_in_zip_archive(zip_data, candidate_path.as_posix())
+
+
+def discover_platforms_from_plugin_archive(zip_data: bytes, name: str) -> frozenset[str]:
+    if is_source_plugin_archive(zip_data, name):
+        return ALL_PLATFORMS
+    elif is_binary_plugin_archive(zip_data, name):
+        metadata = get_metadata_from_plugin_archive(zip_data, name)
+        if metadata.plugin.entry_point.lower().endswith(".so"):
+            return frozenset({PLATFORM_LINUX})
+        elif metadata.plugin.entry_point.lower().endswith(".dylib"):
+            # assume universal binary
+            return frozenset({PLATFORM_MACOS_INTEL, PLATFORM_MACOS_ARM})
+        elif metadata.plugin.entry_point.lower().endswith(".dll"):
+            return frozenset({PLATFORM_WINDOWS})
+        else:
+            # entrypoint should be a bare filename
+            # and we need to test for the existence of files with candidate extensions (.so, .dylib, .dll)
+            platforms = set()
+            extensions = [
+                (".so", {PLATFORM_LINUX}),
+                (".dll", {PLATFORM_WINDOWS}),
+                ("_aarch64.dylib", {PLATFORM_MACOS_ARM}),
+                ("_x86_64.dylib", {PLATFORM_MACOS_INTEL}),
+            ]
+            for ext, plats in extensions:
+                if does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point + ext):
+                    platforms.update(plats)
+
+            # check for universal binary
+            if not platforms.intersection({PLATFORM_MACOS_INTEL, PLATFORM_MACOS_ARM}):
+                if does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point + ".dylib"):
+                    platforms.update({PLATFORM_MACOS_INTEL, PLATFORM_MACOS_ARM})
+
+            if platforms:
+                return frozenset(platforms)
+
+            raise ValueError("failed to discover platforms: entry point not found")
+    else:
+        raise ValueError("not a valid plugin archive")
+
+
 def is_ida_version_compatible(current_version: str, version_spec: str) -> bool:
     """Check if current IDA version is compatible with the version specifier.
 
@@ -355,7 +514,7 @@ def validate_path(path: str, field_name: str) -> None:
         raise ValueError(f"Invalid {field_name} path: '{path}'")
 
 
-def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAPluginMetadata):
+def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAMetadataDescriptor):
     """validate the `ida-plugin.json` metadata within the given plugin archive.
 
     The following things must be checked:
@@ -369,53 +528,53 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAPluginMeta
       - entry point
       - logo path
     """
-    name = metadata.name
+    name = metadata.plugin.name
 
     if metadata.metadata_version != 1:
         logger.debug("Invalid metadata version: %s", metadata.metadata_version)
         raise ValueError(f"Invalid metadata version: {metadata.metadata_version}. Expected: 1")
 
     # name contains only ASCII alphanumeric, underscores, dashes, spaces
-    if not re.match(r"^[a-zA-Z0-9_\- ]+$", metadata.name):
-        logger.debug("Invalid name format: %s", metadata.name)
+    if not re.match(r"^[a-zA-Z0-9_\- ]+$", metadata.plugin.name):
+        logger.debug("Invalid name format: %s", metadata.plugin.name)
         raise ValueError(
-            f"Invalid name format: '{metadata.name}'. Must contain only ASCII alphanumeric, underscores, dashes"
+            f"Invalid name format: '{metadata.plugin.name}'. Must contain only ASCII alphanumeric, underscores, dashes"
         )
 
-    if not metadata.entry_point:
+    if not metadata.plugin.entry_point:
         logger.debug("Missing entry point")
         raise ValueError("entry point required")
 
-    validate_path(metadata.entry_point, "entry point")
-    if metadata.logo_path:
-        validate_path(metadata.logo_path, "logo path")
+    validate_path(metadata.plugin.entry_point, "entry point")
+    if metadata.plugin.logo_path:
+        validate_path(metadata.plugin.logo_path, "logo path")
 
-    if metadata.entry_point.endswith(".py"):
-        if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.entry_point):
-            logger.debug("Missing python entry point file: %s", metadata.entry_point)
-            raise ValueError(f"Entry point file not found in archive: '{metadata.entry_point}'")
+    if metadata.plugin.entry_point.endswith(".py"):
+        if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point):
+            logger.debug("Missing python entry point file: %s", metadata.plugin.entry_point)
+            raise ValueError(f"Entry point file not found in archive: '{metadata.plugin.entry_point}'")
     else:
         # binary plugin
         has_bare_name = False
         for ext in (".so", ".dll", ".dylib"):
-            if does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.entry_point + ext):
+            if does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point + ext):
                 has_bare_name = True
         if not has_bare_name:
-            logger.debug("Missing native entry point file: %s", metadata.entry_point)
-            raise ValueError(f"Binary plugin file not found in archive: '{metadata.entry_point}'")
+            logger.debug("Missing native entry point file: %s", metadata.plugin.entry_point)
+            raise ValueError(f"Binary plugin file not found in archive: '{metadata.plugin.entry_point}'")
 
-    if metadata.logo_path:
-        if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.logo_path):
-            logger.debug("Missing logo file: %s", metadata.logo_path)
-            raise ValueError(f"Logo file not found in archive: '{metadata.logo_path}'")
+    if metadata.plugin.logo_path:
+        if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.logo_path):
+            logger.debug("Missing logo file: %s", metadata.plugin.logo_path)
+            raise ValueError(f"Logo file not found in archive: '{metadata.plugin.logo_path}'")
 
     # we'd want to validate that there are some platforms,
     # however this is recursive.
     # _ = discover_platforms_from_plugin_archive(zip_data, name)
     try:
-        _ = packaging.version.parse(metadata.version)
-    except Exception as e:
-        logger.debug("failed to parse version: %s", metadata.version)
+        _ = packaging.version.parse(metadata.plugin.version)
+    except Exception:
+        logger.debug("failed to parse version: %s", metadata.plugin.version)
         raise
 
 
@@ -438,7 +597,7 @@ def is_source_plugin_archive(zip_data: bytes, name: str) -> bool:
 
         metadata = get_metadata_from_plugin_archive(zip_data, name)
 
-        return metadata.entry_point.endswith(".py")
+        return metadata.plugin.entry_point.endswith(".py")
     except (ValueError, Exception):
         return False
 
@@ -452,7 +611,7 @@ def is_binary_plugin_archive(zip_data: bytes, name: str) -> bool:
             return False
 
         metadata = get_metadata_from_plugin_archive(zip_data, name)
-        entry_point = metadata.entry_point
+        entry_point = metadata.plugin.entry_point
 
         if "/" in entry_point or "\\" in entry_point:
             return False
