@@ -113,6 +113,11 @@ def get_ida_user_dir() -> Path:
     """Get the IDA Pro user directory."""
     if ENV.HCLI_IDAUSR is not None:
         return Path(ENV.HCLI_IDAUSR)
+    # duplicate here, because we prefer access through ENV
+    # but tests might update env vars for the current process.
+    idausr = os.environ.get("HCLI_IDAUSR")
+    if idausr:
+        return Path(idausr)
 
     # Check for standard IDAUSR environment variable
     idausr = os.environ.get("IDAUSR")
@@ -503,6 +508,11 @@ def get_ida_config() -> IDAConfigJson:
 def find_current_ida_install_directory() -> Path:
     if ENV.HCLI_CURRENT_IDA_INSTALL_DIR is not None:
         return Path(ENV.HCLI_CURRENT_IDA_INSTALL_DIR)
+    # duplicate here, because we prefer access through ENV
+    # but tests might update env vars for the current process.
+    env = os.environ.get("HCLI_CURRENT_IDA_INSTALL_DIR")
+    if env:
+        return Path(env)
 
     config = get_ida_config()
     logger.debug("current IDA installation: %s", config.installation_directory)
@@ -605,6 +615,11 @@ def find_current_ida_platform() -> str:
     """find the platform associated with the current IDA installation"""
     if ENV.HCLI_CURRENT_IDA_PLATFORM is not None:
         return ENV.HCLI_CURRENT_IDA_PLATFORM
+    # duplicate here, because we prefer access through ENV
+    # but tests might update env vars for the current process.
+    env = os.environ.get("HCLI_CURRENT_IDA_PLATFORM")
+    if env:
+        return env
 
     os_ = get_os()
     if os_ == "windows":
@@ -620,7 +635,7 @@ def find_current_ida_platform() -> str:
 FIND_VERSION_PY = """
 # output like:
 #
-#     __hcli__:"windows-x86_64"
+#     __hcli__:"9.1"
 import sys
 import json
 import ida_kernwin
@@ -630,9 +645,14 @@ sys.exit()
 
 
 def find_current_ida_version() -> str:
-    """find the version of the current IDA installation"""
+    """find the version of the current IDA installation, like '9.1'"""
     if ENV.HCLI_CURRENT_IDA_VERSION is not None:
         return ENV.HCLI_CURRENT_IDA_VERSION
+    # duplicate here, because we prefer access through ENV
+    # but tests might update env vars for the current process.
+    env = os.environ.get("HCLI_CURRENT_IDA_VERSION")
+    if env:
+        return env
 
     return run_py_in_current_idapython(FIND_VERSION_PY)
 
