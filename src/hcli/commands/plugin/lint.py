@@ -29,23 +29,63 @@ def _validate_and_lint_metadata(metadata: IDAMetadataDescriptor, source_name: st
     if metadata.plugin.ida_versions and not parse_ida_version_spec(metadata.plugin.ida_versions):
         console.print(f"[red]Error[/red] ({source_name}): idaVersion should look like 'X.YspZ'")
 
+    # Schema recommendation
     if not metadata.schema_:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide $schema")
         console.print(
             "  like: https://raw.githubusercontent.com/HexRaysSA/ida-hcli/refs/heads/v0.9.0/docs/reference/ida-plugin.schema.json"
         )
 
+    # Core metadata recommendations
     if not metadata.plugin.ida_versions:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.idaVersions")
+        console.print("  Specify which IDA versions your plugin supports (e.g., '>=9.0')")
 
     if not metadata.plugin.description:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.description")
+        console.print("  A one-line description improves discoverability in the plugin repository")
 
     if not metadata.plugin.categories:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.categories")
+        console.print("  Categories help users find your plugin (e.g., 'malware-analysis', 'decompilation')")
 
     if not metadata.plugin.logo_path:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.logoPath")
+        console.print("  A logo image (16:9 aspect ratio) makes your plugin more visually appealing")
+
+    # Additional optional field recommendations
+    if not metadata.plugin.keywords:
+        console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.keywords")
+        console.print("  Keywords improve search discoverability in the plugin repository")
+
+    if not metadata.plugin.license:
+        console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.license")
+        console.print("  Specify the license (e.g., 'MIT', 'Apache 2.0') to clarify usage rights")
+
+    if not metadata.plugin.authors and not metadata.plugin.maintainers:
+        console.print(
+            f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.authors or plugin.maintainers"
+        )
+        console.print("  Contact information helps users report issues and contribute")
+    else:
+        # Check if contacts have both name and email for better completeness
+        for i, author in enumerate(metadata.plugin.authors):
+            if not author.name or not author.email:
+                console.print(
+                    f"[yellow]Recommendation[/yellow] ({source_name}): plugin.authors[{i}]: provide both name and email"
+                )
+                console.print("  Complete contact information improves user trust and communication")
+        for i, maintainer in enumerate(metadata.plugin.maintainers):
+            if not maintainer.name or not maintainer.email:
+                console.print(
+                    f"[yellow]Recommendation[/yellow] ({source_name}): plugin.maintainers[{i}]: provide both name and email"
+                )
+                console.print("  Complete contact information improves user trust and communication")
+
+    # URLs recommendations
+    if not metadata.plugin.urls.homepage:
+        console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.urls.homepage")
+        console.print("  A dedicated homepage URL (if different from repository) provides more project information")
 
 
 def _lint_plugin_directory(plugin_path: Path) -> None:
