@@ -95,7 +95,7 @@ def test_get_python_dependencies_from_plugin_directory_inline():
 
         # Create ida-plugin.json with inline dependencies
         metadata_content = textwrap.dedent("""{
-            "IDAMetadataDescriptorVersion": 1,
+            "IDAMetadataDescriptorVersion": 2,
             "plugin": {
               "name": "plugin1", 
               "version": "v4.0.0",
@@ -140,7 +140,7 @@ def test_get_python_dependencies_from_plugin_directory_list():
 
         # Create ida-plugin.json with traditional list dependencies
         metadata_content = textwrap.dedent("""{
-            "IDAMetadataDescriptorVersion": 1,
+            "IDAMetadataDescriptorVersion": 2,
             "plugin": {
               "name": "plugin1", 
               "version": "v3.0.0",
