@@ -92,9 +92,6 @@ def validate_metadata_in_plugin_directory(plugin_path: Path):
     """validate the `ida-plugin.json` metadata within the given plugin directory.
 
     The following things must be checked:
-    - metadata version must be "1"
-    - the following fields must contain only ASCII. alphanumeric, underscores, dashes, spaces.
-      - name
     - the following paths must contain relative paths, no paths like ".." or similar escapes:
       - entry point
       - logo path
@@ -107,21 +104,6 @@ def validate_metadata_in_plugin_directory(plugin_path: Path):
         raise ValueError("plugin corrupt: both enabled and disabled at the same time")
 
     metadata = get_metadata_from_plugin_directory(plugin_path)
-
-    if metadata.metadata_version != 1:
-        logger.debug("Invalid metadata version")
-        raise ValueError(f"Invalid metadata version: {metadata.metadata_version}. Expected: 1")
-
-    # name contains only ASCII alphanumeric, underscores, dashes, spaces
-    if not re.match(r"^[a-zA-Z0-9_\- ]+$", metadata.plugin.name):
-        logger.debug("Invalid name format")
-        raise ValueError(
-            f"Invalid name format: '{metadata.plugin.name}'. Must contain only ASCII alphanumeric, underscores, dashes"
-        )
-
-    if not metadata.plugin.entry_point:
-        logger.debug("Missing entry point")
-        raise ValueError("entry point required")
 
     validate_path(metadata.plugin.entry_point, "entry point")
     if metadata.plugin.logo_path:
@@ -151,8 +133,6 @@ def validate_metadata_in_plugin_directory(plugin_path: Path):
         if not logo_path.exists():
             logger.debug(f"Logo file not found in directory: '{metadata.plugin.logo_path}'")
             raise ValueError(f"Logo file not found in directory: '{metadata.plugin.logo_path}'")
-
-    _ = packaging.version.parse(metadata.plugin.version)
 
 
 def get_installed_plugin_paths() -> list[Path]:

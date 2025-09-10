@@ -59,16 +59,21 @@ With `ida-plugin.json`:
 
 ```json
 {
-  "IDAMetadataDescriptorVersion": 1,
+  "IDAMetadataDescriptorVersion": 2,
   "plugin": {
     "name": "plugin1",
     "entryPoint": "entry_stub.py",
     "version": "1.0",
     "idaVersions": ">=9.0",
     "pythonDependencies": ["ida-plugin1==1.0"]
+    "urls": {
+      "repository": "https://github.com/foo/bar"
+    },
+    "authors": [{
+      "email": "user@example.com"
+    }]
   }
 }
-
 ```
 
 And the entry stub:
