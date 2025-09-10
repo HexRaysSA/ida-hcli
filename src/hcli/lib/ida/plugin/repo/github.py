@@ -10,6 +10,7 @@ from typing import Any
 import rich.progress
 from pydantic import BaseModel, ConfigDict, Field
 
+from hcli.lib.console import stderr_console
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveIndex
 from hcli.lib.util.cache import get_cache_directory
 
@@ -324,7 +325,7 @@ def warm_releases_metadata_cache(client: GitHubGraphQLClient, repos: list[tuple[
 
     BATCH_SIZE = 10
     for i in rich.progress.track(
-        range(0, len(repos_to_fetch), BATCH_SIZE), description="Warming cache", transient=True
+        range(0, len(repos_to_fetch), BATCH_SIZE), description="Warming cache", transient=True, console=stderr_console
     ):
         batch = repos_to_fetch[i : i + BATCH_SIZE]
         releases_batch = client.get_many_releases(batch)
@@ -490,7 +491,9 @@ class GithubPluginRepo(BasePluginRepo):
         assets = []
         source_archives = []
 
-        for owner, repo in rich.progress.track(sorted(repos), description="Fetching plugins", transient=True):
+        for owner, repo in rich.progress.track(
+            sorted(repos), description="Fetching plugins", transient=True, console=stderr_console
+        ):
             md = get_releases_metadata(self.client, owner, repo)
             for release in md.releases:
                 # source archives
@@ -514,7 +517,7 @@ class GithubPluginRepo(BasePluginRepo):
         # TODO: disallow different repos from providing the same plugin name
 
         for owner, repo, tag_name, asset in rich.progress.track(
-            assets, description="Fetching plugin assests", transient=True
+            assets, description="Fetching plugin assests", transient=True, console=stderr_console
         ):
             try:
                 buf = get_release_asset(owner, repo, tag_name, asset)
@@ -524,7 +527,7 @@ class GithubPluginRepo(BasePluginRepo):
             index.index_plugin_archive(buf, asset.download_url)
 
         for owner, repo, commit_hash, url in rich.progress.track(
-            source_archives, description="Fetching plugin source archives", transient=True
+            source_archives, description="Fetching plugin source archives", transient=True, console=stderr_console
         ):
             try:
                 buf = get_source_archive(owner, repo, commit_hash, url)
