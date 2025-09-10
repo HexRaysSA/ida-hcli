@@ -62,4 +62,4 @@ async def revoke() -> None:
 
     except Exception as e:
         console.print(f"[red]Failed to revoke API key: {e}[/red]")
-        sys.exit(1)
+        raise click.Abort()

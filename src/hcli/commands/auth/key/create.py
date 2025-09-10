@@ -31,7 +31,7 @@ async def create(name: str | None) -> None:
         existing_keys = await keys.get_keys()
         if any(k.name == key_name for k in existing_keys):
             console.print(f"[red]An API key with name [underline]{key_name}[/underline] already exists.[/red]")
-            sys.exit(1)
+            raise click.Abort()
 
         # Confirm key creation
         if not await safe_ask_async(questionary.confirm(f"Do you want to create a new API key {key_name}?")):
@@ -74,4 +74,4 @@ async def create(name: str | None) -> None:
 
     except Exception as e:
         console.print(f"[red]Failed to create API key: {e}[/red]")
-        sys.exit(1)
+        raise click.Abort()

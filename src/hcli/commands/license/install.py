@@ -101,3 +101,4 @@ async def install_license(file: Path, ida_dir: str | None) -> None:
 
     except Exception as e:
         console.print(f"[red]Failed to install license: {e}[/red]")
+        raise click.Abort()

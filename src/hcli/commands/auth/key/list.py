@@ -73,4 +73,4 @@ async def list_keys() -> None:
 
     except Exception as e:
         console.print(f"[red]Failed to list API keys: {e}[/red]")
-        sys.exit(1)
+        raise click.Abort()

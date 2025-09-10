@@ -80,6 +80,7 @@ async def login(force: bool, name: str | None) -> None:
                 console.print("[red]Login failed. Invalid OTP.[/red]")
         except Exception as e:
             console.print(f"[red]Login failed: {e}[/red]")
+            raise click.Abort()
 
     # Show results
     if source:

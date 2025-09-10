@@ -113,6 +113,7 @@ async def update(
             console.print(f"[bold cyan]curl -LsSf {ENV.HCLI_RELEASE_URL}/install | sh[/bold cyan]")
             console.print("\nOr on Windows, run:")
             console.print(f"[bold cyan]iwr {ENV.HCLI_RELEASE_URL}/install.ps1 | iex[/bold cyan]")
+            raise click.Abort()
 
     else:
         console.print("\nTo update, run:")

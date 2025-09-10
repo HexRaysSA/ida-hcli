@@ -33,7 +33,7 @@ async def install_key(token: str | None, name: str | None, key_name: str | None,
 
     if not token:
         console.print("[red]No API key provided[/red]")
-        sys.exit(1)
+        raise click.Abort()
 
     try:
         console.print("[blue]Validating API key...[/blue]")
@@ -47,7 +47,7 @@ async def install_key(token: str | None, name: str | None, key_name: str | None,
 
         if not source:
             console.print("[red]Failed to validate API key or get user information[/red]")
-            sys.exit(1)
+            raise click.Abort()
 
         console.print(f"[green]API key '{source.name}' created successfully![/green]")
         console.print(f"Email: {source.email}")
@@ -80,4 +80,4 @@ async def install_key(token: str | None, name: str | None, key_name: str | None,
 
     except Exception as e:
         console.print(f"[red]Failed to install API key: {e}[/red]")
-        sys.exit(1)
+        raise click.Abort()
