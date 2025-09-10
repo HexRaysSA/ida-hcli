@@ -13,7 +13,6 @@ if sys.version_info >= (3, 11):
 else:
     import tomli as tomllib
 
-import packaging.version
 import semantic_version
 from pydantic import (
     BaseModel,
@@ -433,45 +432,6 @@ def does_plugin_path_exist_in_plugin_archive(zip_data: bytes, plugin_name: str, 
     return does_path_exist_in_zip_archive(zip_data, candidate_path.as_posix())
 
 
-def discover_platforms_from_plugin_archive(zip_data: bytes, name: str) -> frozenset[str]:
-    if is_source_plugin_archive(zip_data, name):
-        return ALL_PLATFORMS
-    elif is_binary_plugin_archive(zip_data, name):
-        metadata = get_metadata_from_plugin_archive(zip_data, name)
-        if metadata.plugin.entry_point.lower().endswith(".so"):
-            return frozenset({PLATFORM_LINUX})
-        elif metadata.plugin.entry_point.lower().endswith(".dylib"):
-            # assume universal binary
-            return frozenset({PLATFORM_MACOS_INTEL, PLATFORM_MACOS_ARM})
-        elif metadata.plugin.entry_point.lower().endswith(".dll"):
-            return frozenset({PLATFORM_WINDOWS})
-        else:
-            # entrypoint should be a bare filename
-            # and we need to test for the existence of files with candidate extensions (.so, .dylib, .dll)
-            platforms = set()
-            extensions = [
-                (".so", {PLATFORM_LINUX}),
-                (".dll", {PLATFORM_WINDOWS}),
-                ("_aarch64.dylib", {PLATFORM_MACOS_ARM}),
-                ("_x86_64.dylib", {PLATFORM_MACOS_INTEL}),
-            ]
-            for ext, plats in extensions:
-                if does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point + ext):
-                    platforms.update(plats)
-
-            # check for universal binary
-            if not platforms.intersection({PLATFORM_MACOS_INTEL, PLATFORM_MACOS_ARM}):
-                if does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point + ".dylib"):
-                    platforms.update({PLATFORM_MACOS_INTEL, PLATFORM_MACOS_ARM})
-
-            if platforms:
-                return frozenset(platforms)
-
-            raise ValueError("failed to discover platforms: entry point not found")
-    else:
-        raise ValueError("not a valid plugin archive")
-
-
 def is_ida_version_compatible(current_version: str, version_spec: str) -> bool:
     """Check if current IDA version is compatible with the version specifier.
 
@@ -545,6 +505,29 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAMetadataDe
         for ext in (".so", ".dll", ".dylib"):
             if does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point + ext):
                 has_bare_name = True
+
+        if has_bare_name:
+            extensions = [
+                (".so", PLATFORM_LINUX),
+                (".dll", PLATFORM_WINDOWS),
+                (".dylib", PLATFORM_MACOS_ARM),
+                (".dylib", PLATFORM_MACOS_INTEL),
+            ]
+            for ext, platform in extensions:
+                if platform in metadata.plugin.platforms:
+                    if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point + ext):
+                        raise ValueError("missing native entry point: %s", metadata.plugin.entry_point + ext)
+
+        else:
+            if set(metadata.plugin.platforms) == {PLATFORM_MACOS_ARM, PLATFORM_MACOS_INTEL}:
+                if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point):
+                    raise ValueError("missing native entry point: %s", metadata.plugin.entry_point)
+            elif len(set(metadata.plugin.platforms)) == 1:
+                if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point):
+                    raise ValueError("missing native entry point: %s", metadata.plugin.entry_point)
+            else:
+                raise ValueError("plugin declares multiple platforms for single native entry point")
+
         if not has_bare_name:
             logger.debug("Missing native entry point file: %s", metadata.plugin.entry_point)
             raise ValueError(f"Binary plugin file not found in archive: '{metadata.plugin.entry_point}'")
