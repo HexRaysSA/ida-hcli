@@ -23,7 +23,7 @@ class JSONFilePluginRepo(BasePluginRepo):
         # pydantic doesn't have a way to emit json with sorted keys
         # and we want a deterministic file,
         # so we re-encode here.
-        return json.dumps(json.loads(doc), sort_keys=True, indent=True)
+        return json.dumps(json.loads(doc), sort_keys=True, indent=4)
 
     def to_bytes(self) -> bytes:
         return self.to_json().encode("utf-8")
