@@ -247,4 +247,7 @@ https://github.com/VirusTotal/vt-ida-plugin
 Doesn't have an `ida-plugin.json`. Python dependencies: `requests`.
 Trivial metadata file, located in subdirectory `./plugin/`.
 
+Still need to integrate the VT API key setting into the common framework.
+Good test case for that design.
+
 https://github.com/ida-community-plugins/vt-ida-plugin
