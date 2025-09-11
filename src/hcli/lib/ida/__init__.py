@@ -498,7 +498,9 @@ class SettingsConfig(BaseModel):
 
     # plugin name -> key -> value
     plugins: dict[str, dict[str, str | int]] = Field(default_factory=dict)
-    plugin_repository: PluginRepositoryConfig = Field(alias="plugin-repository", default_factory=lambda: PluginRepositoryConfig())
+    plugin_repository: PluginRepositoryConfig = Field(
+        alias="plugin-repository", default_factory=lambda: PluginRepositoryConfig()
+    )
 
 
 # describes contents of IDAUSR/ida-config.json
