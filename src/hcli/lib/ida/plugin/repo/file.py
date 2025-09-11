@@ -1,13 +1,17 @@
 import json
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 
 import requests
-from pydantic import RootModel
+from pydantic import BaseModel
 
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin
 
-PluginList = RootModel[list[Plugin]]
+
+class StaticPluginRepo(BaseModel):
+    version: Literal[1] = 1
+    plugins: list[Plugin]
 
 
 class JSONFilePluginRepo(BasePluginRepo):
@@ -19,7 +23,7 @@ class JSONFilePluginRepo(BasePluginRepo):
         return self.plugins
 
     def to_json(self):
-        doc = PluginList(self.get_plugins()).model_dump_json()
+        doc = StaticPluginRepo(plugins=self.get_plugins()).model_dump_json()
         # pydantic doesn't have a way to emit json with sorted keys
         # and we want a deterministic file,
         # so we re-encode here.
@@ -30,7 +34,7 @@ class JSONFilePluginRepo(BasePluginRepo):
 
     @classmethod
     def from_json(cls, doc: str):
-        return cls(PluginList.model_validate_json(doc).root)
+        return cls(StaticPluginRepo.model_validate_json(doc).plugins)
 
     @classmethod
     def from_bytes(cls, buf: bytes):
