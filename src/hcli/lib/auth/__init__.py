@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 from typing import Any
 
+from gotrue._sync.storage import SyncSupportedStorage as GoTrueSyncSupportedStorage
 from supabase import Client, create_client
 from supabase.lib.client_options import SyncClientOptions
 
@@ -28,7 +29,7 @@ class AuthService:
             raise Exception("AuthService is a singleton. Use AuthService.instance")
 
         # Create custom storage class for Supabase
-        class SyncSupportedStorage:
+        class SyncSupportedStorage(GoTrueSyncSupportedStorage):
             def get_item(self, key: str) -> str | None:
                 return config_store.get_string(key) or None
 
@@ -108,7 +109,7 @@ class AuthService:
                 if self._current_source.token:
                     # Set the token in Supabase client
                     user_response = self.supabase.auth.get_user()
-                    if user_response.user:
+                    if user_response and user_response.user:
                         self.user = user_response.user
                         self.session = self.supabase.auth.get_session()
             except Exception:
@@ -200,7 +201,7 @@ class AuthService:
             if self._current_source.token:
                 try:
                     user_response = self.supabase.auth.get_user()
-                    if user_response.user:
+                    if user_response and user_response.user:
                         self.user = user_response.user
                         self.session = self.supabase.auth.get_session()
                         return True
@@ -230,7 +231,7 @@ class AuthService:
             try:
                 # Try to verify if token is actually expired
                 user_response = self.supabase.auth.get_user()
-                return user_response.user is None
+                return user_response is None or user_response.user is None
             except Exception:
                 return True
 
@@ -349,7 +350,7 @@ class AuthService:
 
             # Refresh session after OTP verification
             user_response = self.supabase.auth.get_user()
-            if user_response.user:
+            if user_response and user_response.user:
                 self.user = user_response.user
                 self.session = self.supabase.auth.get_session()
 
@@ -547,7 +548,7 @@ class AuthService:
 
             # Refresh user and session info
             user_response = self.supabase.auth.get_user()
-            if user_response.user:
+            if user_response and user_response.user:
                 self.user = user_response.user
                 self.session = self.supabase.auth.get_session()
                 print(f"{self.user.email} logged in successfully!")
