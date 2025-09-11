@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 
 import semantic_version
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_serializer
 
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
@@ -28,6 +28,10 @@ class PluginArchiveLocation(BaseModel):
     ida_versions: str
     platforms: frozenset[str]
     metadata: IDAMetadataDescriptor
+
+    @field_serializer("platforms")
+    def serialize_platforms_in_order(self, value: frozenset[str]):
+        return sorted(value)
 
 
 class Plugin(BaseModel):
