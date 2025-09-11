@@ -126,10 +126,9 @@ def search_plugins(ctx, query: str | None = None) -> None:
 
         plugins: list[Plugin] = plugin_repo.get_plugins()
         for plugin in sorted(plugins, key=lambda p: p.name.lower()):
-
             # TODO: if query is plugin name exact match, show details of that plugin
             # TODO: if query is plugin name+version exact match, show details of that version
-            
+
             if not does_plugin_match_query(query or "", plugin):
                 continue
 

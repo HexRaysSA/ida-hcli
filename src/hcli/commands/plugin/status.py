@@ -11,7 +11,7 @@ from hcli.lib.commands import async_command
 from hcli.lib.console import console
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
 from hcli.lib.ida.plugin import parse_plugin_version
-from hcli.lib.ida.plugin.install import get_installed_plugins
+from hcli.lib.ida.plugin.install import get_installed_legacy_plugins, get_installed_plugins, get_plugins_directory
 from hcli.lib.ida.plugin.repo import BasePluginRepo
 
 logger = logging.getLogger(__name__)
@@ -38,9 +38,18 @@ async def get_plugin_status(ctx) -> None:
                 if parse_plugin_version(location.version) > parse_plugin_version(version):
                     status = f"upgradable to [yellow]{location.version}[/yellow]"
             except (ValueError, KeyError):
-                status = "[grey69]not found in repository[/grey69]"
+                status = "[yellow]not found in repository[/yellow]"
 
             table.add_row(name, version, status)
+
+        plugin_directory = get_plugins_directory()
+        for name, path in get_installed_legacy_plugins():
+            plugin_path = path.parent.relative_to(plugin_directory)
+            table.add_row(
+                f"[grey69](legacy)[/grey69] [blue]{name}[/blue]",
+                "",
+                f"[grey69]found at: $IDAPLUGINS/[/grey69]{plugin_path}/",
+            )
 
         if table.row_count:
             console.print(table)

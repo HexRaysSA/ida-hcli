@@ -5,8 +5,10 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import Literal
 
 import packaging.version
+from pydantic import AliasPath, BaseModel, ConfigDict, Field
 
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version, get_ida_user_dir
 from hcli.lib.ida.plugin import (
@@ -168,6 +170,42 @@ def get_installed_plugins() -> list[tuple[str, str]]:
         except ValueError as e:
             logger.warning(f"Failed to read metadata from {plugin_path}: {e}")
             continue
+
+    return installed_plugins
+
+
+class IDAPluginMetadataV1(BaseModel):
+    """Legacy v1 IDA Plugin metadata from ida-plugin.json"""
+
+    model_config = ConfigDict(extra="allow")
+
+    metadata_version: Literal[1] = Field(validation_alias="IDAMetadataDescriptorVersion")
+    name: str = Field(validation_alias=AliasPath("plugin", "name"))
+
+
+def get_installed_legacy_plugins() -> list[tuple[str, Path]]:
+    """fetch (name, path) pairs for currently installed legacy plugins"""
+    plugins_dir = get_plugins_directory()
+    installed_plugins: list[tuple[str, Path]] = []
+
+    if not plugins_dir.exists():
+        return installed_plugins
+
+    for plugin_path in plugins_dir.iterdir():
+        if not plugin_path.is_dir():
+            continue
+
+        metadata_file = plugin_path / "ida-plugin.json"
+        if not metadata_file.exists():
+            continue
+
+        try:
+            metadata = IDAPluginMetadataV1.model_validate_json(metadata_file.read_bytes())
+        except ValueError as e:
+            logger.debug(f"Invalid plugin metadata in {plugin_path}: {e}")
+            continue
+
+        installed_plugins.append((metadata.name, metadata_file))
 
     return installed_plugins
 
