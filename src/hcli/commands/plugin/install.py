@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from pathlib import Path
@@ -14,6 +15,7 @@ from hcli.lib.console import console
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
 from hcli.lib.ida.plugin import get_metadata_from_plugin_archive, get_metadatas_with_paths_from_plugin_archive
 from hcli.lib.ida.plugin.install import install_plugin_archive
+from hcli.lib.ida.plugin.repo import BasePluginRepo
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +77,16 @@ def install_plugin(ctx, plugin: str) -> None:
         else:
             logger.info("finding plugin in repository")
             plugin_name = re.split("=><!~", plugin_spec)[0]
-            plugin_repo = ctx.obj["plugin_repo"]
+            plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
             location = plugin_repo.find_compatible_plugin_from_spec(plugin_spec, current_platform, current_ida_version)
             buf = fetch_plugin_archive(location.url)
+
+            h = hashlib.sha256()
+            h.update(buf)
+            sha256 = h.hexdigest()
+
+            if sha256 != location.sha256:
+                raise ValueError(f"hash mismatch: expected {location.sha256} but found {sha256} for {location.url}")
 
         install_plugin_archive(buf, plugin_name)
 
