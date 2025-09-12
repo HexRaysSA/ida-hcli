@@ -27,7 +27,6 @@ def test_get_ida_config():
     assert hasattr(result.paths, "installation_directory")
 
 
-
 def test_find_current_ida_install_directory():
     result = find_current_ida_install_directory()
     assert isinstance(result, Path)
