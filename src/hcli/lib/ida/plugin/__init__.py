@@ -124,7 +124,7 @@ class URLs(BaseModel):
 
 
 class PluginMetadata(BaseModel):
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+    model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
     ###########################################################################
     # required
@@ -262,7 +262,7 @@ class IDAMetadataDescriptor(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
 
     schema_: str | None = Field(alias="$schema", default=None, exclude=True)
-    metadata_version: Literal[2] = Field(alias="IDAMetadataDescriptorVersion")  # must be 2
+    metadata_version: Literal[1] = Field(alias="IDAMetadataDescriptorVersion")  # must be 2
     plugin: PluginMetadata
 
 

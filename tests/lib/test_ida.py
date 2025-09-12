@@ -23,7 +23,9 @@ def test_get_ida_config_path():
 def test_get_ida_config():
     result = get_ida_config()
     assert result is not None
-    assert hasattr(result, "installation_directory")
+    assert hasattr(result, "paths")
+    assert hasattr(result.paths, "installation_directory")
+
 
 
 def test_find_current_ida_install_directory():
