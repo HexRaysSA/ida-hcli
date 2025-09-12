@@ -470,6 +470,7 @@ INITIAL_REPOSITORIES = [
     "ida-community-plugins/hcli-ipyida",
     "ida-community-plugins/vt-ida-plugin",
     "williballenthin/idawilli",
+    "HexRaysSA/ida-terminal-plugin",
 ]
 
 

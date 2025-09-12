@@ -1,5 +1,5 @@
 {
-  "IDAMetadataDescriptorVersion": 2,
+  "IDAMetadataDescriptorVersion": 1,
   "plugin": {
     "name": "plugin1",
     "version": "v3.0.0",
