@@ -17,7 +17,7 @@ from hcli.lib.console import console
 @click.option("--key-name", help="Name for the API key")
 @click.option("--set-default", is_flag=True, help="Set as default credentials")
 @async_command
-async def install_key(token: str | None, name: str | None, key_name: str | None, set_default: bool) -> None:
+async def install_key(key: str | None, name: str | None, key_name: str | None, set_default: bool) -> None:
     """Install an API key as a new credentials."""
     auth_service = get_auth_service()
     auth_service.init()
@@ -28,10 +28,10 @@ async def install_key(token: str | None, name: str | None, key_name: str | None,
         console.print(f"Current credentials: {current_source.name} ({current_source.email})")
 
     # Get key from option or prompt
-    if not token:
-        token = await safe_ask_async(questionary.password("Enter API key"))
+    if not key:
+        key = await safe_ask_async(questionary.password("Enter API key"))
 
-    if not token:
+    if not key:
         console.print("[red]No API key provided[/red]")
         raise click.Abort()
 
@@ -43,7 +43,7 @@ async def install_key(token: str | None, name: str | None, key_name: str | None,
             key_name = await safe_ask_async(questionary.text("API Key name", default="hcli"))
 
         # Install the API key as a new credentials
-        source = await auth_service.add_api_key_credentials(key_name, token)
+        source = await auth_service.add_api_key_credentials(key_name, key)
 
         if not source:
             console.print("[red]Failed to validate API key or get user information[/red]")
