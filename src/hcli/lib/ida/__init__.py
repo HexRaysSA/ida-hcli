@@ -489,7 +489,7 @@ class PluginRepositoryConfig(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
 
     url: str = Field(
-        default="https://raw.githubusercontent.com/HexRaysSA/plugin-repository/refs/heads/main/plugin-repository.json"
+        default="https://raw.githubusercontent.com/HexRaysSA/plugin-repository/refs/heads/v1/plugin-repository.json",
     )
 
 
