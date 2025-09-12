@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-
 import questionary
 import rich_click as click
 

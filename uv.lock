@@ -775,6 +775,7 @@ version = "0.8.3.dev5"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
+    { name = "gotrue" },
     { name = "httpx" },
     { name = "idapro" },
     { name = "packaging" },
@@ -825,6 +826,7 @@ dev = [
 requires-dist = [
     { name = "bandit", marker = "extra == 'dev'" },
     { name = "click" },
+    { name = "gotrue", specifier = ">=2.12.0" },
     { name = "httpx" },
     { name = "idapro", specifier = ">=0.0.5" },
     { name = "mkdocs-click", marker = "extra == 'docs'", specifier = ">=0.9.0" },

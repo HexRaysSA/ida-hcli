@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 from typing import Any
 
+from gotrue import SyncSupportedStorage
 from supabase import Client, create_client
 from supabase.lib.client_options import SyncClientOptions
 
@@ -28,7 +29,7 @@ class AuthService:
             raise Exception("AuthService is a singleton. Use AuthService.instance")
 
         # Create custom storage class for Supabase
-        class SyncSupportedStorage:
+        class ConfigSyncSupportedStorage(SyncSupportedStorage):
             def get_item(self, key: str) -> str | None:
                 return config_store.get_string(key) or None
 
@@ -40,7 +41,7 @@ class AuthService:
 
         # Create Supabase client with custom storage
         options = SyncClientOptions(
-            auto_refresh_token=False, persist_session=True, storage=SyncSupportedStorage(), flow_type="implicit"
+            auto_refresh_token=False, persist_session=True, storage=ConfigSyncSupportedStorage(), flow_type="implicit"
         )
 
         self.supabase: Client = create_client(ENV.HCLI_SUPABASE_URL, ENV.HCLI_SUPABASE_ANON_KEY, options)
