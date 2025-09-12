@@ -251,3 +251,15 @@ Still need to integrate the VT API key setting into the common framework.
 Good test case for that design.
 
 https://github.com/ida-community-plugins/vt-ida-plugin
+
+
+#### mkYARA
+
+https://github.com/fox-it/mkYARA
+
+Needed to merge a bunch of pending PRs (the repo is not active): python3, IDA 9 support.
+Needed to fix PyQt5 -> PySide6 stuff (making this IDA 9.2+ compatible).
+Needed to move plugin to root so it could relative import the mkyara package;
+ otherwise, would need to add pythonDependency on PyPI package that is out of date (no python3 support).
+
+https://github.com/ida-community-plugins/mkYARA
