@@ -266,6 +266,45 @@ class IDAMetadataDescriptor(BaseModel):
     plugin: PluginMetadata
 
 
+class MinimalIDAPluginMetadata(BaseModel):
+    """Minimal set of IDA Plugin metadata from ida-plugin.json
+
+    This covers plugins that have an ida-plugin.json that written
+     before hcli and its plugin manager.
+    So really the only required field was "name"
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    class MinimalPluginMetadata(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        name: str
+        version: str | None = None
+
+    # IDAMetadataDescriptorVersion=1 is expected by the IDA Pro plugin loader.
+    # So we can't bump it without coordination.
+    metadata_version: Literal[1] = Field(validation_alias="IDAMetadataDescriptorVersion")
+    plugin: "MinimalIDAPluginMetadata.MinimalPluginMetadata"
+
+    def guess_hcli_plugin_version(self):
+        """
+        legacy vs incompatible vs ...
+
+        Versions:
+        - 1: initial ida-plugin.json schema and format (2025-xx)
+        - 2: version required, pythonDependencies added (2025-08)
+        - 3: urls.repository required (2025-09-12)
+        """
+        # TODO: i'm not sure if we want this.
+        if "urls" in (self.plugin.__pydantic_extra__ or {}):
+            return 3
+
+        if "version" in (self.plugin.__pydantic_extra__ or {}):
+            return 2
+
+        return 1
+
+
 def parse_pep723_metadata(python_file_content: str) -> list[str]:
     """Parse PEP 723 inline script metadata from Python file content.
 
