@@ -16,6 +16,7 @@ from typing import NamedTuple
 from pydantic import BaseModel, ConfigDict, Field
 
 from hcli.env import ENV
+from hcli.lib.util.cache import get_cache_directory
 from hcli.lib.util.io import get_os
 
 logger = logging.getLogger(__name__)
@@ -608,6 +609,29 @@ def run_py_in_current_idapython(src: str) -> str:
         raise RuntimeError("Could not find __hcli__: prefix in log output")
 
 
+def get_current_ida_platform_cache_path() -> Path:
+    return get_cache_directory("current-ida") / "platform.json"
+
+
+def set_current_ida_platform_cache(ida_path: Path, platform: str) -> None:
+    cache_path = get_current_ida_platform_cache_path()
+    if cache_path.exists():
+        doc = json.loads(cache_path.read_text(encoding="utf-8"))
+    else:
+        doc = {}
+    doc[str(ida_path.absolute())] = platform
+    cache_path.write_text(json.dumps(doc), encoding="utf-8")
+
+
+def get_current_ida_platform_cache(ida_path: Path) -> str:
+    cache_path = get_current_ida_platform_cache_path()
+    if not cache_path.exists():
+        raise KeyError(f"No platform cache found for {ida_path}")
+
+    doc = json.loads(cache_path.read_text(encoding="utf-8"))
+    return doc[str(ida_path.absolute())]
+
+
 FIND_PLATFORM_PY = """
 # output like:
 #
@@ -653,9 +677,39 @@ def find_current_ida_platform() -> str:
     elif os_ == "linux":
         return "linux-x86_64"
     elif os_ == "mac":
-        return run_py_in_current_idapython(FIND_PLATFORM_PY)
+        ida_dir = find_current_ida_install_directory()
+        try:
+            return get_current_ida_platform_cache(ida_dir)
+        except KeyError:
+            pass
+        platform = run_py_in_current_idapython(FIND_PLATFORM_PY)
+        set_current_ida_platform_cache(ida_dir, platform)
+        return platform
     else:
         raise ValueError(f"Unsupported OS: {os_}")
+
+
+def get_current_ida_version_cache_path() -> Path:
+    return get_cache_directory("current-ida") / "version.json"
+
+
+def set_current_ida_version_cache(ida_path: Path, version: str) -> None:
+    cache_path = get_current_ida_version_cache_path()
+    if cache_path.exists():
+        doc = json.loads(cache_path.read_text(encoding="utf-8"))
+    else:
+        doc = {}
+    doc[str(ida_path.absolute())] = version
+    cache_path.write_text(json.dumps(doc), encoding="utf-8")
+
+
+def get_current_ida_version_cache(ida_path: Path) -> str:
+    cache_path = get_current_ida_version_cache_path()
+    if not cache_path.exists():
+        raise KeyError(f"No version cache found for {ida_path}")
+
+    doc = json.loads(cache_path.read_text(encoding="utf-8"))
+    return doc[str(ida_path.absolute())]
 
 
 FIND_VERSION_PY = """
@@ -680,7 +734,14 @@ def find_current_ida_version() -> str:
     if env:
         return env
 
-    return run_py_in_current_idapython(FIND_VERSION_PY)
+    ida_dir = find_current_ida_install_directory()
+    try:
+        return get_current_ida_version_cache(ida_dir)
+    except KeyError:
+        pass
+    version = run_py_in_current_idapython(FIND_VERSION_PY)
+    set_current_ida_version_cache(ida_dir, version)
+    return version
 
 
 def generate_instance_name(path: Path) -> str:
