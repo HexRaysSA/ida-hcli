@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import rich_click as click
 from rich.table import Table
 
 from hcli.lib.api.keys import keys
