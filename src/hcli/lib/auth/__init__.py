@@ -5,7 +5,6 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 from typing import Any
 
-from gotrue._sync.storage import SyncSupportedStorage as GoTrueSyncSupportedStorage
 from supabase import Client, create_client
 from supabase.lib.client_options import SyncClientOptions
 
@@ -29,7 +28,7 @@ class AuthService:
             raise Exception("AuthService is a singleton. Use AuthService.instance")
 
         # Create custom storage class for Supabase
-        class SyncSupportedStorage(GoTrueSyncSupportedStorage):
+        class SyncSupportedStorage:
             def get_item(self, key: str) -> str | None:
                 return config_store.get_string(key) or None
 
