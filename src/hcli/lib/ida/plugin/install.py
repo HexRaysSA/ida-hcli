@@ -5,14 +5,13 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Literal
 
 import packaging.version
-from pydantic import AliasPath, BaseModel, ConfigDict, Field
 
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version, get_ida_user_dir
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
+    MinimalIDAPluginMetadata,
     get_metadata_from_plugin_archive,
     get_metadata_path_from_plugin_archive,
     get_python_dependencies_from_plugin_archive,
@@ -174,19 +173,10 @@ def get_installed_plugins() -> list[tuple[str, str]]:
     return installed_plugins
 
 
-class IDAPluginMetadataV1(BaseModel):
-    """Legacy v1 IDA Plugin metadata from ida-plugin.json"""
-
-    model_config = ConfigDict(extra="allow")
-
-    metadata_version: Literal[1] = Field(validation_alias="IDAMetadataDescriptorVersion")
-    name: str = Field(validation_alias=AliasPath("plugin", "name"))
-
-
-def get_installed_legacy_plugins() -> list[tuple[str, Path]]:
-    """fetch (name, path) pairs for currently installed legacy plugins"""
+def get_installed_minimal_plugins() -> list[tuple[Path, MinimalIDAPluginMetadata]]:
+    """fetch (name, path) pairs for currently installed minimal (likely legacy) plugins"""
     plugins_dir = get_plugins_directory()
-    installed_plugins: list[tuple[str, Path]] = []
+    installed_plugins: list[tuple[Path, MinimalIDAPluginMetadata]] = []
 
     if not plugins_dir.exists():
         return installed_plugins
@@ -200,12 +190,41 @@ def get_installed_legacy_plugins() -> list[tuple[str, Path]]:
             continue
 
         try:
-            metadata = IDAPluginMetadataV1.model_validate_json(metadata_file.read_bytes())
+            _ = get_metadata_from_plugin_directory(plugin_path)
+        except ValueError:
+            pass
+        else:
+            # skip the valid plugins
+            continue
+
+        try:
+            metadata = MinimalIDAPluginMetadata.model_validate_json(metadata_file.read_bytes())
         except ValueError as e:
             logger.debug(f"Invalid plugin metadata in {plugin_path}: {e}")
             continue
 
-        installed_plugins.append((metadata.name, metadata_file))
+        installed_plugins.append((metadata_file, metadata))
+
+    return installed_plugins
+
+
+def get_installed_legacy_plugins() -> list[Path]:
+    """fetch paths for  currently installed legacy, single-file plugins"""
+    plugins_dir = get_plugins_directory()
+    installed_plugins: list[Path] = []
+
+    if not plugins_dir.exists():
+        return installed_plugins
+
+    for plugin_path in plugins_dir.iterdir():
+        if plugin_path.is_dir():
+            continue
+
+        if plugin_path.name.endswith(".py"):
+            installed_plugins.append(plugin_path)
+
+        if plugin_path.name.endswith((".so", ".dll", ".dylib")):
+            installed_plugins.append(plugin_path)
 
     return installed_plugins
 
