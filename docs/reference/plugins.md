@@ -1,23 +1,75 @@
-# Plugin Manager
+# IDA Pro Plugin Manager
 
-plugins.hex-rays.com will watch for GitHub repositories (and other provider) that contain an `ida-plugin.json` file.
+hcli can manage plugins for IDA Pro, letting users search, install, upgrade, and configure third-party plugins.
+The underlying index of plugins is published at https://github.com/HexRaysSA/plugin-repository, and
+ Hex-Rays maintains https://plugins.hex-rays.com as a website showing the available plugins.
+
+Status: the plugin manager is roughly done, and we're now migrating plugins and documentation.
+
+
+## IDA Pro Plugin Repository
+
+plugins.hex-rays.com is a web interface to the collection of available IDA Pro plugins (the "plugin repository").
+The plugin repository publishes a JSON document within https://github.com/HexRaysSA/plugin-repository.
+This file is the index of all available plugins, their versions and metadata, and download URLs.
+GitHub Actions runs regularly to upate the JSON document with plugins discovered across GitHub.
+The raw index data is available here: https://raw.githubusercontent.com/HexRaysSA/plugin-repository/refs/heads/v1/plugin-repository.json
+
+The plugin repository's GitHub Action watches for GitHub repositories that contain an `ida-plugin.json` file.
 For each repo, it will watch for releases. When it sees a release, it will inspect the release archives for either
  source archives (pure-Python) or binary archives (containing .so/.dll/.dylib plugins).
 In either case, it'll expect to find an `ida-plugin.json` file in the archive describing the plugin.
 The service will index all the found archives and their metadata, and expose this to hcli
  (and/or other plugin managers, like a GUI version within IDA).
 
-hcli will use plugins.hex-rays.com to list/search for plugins and retrieve the download URL (to the GitHub release archive).
-After various validation steps, hcli then extracts the archive subdirectory containing `ida-plugin.json` into `$IDAUSR/plugins/`,
- and the plugin is installed.
+Note that the plugin repository requires more metadata than originally documented on the Hex-Rays website.
+Keep reading to see what's required and how to migrate your plugin.
+
+
+## hcli IDA Pro plugin manager
+
+hcli uses the plugin repository JSON file to list/search for plugins and retrieve the download URL.
+After various validation steps, hcli then extracts the archive subdirectory containing
+ `ida-plugin.json` into `$IDAUSR/plugins/`, and the plugin is installed.
 If there are Python dependencies declared within the metadata file, then these are installed via pip first.
 There are obvious upgrade and uninstallation routines, too.
+
+
+### Plugin Installation Location
+
+Plugins are installed to `$IDAUSR/plugins/`, where `$IDAUSR` is the IDA user directory:
+- **Windows**: `%APPDATA%\Hex-Rays\IDA Pro\`
+- **macOS**: `~/Library/Application Support/IDA Pro/`
+- **Linux**: `~/.idapro/`
+
+Its possible to override `$IDAUSR` when running IDA, which can be helpful if you test across multiple versions:
+
+```
+$ export IDAUSR=~/.idapro91/
+$ hcli plugin install ipyida
+$ ~/software/ida-9.1/ida
+```
+
+Each plugin is installed in its own subdirectory within `plugins/`. For example, installing the "oplog" plugin creates:
+```
+$IDAUSR/plugins/oplog/
+├── ida-plugin.json
+├── oplog_entry.py
+└── (other plugin files)
+```
+
+The directory name matches the plugin name from `ida-plugin.json`.
+This is why the contents of `name` are fairly restrictive. They should also be globally unique.
+We'll address collisions in plugin names by taking into account the code repository, too.
+
+During upgrades, the existing directory is replaced with the new version.
+Uninstallation is as easy as deleting the directory.
 
 
 ## Plugin Archive Format
 
 A Plugin Archive is a ZIP archive that contains an IDA plugin and its associated `ida-plugin.json` metadata file.
-The metadata file should be found in the root subdirectory that contains all the plugin's files.
+The metadata file should be found in the root directory of the plugin within the archive.
 
 For example:
 
@@ -37,9 +89,74 @@ plugin.zip
 └── plugin.dll
 ```
 
+### ida-plugin.json
+
+The `ida-plugin.json` file is the marker for an IDA Pro plugin.
+https://docs.hex-rays.com/user-guide/plugins/plugin-submission-guide#define-plugin-metadata-with-ida-plugin.json
+
+A typical `ida-plugin.json` file might look like this:
+
+```json
+{
+  "IDAMetadataDescriptorVersion": 1,
+  "plugin": {
+    "name": "oplog",
+    "entryPoint": "oplog_entry.py",
+    "version": "0.1.2",
+    "idaVersions": ">=9.1",
+    "description": "oplog is an IDA Pro plugin that records operations during analysis.",
+    "license": "Apache 2.0",
+    "categories": [
+      "ui-ux-and-visualization"
+    ],
+    "pythonDependencies": ["pydantic>=2"],
+    "urls": {
+      "repository": "https://github.com/williballenthin/idawilli"
+    },
+    "authors": [{
+      "name": "Willi Ballenthin",
+      "email": "wballenthin@hex-rays.com"
+    }],
+    "keywords": [
+      "activity-tracking",
+      "workflow-analysis",
+      "reverse-engineering-methodology",
+      "ai-training-data",
+      "analysis-visualization"
+    ]
+  }
+}
+```
+
+And a minimal `ida-plugin.json` could look like this:
+
+```json
+{
+  "IDAMetadataDescriptorVersion": 1,
+  "plugin": {
+    "name": "oplog",
+    "entryPoint": "oplog_entry.py",
+    "version": "0.1.2",
+    "urls": {
+      "repository": "https://github.com/williballenthin/idawilli"
+    },
+    "authors": [{
+      "name": "Willi Ballenthin",
+      "email": "wballenthin@hex-rays.com"
+    }]
+  }
+}
+```
+
+In addition to the fields described on the Hex-Rays website,
+hcli requires the following fields in `ida-plugin.json`:
+
+  - `version`: the version of the plugin archive
+  - `urls.repository`: the repository that publishes the plugin
+  - `authors` (or `maintainers`): name and/or email. Social media handles are ok!
+
 
 ### Source Archives and Binary Archives
-
 
 For many pure-Python IDA plugins, source archives are often sufficient.
 This means you don't have to create any GitHub Actions workflows; you just have to tag your releases in GitHub.
@@ -65,7 +182,7 @@ With `ida-plugin.json`:
     "entryPoint": "entry_stub.py",
     "version": "1.0",
     "idaVersions": ">=9.0",
-    "pythonDependencies": ["ida-plugin1==1.0"]
+    "pythonDependencies": ["ida-plugin1==1.0"],
     "urls": {
       "repository": "https://github.com/foo/bar"
     },
@@ -140,6 +257,84 @@ plugins.zip
 
 ## Migrating Plugins to the Plugin Repository
 
+(Rough notes:)
+
+Plugins should try to use GitHub Actions for builds and GitHub Releases for tagging versions.
+
+The plugin repository's discovery script uses GitHub Releases to identify new candidate versions. 
+GH Releases is also a reasonable experience for users, due to the stable links, changelogs, and attached artifacts.
+While we may add support for other hosting sites, GitHub is the only platform available today.
+
+Pure Python plugins won't need a build step and can rely on source archives automatically attached to GitHub Release pages.
+Other plugins can use any CI system they want (including manual builds, if they insist),
+ but Hex-Rays provides examples and support for GitHub Actions.
+Don't hesitate to reach out for help!
+
+As you modify `ida-plugin.json`, use `hcli plugin lint /path/to/plugin/directory` to validate the contents and highlight issues.
+
+Anyways, determine if the plugin is pure Python or a native plugin. More detailed notes follow.
+
+Finally, remember to update the readme to explain that users should now use hcli instead of manual installing the plugin.
+
+
+### Migrating pure Python Plugins
+
+For simple single-file plugins, all you need to do is add an `ida-plugin.json` file.
+Then do releases via GitHub Actions and the automatically attached source archive will be the plugin archive.
+
+In fact, most pure Python plugins can get away with no build step, and just tagging releases via GitHub Releases.
+
+If there are multiple plugins in the same repo, this is ok, as long as they're in separate directories.
+See "Multi-Plugin Archives" above.
+
+If a Python plugin relies on a third-party dependency, declare this in the `pythonDependencies` array in `ida-plugin.json`.
+
+If there's many files related to the plugin, ensure they're all in the same directory (or nested subdirectory) as `ida-plugin.json`.
+Python plugins can rely on imports relative to the entry point script, so the following are ok:
+
+```
+plugins.zip
+└── plugin1
+    ├── ida-plugin.json
+    ├── plugin_entry.py
+    └── myutils.py
+
+# import myutils
+```
+
+or
+
+```
+plugins.zip
+└── plugin1
+    ├── ida-plugin.json
+    ├── plugin_entry.py
+    └── mylib
+        ├── __init__.py
+        └── foo
+
+# import mylib.foo
+```
+
+Some plugins have published most of their code to PyPI via a tradional Python package, and then refer to this in a trivial entrypoint stub.
+This is fine. They can keep doing this, updating `pythonDependencies` to reference that package;
+or they can migrate to keeping the Python package as a relative import.
+
+
+### Migrating a Native Plugin
+
+If its a native plugin, migrate the build configuration (if it exists) to GitHub Actions.
+To acquire the SDK, either use a Git submodule or use hcli to fetch it.
+The latter is probably a better solution but requires an active IDA Pro license (but you can get one through the Plugin Contributor Program),
+and enables you to build against 8.4, 9.0, 9.1, as well as 9.2+.
+The open source SDK on GitHub only has tags for 9.2+.
+
+Here's an example workflow:
+https://github.com/williballenthin/zydisinfo/blob/gha-hcli/.github/workflows/build.yml
+
+Once you have built the shared object files, package them up along with the `ida-plugin.json` file.
+You can create one artifact per platform, or do a "fat" binary archive (see above).
+Separate files might be easier; just make sure you set `idaPlatforms` in `ida-plugin.json` to reflect the contents, so we don't try to install .dll files on macOS.
 
 
 ### Experience Reports
