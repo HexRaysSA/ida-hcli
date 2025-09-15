@@ -42,10 +42,8 @@ ALL_PLATFORMS: frozenset[str] = frozenset(
 
 
 def parse_plugin_version(version: str) -> semantic_version.Version:
-    normalized_version = version
-    normalized_version = normalized_version.lstrip("v")
     # we want to use Version, instead of SimpleSpec, because it is sortable
-    return semantic_version.Version(normalized_version, partial=True)
+    return semantic_version.Version(version, partial=True)
 
 
 def parse_ida_version(version: str) -> semantic_version.Version:
@@ -109,7 +107,6 @@ class URLs(BaseModel):
     # URL of GitHub repository containing the source code for the plugin.
     # Uses the form: https://github.com/org/project
     repository: str
-    # TODO(ai): add a validator for this url pattern, org and project can be variable
 
     # URL of website describing the plugin, if different from the GitHub repo.
     homepage: str | None = None
@@ -144,6 +141,8 @@ class PluginMetadata(BaseModel):
     name: str
 
     # Specify the version of your plugin. It must follow the x.y.z format (e.g., 1.0.0).
+    # Do not include a leading "v".
+    #
     # Examples:
     #   - "1.0.0"
     version: str

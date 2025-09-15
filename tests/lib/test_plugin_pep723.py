@@ -98,7 +98,7 @@ def test_get_python_dependencies_from_plugin_directory_inline():
             "IDAMetadataDescriptorVersion": 1,
             "plugin": {
               "name": "plugin1", 
-              "version": "v4.0.0",
+              "version": "4.0.0",
               "entryPoint": "plugin1.py",
               "description": "test plugin",
               "pythonDependencies": "inline",
@@ -143,7 +143,7 @@ def test_get_python_dependencies_from_plugin_directory_list():
             "IDAMetadataDescriptorVersion": 1,
             "plugin": {
               "name": "plugin1", 
-              "version": "v3.0.0",
+              "version": "3.0.0",
               "entryPoint": "plugin1.py",
               "description": "test plugin",
               "pythonDependencies": ["requests>=2.28.0", "pydantic>=2.0.0"],
