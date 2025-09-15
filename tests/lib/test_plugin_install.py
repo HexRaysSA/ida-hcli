@@ -104,7 +104,7 @@ def test_install_source_plugin_archive(temp_hcli_idausr_dir, hook_current_platfo
     assert (plugin_directory / "ida-plugin.json").exists()
     assert (plugin_directory / "plugin1.py").exists()
 
-    assert ("plugin1", "v1.0.0") in get_installed_plugins()
+    assert ("plugin1", "1.0.0") in get_installed_plugins()
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
@@ -121,7 +121,7 @@ def test_install_binary_plugin_archive(temp_hcli_idausr_dir, hook_current_platfo
     assert (plugin_directory / "zydisinfo.so").exists()
     assert (plugin_directory / "zydisinfo.dylib").exists()
 
-    assert ("zydisinfo", "v1.0.0") in get_installed_plugins()
+    assert ("zydisinfo", "1.0.0") in get_installed_plugins()
     assert is_plugin_installed("zydisinfo")
 
 
@@ -131,10 +131,10 @@ def test_uninstall(temp_hcli_idausr_dir, hook_current_platform, hook_current_ver
     buf = plugin_path.read_bytes()
 
     install_plugin_archive(buf, "plugin1")
-    assert ("plugin1", "v1.0.0") in get_installed_plugins()
+    assert ("plugin1", "1.0.0") in get_installed_plugins()
 
     uninstall_plugin("plugin1")
-    assert ("plugin1", "v1.0.0") not in get_installed_plugins()
+    assert ("plugin1", "1.0.0") not in get_installed_plugins()
     assert not is_plugin_installed("zydisinfo")
 
 
@@ -144,11 +144,11 @@ def test_upgrade(temp_hcli_idausr_dir, hook_current_platform, hook_current_versi
     v2 = (PLUGIN_DATA / "plugin1" / "plugin1-v2.0.0.zip").read_bytes()
 
     install_plugin_archive(v1, "plugin1")
-    assert ("plugin1", "v1.0.0") in get_installed_plugins()
+    assert ("plugin1", "1.0.0") in get_installed_plugins()
     assert is_plugin_installed("plugin1")
 
     upgrade_plugin_archive(v2, "plugin1")
-    assert ("plugin1", "v2.0.0") in get_installed_plugins()
+    assert ("plugin1", "2.0.0") in get_installed_plugins()
     assert is_plugin_installed("plugin1")
 
     uninstall_plugin("plugin1")
