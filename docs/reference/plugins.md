@@ -458,3 +458,11 @@ Needed to move plugin to root so it could relative import the mkyara package;
  otherwise, would need to add pythonDependency on PyPI package that is out of date (no python3 support).
 
 https://github.com/ida-community-plugins/mkYARA
+
+
+#### yarka
+
+https://github.com/AzzOnFire/yarka/pull/1
+
+Very easy to port, but I had Claude do it, and it took a little bit to write ./plugins-AGENT.md.
+Then I drafted the text for maintainers. This can also generally be reused.
