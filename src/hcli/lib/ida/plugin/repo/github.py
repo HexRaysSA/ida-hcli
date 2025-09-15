@@ -471,6 +471,8 @@ INITIAL_REPOSITORIES = [
     "ida-community-plugins/vt-ida-plugin",
     "williballenthin/idawilli",
     "HexRaysSA/ida-terminal-plugin",
+    "HexRaysSA/yarka",
+    "azzonfire/yarka",
 ]
 
 
