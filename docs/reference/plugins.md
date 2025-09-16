@@ -466,3 +466,13 @@ https://github.com/AzzOnFire/yarka/pull/1
 
 Very easy to port, but I had Claude do it, and it took a little bit to write ./plugins-AGENT.md.
 Then I drafted the text for maintainers. This can also generally be reused.
+
+There are some user preferences that the user can set by modifying the source code, like formatting of the yara rules.
+
+#### Gepetto
+
+https://github.com/JusticeRage/Gepetto/pull/105
+
+Claude Code did it. Straightforward.
+
+There's a config.ini file used to store settings.

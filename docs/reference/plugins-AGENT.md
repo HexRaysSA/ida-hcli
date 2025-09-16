@@ -12,7 +12,7 @@ Here are your specific instructions. Ask for guidance and clarification along th
   "name": str,
   "entryPoint": path,
   "version": str,
-  "description": str,
+  "description": str, single concise sentence
   "license": str,
   "urls": {
     "repository": str
@@ -54,25 +54,6 @@ Ultrathink about this step.
 5. If needed, propose a GitHub Actions workflow that will build the native plugin, using the following as an example:
 https://github.com/williballenthin/zydisinfo/blob/gha-hcli/.github/workflows/build.yml
 
-6. Finally, update the readme to explain how to install the plugin using hcli (`hcli plugin install foo`).
-An example:
-
-```md
-#### Using hcli (Recommended)
-The easiest way to install Yarka is using the [Hex-Rays CLI tool (hcli)](https://github.com/HexRaysSA/ida-hcli):
-```bash
-pip install ida-hcli
-hcli plugin install yarka
-```
-
-This will automatically install the plugin to your IDA user directory.
-
-#### Manual Installation
-Alternatively, you can manually install the plugin:
-1. Copy `yarka.py` and the `yarka` folder to your IDA plugins directory
-2. The plugins directory location depends on your system:
-   - **Windows**: `%APPDATA%\Hex-Rays\IDA Pro\plugins\`
-   - **macOS**: `~/Library/Application Support/IDA Pro/plugins/`
-   - **Linux**: `~/.idapro/plugins/`
-```
-
+6. Identify if there are any configuration or settings values that can/should/must be provided by the user, such as
+API keys, personalization, etc. In the future, we'll have infrastructure for this, but we don't today. But we do want
+to know which plugins will need updating.
