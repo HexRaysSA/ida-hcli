@@ -44,4 +44,4 @@ jobs:
 
       - name: Lint with mypy
         run: |
-          uv run mypy --check-untyped-defs --ignore-missing-imports src/ tests/
+          uv run mypy --check-untyped-defs --ignore-missing-imports src/ tests/ --exclude tests/data/
