@@ -63,9 +63,6 @@ def parse_ida_version(version: str) -> semantic_version.Version:
     # as its considered "build metadata"
     normalized_version = re.sub(r"\.0sp(\d+)", r".\1", normalized_version)
 
-    if normalized_version != version:
-        logger.debug("normalized %s -> %s", version, normalized_version)
-
     return semantic_version.Version(normalized_version)
 
 
@@ -85,9 +82,6 @@ def parse_ida_version_spec(spec: str) -> semantic_version.SimpleSpec:
     # because if we use X.Y.0+spZ, the "+spZ" is not compared,
     # as its considered "build metadata"
     normalized_spec = re.sub(r"\.0sp(\d+)", r".\1", normalized_spec)
-
-    if normalized_spec != spec:
-        logger.debug("normalized %s -> %s", spec, normalized_spec)
 
     return semantic_version.SimpleSpec(normalized_spec)
 
