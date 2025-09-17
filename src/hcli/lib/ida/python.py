@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 FIND_PYTHON_PY = """
 # output like:
 #
-#     __hcli__:"/Users/user/code/hex-rays/ida-hcli/.venv/bin/python3"
+#     __hcli__:"/Users/user/.idapro/venv/bin/python"
 import shutil
 import sys
 import json
@@ -32,7 +32,9 @@ def find_current_python_executable() -> Path:
     if exe:
         return Path(exe)
 
-    return Path(run_py_in_current_idapython(FIND_PYTHON_PY))
+    exe = run_py_in_current_idapython(FIND_PYTHON_PY)
+    logger.debug("found python path: %s", exe)
+    return Path(exe)
 
 
 def does_current_ida_have_pip(python_exe: Path) -> bool:
