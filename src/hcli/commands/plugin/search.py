@@ -156,6 +156,8 @@ def handle_plugin_name_query(plugins: list[Plugin], query: str, current_version:
 
 def handle_plugin_spec_query(plugins: list[Plugin], query: str, current_version: str, current_platform: str):
     name, version = split_plugin_version_spec(query)
+    if not version:
+        raise ValueError(f"invalid plugin version: {query}")
 
     plugin = get_plugin_by_name(plugins, name)
 

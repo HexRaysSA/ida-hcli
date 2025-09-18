@@ -273,8 +273,13 @@ def test_plugin_all(virtual_ida_environment_with_venv):
     assert "zydisinfo  1.0.0    https://github.com/HexRaysSA/ida-hcli" in p.stdout
     assert "plugin1    4.0.0    https://github.com/HexRaysSA/ida-hcli" not in p.stdout
 
-    # TODO: search zydisinfo
-    # TODO: search zydisinfo==1.0.0
+    p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydisinfo")
+    assert "name: zydisinfo" in p.stdout
+    assert "available versions:\n 1.0.0" in p.stdout
+
+    p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydisinfo==1.0.0")
+    assert "name: zydisinfo" in p.stdout
+    assert "download locations:\n >=9.0  linux-x86_64, macos-aarch64, macos-x86_64, windows-x86_64  file://" in p.stdout
 
     p = run_hcli(f"plugin --repo {repo_path.absolute()} install zydisinfo")
     assert "Installed plugin: zydisinfo==1.0.0\n" == p.stdout
@@ -332,7 +337,7 @@ def test_plugin_all(virtual_ida_environment_with_venv):
     # work with the default index
     # if `hint-calls` becomes unmaintained, this plugin name can be changed.
     # the point is just to show the default index works.
-    p = run_hcli("plugin search hint-calls")
+    p = run_hcli("plugin search hint-ca")
     assert " hint-calls  " in p.stdout
 
     p = run_hcli("plugin install hint-calls")

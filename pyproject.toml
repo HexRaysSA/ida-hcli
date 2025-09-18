@@ -26,6 +26,7 @@ dependencies = [
     "gotrue>=2.12.0",
     "pip>=25.2",
     "tomli>=1.2.0; python_version<'3.11'",
+    "pyyaml>=6.0.2",
 ]
 
 [project.urls]
