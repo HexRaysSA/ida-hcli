@@ -1,4 +1,6 @@
 import contextlib
+import shlex
+import json
 import os
 import platform
 import shutil
@@ -170,7 +172,21 @@ def initialize_idausr_with_venv(idausr_dir: Path):
     # upgrade pip, since when we have an old python with the defaults,
     # then pip might not have --dry-run (added in 22.2)
     python_exe = get_python_exe_for_venv(venv_path)
-    _ = subprocess.run([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
+    # _ = subprocess.run([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
+    # using uv is a few seconds faster, which is nicer for interactive dev
+    _ = subprocess.run(["uv", "pip", "install", "--python=" + str(python_exe.absolute()), "--upgrade", "pip"], check=True)
+
+
+THIS_FILE = Path(__file__)
+TESTS_DIR = THIS_FILE.parent.parent
+PROJECT_DIR = TESTS_DIR.parent
+
+
+def install_this_package_in_venv(venv_path: Path):
+    python_exe = get_python_exe_for_venv(venv_path)
+    # _ = subprocess.run([python_exe, "-m", "pip", "install", str(PROJECT_DIR.absolute())], check=True)
+    # using uv is a few seconds faster, which is nicer for interactive dev
+    _ = subprocess.run(["uv", "pip", "install", "--python=" + str(python_exe.absolute()), str(PROJECT_DIR.absolute())], check=True)
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
@@ -187,3 +203,87 @@ def test_plugin_python_dependencies(temp_hcli_idausr_dir, hook_current_platform,
 
         freeze = pip_freeze(python_exe)
         assert "packaging==25.0" in freeze
+
+
+def run_hcli(args: str) -> subprocess.CompletedProcess[str]:
+    python_exe = os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"]
+    return subprocess.run([python_exe, "-m", "hcli.main"] + shlex.split(args), check=True, encoding="utf-8", capture_output=True)
+
+
+@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
+def test_plugin_all(temp_hcli_idausr_dir, hook_current_platform, hook_current_version):
+    idausr = Path(os.environ["HCLI_IDAUSR"])
+    initialize_idausr_with_venv(idausr)
+    venv_path = idausr / "venv"
+    install_this_package_in_venv(venv_path)
+
+    python_exe = get_python_exe_for_venv(venv_path)
+    with temp_env_var("HCLI_CURRENT_IDA_PYTHON_EXE", str(python_exe.absolute())):
+        p = run_hcli("--help")
+        assert "Usage: python -m hcli.main [OPTIONS] COMMAND [ARGS]..." in p.stdout
+
+        p = run_hcli("plugin --help")
+        assert "Usage: python -m hcli.main plugin [OPTIONS] COMMAND [ARGS]..." in p.stdout
+       
+        PLUGINS_DIR = TESTS_DIR / "data" / "plugins"
+        p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} repo snapshot")
+        assert "plugin1" in p.stdout
+        assert "zydisinfo" in p.stdout
+        assert "1.0.0" in p.stdout
+        assert "4.0.0" in p.stdout
+        # ensure it looks like json
+        _ = json.loads(p.stdout)
+
+        repo_path = idausr / "repo.json"
+        repo_path.write_text(p.stdout)
+
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
+        assert "No plugins found\n" == p.stdout
+
+        # current platform: macos-aarch64
+        # current version: 9.1
+        # 
+        # plugin1    4.0.0    https://github.com/HexRaysSA/ida-hcli
+        # zydisinfo  1.0.0    https://github.com/HexRaysSA/ida-hcli
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} search")
+        assert "plugin1    4.0.0    https://github.com/HexRaysSA/ida-hcli" in p.stdout
+        assert "zydisinfo  1.0.0    https://github.com/HexRaysSA/ida-hcli" in p.stdout
+        
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydis")
+        assert "zydisinfo  1.0.0    https://github.com/HexRaysSA/ida-hcli" in p.stdout
+        assert "plugin1    4.0.0    https://github.com/HexRaysSA/ida-hcli" not in p.stdout
+
+        # TODO: search zydisinfo
+        # TODO: search zydisinfo==1.0.0
+        
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} install zydisinfo")
+        assert "Installed plugin: zydisinfo==1.0.0\n" == p.stdout
+
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
+        assert " zydisinfo  1.0.0   \n" == p.stdout
+
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall zydisinfo")
+        assert "Uninstalled plugin: zydisinfo\n" == p.stdout
+
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
+        assert "No plugins found\n" == p.stdout
+
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} install plugin1==1.0.0")
+        assert "Installed plugin: plugin1==1.0.0\n" == p.stdout
+
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
+        assert " plugin1  1.0.0  upgradable to 4.0.0 \n" == p.stdout
+
+        # p = run_hcli(f"plugin --repo {repo_path.absolute()} upgrade plugin1==2.0.0")
+        # assert "Installed plugin: plugin1==2.0.0\n" == p.stdout
+
+        # # downgrade
+        # p = run_hcli(f"plugin --repo {repo_path.absolute()} upgrade plugin1==1.0.0")
+        # assert "Installed plugin: plugin1==1.0.0\n" == p.stdout
+
+        # upgrade all
+        # uninstall
+        #
+        # install by path
+        # install by url
+        # install from default index
