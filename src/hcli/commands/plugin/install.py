@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import logging
-import re
 from pathlib import Path
 
 import rich_click as click
 
 from hcli.lib.console import console
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
-from hcli.lib.ida.plugin import get_metadata_from_plugin_archive, get_metadatas_with_paths_from_plugin_archive
+from hcli.lib.ida.plugin import (
+    get_metadata_from_plugin_archive,
+    get_metadatas_with_paths_from_plugin_archive,
+    split_plugin_version_spec,
+)
 from hcli.lib.ida.plugin.install import install_plugin_archive
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
 
@@ -53,7 +56,7 @@ def install_plugin(ctx, plugin: str) -> None:
 
         else:
             logger.info("finding plugin in repository")
-            plugin_name = re.split("[=><!~/]", plugin_spec)[0]
+            plugin_name, _ = split_plugin_version_spec(plugin_spec)
             logger.debug("plugin name: %s", plugin_name)
 
             plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]

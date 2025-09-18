@@ -1,6 +1,5 @@
 import hashlib
 import logging
-import re
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
@@ -15,6 +14,7 @@ from hcli.lib.ida.plugin import (
     get_metadatas_with_paths_from_plugin_archive,
     is_ida_version_compatible,
     parse_plugin_version,
+    split_plugin_version_spec,
     validate_metadata_in_plugin_archive,
 )
 
@@ -63,6 +63,50 @@ class Plugin(BaseModel):
     versions: dict[str, list[PluginArchiveLocation]]
 
 
+def is_compatible_plugin_version_location(
+    plugin: Plugin, version: str, location: PluginArchiveLocation, current_platform: str, current_version: str
+) -> bool:
+    if not is_ida_version_compatible(current_version, location.ida_versions):
+        return False
+
+    if current_platform not in location.platforms:
+        return False
+
+    return True
+
+
+def is_compatible_plugin_version(
+    plugin: Plugin, version: str, locations: list[PluginArchiveLocation], current_platform: str, current_version: str
+) -> bool:
+    return any(
+        is_compatible_plugin_version_location(plugin, version, location, current_platform, current_version)
+        for location in locations
+    )
+
+
+def is_compatible_plugin(plugin: Plugin, current_platform: str, current_version: str) -> bool:
+    return any(
+        is_compatible_plugin_version(plugin, version, locations, current_platform, current_version)
+        for version, locations in plugin.versions.items()
+    )
+
+
+def get_latest_plugin_metadata(plugin: Plugin) -> IDAMetadataDescriptor:
+    max_version = max(plugin.versions.keys(), key=parse_plugin_version)
+    max_locations = plugin.versions[max_version]
+    return max_locations[0].metadata
+
+
+def get_latest_compatible_plugin_metadata(
+    plugin: Plugin, current_platform: str, current_version: str
+) -> IDAMetadataDescriptor:
+    for version, locations in sorted(plugin.versions.items(), key=lambda p: parse_plugin_version(p[0]), reverse=True):
+        if is_compatible_plugin_version(plugin, version, locations, current_platform, current_version):
+            return plugin.versions[version][0].metadata
+
+    raise ValueError("no versions of plugin are compatible")
+
+
 class BasePluginRepo(ABC):
     @abstractmethod
     def get_plugins(self) -> list[Plugin]: ...
@@ -70,7 +114,7 @@ class BasePluginRepo(ABC):
     def find_compatible_plugin_from_spec(
         self, plugin_spec: str, current_platform: str, current_version: str
     ) -> PluginArchiveLocation:
-        plugin_name: str = re.split("[=><!~/]", plugin_spec)[0]
+        plugin_name, _ = split_plugin_version_spec(plugin_spec)
         wanted_spec = semantic_version.SimpleSpec(plugin_spec[len(plugin_name) :] or ">=0")
 
         plugins = [plugin for plugin in self.get_plugins() if plugin.name == plugin_name]

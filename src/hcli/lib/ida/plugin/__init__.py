@@ -86,6 +86,33 @@ def parse_ida_version_spec(spec: str) -> semantic_version.SimpleSpec:
     return semantic_version.SimpleSpec(normalized_spec)
 
 
+def split_plugin_version_spec(version_spec: str) -> tuple[str, str]:
+    """Split a plugin version spec into plugin name and version.
+
+    Args:
+        version_spec: Plugin version specification like "plugin>=1.0.0"
+
+    Returns:
+        Tuple of (plugin_name, plugin_version)
+
+    Raises:
+        ValueError: If the version spec format is invalid
+    """
+    plugin_name = re.split("[=><!~]", version_spec)[0]
+
+    op_chars = version_spec[len(plugin_name) : len(plugin_name) + 2]
+    if not op_chars or op_chars[0] not in "=><!~":
+        raise ValueError(f"invalid plugin version spec: {version_spec}")
+
+    if len(op_chars) < 2 or op_chars[1] != "=":
+        raise ValueError(f"invalid plugin version spec: {version_spec}")
+
+    plugin_version = version_spec[len(plugin_name) + 2 :]
+    _ = parse_plugin_version(plugin_version)
+
+    return (plugin_name, plugin_version)
+
+
 class Contact(BaseModel):
     name: str | None = None
     email: str | None = None
