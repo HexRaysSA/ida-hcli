@@ -76,7 +76,9 @@ def install_plugin(ctx, plugin: str) -> None:
 
         else:
             logger.info("finding plugin in repository")
-            plugin_name = re.split("=><!~", plugin_spec)[0]
+            plugin_name = re.split("[=><!~/]", plugin_spec)[0]
+            logger.debug("plugin name: %s", plugin_name)
+
             plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
             location = plugin_repo.find_compatible_plugin_from_spec(plugin_spec, current_platform, current_ida_version)
             buf = fetch_plugin_archive(location.url)
