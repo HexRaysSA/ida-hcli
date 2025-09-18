@@ -49,7 +49,7 @@ class BasePluginRepo(ABC):
     def find_compatible_plugin_from_spec(
         self, plugin_spec: str, current_platform: str, current_version: str
     ) -> PluginArchiveLocation:
-        plugin_name: str = re.split("=><!~", plugin_spec)[0]
+        plugin_name: str = re.split("[=><!~/]", plugin_spec)[0]
         wanted_spec = semantic_version.SimpleSpec(plugin_spec[len(plugin_name) :] or ">=0")
 
         plugins = [plugin for plugin in self.get_plugins() if plugin.name == plugin_name]
