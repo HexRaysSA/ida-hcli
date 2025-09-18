@@ -521,7 +521,8 @@ def get_ida_config_path() -> Path:
 def get_ida_config() -> IDAConfigJson:
     ida_config_path = get_ida_config_path()
     if not ida_config_path.exists():
-        raise ValueError("ida-config.json doesn't exist")
+        logger.debug("using default ida-config.json contents")
+        return IDAConfigJson()
 
     return IDAConfigJson.model_validate_json(ida_config_path.read_text(encoding="utf-8"))
 
