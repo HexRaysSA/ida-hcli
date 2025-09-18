@@ -6,38 +6,16 @@ import hashlib
 import logging
 import re
 from pathlib import Path
-from urllib.parse import urlparse
 
-import requests
 import rich_click as click
 
 from hcli.lib.console import console
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
 from hcli.lib.ida.plugin import get_metadata_from_plugin_archive, get_metadatas_with_paths_from_plugin_archive
-from hcli.lib.ida.plugin.install import install_plugin_archive
+from hcli.lib.ida.plugin.install import install_plugin_archive, fetch_plugin_archive
 from hcli.lib.ida.plugin.repo import BasePluginRepo
 
 logger = logging.getLogger(__name__)
-
-
-def fetch_plugin_archive(url: str) -> bytes:
-    parsed_url = urlparse(url)
-
-    if parsed_url.scheme == "file":
-        # Handle file:// URLs
-        file_path = Path(parsed_url.path)
-        if not file_path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
-        return file_path.read_bytes()
-
-    elif parsed_url.scheme in ("http", "https"):
-        # Handle HTTP(S) URLs
-        response = requests.get(url, timeout=30.0)
-        response.raise_for_status()
-        return response.content
-
-    else:
-        raise ValueError(f"Unsupported URL scheme: {parsed_url.scheme}")
 
 
 @click.command()
