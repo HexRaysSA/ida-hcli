@@ -38,10 +38,10 @@ jobs:
 
       - name: Lint with ruff
         run: |
-          uv run ruff format --check --line-length 120 src/ tests/
-          uv run ruff check src/ tests/
-          uv run ruff check --select I src/ tests/
+          uvx ruff format --check --line-length 120 src/ tests/
+          uvx ruff check src/ tests/
+          uvx ruff check --select I src/ tests/
 
       - name: Lint with mypy
         run: |
-          uv run mypy --check-untyped-defs --ignore-missing-imports src/ tests/ --exclude tests/data/
+          uvx mypy --check-untyped-defs --ignore-missing-imports src/ tests/ --exclude tests/data/

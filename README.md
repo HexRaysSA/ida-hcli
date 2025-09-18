@@ -68,9 +68,10 @@ uv sync --extra dev
 uv build 
 
 # Run development tools
-uv run ruff format
-uv run ruff check --fix
-uv run ruff check --select I --fix
+uvx ruff format
+uvx ruff check --fix
+uvx ruff check --select I --fix
+uvx mypy --check-untyped-defs src/ tests/ --exclude tests/data/ --disable-error-code=import-untyped --disable-error-code=import-not-found
 ```
 
 ### Documentation
