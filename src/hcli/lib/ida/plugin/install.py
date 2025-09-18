@@ -5,7 +5,6 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-import packaging.version
 
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version, get_ida_user_dir
 from hcli.lib.ida.plugin import (
@@ -18,6 +17,7 @@ from hcli.lib.ida.plugin import (
     is_binary_plugin_archive,
     is_ida_version_compatible,
     is_source_plugin_archive,
+    parse_plugin_version,
     validate_metadata_in_plugin_archive,
     validate_path,
 )
@@ -228,6 +228,37 @@ def get_installed_legacy_plugins() -> list[Path]:
     return installed_plugins
 
 
+def can_install_python_dependencies(
+    zip_data: bytes, metadata: IDAMetadataDescriptor, excluded_plugins: list[str] | None = None
+) -> bool:
+    python_dependencies = get_python_dependencies_from_plugin_archive(zip_data, metadata)
+    if python_dependencies:
+        all_python_dependencies: list[str] = []
+        for existing_plugin_path in get_installed_plugin_paths():
+            existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
+            if excluded_plugins and existing_metadata.plugin.name in excluded_plugins:
+                continue
+
+            existing_deps = get_python_dependencies_from_plugin_directory(existing_plugin_path, existing_metadata)
+            all_python_dependencies.extend(existing_deps)
+
+        all_python_dependencies.extend(python_dependencies)
+
+        python_exe = find_current_python_executable()
+
+        if not does_current_ida_have_pip(python_exe):
+            logger.debug("pip not available")
+            return False
+
+        try:
+            verify_pip_can_install_packages(python_exe, all_python_dependencies)
+        except CantInstallPackagesError:
+            logger.debug("can't install dependencies")
+            return False
+
+    return True
+
+
 def can_install_plugin(
     zip_data: bytes, metadata: IDAMetadataDescriptor, current_platform: str, current_version: str
 ) -> bool:
@@ -251,28 +282,8 @@ def can_install_plugin(
         logger.warning(f"Current IDA version not supported: {current_version}")
         return False
 
-    # Get Python dependencies using helper function
-    python_dependencies = get_python_dependencies_from_plugin_archive(zip_data, metadata)
-    if python_dependencies:
-        all_python_dependencies: list[str] = []
-        for existing_plugin_path in get_installed_plugin_paths():
-            existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
-            existing_deps = get_python_dependencies_from_plugin_directory(existing_plugin_path, existing_metadata)
-            all_python_dependencies.extend(existing_deps)
-
-        all_python_dependencies.extend(python_dependencies)
-
-        python_exe = find_current_python_executable()
-
-        if not does_current_ida_have_pip(python_exe):
-            logger.debug("pip not available")
-            return False
-
-        try:
-            verify_pip_can_install_packages(python_exe, all_python_dependencies)
-        except CantInstallPackagesError:
-            logger.debug("can't install dependencies")
-            return False
+    if not can_install_python_dependencies(zip_data, metadata):
+        return False
 
     return True
 
@@ -411,6 +422,35 @@ def is_plugin_installed(name: str) -> bool:
     return name in installed_plugins
 
 
+def can_upgrade_plugin(
+    zip_data: bytes, metadata: IDAMetadataDescriptor, current_platform: str, current_version: str
+) -> bool:
+    name = metadata.plugin.name
+    try:
+        destination_path = get_plugin_directory(name)
+    except ValueError as e:
+        logger.error(f"Can't upgrade plugin: {str(e)}")
+        return False
+
+    if not destination_path.exists():
+        logger.warning(f"Plugin directory doesn't exist: {destination_path}")
+        return False
+
+    platforms = metadata.plugin.platforms
+    if current_platform not in platforms:
+        logger.warning(f"Current platform not supported: {current_platform}")
+        return False
+
+    if metadata.plugin.ida_versions and not is_ida_version_compatible(current_version, metadata.plugin.ida_versions):
+        logger.warning(f"Current IDA version not supported: {current_version}")
+        return False
+
+    if not can_install_python_dependencies(zip_data, metadata, excluded_plugins=[name]):
+        return False
+
+    return True
+
+
 def upgrade_plugin_archive(zip_data: bytes, name: str):
     metadata = get_metadata_from_plugin_archive(zip_data, name)
     validate_metadata_in_plugin_archive(zip_data, metadata)
@@ -418,20 +458,18 @@ def upgrade_plugin_archive(zip_data: bytes, name: str):
     if not is_plugin_installed(metadata.plugin.name):
         raise ValueError(f"plugin is not installed: {metadata.plugin.name}")
 
-    # TODO: can install the plugin? IDA versions and stuff
-    # TODO: implement rollback
+    current_platform = find_current_ida_platform()
+    current_version = find_current_ida_version()
+
+    if not can_upgrade_plugin(zip_data, metadata, current_platform, current_version):
+        logger.warning("can't upgrade plugin")
+        raise RuntimeError("Plugin upgrade is not possible")
 
     plugin_path = get_plugin_directory(metadata.plugin.name)
     existing_metadata = get_metadata_from_plugin_directory(plugin_path)
 
-    # use python setuptools/pip-style version parsing and comparison
-    # to ensure that metadata.version is > existing_metadata.version
-    try:
-        # TODO: validate this during metadata validation
-        new_version = packaging.version.parse(metadata.plugin.version)
-        existing_version = packaging.version.parse(existing_metadata.plugin.version)
-    except packaging.version.InvalidVersion:
-        raise ValueError("failed to parse plugin versions")
+    new_version = parse_plugin_version(metadata.plugin.version)
+    existing_version = parse_plugin_version(existing_metadata.plugin.version)
 
     if new_version <= existing_version:
         logger.warning(
@@ -456,6 +494,7 @@ def upgrade_plugin_archive(zip_data: bytes, name: str):
     except Exception as e:
         logger.debug("error during upgrade: install: %s", e)
         logger.debug("rolling back to prior version")
+        shutil.rmtree(plugin_path, ignore_errors=True)
         rollback_path.rename(plugin_path)
         raise e
     else:
