@@ -16,7 +16,7 @@ dependencies = [
     "rich-click",
     "httpx",
     "supabase",
-    "pydantic",
+    "pydantic>=2.11.0",
     "platformdirs",
     "packaging",
     "questionary",
@@ -57,13 +57,7 @@ dev = [
 
 [project.optional-dependencies]
 dev = [
-    "mypy>=1.16.0",
-    "ruff",
-    "bandit",
-    "pre-commit>=4.2.0",
-    "safety>=3.5.2",
     "python-semantic-release>=10.3.1",
-    "taskipy>=1.14.1",
 ]
 test = [
     "pytest>=7.0.0",
