@@ -5,9 +5,6 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from urllib.parse import urlparse
-
-import requests
 import packaging.version
 
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version, get_ida_user_dir
@@ -463,21 +460,3 @@ def upgrade_plugin_archive(zip_data: bytes, name: str):
         raise e
     else:
         shutil.rmtree(rollback_path)
-
-
-def fetch_plugin_archive(url: str) -> bytes:
-    parsed_url = urlparse(url)
-
-    if parsed_url.scheme == "file":
-        file_path = Path(parsed_url.path)
-        if not file_path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
-        return file_path.read_bytes()
-
-    elif parsed_url.scheme in ("http", "https"):
-        response = requests.get(url, timeout=30.0)
-        response.raise_for_status()
-        return response.content
-
-    else:
-        raise ValueError(f"Unsupported URL scheme: {parsed_url.scheme}")
