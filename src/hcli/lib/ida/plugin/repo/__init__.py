@@ -3,7 +3,10 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from pathlib import Path
+from urllib.parse import urlparse
 
+import requests
 import semantic_version
 from pydantic import BaseModel, ConfigDict, field_serializer
 
@@ -16,6 +19,24 @@ from hcli.lib.ida.plugin import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def fetch_plugin_archive(url: str) -> bytes:
+    parsed_url = urlparse(url)
+
+    if parsed_url.scheme == "file":
+        file_path = Path(parsed_url.path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        return file_path.read_bytes()
+
+    elif parsed_url.scheme in ("http", "https"):
+        response = requests.get(url, timeout=30.0)
+        response.raise_for_status()
+        return response.content
+
+    else:
+        raise ValueError(f"Unsupported URL scheme: {parsed_url.scheme}")
 
 
 class PluginArchiveLocation(BaseModel):
@@ -88,6 +109,19 @@ class BasePluginRepo(ABC):
                 return location
 
         raise KeyError(f"plugin not found: {plugin_spec}")
+
+    def fetch_compatible_plugin_from_spec(self, plugin_spec: str, current_platform: str, current_version: str) -> bytes:
+        location = self.find_compatible_plugin_from_spec(plugin_spec, current_platform, current_version)
+        buf = fetch_plugin_archive(location.url)
+
+        h = hashlib.sha256()
+        h.update(buf)
+        sha256 = h.hexdigest()
+
+        if sha256 != location.sha256:
+            raise ValueError(f"hash mismatch: expected {location.sha256} but found {sha256} for {location.url}")
+
+        return buf
 
 
 class PluginArchiveIndex:
