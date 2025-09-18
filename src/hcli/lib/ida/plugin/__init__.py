@@ -99,6 +99,8 @@ def split_plugin_version_spec(version_spec: str) -> tuple[str, str]:
         ValueError: If the version spec format is invalid
     """
     plugin_name = re.split("[=><!~]", version_spec)[0]
+    if plugin_name == version_spec:
+        return plugin_name, ""
 
     op_chars = version_spec[len(plugin_name) : len(plugin_name) + 2]
     if not op_chars or op_chars[0] not in "=><!~":
