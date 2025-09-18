@@ -1,4 +1,4 @@
-from fixtures import PLUGIN_DATA
+from fixtures import PLUGINS_DIR
 
 from hcli.lib.ida.plugin import (
     is_binary_plugin_archive,
@@ -9,7 +9,7 @@ from hcli.lib.ida.plugin import (
 
 
 def test_source_plugin_archive():
-    plugin_path = PLUGIN_DATA / "plugin1" / "plugin1-v1.0.0.zip"
+    plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip"
     buf = plugin_path.read_bytes()
 
     assert is_plugin_archive(buf, "plugin1")
@@ -18,7 +18,7 @@ def test_source_plugin_archive():
 
 
 def test_binary_plugin_archive():
-    plugin_path = PLUGIN_DATA / "zydisinfo" / "zydisinfo-v1.0.0.zip"
+    plugin_path = PLUGINS_DIR / "zydisinfo" / "zydisinfo-v1.0.0.zip"
     buf = plugin_path.read_bytes()
 
     assert is_plugin_archive(buf, "zydisinfo")
