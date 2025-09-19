@@ -10,9 +10,12 @@ import semantic_version
 from pydantic import BaseModel, ConfigDict, field_serializer
 
 from hcli.lib.ida.plugin import (
+    IdaVersion,
     IDAMetadataDescriptor,
+    Platform,
     get_metadatas_with_paths_from_plugin_archive,
     is_ida_version_compatible,
+    parse_ida_version,
     parse_plugin_version,
     split_plugin_version_spec,
     validate_metadata_in_plugin_archive,
@@ -46,13 +49,17 @@ class PluginArchiveLocation(BaseModel):
     sha256: str
     name: str
     version: str
-    ida_versions: str
+    ida_versions: frozenset[str]
     platforms: frozenset[str]
     metadata: IDAMetadataDescriptor
 
     @field_serializer("platforms")
     def serialize_platforms_in_order(self, value: frozenset[str]):
         return sorted(value)
+
+    @field_serializer("ida_versions")
+    def serialize_ida_versions_in_order(self, value: frozenset[str]):
+        return sorted(value, key=parse_ida_version)
 
 
 class Plugin(BaseModel):
@@ -179,9 +186,9 @@ class PluginArchiveIndex:
     """
 
     def __init__(self):
-        # name -> version -> tuple[idaVersion, set[platforms]] -> list[tuple[url, sha256]]
+        # name -> version -> tuple[set[IdaVersion], set[Platform]] -> list[tuple[url, sha256, metadata]]
         self.index: dict[
-            str, dict[str, dict[tuple[str, frozenset[str]], list[tuple[str, str, IDAMetadataDescriptor]]]]
+            str, dict[str, dict[tuple[frozenset[IdaVersion], frozenset[Platform]], list[tuple[str, str, IDAMetadataDescriptor]]]]
         ] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
     def index_plugin_archive(self, buf: bytes, url: str):
@@ -197,7 +204,7 @@ class PluginArchiveIndex:
 
             name = metadata.plugin.name
             version = metadata.plugin.version
-            ida_versions = metadata.plugin.ida_versions or ">=0"
+            ida_versions = frozenset(metadata.plugin.ida_versions)
             platforms = frozenset(metadata.plugin.platforms)
             spec = (ida_versions, platforms)
 

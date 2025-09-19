@@ -3,8 +3,9 @@ import logging
 import pathlib
 import re
 import sys
+import typing
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Literal
 
@@ -31,14 +32,85 @@ PLATFORM_LINUX = "linux-x86_64"
 PLATFORM_MACOS_INTEL = "macos-x86_64"
 PLATFORM_MACOS_ARM = "macos-aarch64"
 
-ALL_PLATFORMS: frozenset[str] = frozenset(
-    {
-        PLATFORM_WINDOWS,
-        PLATFORM_LINUX,
-        PLATFORM_MACOS_INTEL,
-        PLATFORM_MACOS_ARM,
-    }
-)
+Platform = Literal[
+    "windows-x86_64",
+    "linux-x86_64",
+    "macos-x86_64",
+    "macos-aarch64",
+]
+
+ALL_PLATFORMS: frozenset[Platform] = frozenset(typing.get_args(Platform))
+
+IdaVersion = Literal[
+    # next versions, unreleased. names are guesses and not any sort of official announcement.
+    # we should have these available so that older versions of hcli don't complain about new plugin support.
+    "10.0",
+    "9.4",
+    "9.3",
+    # released versions
+    "9.2",  #    2025-09
+    "9.1",  #    2025-02
+    "9.0sp1",  # 2024-12
+    "9.0",  #    2024-09
+    "8.5",  #    2025-02
+    "8.4sp2",  # 2024-05
+    "8.4sp1",  # 2024-03
+    "8.4",  #    2024-02
+    "8.3",  #    2023-06
+    "8.2sp1",  # 2023-01
+    "8.2",  #    2022-12
+    "8.1",  #    2022-10
+    "8.0sp1",  # 2022-08
+    "8.0",  #    2022-07
+    "7.7sp1",  # 2022-01
+    "7.7",  #    2021-12
+    "7.6sp1",
+    "7.6",  #    2021-03
+    "7.5sp3",  # 2020-10
+    "7.5sp2",  # 2020-07
+    "7.5sp1",  # 2020-06
+    "7.5",  #    2020-05
+    "7.4sp1",  # 2019-11
+    "7.4",  #    2019-10
+    "7.3",  #    2019-06
+    "7.2",  #    2018-11
+    "7.1",  #    2018-02
+    "7.0sp1",  # 2017-11
+    "7.0",
+    "6.95",  #   2016-08
+    "6.9",
+    "6.8",
+    "6.7",
+    "6.6",
+    "6.5",
+    "6.4",
+    "6.3",
+    "6.2",
+    "6.1",
+    "6.0",
+    "5.7",
+    "5.6",
+    "5.5",
+    "5.4",
+    "5.3",
+    "5.2",
+    "5.1",
+    "5.0",
+    "4.9sp1",
+    "4.9",
+    "4.8",
+    "4.7",
+    "4.6",
+    "4.5",
+    "4.4",
+    "4.3",
+    "4.2",
+    "4.1",
+    "4.0",
+    "3.0",
+]
+
+ALL_IDA_VERSIONS: frozenset[IdaVersion] = frozenset(typing.get_args(IdaVersion))
 
 
 def parse_plugin_version(version: str) -> semantic_version.Version:
@@ -47,43 +119,20 @@ def parse_plugin_version(version: str) -> semantic_version.Version:
 
 
 def parse_ida_version(version: str) -> semantic_version.Version:
-    if re.match(r"\d\.\d\.\d", version):
-        raise ValueError("invalid version string: three components, like X.Y.Z")
+    normalized_version = version.replace("sp", ".")
+
+    if re.match(r"\d+\.\d+\.\d+", normalized_version):
+        return semantic_version.Version(normalized_version)
 
     # now we're guaranteed to only have one (X) or two (X.Y) component versions
-
-    # negative lookbehind, pattern, negative lookahead
-    normalized_version = re.sub(r"(?<![.sp])(\d+)(?![.])", r"\1.0.0", version)
-    normalized_version = re.sub(r"(?<![.sp])(\d+)\.(\d+)(?![.])", r"\1.\2.0", normalized_version)
-
-    # now we have three component versions, all ending with ".0"
-
-    # map X.Y.0spZ to X.Y.Z
-    # because if we use X.Y.0+spZ, the "+spZ" is not compared,
-    # as its considered "build metadata"
-    normalized_version = re.sub(r"\.0sp(\d+)", r".\1", normalized_version)
+    # X -> X.0.0
+    # X.Y -> X.Y.0
+    if "." not in normalized_version:
+        normalized_version = version + ".0.0"
+    else:
+        normalized_version = version + ".0"
 
     return semantic_version.Version(normalized_version)
-
-
-def parse_ida_version_spec(spec: str) -> semantic_version.SimpleSpec:
-    if re.match(r"\d\.\d\.\d", spec):
-        raise ValueError("invalid spec string: three components, like X.Y.Z")
-
-    # now we're guaranteed to only have one (X) or two (X.Y) component versions
-
-    # negative lookbehind, pattern, negative lookahead
-    normalized_spec = re.sub(r"(?<![.sp])(\d+)(?![.])", r"\1.0.0", spec)
-    normalized_spec = re.sub(r"(?<![.sp])(\d+)\.(\d+)(?![.])", r"\1.\2.0", normalized_spec)
-
-    # now we have three component versions, all ending with ".0"
-
-    # map X.Y.0spZ to X.Y.Z
-    # because if we use X.Y.0+spZ, the "+spZ" is not compared,
-    # as its considered "build metadata"
-    normalized_spec = re.sub(r"\.0sp(\d+)", r".\1", normalized_spec)
-
-    return semantic_version.SimpleSpec(normalized_spec)
 
 
 def split_plugin_version_spec(version_spec: str) -> tuple[str, str]:
@@ -221,12 +270,14 @@ class PluginMetadata(BaseModel):
     maintainers: list[Contact] = Field(default_factory=list)
 
     # Declare which versions of IDA your plugin supports.
-    # You can specify a single version (e.g., 9.0) or a version range (e.g., >=9.0)
-    #  using the semantic versioning scheme.
-    ida_versions: str | None = Field(alias="idaVersions", default=">=0")
-    platforms: list[
-        Literal["windows-x86_64"] | Literal["linux-x86_64"] | Literal["macos-aarch64"] | Literal["macos-x86_64"]
-    ] = Field(default_factory=lambda: list(sorted(ALL_PLATFORMS)))
+    # You must declare each version separately, because IDA's APIs don't clearly follow semantic versioning.
+    # The default is all versions, but this is almost certainly incorrect!
+    ida_versions: list[IdaVersion] = Field(default_factory=lambda: list(sorted(ALL_IDA_VERSIONS)))
+
+    # Declare which platforms your plugin supports.
+    # The default is all versions, which is likely for cross-platform Python plugins.
+    # Native plugins should declare the platform consistent with the .dll/.so/.dylib file in the archive.
+    platforms: list[Platform] = Field(default_factory=lambda: list(sorted(ALL_PLATFORMS)))
 
     # Include an image to visually represent your plugin on its page at plugins.hex-rays.com.
     # This should be a relative path to an image file within your plugin’s repository.
@@ -258,15 +309,6 @@ class PluginMetadata(BaseModel):
     def is_ok_version(cls, value: str) -> str:
         try:
             _ = parse_plugin_version(value)
-        except Exception as e:
-            raise ValueError("failed to parse version") from e
-        return value
-
-    @field_validator("ida_versions", mode="after")
-    @classmethod
-    def is_ok_ida_version(cls, value: str) -> str:
-        try:
-            _ = parse_ida_version_spec(value)
         except Exception as e:
             raise ValueError("failed to parse version") from e
         return value
@@ -493,23 +535,9 @@ def does_plugin_path_exist_in_plugin_archive(zip_data: bytes, plugin_name: str, 
     return does_path_exist_in_zip_archive(zip_data, candidate_path.as_posix())
 
 
-def is_ida_version_compatible(current_version: str, version_spec: str) -> bool:
-    """Check if current IDA version is compatible with the version specifier.
-
-    Note that all IDA versions are expected to have at most two components,
-    like "9" or "9.1". Service packs are also supported: "9.1sp".
-    Three components are NOT supported: "9.1.0"
-
-    Args:
-        current_version: Current IDA version (e.g., "9.1")
-        version_spec: Version specifier (e.g., ">=8.0", "~=9.0", ">=0")
-
-    Returns:
-        True if current version satisfies the specifier
-    """
-    cur = parse_ida_version(current_version)
-    spec = parse_ida_version_spec(version_spec)
-    return cur in spec
+def is_ida_version_compatible(current_version: str, compatible_versions: Iterable[str]) -> bool:
+    """Check if current IDA version is compatible with the given versions."""
+    return current_version in compatible_versions
 
 
 # expect paths to be:
