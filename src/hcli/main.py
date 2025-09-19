@@ -1,6 +1,28 @@
 from __future__ import annotations
 
 import logging
+import os
+import platform
+
+# Configure Windows console for better Unicode support
+if platform.system() == "Windows":
+    # Set environment variables to force UTF-8 encoding on Windows
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    # Force UTF-8 mode if available
+    os.environ.setdefault("PYTHONUTF8", "1")
+    # Enable UTF-8 mode for Windows console (Python 3.7+)
+    if hasattr(os, 'set_inheritable'):
+        try:
+            import io
+            import sys
+            # Try to reconfigure stdout/stderr for UTF-8 if they use charmap
+            if hasattr(sys.stdout, 'encoding') and 'charmap' in sys.stdout.encoding.lower():
+                sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+            if hasattr(sys.stderr, 'encoding') and 'charmap' in sys.stderr.encoding.lower():
+                sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+        except (AttributeError, OSError):
+            # Fallback for older Python versions or restricted environments
+            pass
 
 import rich_click as click
 from rich.logging import RichHandler
@@ -54,12 +76,21 @@ class MainGroup(click.RichGroup):
             elif isinstance(e, KeyboardInterrupt):
                 console.print("\n[yellow]Operation cancelled by user[/yellow]")
             else:
-                console.print(f"[red]Unexpected error: {e}[/red]")
-                # Optionally include debug info in debug mode
-                if ENV.HCLI_DEBUG:
-                    import traceback
+                try:
+                    console.print(f"[red]Unexpected error: {e}[/red]")
+                    # Optionally include debug info in debug mode
+                    if ENV.HCLI_DEBUG:
+                        import traceback
 
-                    console.print(f"[dim]{traceback.format_exc()}[/dim]")
+                        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+                except UnicodeEncodeError:
+                    # Fallback for encoding issues on Windows
+                    import sys
+                    error_msg = str(e).encode('ascii', 'replace').decode('ascii')
+                    sys.stderr.write(f"Unexpected error: {error_msg}\n")
+                    if ENV.HCLI_DEBUG:
+                        import traceback
+                        traceback.print_exc()
 
             raise click.Abort()
 
