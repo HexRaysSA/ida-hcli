@@ -207,3 +207,5 @@ jobs:
           HCLI_INSTALL_DIR: ${{ runner.temp }}/app/ida/
           HCLI_HAS_IDAT: ${{ matrix.os_ida.idat_path != '' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "UTF-8"
