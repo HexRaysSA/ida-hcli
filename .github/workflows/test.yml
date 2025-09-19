@@ -210,3 +210,4 @@ jobs:
           PYTHONUTF8: "1"
           PYTHONIOENCODING: "UTF-8"
           HCLI_DISABLE_UPDATES: "1"
+          HCLI_DEBUG: "1"
