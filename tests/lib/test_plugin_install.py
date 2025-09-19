@@ -249,7 +249,6 @@ def test_plugin_all(virtual_ida_environment_with_venv):
 
     with temp_env_var("TERM", "dumb"):
         with temp_env_var("COLUMNS", "240"):
-
             p = run_hcli("--help")
             assert "Usage: python -m hcli.main [OPTIONS] COMMAND [ARGS]..." in p.stdout
 
