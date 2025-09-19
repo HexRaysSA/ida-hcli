@@ -146,7 +146,10 @@ class GitHubGraphQLClient:
             raise Exception(f"HTTP {e.code}: {error_body}")
 
     def get_many_releases(self, repos: list[tuple[str, str]], count: int = 10) -> dict[tuple[str, str], GitHubReleases]:
-        """Fetch releases for multiple repositories in a single query"""
+        """Fetch releases for multiple repositories in a single query
+
+        Returns: mapping from (owner, repo) -> GitHubReleases
+        """
         if not repos:
             return {}
 
@@ -494,13 +497,17 @@ class GithubPluginRepo(BasePluginRepo):
         assets = []
         source_archives = []
 
-        for owner, repo in rich.progress.track(
-            sorted(repos), description="Fetching plugins", transient=True, console=stderr_console
-        ):
+        # first collect all the URLs
+        # then fetch them in a second loop
+        # so that we can have a meaningful progress bar.
+
+        for owner, repo in sorted(repos):
             md = get_releases_metadata(self.client, owner, repo)
+            seen_zipball_urls = set()
             for release in md.releases:
                 # source archives
                 source_archives.append((owner, repo, release.commit_hash, release.zipball_url))
+                seen_zipball_urls.add(release.zipball_url)
 
                 # assets (distribution/binary archives)
                 for asset in release.assets:
@@ -513,11 +520,14 @@ class GithubPluginRepo(BasePluginRepo):
                 if not tag.tag_name.startswith("v"):
                     continue
                 logger.debug("found tag: %s/%s %s", owner, repo, tag.tag_name)
-                source_archives.append((owner, repo, tag.commit_hash, tag.zipball_url))
+
+                if tag.zipball_url in seen_zipball_urls:
+                    logger.debug("already found this URL")
+                else:
+                    source_archives.append((owner, repo, tag.commit_hash, tag.zipball_url))
+                    seen_zipball_urls.add(tag.zipball_url)
 
         index = PluginArchiveIndex()
-
-        # TODO: disallow different repos from providing the same plugin name
 
         for owner, repo, tag_name, asset in rich.progress.track(
             assets, description="Fetching plugin assests", transient=True, console=stderr_console
@@ -527,7 +537,8 @@ class GithubPluginRepo(BasePluginRepo):
             except ValueError:
                 continue
 
-            index.index_plugin_archive(buf, asset.download_url)
+            host_url = f"https://github.com/{owner}/{repo}"
+            index.index_plugin_archive(buf, asset.download_url, expected_host=host_url)
 
         for owner, repo, commit_hash, url in rich.progress.track(
             source_archives, description="Fetching plugin source archives", transient=True, console=stderr_console
@@ -537,6 +548,7 @@ class GithubPluginRepo(BasePluginRepo):
             except ValueError:
                 continue
 
-            index.index_plugin_archive(buf, url)
+            host_url = f"https://github.com/{owner}/{repo}"
+            index.index_plugin_archive(buf, url, expected_host=host_url)
 
         return index.get_plugins()

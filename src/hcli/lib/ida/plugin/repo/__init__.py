@@ -10,8 +10,8 @@ import semantic_version
 from pydantic import BaseModel, ConfigDict, field_serializer
 
 from hcli.lib.ida.plugin import (
-    IdaVersion,
     IDAMetadataDescriptor,
+    IdaVersion,
     Platform,
     get_metadatas_with_paths_from_plugin_archive,
     is_ida_version_compatible,
@@ -48,6 +48,7 @@ class PluginArchiveLocation(BaseModel):
     url: str
     sha256: str
     name: str
+    host: str
     version: str
     ida_versions: frozenset[str]
     platforms: frozenset[str]
@@ -66,6 +67,7 @@ class Plugin(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
 
     name: str
+    host: str  # repo URL (or other canonical URL in the future, when supported.)
     # version -> list[PluginVersion]
     versions: dict[str, list[PluginArchiveLocation]]
 
@@ -114,23 +116,40 @@ def get_latest_compatible_plugin_metadata(
     raise ValueError("no versions of plugin are compatible")
 
 
+def get_plugin_by_name(plugins: list[Plugin], name: str, host: str | None = None) -> Plugin:
+    if host:
+        plugins = [
+            plugin for plugin in plugins if plugin.name.lower() == name.lower() and plugin.host.lower() == host.lower()
+        ]
+    else:
+        plugins = [plugin for plugin in plugins if plugin.name.lower() == name.lower()]
+
+    if not plugins:
+        raise ValueError(f"plugin not found: {name}")
+
+    if len(plugins) > 1:
+        logger.debug("found plugin:")
+        for plugin in plugins:
+            logger.debug("  - %s (%s)", plugin.name, plugin.host)
+        raise RuntimeError("too many plugins found")
+
+    return plugins[0]
+
+
 class BasePluginRepo(ABC):
     @abstractmethod
     def get_plugins(self) -> list[Plugin]: ...
 
+    def get_plugin_by_name(self, name: str, host: str | None = None) -> Plugin:
+        return get_plugin_by_name(self.get_plugins(), name, host=host)
+
     def find_compatible_plugin_from_spec(
-        self, plugin_spec: str, current_platform: str, current_version: str
+        self, plugin_spec: str, current_platform: str, current_version: str, host: str | None = None
     ) -> PluginArchiveLocation:
         plugin_name, _ = split_plugin_version_spec(plugin_spec)
         wanted_spec = semantic_version.SimpleSpec(plugin_spec[len(plugin_name) :] or ">=0")
 
-        plugins = [plugin for plugin in self.get_plugins() if plugin.name == plugin_name]
-        if not plugins:
-            raise ValueError(f"plugin not found: {plugin_name}")
-        if len(plugins) > 1:
-            raise RuntimeError("too many plugins found")
-
-        plugin: Plugin = plugins[0]
+        plugin = self.get_plugin_by_name(plugin_name, host=host)
 
         versions = reversed(sorted(plugin.versions.keys(), key=parse_plugin_version))
         for version in versions:
@@ -178,7 +197,7 @@ class BasePluginRepo(ABC):
 class PluginArchiveIndex:
     """index a collection of plugin archive URLs by name/version/idaVersion/platform.
 
-    Plugins are uniquely identified by the name.
+    Plugins are uniquely identified by the name and host (repo URL today, xor other canonical URL in the future).
     There may be multiple versions of a plugin.
     Each version may have multiple distribution archives due to:
       - different IDA versions (compiled against SDK for 7.4 versus 9.2)
@@ -186,12 +205,20 @@ class PluginArchiveIndex:
     """
 
     def __init__(self):
-        # name -> version -> tuple[set[IdaVersion], set[Platform]] -> list[tuple[url, sha256, metadata]]
+        # tuple[name, host] -> version -> tuple[set[IdaVersion], set[Platform]] -> list[tuple[url, sha256, metadata]]
         self.index: dict[
-            str, dict[str, dict[tuple[frozenset[IdaVersion], frozenset[Platform]], list[tuple[str, str, IDAMetadataDescriptor]]]]
+            tuple[str, str],
+            dict[
+                str,
+                dict[tuple[frozenset[IdaVersion], frozenset[Platform]], list[tuple[str, str, IDAMetadataDescriptor]]],
+            ],
         ] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
-    def index_plugin_archive(self, buf: bytes, url: str):
+    def index_plugin_archive(self, buf: bytes, url: str, expected_host: str | None = None):
+        """Parse the given plugin archive and index the encountered plugins.
+
+        Optionally filter out plugins whose host does not match the expected host.
+        """
         for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
             try:
                 validate_metadata_in_plugin_archive(buf, metadata)
@@ -203,22 +230,28 @@ class PluginArchiveIndex:
             sha256 = h.hexdigest()
 
             name = metadata.plugin.name
+            host = metadata.plugin.host
             version = metadata.plugin.version
             ida_versions = frozenset(metadata.plugin.ida_versions)
             platforms = frozenset(metadata.plugin.platforms)
             spec = (ida_versions, platforms)
 
-            versions = self.index[name]
-            specs = versions[version]
-            specs[spec].append((url, sha256, metadata))
             logger.debug(
-                "found plugin: %s %s IDA:%s %s %s",
+                "found plugin: %s==%s, %d versions, for: %s, at: %s",
                 name,
                 version,
-                ida_versions,
+                len(ida_versions),
                 platforms,
                 url,
             )
+
+            if expected_host and expected_host != host:
+                logger.debug("%s: host mismatch: %s versus expected %s", name, host, expected_host)
+                continue
+
+            versions = self.index[(name, host)]
+            specs = versions[version]
+            specs[spec].append((url, sha256, metadata))
 
     def get_plugins(self) -> list[Plugin]:
         """
@@ -228,7 +261,8 @@ class PluginArchiveIndex:
         ret = []
 
         # sort alphabetically by name
-        for name, versions in sorted(self.index.items(), key=lambda p: p[0]):
+        for id_, versions in sorted(self.index.items(), key=lambda p: p[0]):
+            name, host = id_
             locations_by_version = defaultdict(list)
 
             # sort by version
@@ -243,6 +277,7 @@ class PluginArchiveIndex:
                             url=url,
                             sha256=sha256,
                             name=name,
+                            host=host,
                             version=version,
                             ida_versions=ida_versions,
                             platforms=platforms,
@@ -250,7 +285,7 @@ class PluginArchiveIndex:
                         )
                         locations_by_version[version].append(location)
 
-            plugin = Plugin(name=name, versions=locations_by_version)
+            plugin = Plugin(name=name, host=host, versions=locations_by_version)
             ret.append(plugin)
 
         return ret
