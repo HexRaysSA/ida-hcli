@@ -86,6 +86,7 @@ class GitHubTag(BaseModel):
     tag_name: str
     commit_hash: str
     zipball_url: str
+    committed_date: str
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "GitHubTag":
@@ -97,6 +98,7 @@ class GitHubTag(BaseModel):
             tag_name=data["name"],
             commit_hash=target["oid"],
             zipball_url=target["zipballUrl"],
+            committed_date=target["committedDate"],
         )
 
 
@@ -195,12 +197,14 @@ class GitHubGraphQLClient:
                                     ... on Commit {{
                                         zipballUrl
                                         oid
+                                        committedDate
                                     }}
                                     ... on Tag {{
                                         target {{
                                             ... on Commit {{
                                                 zipballUrl
                                                 oid
+                                                committedDate
                                             }}
                                         }}
                                     }}
@@ -215,12 +219,14 @@ class GitHubGraphQLClient:
                                 ... on Commit {{
                                     zipballUrl
                                     oid
+                                    committedDate
                                 }}
                                 ... on Tag {{
                                     target {{
                                         ... on Commit {{
                                             zipballUrl
                                             oid
+                                            committedDate
                                         }}
                                     }}
                                 }}
@@ -549,6 +555,12 @@ class GithubPluginRepo(BasePluginRepo):
             md = get_releases_metadata(self.client, owner, repo)
             seen_zipball_urls = set()
             for release in md.releases:
+                if release.published_at < "2025-09-01":
+                    logger.debug(
+                        "skipping old release: %s/%s %s on %s", owner, repo, release.tag_name, release.published_at
+                    )
+                    continue
+
                 # source archives
                 source_archives.append((owner, repo, release.commit_hash, release.zipball_url))
                 seen_zipball_urls.add(release.zipball_url)
@@ -563,10 +575,15 @@ class GithubPluginRepo(BasePluginRepo):
             for tag in md.tags:
                 if not tag.tag_name.startswith("v"):
                     continue
+
+                if tag.committed_date < "2025-09-01":
+                    logger.debug("skipping old tag: %s/%s %s on %s", owner, repo, tag.tag_name, tag.committed_date)
+                    continue
+
                 logger.debug("found tag: %s/%s %s", owner, repo, tag.tag_name)
 
                 if tag.zipball_url in seen_zipball_urls:
-                    logger.debug("already found this URL")
+                    logger.debug("already found URL for tag: %s/%s %s: %s", owner, repo, tag.tag_name, tag.zipball_url)
                 else:
                     source_archives.append((owner, repo, tag.commit_hash, tag.zipball_url))
                     seen_zipball_urls.add(tag.zipball_url)
