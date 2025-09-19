@@ -27,12 +27,14 @@ def test_binary_plugin_archive():
 
 
 def test_is_ida_version_compatible():
-    assert is_ida_version_compatible("9.0", ">=0")
-    assert is_ida_version_compatible("9.0", ">=9")
-    assert is_ida_version_compatible("9.1", ">=9")
-    assert is_ida_version_compatible("9.0sp1", ">=9")
-    assert is_ida_version_compatible("9.0", ">=9.0")
-    assert is_ida_version_compatible("9.0", ">=9.0.0")
-    assert is_ida_version_compatible("9.0", ">=9.0,<9.1")
-    assert is_ida_version_compatible("9.0sp1", ">=9.0,<9.1")
-    assert is_ida_version_compatible("9.0sp1", ">=9.0,<9.1,!=9.0")
+    # Test exact version matches
+    assert is_ida_version_compatible("9.0", ["9.0"])
+    assert is_ida_version_compatible("9.0", ["9.0", "9.1"])
+    assert is_ida_version_compatible("9.1", ["9.0", "9.1", "9.2"])
+    assert is_ida_version_compatible("9.0sp1", ["9.0sp1"])
+    assert is_ida_version_compatible("9.0sp1", ["9.0", "9.0sp1", "9.1"])
+
+    # Test version not in list
+    assert not is_ida_version_compatible("9.2", ["9.0", "9.1"])
+    assert not is_ida_version_compatible("8.5", ["9.0", "9.1"])
+    assert not is_ida_version_compatible("9.0sp1", ["9.0", "9.1"])  # sp1 not in list

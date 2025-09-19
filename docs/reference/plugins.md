@@ -103,7 +103,7 @@ A typical `ida-plugin.json` file might look like this:
     "name": "oplog",
     "entryPoint": "oplog_entry.py",
     "version": "0.1.2",
-    "idaVersions": ">=9.1",
+    "idaVersions": ["9.1", "9.2"],
     "description": "oplog is an IDA Pro plugin that records operations during analysis.",
     "license": "Apache 2.0",
     "categories": [
@@ -181,7 +181,7 @@ With `ida-plugin.json`:
     "name": "plugin1",
     "entryPoint": "entry_stub.py",
     "version": "1.0",
-    "idaVersions": ">=9.0",
+    "idaVersions": ["9.0", "9.1", "9.2"],
     "pythonDependencies": ["ida-plugin1==1.0"],
     "urls": {
       "repository": "https://github.com/foo/bar"
