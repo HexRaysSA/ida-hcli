@@ -38,8 +38,8 @@ def get_plugin_status(ctx) -> None:
             status = ""
             try:
                 location = plugin_repo.find_compatible_plugin_from_spec(name, current_platform, current_ida_version)
-                if parse_plugin_version(location.version) > parse_plugin_version(version):
-                    status = f"upgradable to [yellow]{location.version}[/yellow]"
+                if parse_plugin_version(location.metadata.plugin.version) > parse_plugin_version(version):
+                    status = f"upgradable to [yellow]{location.metadata.plugin.version}[/yellow]"
             except (ValueError, KeyError):
                 status = "[yellow]not found in repository[/yellow]"
 

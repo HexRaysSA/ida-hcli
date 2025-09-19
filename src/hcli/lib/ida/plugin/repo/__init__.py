@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 import requests
 import semantic_version
-from pydantic import BaseModel, ConfigDict, field_serializer
+from pydantic import BaseModel, ConfigDict
 
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
@@ -15,7 +15,6 @@ from hcli.lib.ida.plugin import (
     Platform,
     get_metadatas_with_paths_from_plugin_archive,
     is_ida_version_compatible,
-    parse_ida_version,
     parse_plugin_version,
     split_plugin_version_spec,
     validate_metadata_in_plugin_archive,
@@ -47,20 +46,7 @@ class PluginArchiveLocation(BaseModel):
 
     url: str
     sha256: str
-    name: str
-    host: str
-    version: str
-    ida_versions: frozenset[str]
-    platforms: frozenset[str]
     metadata: IDAMetadataDescriptor
-
-    @field_serializer("platforms")
-    def serialize_platforms_in_order(self, value: frozenset[str]):
-        return sorted(value)
-
-    @field_serializer("ida_versions")
-    def serialize_ida_versions_in_order(self, value: frozenset[str]):
-        return sorted(value, key=parse_ida_version)
 
 
 class Plugin(BaseModel):
@@ -75,10 +61,10 @@ class Plugin(BaseModel):
 def is_compatible_plugin_version_location(
     plugin: Plugin, version: str, location: PluginArchiveLocation, current_platform: str, current_version: str
 ) -> bool:
-    if not is_ida_version_compatible(current_version, location.ida_versions):
+    if not is_ida_version_compatible(current_version, location.metadata.plugin.ida_versions):
         return False
 
-    if current_platform not in location.platforms:
+    if current_platform not in location.metadata.plugin.platforms:
         return False
 
     return True
@@ -125,13 +111,17 @@ def get_plugin_by_name(plugins: list[Plugin], name: str, host: str | None = None
         plugins = [plugin for plugin in plugins if plugin.name.lower() == name.lower()]
 
     if not plugins:
-        raise ValueError(f"plugin not found: {name}")
+        raise KeyError(f"plugin not found: {name}")
 
     if len(plugins) > 1:
         logger.debug("found plugin:")
         for plugin in plugins:
             logger.debug("  - %s (%s)", plugin.name, plugin.host)
-        raise RuntimeError("too many plugins found")
+
+        # this needs to be implemented.
+        # callers should handle this nicely and then provide host.
+        # but nobody does this today.
+        raise NotImplementedError(f"colliding plugin name: {name}")
 
     return plugins[0]
 
@@ -160,19 +150,19 @@ class BasePluginRepo(ABC):
 
             logger.debug("found matching version: %s", version)
             for i, location in enumerate(plugin.versions[version]):
-                if current_platform not in location.platforms:
+                if current_platform not in location.metadata.plugin.platforms:
                     logger.debug(
                         "skipping location %d: unsupported platforms: %s",
                         i,
-                        location.platforms,
+                        location.metadata.plugin.platforms,
                     )
                     continue
 
-                if not is_ida_version_compatible(current_version, location.ida_versions):
+                if not is_ida_version_compatible(current_version, location.metadata.plugin.ida_versions):
                     logger.debug(
                         "skipping location %d: unsupported IDA versions: %s",
                         i,
-                        location.ida_versions,
+                        location.metadata.plugin.ida_versions,
                     )
                     continue
 
