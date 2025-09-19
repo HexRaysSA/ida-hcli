@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -404,6 +404,7 @@ test = [
 [package.dev-dependencies]
 dev = [
     { name = "types-pexpect" },
+    { name = "types-pyyaml" },
     { name = "types-requests" },
 ]
 
@@ -444,6 +445,7 @@ provides-extras = ["dev", "test", "docs"]
 [package.metadata.requires-dev]
 dev = [
     { name = "types-pexpect", specifier = ">=4.9.0.20250809" },
+    { name = "types-pyyaml", specifier = ">=6.0.12.20250915" },
     { name = "types-requests", specifier = ">=2.32.4.20250809" },
 ]
 
@@ -1391,6 +1393,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7f/a2/29564e69dee62f0f887ba7bfffa82fa4975504952e6199b218d3b403becd/types_pexpect-4.9.0.20250809.tar.gz", hash = "sha256:17a53c785b847c90d0be9149b00b0254e6e92c21cd856e853dac810ddb20101f", size = 13240, upload-time = "2025-08-09T03:15:04.554Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cc/1b/4d557287e6672feb749cf0d8ef5eb19189aff043e73e509e3775febc1cf1/types_pexpect-4.9.0.20250809-py3-none-any.whl", hash = "sha256:d19d206b8a7c282dac9376f26f072e036d22e9cf3e7d8eba3f477500b1f39101", size = 17039, upload-time = "2025-08-09T03:15:03.528Z" },
+]
+
+[[package]]
+name = "types-pyyaml"
+version = "6.0.12.20250915"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/69/3c51b36d04da19b92f9e815be12753125bd8bc247ba0470a982e6979e71c/types_pyyaml-6.0.12.20250915.tar.gz", hash = "sha256:0f8b54a528c303f0e6f7165687dd33fafa81c807fcac23f632b63aa624ced1d3", size = 17522, upload-time = "2025-09-15T03:01:00.728Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bd/e0/1eed384f02555dde685fff1a1ac805c1c7dcb6dd019c916fe659b1c1f9ec/types_pyyaml-6.0.12.20250915-py3-none-any.whl", hash = "sha256:e7d4d9e064e89a3b3cae120b4990cd370874d2bf12fa5f46c97018dd5d3c9ab6", size = 20338, upload-time = "2025-09-15T03:00:59.218Z" },
 ]
 
 [[package]]

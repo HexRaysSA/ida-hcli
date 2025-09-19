@@ -44,4 +44,4 @@ jobs:
 
       - name: Lint with mypy
         run: |
-          uvx mypy --check-untyped-defs --ignore-missing-imports src/ tests/ --exclude tests/data/
+          uvx mypy --check-untyped-defs  --disable-error-code=import-untyped --disable-error-code=import-not-found src/ tests/ --exclude tests/data/
