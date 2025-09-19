@@ -209,3 +209,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: "UTF-8"
+          HCLI_DISABLE_UPDATES: "1"
