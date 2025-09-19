@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import logging
 
-import rich.markdown
-import rich.syntax
 import rich.table
 import rich_click as click
 import yaml
@@ -13,6 +12,8 @@ import yaml
 from hcli.lib.console import console
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
 from hcli.lib.ida.plugin import (
+    IdaVersion,
+    parse_ida_version,
     parse_plugin_version,
     split_plugin_version_spec,
 )
@@ -154,6 +155,16 @@ def handle_plugin_name_query(plugins: list[Plugin], query: str, current_version:
     console.print(table)
 
 
+def render_ida_versions(versions: Sequence[IdaVersion]) -> str:
+    ordered_versions = sorted(versions, key=parse_ida_version)
+
+    if len(ordered_versions) == 1:
+        return ordered_versions[0]
+
+    # assume there are no holes. we could make this more complete if required.
+    return f"{ordered_versions[0]}-{ordered_versions[-1]}"
+
+
 def handle_plugin_spec_query(plugins: list[Plugin], query: str, current_version: str, current_platform: str):
     name, version = split_plugin_version_spec(query)
     if not version:
@@ -177,7 +188,7 @@ def handle_plugin_spec_query(plugins: list[Plugin], query: str, current_version:
 
     for location in locations:
         table.add_row(
-            location.metadata.plugin.ida_versions,
+            render_ida_versions(location.metadata.plugin.ida_versions),
             ", ".join(sorted(location.metadata.plugin.platforms)),
             location.url,
         )

@@ -11,7 +11,7 @@ from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command, enforce_login
 from hcli.lib.console import console
 from hcli.lib.ida import (
-    IdaVersion,
+    IdaProduct,
     accept_eula,
     get_default_ida_install_directory,
     get_ida_config_path,
@@ -66,7 +66,7 @@ async def install(
         else:
             installer_path = Path(installer)
 
-        version = IdaVersion.from_installer_filename(installer_path.name)
+        version = IdaProduct.from_installer_filename(installer_path.name)
 
         if not install_dir:
             install_dir_path = get_default_ida_install_directory(version)

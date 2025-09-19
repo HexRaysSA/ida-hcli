@@ -10,7 +10,7 @@ from rich.console import Console
 
 from hcli.lib.commands import async_command
 from hcli.lib.config import config_store
-from hcli.lib.ida import IdaVersion, get_default_ida_install_directory, get_ida_binary_path
+from hcli.lib.ida import IdaProduct, get_default_ida_install_directory, get_ida_binary_path
 
 console = Console()
 
@@ -83,7 +83,7 @@ async def open_url(url: str | None) -> None:
     # Fallback to standard discovery
     if not ida_bin:
         try:
-            ida_dir = get_default_ida_install_directory(IdaVersion("IDA Professional", 9, 2))
+            ida_dir = get_default_ida_install_directory(IdaProduct("IDA Professional", 9, 2))
             ida_bin = get_ida_binary_path(ida_dir)
         except Exception as e:
             console.print(f"[red]IDA Pro not found: {e}[/red]")

@@ -36,7 +36,7 @@ class DownloadResource(NamedTuple):
 
 @dataclass
 @total_ordering
-class IdaVersion:
+class IdaProduct:
     product: str
     major: int
     minor: int
@@ -88,7 +88,7 @@ class IdaVersion:
         return f"{base}{self.suffix}" if self.suffix else base
 
     def __lt__(self, other):
-        if not isinstance(other, IdaVersion):
+        if not isinstance(other, IdaProduct):
             return NotImplemented
         return (self.product, self.major, self.minor, self.suffix or "") < (
             other.product,
@@ -159,7 +159,7 @@ def get_user_home_dir() -> Path:
         raise ValueError(f"Unsupported operating system: {os}")
 
 
-def get_default_ida_install_directory(ver: IdaVersion) -> Path:
+def get_default_ida_install_directory(ver: IdaProduct) -> Path:
     """Get the default installation directory for IDA Pro."""
 
     # like "IDA Professional 9.1sp1"

@@ -12,7 +12,6 @@ from hcli.lib.console import console
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
     get_metadatas_with_paths_from_plugin_archive,
-    parse_ida_version_spec,
     parse_plugin_version,
     validate_metadata_in_plugin_archive,
 )
@@ -26,20 +25,9 @@ def _validate_and_lint_metadata(metadata: IDAMetadataDescriptor, source_name: st
     if not parse_plugin_version(metadata.plugin.version):
         console.print(f"[red]Error[/red] ({source_name}): plugin version should look like 'X.Y.Z'")
 
-    if metadata.plugin.ida_versions and not parse_ida_version_spec(metadata.plugin.ida_versions):
-        console.print(f"[red]Error[/red] ({source_name}): idaVersion should look like 'X.YspZ'")
-
-    # Schema recommendation
-    if not metadata.schema_:
-        console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide $schema")
-        console.print(
-            "  like: https://raw.githubusercontent.com/HexRaysSA/ida-hcli/refs/heads/v0.9.0/docs/reference/ida-plugin.schema.json"
-        )
-
-    # Core metadata recommendations
     if not metadata.plugin.ida_versions:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.idaVersions")
-        console.print("  Specify which IDA versions your plugin supports (e.g., '>=9.0')")
+        console.print("  Specify which IDA versions your plugin supports (e.g., ['9.0', '9.1'])")
 
     if not metadata.plugin.description:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.description")
@@ -53,7 +41,6 @@ def _validate_and_lint_metadata(metadata: IDAMetadataDescriptor, source_name: st
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.logoPath")
         console.print("  A logo image (16:9 aspect ratio) makes your plugin more visually appealing")
 
-    # Additional optional field recommendations
     if not metadata.plugin.keywords:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.keywords")
         console.print("  Keywords improve search discoverability in the plugin repository")
@@ -81,11 +68,6 @@ def _validate_and_lint_metadata(metadata: IDAMetadataDescriptor, source_name: st
                     f"[yellow]Recommendation[/yellow] ({source_name}): plugin.maintainers[{i}]: provide both name and email"
                 )
                 console.print("  Complete contact information improves user trust and communication")
-
-    # URLs recommendations
-    if not metadata.plugin.urls.homepage:
-        console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.urls.homepage")
-        console.print("  A dedicated homepage URL (if different from repository) provides more project information")
 
 
 def _lint_plugin_directory(plugin_path: Path) -> None:

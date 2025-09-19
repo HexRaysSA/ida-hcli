@@ -4,7 +4,7 @@
     "plugin": {
         "name": "zydisinfo",
         "entryPoint": "zydisinfo",
-        "idaVersions": ">=9.0",
+        "idaVersions": ["9.0", "9.1", "9.2"],
         "version": "1.0.0",
         "urls": {
             "repository": "https://github.com/HexRaysSA/ida-hcli"
