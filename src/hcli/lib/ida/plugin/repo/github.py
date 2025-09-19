@@ -3,6 +3,7 @@ import json
 import logging
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -404,43 +405,7 @@ def get_source_archive_cache(owner: str, repo: str, commit_hash: str) -> bytes:
     return archive_path.read_bytes()
 
 
-class HeadRequest(urllib.request.Request):
-    def get_method(self) -> str:
-        return "HEAD"
-
-
-def fetch_http_resource_size(url: str) -> int:
-    # Try Content-Length header first with HEAD request
-    try:
-        req = HeadRequest(url)
-        with urllib.request.urlopen(req) as response:
-            content_length = response.headers.get("Content-Length")
-            if content_length:
-                return int(content_length)
-    except Exception as e:
-        logging.debug(f"HEAD request failed for {url}: {e}")
-
-    # If HEAD fails, try Range request
-    try:
-        range_req = urllib.request.Request(url)
-        range_req.add_header("Range", "bytes=0-0")
-        with urllib.request.urlopen(range_req) as response:
-            content_range = response.headers.get("Content-Range")
-            if content_range:
-                return int(content_range.split("/")[-1])
-    except Exception as e:
-        logging.debug(f"Range request failed for {url}: {e}")
-
-    # If both fail, return 0 to indicate unknown size
-    logging.debug(f"Could not determine size for {url}")
-    return 0
-
-
 def download_source_archive(zip_url: str) -> bytes:
-    size = fetch_http_resource_size(zip_url)
-    if size > 0 and size > MAX_DOWNLOAD_SIZE:
-        raise ValueError(f"Source archive too large ({size}) - exceeds {MAX_DOWNLOAD_SIZE} limit")
-
     logging.info(f"Downloading source archive from {zip_url}")
     req = urllib.request.Request(zip_url)
     with urllib.request.urlopen(req) as response:
@@ -468,15 +433,87 @@ def get_release_metadata(client: GitHubGraphQLClient, owner: str, repo: str, rel
     raise KeyError(f"Release {release_id} not found for {owner}/{repo}")
 
 
-INITIAL_REPOSITORIES = [
-    "ida-community-plugins/zydisinfo",
-    "ida-community-plugins/hcli-ipyida",
-    "ida-community-plugins/vt-ida-plugin",
-    "williballenthin/idawilli",
-    "HexRaysSA/ida-terminal-plugin",
-    "HexRaysSA/yarka",
-    "azzonfire/yarka",
-]
+def get_candidate_github_repos_cache_path() -> Path:
+    return get_cache_directory() / "candidate_repos.json"
+
+
+def set_candidate_github_repos_cache(repos: list[str]) -> None:
+    cache_path = get_candidate_github_repos_cache_path()
+    cache_path.write_text(json.dumps(repos, indent=2, sort_keys=True))
+    logging.debug(f"Saved candidate repos cache to: {cache_path}")
+
+
+def get_candidate_github_repos_cache() -> list[str]:
+    cache_path = get_candidate_github_repos_cache_path()
+    if not cache_path.exists():
+        raise KeyError("No candidate repos cache found")
+
+    file_age = time.time() - cache_path.stat().st_mtime
+
+    # release metadata cache expires after 24 hours
+    # based on file modification time
+    if file_age > 24 * 60 * 60:  # 24 hours
+        logging.info("Cache expired for candidate repos, removing file")
+        cache_path.unlink()
+        raise KeyError("Expired candidate repos cache")
+
+    return json.loads(cache_path.read_text())
+
+
+def find_github_repos_with_plugins(token: str) -> list[str]:
+    """Find GitHub repositories that contain ida-plugin.json files using GitHub's search API.
+
+    Returns:
+        List of repositories in "owner/repo" format
+    """
+
+    # Note: Forks with fewer stars than the parent repository or no commits are not indexed for code search.
+    # via: https://docs.github.com/en/search-github/searching-on-github/searching-code
+    queries = [
+        "filename:ida-plugin.json",
+        "filename:ida-plugin.json fork:true",
+    ]
+
+    repos = set()
+    for query in queries:
+        search_url = "https://api.github.com/search/code"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "ida-hcli",
+        }
+
+        page = 1
+        while True:
+            params = f"q={urllib.parse.quote(query)}&per_page=100&page={page}"
+            url = f"{search_url}?{params}"
+
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req) as response:
+                    result = json.loads(response.read().decode("utf-8"))
+
+                    items = result.get("items", [])
+                    if not items:
+                        break
+
+                    for item in items:
+                        repo_full_name = item["repository"]["full_name"]
+                        repos.add(repo_full_name)
+
+                    if len(items) < 100:
+                        break
+
+                    page += 1
+            except urllib.error.HTTPError as e:
+                error_body = e.read().decode("utf-8")
+                logger.warning(f"GitHub search API error on page {page}: HTTP {e.code}: {error_body}")
+                break
+            except Exception as e:
+                logger.warning(f"Failed to search GitHub repositories on page {page}: {e}")
+                break
+
+    return sorted(list(repos))
 
 
 class GithubPluginRepo(BasePluginRepo):
@@ -486,9 +523,16 @@ class GithubPluginRepo(BasePluginRepo):
         self.client = GitHubGraphQLClient(token)
 
         warm_releases_metadata_cache(self.client, self._get_repos())
+        _ = self._get_repos()
 
     def _get_repos(self):
-        return [parse_repository(repo) for repo in INITIAL_REPOSITORIES]
+        try:
+            repos = get_candidate_github_repos_cache()
+        except KeyError:
+            repos = find_github_repos_with_plugins(self.token)
+            set_candidate_github_repos_cache(repos)
+
+        return [parse_repository(repo) for repo in repos]
 
     @functools.cache
     def get_plugins(self) -> list[Plugin]:
