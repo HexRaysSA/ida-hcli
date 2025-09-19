@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 import logging
+from collections.abc import Sequence
 
 import rich.table
 import rich_click as click
@@ -23,6 +23,7 @@ from hcli.lib.ida.plugin.repo import (
     Plugin,
     get_latest_compatible_plugin_metadata,
     get_latest_plugin_metadata,
+    get_plugin_by_name,
     is_compatible_plugin,
     is_compatible_plugin_version,
 )
@@ -68,14 +69,6 @@ def does_plugin_match_query(query: str, plugin: Plugin) -> bool:
                     return True
 
     return False
-
-
-def get_plugin_by_name(plugins: list[Plugin], name: str) -> Plugin:
-    for plugin in plugins:
-        if plugin.name.lower() == name.lower():
-            return plugin
-
-    raise KeyError(f"plugin not found: {name}")
 
 
 def is_plugin_name_query(plugins: list[Plugin], query: str):

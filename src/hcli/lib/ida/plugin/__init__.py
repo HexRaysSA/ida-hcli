@@ -319,6 +319,17 @@ class PluginMetadata(BaseModel):
             raise ValueError("authors or maintainers must be present")
         return self
 
+    @property
+    def host(self) -> str:
+        """fetch the canonical host for the plugin.
+
+        Today this is the (GitHub) repository URL.
+        In the future, it may alternatively be another URL scheme, like HTTP site.
+        Then we expect a guarantee like urls.repository xor urls.website xor urls.foo
+         and this routine fetches the canonical URL.
+        """
+        return self.urls.repository
+
 
 class IDAMetadataDescriptor(BaseModel):
     """Metadata from ida-plugin.json"""
