@@ -121,6 +121,33 @@ def get_python_exe_for_venv(venv_path: Path) -> Path:
     return venv_path / "Scripts" / "python.exe" if os.name == "nt" else venv_path / "bin" / "python"
 
 
+def uv_or_pip_install(python_exe: Path, package: str, upgrade: bool = False) -> None:
+    """Install a package using uv if available, otherwise fall back to pip."""
+    import shutil
+    
+    # Check if uv is available
+    uv_available = shutil.which("uv") is not None
+    
+    if uv_available:
+        try:
+            cmd = ["uv", "pip", "install", "--python=" + str(python_exe.absolute())]
+            if upgrade:
+                cmd.append("--upgrade")
+            cmd.append(package)
+            subprocess.run(cmd, check=True)
+            return
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            # Fall back to pip if uv fails
+            pass
+    
+    # Use pip as fallback
+    cmd = [str(python_exe), "-m", "pip", "install"]
+    if upgrade:
+        cmd.append("--upgrade")
+    cmd.append(package)
+    subprocess.run(cmd, check=True)
+
+
 @pytest.fixture
 def virtual_ida_environment_with_venv(virtual_ida_environment):
     """pytest fixture with the following hooks: IDAUSR, current platform, current version.
@@ -135,12 +162,8 @@ def virtual_ida_environment_with_venv(virtual_ida_environment):
     # then pip might not have --dry-run (added in 22.2)
     python_exe = get_python_exe_for_venv(venv_path)
 
-    # using uv is a several seconds faster, which is much better for interactive dev.
-    # so assume its present.
-    # _ = subprocess.run([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
-    _ = subprocess.run(
-        ["uv", "pip", "install", "--python=" + str(python_exe.absolute()), "--upgrade", "pip"], check=True
-    )
+    # Try uv first, fall back to pip if not available
+    uv_or_pip_install(python_exe, "pip", upgrade=True)
 
     with temp_env_var("HCLI_CURRENT_IDA_PYTHON_EXE", str(python_exe.absolute())):
         with temp_env_var("VIRTUAL_ENV", str(venv_path.absolute())):
@@ -212,11 +235,8 @@ def test_upgrade(virtual_ida_environment):
 
 def install_this_package_in_venv(venv_path: Path):
     python_exe = get_python_exe_for_venv(venv_path)
-    # _ = subprocess.run([python_exe, "-m", "pip", "install", str(PROJECT_DIR.absolute())], check=True)
-    # using uv is a few seconds faster, which is nicer for interactive dev
-    _ = subprocess.run(
-        ["uv", "pip", "install", "--python=" + str(python_exe.absolute()), str(PROJECT_DIR.absolute())], check=True
-    )
+    # Try uv first, fall back to pip if not available
+    uv_or_pip_install(python_exe, str(PROJECT_DIR.absolute()))
 
 
 def test_plugin_python_dependencies(virtual_ida_environment_with_venv):
