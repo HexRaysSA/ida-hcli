@@ -231,8 +231,12 @@ def test_plugin_python_dependencies(virtual_ida_environment_with_venv):
 
 def run_hcli(args: str) -> subprocess.CompletedProcess[str]:
     python_exe = os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"]
+    if platform.system() == "Windows":
+        args_list = shlex.split(args, posix=False)
+    else:
+        args_list = shlex.split(args)
     return subprocess.run(
-        [python_exe, "-m", "hcli.main"] + shlex.split(args), check=True, encoding="utf-8", capture_output=True
+        [python_exe, "-m", "hcli.main"] + args_list, check=True, encoding="utf-8", capture_output=True
     )
 
 
