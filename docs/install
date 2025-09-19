@@ -627,12 +627,13 @@ get_asset_download_info() {
         _asset_id=$(jq -r ".assets[] | select(.name == \"$_filename\") | .id" "$_tmp_file")
     else
         # Fallback to grep-based parsing
-        # Find the asset block and extract the id
-        _asset_id=$(grep -A 20 "\"name\": *\"$_filename\"" "$_tmp_file" | grep -o '"id": *[0-9]*' | head -n1 | cut -d' ' -f2)
-        
+        # Find the asset name, then look backwards for the asset's ID (not the uploader's ID)
+        # The asset ID appears BEFORE the name in the JSON structure
+        _asset_id=$(grep -B 3 "\"name\": *\"$_filename\"" "$_tmp_file" | grep -o '"id": *[0-9]*' | head -n1 | cut -d':' -f2 | tr -d ' ')
+
         if [ -z "$_asset_id" ]; then
-            # Try alternative format
-            _asset_id=$(grep -A 20 "\"name\":\"$_filename\"" "$_tmp_file" | grep -o '"id":[0-9]*' | head -n1 | cut -d':' -f2)
+            # Try alternative format without spaces
+            _asset_id=$(grep -B 3 "\"name\":\"$_filename\"" "$_tmp_file" | grep -o '"id":[0-9]*' | head -n1 | cut -d':' -f2)
         fi
     fi
     

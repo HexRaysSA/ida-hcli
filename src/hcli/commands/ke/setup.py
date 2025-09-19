@@ -109,6 +109,13 @@ async def _check_and_setup_ida_instances() -> None:
         _print_ida_setup_instructions()
 
 
+@click.command(name="install")
+@async_command
+async def install() -> None:
+    """Install the KE plugin."""
+    console.print("Coming soon...")
+
+
 def _print_ida_setup_instructions() -> None:
     """Print instructions for manually setting up IDA instances."""
     console.print("\n[yellow]To use ida:// links, you need to register IDA Pro instances:[/yellow]")
