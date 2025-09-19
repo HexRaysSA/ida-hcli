@@ -12,7 +12,10 @@ import yaml
 from hcli.lib.console import console
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
 from hcli.lib.ida.plugin import (
+    ALL_IDA_VERSIONS,
+    ALL_PLATFORMS,
     IdaVersion,
+    Platform,
     parse_ida_version,
     parse_plugin_version,
     split_plugin_version_spec,
@@ -104,6 +107,7 @@ def handle_plugin_name_query(plugins: list[Plugin], query: str, current_version:
 
     metadata_dict = latest_metadata.plugin.model_dump()
     del metadata_dict["platforms"]
+    metadata_dict["idaVersions"] = render_ida_versions(metadata_dict["idaVersions"])
 
     yaml_str = yaml.dump(metadata_dict, default_flow_style=False, sort_keys=True)
     console.print(yaml_str)
@@ -149,6 +153,9 @@ def handle_plugin_name_query(plugins: list[Plugin], query: str, current_version:
 
 
 def render_ida_versions(versions: Sequence[IdaVersion]) -> str:
+    if frozenset(versions) == ALL_IDA_VERSIONS:
+        return "all"
+
     ordered_versions = sorted(versions, key=parse_ida_version)
 
     if len(ordered_versions) == 1:
@@ -156,6 +163,13 @@ def render_ida_versions(versions: Sequence[IdaVersion]) -> str:
 
     # assume there are no holes. we could make this more complete if required.
     return f"{ordered_versions[0]}-{ordered_versions[-1]}"
+
+
+def render_platforms(platforms: Sequence[Platform]) -> str:
+    if frozenset(platforms) == ALL_PLATFORMS:
+        return "all"
+
+    return ", ".join(sorted(platforms))
 
 
 def handle_plugin_spec_query(plugins: list[Plugin], query: str, current_version: str, current_platform: str):
@@ -170,6 +184,7 @@ def handle_plugin_spec_query(plugins: list[Plugin], query: str, current_version:
 
     metadata_dict = metadata.plugin.model_dump()
     del metadata_dict["platforms"]
+    metadata_dict["idaVersions"] = render_ida_versions(metadata_dict["idaVersions"])
 
     yaml_str = yaml.dump(metadata_dict, default_flow_style=False, sort_keys=True)
     console.print(yaml_str)
@@ -181,9 +196,9 @@ def handle_plugin_spec_query(plugins: list[Plugin], query: str, current_version:
 
     for location in locations:
         table.add_row(
-            render_ida_versions(location.metadata.plugin.ida_versions),
-            ", ".join(sorted(location.metadata.plugin.platforms)),
-            location.url,
+            "IDA: " + render_ida_versions(location.metadata.plugin.ida_versions),
+            "platforms: " + render_platforms(location.metadata.plugin.platforms),
+            "URL: " + location.url,
         )
 
     console.print("download locations:")

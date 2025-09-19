@@ -272,7 +272,7 @@ class PluginMetadata(BaseModel):
     # Declare which versions of IDA your plugin supports.
     # You must declare each version separately, because IDA's APIs don't clearly follow semantic versioning.
     # The default is all versions, but this is almost certainly incorrect!
-    ida_versions: list[IdaVersion] = Field(default_factory=lambda: list(sorted(ALL_IDA_VERSIONS)))
+    ida_versions: list[IdaVersion] = Field(alias="idaVersions", default_factory=lambda: list(sorted(ALL_IDA_VERSIONS)))
 
     # Declare which platforms your plugin supports.
     # The default is all versions, which is likely for cross-platform Python plugins.
