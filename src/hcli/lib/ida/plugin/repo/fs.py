@@ -18,7 +18,7 @@ class FileSystemPluginRepo(BasePluginRepo):
                     continue
 
                 path = Path(os.path.join(root, file))
-                url = f"file://{path.absolute()}"
+                url = path.absolute().as_uri()
 
                 with open(path, "rb") as f:
                     buf = f.read()
