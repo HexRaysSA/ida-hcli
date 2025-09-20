@@ -5,8 +5,14 @@ Shared fixtures and utilities for integration tests.
 import re
 from typing import Tuple
 
-import pexpect
 import pytest
+
+# Only import pexpect if available (not on Windows)
+try:
+    import pexpect
+    PEXPECT_AVAILABLE = True
+except ImportError:
+    PEXPECT_AVAILABLE = False
 
 
 class FilteredOutput:
@@ -31,12 +37,17 @@ class CLITester:
     """Helper class for testing CLI commands with pexpect."""
 
     def __init__(self, timeout: int = 10):
+        if not PEXPECT_AVAILABLE:
+            pytest.skip("CLITester requires pexpect (not available on Windows)")
         self.timeout = timeout
 
     def run_command(
         self, command: str, expected_output: str | None = None, timeout: int | None = None
     ) -> Tuple[bool, str]:
         """Run a CLI command and optionally check for expected output."""
+        if not PEXPECT_AVAILABLE:
+            pytest.skip("CLI testing requires pexpect (not available on Windows)")
+            
         if timeout is None:
             timeout = self.timeout
 
@@ -113,18 +124,22 @@ def cli_tester():
 # Utility functions for test setup
 def check_dependencies():
     """Check if required dependencies are available."""
+    if not PEXPECT_AVAILABLE:
+        return False
+        
     try:
-        import pexpect
-
         pexpect.spawn("uv --version", timeout=2).expect(pexpect.EOF)
         return True
-    except (ImportError, Exception):
+    except Exception:
         return False
 
 
 @pytest.fixture(scope="module")
 def check_uv_available():
     """Ensure uv is available for running commands."""
+    if not PEXPECT_AVAILABLE:
+        pytest.skip("uv checking requires pexpect (not available on Windows)")
+        
     try:
         pexpect.spawn("uv --version", timeout=2).expect(pexpect.EOF)
         return True
@@ -132,14 +147,22 @@ def check_uv_available():
         pytest.skip("uv not available for integration tests")
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def require_uv(check_uv_available):
-    """Auto-use fixture to ensure uv is available."""
+    """Fixture to ensure uv is available. Use this explicitly in tests that need uv."""
     pass
 
 
-@pytest.fixture(scope="session", autouse=True)
-def check_test_requirements():
-    """Ensure test requirements are met."""
-    if not check_dependencies():
-        pytest.skip("Integration tests require pexpect and uv to be installed")
+def pytest_runtest_setup(item):
+    """Check for integration test requirements before running integration tests."""
+    # Check if this is an integration test
+    if "integration" in str(item.fspath):
+        # For integration tests that use pexpect, skip on Windows
+        if "pexpect" in str(item.function) or any("cli_tester" in name for name in item.fixturenames):
+            if not PEXPECT_AVAILABLE:
+                pytest.skip("Integration tests require pexpect (not available on Windows)")
+        
+        # Check for uv availability if the test uses uv-related features
+        if any(name in ["require_uv", "check_uv_available"] for name in item.fixturenames):
+            if not check_dependencies():
+                pytest.skip("Integration tests require pexpect and uv to be installed")
