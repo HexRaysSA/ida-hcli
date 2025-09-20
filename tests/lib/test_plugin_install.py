@@ -1,5 +1,6 @@
 import contextlib
 import json
+import logging
 import os
 import platform
 import shlex
@@ -23,6 +24,8 @@ from hcli.lib.ida.plugin.install import (
     upgrade_plugin_archive,
 )
 from hcli.lib.ida.python import pip_freeze
+
+logger = logging.getLogger(__name__)
 
 
 @contextlib.contextmanager
@@ -235,9 +238,21 @@ def run_hcli(args: str) -> subprocess.CompletedProcess[str]:
         args_list = shlex.split(args, posix=False)
     else:
         args_list = shlex.split(args)
-    return subprocess.run(
-        [python_exe, "-m", "hcli.main"] + args_list, check=True, encoding="utf-8", capture_output=True
-    )
+
+    try:
+        return subprocess.run(
+            [python_exe, "-m", "hcli.main"] + args_list, check=True, encoding="utf-8", capture_output=True
+        )
+    except subprocess.CalledProcessError as e:
+        # Log stdout and stderr on error
+        logger.debug(f"hcli command failed: {' '.join([python_exe, '-m', 'hcli.main'] + args_list)}")
+        logger.debug(f"hcli exit code: {e.returncode}")
+        if e.stdout:
+            logger.debug(f"hcli stdout: {e.stdout}")
+        if e.stderr:
+            logger.debug(f"hcli stderr: {e.stderr}")
+        # Re-raise the original exception
+        raise
 
 
 def test_plugin_all(virtual_ida_environment_with_venv):
@@ -246,7 +261,6 @@ def test_plugin_all(virtual_ida_environment_with_venv):
 
     with temp_env_var("TERM", "dumb"):
         with temp_env_var("COLUMNS", "240"):
-
             p = run_hcli("--help")
             assert "Usage: python -m hcli.main [OPTIONS] COMMAND [ARGS]..." in p.stdout
 
