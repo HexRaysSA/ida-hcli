@@ -347,8 +347,9 @@ def test_plugin_all(virtual_ida_environment_with_venv):
             p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall plugin1")
             assert "Uninstalled plugin: plugin1\n" == p.stdout
 
+            # install from file:// path URI
             p = run_hcli(
-                f"plugin --repo {repo_path.absolute()} install file://{(PLUGINS_DIR / 'plugin1' / 'plugin1-v4.0.0.zip').absolute()}"
+                f"plugin --repo {repo_path.absolute()} install {(PLUGINS_DIR / 'plugin1' / 'plugin1-v4.0.0.zip').absolute().as_uri()}"
             )
             assert "Installed plugin: plugin1==4.0.0\n" == p.stdout
 
