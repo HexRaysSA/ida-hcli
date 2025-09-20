@@ -232,18 +232,6 @@ def test_plugin_python_dependencies(virtual_ida_environment_with_venv):
     assert "packaging==25.0" in freeze
 
 
-class CommandError(ValueError):
-    """Custom error for command failures that includes the subprocess result."""
-
-    def __init__(self, message: str, result: subprocess.CompletedProcess[str]):
-        super().__init__(message)
-        self.result = result
-        # For compatibility with CalledProcessError-like interface
-        self.returncode = result.returncode
-        self.stdout = result.stdout
-        self.stderr = result.stderr
-
-
 def run_hcli(args: str) -> subprocess.CompletedProcess[str]:
     python_exe = os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"]
     if platform.system() == "Windows":
@@ -251,21 +239,20 @@ def run_hcli(args: str) -> subprocess.CompletedProcess[str]:
     else:
         args_list = shlex.split(args)
 
-    result = subprocess.run([python_exe, "-m", "hcli.main"] + args_list, encoding="utf-8", capture_output=True)
-
-    # Log stdout and stderr at debug level
-    logger.debug(f"hcli command: {' '.join([python_exe, '-m', 'hcli.main'] + args_list)}")
-    logger.debug(f"hcli exit code: {result.returncode}")
-    if result.stdout:
-        logger.debug(f"hcli stdout: {result.stdout}")
-    if result.stderr:
-        logger.debug(f"hcli stderr: {result.stderr}")
-
-    # Manually check status code and raise ValueError if not 0 (success)
-    if result.returncode != 0:
-        raise CommandError(f"Command failed with exit code {result.returncode}", result)
-
-    return result
+    try:
+        return subprocess.run(
+            [python_exe, "-m", "hcli.main"] + args_list, check=True, encoding="utf-8", capture_output=True
+        )
+    except subprocess.CalledProcessError as e:
+        # Log stdout and stderr on error
+        logger.debug(f"hcli command failed: {' '.join([python_exe, '-m', 'hcli.main'] + args_list)}")
+        logger.debug(f"hcli exit code: {e.returncode}")
+        if e.stdout:
+            logger.debug(f"hcli stdout: {e.stdout}")
+        if e.stderr:
+            logger.debug(f"hcli stderr: {e.stderr}")
+        # Re-raise the original exception
+        raise
 
 
 def test_plugin_all(virtual_ida_environment_with_venv):
@@ -337,7 +324,7 @@ def test_plugin_all(virtual_ida_environment_with_venv):
             assert "Installed plugin: plugin1==2.0.0\n" == p.stdout
 
             # downgrade not supported
-            with pytest.raises(CommandError) as e:
+            with pytest.raises(subprocess.CalledProcessError) as e:
                 p = run_hcli(f"plugin --repo {repo_path.absolute()} upgrade plugin1==1.0.0")
                 assert (
                     e.value.stdout
