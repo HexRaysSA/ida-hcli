@@ -173,6 +173,29 @@ jobs:
         run: |
           uv sync --no-sources --extra dev --extra test
 
+      - name: Install IDA ${{ matrix.os_ida.ida_version }} (default location)
+        run: |
+          uv run hcli --disable-updates ida install --download-id ${{ matrix.os_ida.slug }} --license-id ${{ secrets.IDA_LICENSE_ID }} --set-default
+        env:
+          HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
+          IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
+
+      - name: Check default install location (unix)
+        if: ${{ matrix.os_ida.os != 'windows-latest' }}
+        run: |
+          if [[ ! -d "${{ matrix.os_ida.default_path }}" ]]; then
+            echo "ERROR: Default installation path does not exist: ${{matrix.os_ida.default_path }}"
+            exit 1
+          fi
+
+      - name: Check default install location (windows)
+        if: ${{ matrix.os_ida.os == 'windows-latest' }}
+        run: |
+          if (!(Test-Path "${{ matrix.os_ida.default_path }}")) {
+            Write-Error "ERROR: Default installation path does not exist: ${{ matrix.os_ida.default_path }}"
+            exit 1
+          }
+
       - name: Install IDA ${{ matrix.os_ida.ida_version }}
         run: |
           uv run hcli --disable-updates ida install --download-id ${{ matrix.os_ida.slug }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
@@ -202,29 +225,6 @@ jobs:
           Get-Content "${{ runner.temp }}\ida.log"
           if (!(Test-Path "${{ runner.temp }}\ida.log")) {
             Write-Error "ERROR: Log file does not exist"
-            exit 1
-          }
-
-      - name: Install IDA ${{ matrix.os_ida.ida_version }} (default location)
-        run: |
-          uv run hcli --disable-updates ida install --download-id ${{ matrix.os_ida.slug }} --license-id ${{ secrets.IDA_LICENSE_ID }} --set-default
-        env:
-          HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
-          IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
-
-      - name: Check default install location (unix)
-        if: ${{ matrix.os_ida.os != 'windows-latest' }}
-        run: |
-          if [[ ! -d "${{ matrix.os_ida.default_path }}" ]]; then
-            echo "ERROR: Default installation path does not exist: ${{matrix.os_ida.default_path }}"
-            exit 1
-          fi
-
-      - name: Check default install location (windows)
-        if: ${{ matrix.os_ida.os == 'windows-latest' }}
-        run: |
-          if (!(Test-Path "${{ matrix.os_ida.default_path }}")) {
-            Write-Error "ERROR: Default installation path does not exist: ${{ matrix.os_ida.default_path }}"
             exit 1
           }
 
