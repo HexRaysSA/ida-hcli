@@ -7,7 +7,7 @@ from rich.logging import RichHandler
 
 from hcli.commands import register_commands
 from hcli.env import ENV
-from hcli.lib.console import console
+from hcli.lib.console import console, stderr_console
 from hcli.lib.extensions import get_extensions
 from hcli.lib.update.version import BackgroundUpdateChecker
 
@@ -97,7 +97,7 @@ def cli(_ctx, quiet, auth, auth_credentials, disable_updates: bool):
     _ctx.obj["auth_credentials"] = auth_credentials
 
     if ENV.HCLI_DEBUG:
-        handler = RichHandler(show_time=False, show_path=False, rich_tracebacks=True)
+        handler = RichHandler(show_time=False, show_path=False, rich_tracebacks=True, console=stderr_console)
         logging.basicConfig(level=logging.DEBUG, format="%(message)s", datefmt="[%X]", handlers=[handler])
 
 
