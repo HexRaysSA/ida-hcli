@@ -53,6 +53,7 @@ build-backend = "setuptools.build_meta"
 [dependency-groups]
 dev = [
     "types-pexpect>=4.9.0.20250809",
+    "types-pyyaml>=6.0.12.20250915",
     "types-requests>=2.32.4.20250809",
 ]
 
