@@ -231,8 +231,12 @@ def test_plugin_python_dependencies(virtual_ida_environment_with_venv):
 
 def run_hcli(args: str) -> subprocess.CompletedProcess[str]:
     python_exe = os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"]
+    if platform.system() == "Windows":
+        args_list = shlex.split(args, posix=False)
+    else:
+        args_list = shlex.split(args)
     return subprocess.run(
-        [python_exe, "-m", "hcli.main"] + shlex.split(args), check=True, encoding="utf-8", capture_output=True
+        [python_exe, "-m", "hcli.main"] + args_list, check=True, encoding="utf-8", capture_output=True
     )
 
 
@@ -329,8 +333,9 @@ def test_plugin_all(virtual_ida_environment_with_venv):
             p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall plugin1")
             assert "Uninstalled plugin: plugin1\n" == p.stdout
 
+            # install from file:// path URI
             p = run_hcli(
-                f"plugin --repo {repo_path.absolute()} install file://{(PLUGINS_DIR / 'plugin1' / 'plugin1-v4.0.0.zip').absolute()}"
+                f"plugin --repo {repo_path.absolute()} install {(PLUGINS_DIR / 'plugin1' / 'plugin1-v4.0.0.zip').absolute().as_uri()}"
             )
             assert "Installed plugin: plugin1==4.0.0\n" == p.stdout
 

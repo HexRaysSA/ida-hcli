@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import urllib.request
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
@@ -27,7 +28,7 @@ def fetch_plugin_archive(url: str) -> bytes:
     parsed_url = urlparse(url)
 
     if parsed_url.scheme == "file":
-        file_path = Path(parsed_url.path)
+        file_path = Path(urllib.request.url2pathname(parsed_url.path))
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
         return file_path.read_bytes()
