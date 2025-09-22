@@ -316,6 +316,22 @@ class PluginMetadata(BaseModel):
             raise ValueError("failed to parse version") from e
         return value
 
+    @field_validator("ida_versions", mode="before")
+    @classmethod
+    def transform_ida_version_spec_to_versions(cls, raw: str | list[IdaVersion]) -> list[IdaVersion]:
+        # hardcoded the handling of a few common versions to ease the migration.
+        # remove this after a short while.
+        if raw == ">=9.2":
+            return ["9.2"]
+        elif raw == ">=9.1":
+            return ["9.1", "9.2"]
+        elif raw == ">=9.0":
+            return ["9.0", "9.0sp1", "9.1", "9.2"]
+        elif isinstance(raw, str):
+            raise ValueError(f"unexpected idaVersions: {raw}")
+        else:
+            return raw
+
     @model_validator(mode="after")
     def check_at_least_one_contact(self):
         if not self.authors and not self.maintainers:
