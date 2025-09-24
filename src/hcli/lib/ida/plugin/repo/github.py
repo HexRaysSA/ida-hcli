@@ -523,9 +523,10 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
 
 
 class GithubPluginRepo(BasePluginRepo):
-    def __init__(self, token: str):
+    def __init__(self, token: str, extra_repos: list[str] | None = None):
         super().__init__()
         self.token = token
+        self.extra_repos = extra_repos or []
         self.client = GitHubGraphQLClient(token)
 
         warm_releases_metadata_cache(self.client, self._get_repos())
@@ -538,7 +539,7 @@ class GithubPluginRepo(BasePluginRepo):
             repos = find_github_repos_with_plugins(self.token)
             set_candidate_github_repos_cache(repos)
 
-        return [parse_repository(repo) for repo in repos]
+        return [parse_repository(repo) for repo in sorted(set(repos + self.extra_repos))]
 
     @functools.cache
     def get_plugins(self) -> list[Plugin]:
