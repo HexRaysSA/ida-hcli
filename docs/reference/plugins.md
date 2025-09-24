@@ -516,3 +516,31 @@ Lots of library code, some with common names, might make sense to use relative i
 https://github.com/HexRays-plugin-contributions/deREferencing
 
 > Config options can be modified vía deferencing/config.py file.
+
+needed to re-add support for IDA versions less than 9.0
+
+
+#### comida
+
+https://github.com/HexRays-plugin-contributions/comida
+
+Windows only
+
+#### capa
+
+https://github.com/HexRays-plugin-contributions/capa
+
+every is provided via PyPI package. pin to specific version.
+Qt errors in 9.2.
+otherwise trivial.
+
+#### xray
+
+https://github.com/HexRays-plugin-contributions/xray
+
+if run as a script, it installs itself.
+writes a config file to $IDAUSR/$plugin.cfg
+
+fix for Python 3.2+: https://github.com/patois/xray/pull/6
+
+
