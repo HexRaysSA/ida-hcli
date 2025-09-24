@@ -20,6 +20,7 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationError,
+    field_serializer,
     field_validator,
     model_validator,
 )
@@ -344,6 +345,14 @@ class PluginMetadata(BaseModel):
         if not self.authors and not self.maintainers:
             raise ValueError("authors or maintainers must be present")
         return self
+
+    @field_serializer("ida_versions")
+    def serialize_sorted_ida_versions(self, versions: list[IdaVersion]):
+        return sorted(versions, key=parse_ida_version)
+
+    @field_serializer("platforms")
+    def serialize_sorted_platforms(self, platforms: list[Platform]):
+        return sorted(platforms)
 
     @property
     def host(self) -> str:
