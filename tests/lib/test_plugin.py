@@ -1,6 +1,10 @@
+import json
+
+import pytest
 from fixtures import PLUGINS_DIR
 
 from hcli.lib.ida.plugin import (
+    IDAMetadataDescriptor,
     is_binary_plugin_archive,
     is_ida_version_compatible,
     is_plugin_archive,
@@ -38,3 +42,44 @@ def test_is_ida_version_compatible():
     assert not is_ida_version_compatible("9.2", ["9.0", "9.1"])
     assert not is_ida_version_compatible("8.5", ["9.0", "9.1"])
     assert not is_ida_version_compatible("9.0sp1", ["9.0", "9.1"])  # sp1 not in list
+
+
+def test_parse_plugin_version():
+    metadata_path = PLUGINS_DIR / "plugin1" / "src-v1" / "ida-plugin.json"
+
+    doc = json.loads(metadata_path.read_text())
+    doc["plugin"]["version"] = "2025.09.24"
+    with pytest.raises(ValueError):
+        _ = IDAMetadataDescriptor.model_validate_json(json.dumps(doc))
+
+    doc["plugin"]["version"] = "2025.9.24"
+    _ = IDAMetadataDescriptor.model_validate_json(json.dumps(doc))
+
+
+def test_parse_ida_versions():
+    metadata_path = PLUGINS_DIR / "plugin1" / "src-v1" / "ida-plugin.json"
+
+    doc = json.loads(metadata_path.read_text())
+    doc["plugin"]["idaVersions"] = "==9.0.0"
+    m = IDAMetadataDescriptor.model_validate_json(json.dumps(doc))
+    assert m.plugin.ida_versions == ["9.0"]
+
+    doc = json.loads(metadata_path.read_text())
+    doc["plugin"]["idaVersions"] = "==9.0"
+    m = IDAMetadataDescriptor.model_validate_json(json.dumps(doc))
+    assert set(m.plugin.ida_versions) == {"9.0", "9.0sp1"}
+
+    doc = json.loads(metadata_path.read_text())
+    doc["plugin"]["idaVersions"] = ">=9.0"
+    m = IDAMetadataDescriptor.model_validate_json(json.dumps(doc))
+    assert "9.0" in m.plugin.ida_versions
+    assert "9.1" in m.plugin.ida_versions
+    assert "8.5" not in m.plugin.ida_versions
+
+    doc = json.loads(metadata_path.read_text())
+    doc["plugin"]["idaVersions"] = ">=9.0,<9.2"
+    m = IDAMetadataDescriptor.model_validate_json(json.dumps(doc))
+    assert "9.0" in m.plugin.ida_versions
+    assert "9.1" in m.plugin.ida_versions
+    assert "8.5" not in m.plugin.ida_versions
+    assert "9.2" not in m.plugin.ida_versions

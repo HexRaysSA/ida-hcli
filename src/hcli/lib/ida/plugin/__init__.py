@@ -55,68 +55,72 @@ IdaVersion = Literal[
     # 9.0 introduced `ida-plugin.json` support which we strictly rely on for the plugin manager
     # so the plugin manager can't support older versions, without backporting the loader
     # (which is possible, and a possible extension)
-    # "8.5",  #    2025-02
-    # "8.4sp2",  # 2024-05
-    # "8.4sp1",  # 2024-03
-    # "8.4",  #    2024-02
-    # "8.3",  #    2023-06
-    # "8.2sp1",  # 2023-01
-    # "8.2",  #    2022-12
-    # "8.1",  #    2022-10
-    # "8.0sp1",  # 2022-08
-    # "8.0",  #    2022-07
-    # "7.7sp1",  # 2022-01
-    # "7.7",  #    2021-12
-    # "7.6sp1",
-    # "7.6",  #    2021-03
-    # "7.5sp3",  # 2020-10
-    # "7.5sp2",  # 2020-07
-    # "7.5sp1",  # 2020-06
-    # "7.5",  #    2020-05
-    # "7.4sp1",  # 2019-11
-    # "7.4",  #    2019-10
-    # "7.3",  #    2019-06
-    # "7.2",  #    2018-11
-    # "7.1",  #    2018-02
-    # "7.0sp1",  # 2017-11
-    # "7.0",
-    # "6.95",  #   2016-08
-    # "6.9",
-    # "6.8",
-    # "6.7",
-    # "6.6",
-    # "6.5",
-    # "6.4",
-    # "6.3",
-    # "6.2",
-    # "6.1",
-    # "6.0",
-    # "5.7",
-    # "5.6",
-    # "5.5",
-    # "5.4",
-    # "5.3",
-    # "5.2",
-    # "5.1",
-    # "5.0",
-    # "4.9sp1",
-    # "4.9",
-    # "4.8",
-    # "4.7",
-    # "4.6",
-    # "4.5",
-    # "4.4",
-    # "4.3",
-    # "4.2",
-    # "4.1",
-    # "4.0",
-    # "3.0",
+    "8.5",  #    2025-02
+    "8.4sp2",  # 2024-05
+    "8.4sp1",  # 2024-03
+    "8.4",  #    2024-02
+    "8.3",  #    2023-06
+    "8.2sp1",  # 2023-01
+    "8.2",  #    2022-12
+    "8.1",  #    2022-10
+    "8.0sp1",  # 2022-08
+    "8.0",  #    2022-07
+    "7.7sp1",  # 2022-01
+    "7.7",  #    2021-12
+    "7.6sp1",
+    "7.6",  #    2021-03
+    "7.5sp3",  # 2020-10
+    "7.5sp2",  # 2020-07
+    "7.5sp1",  # 2020-06
+    "7.5",  #    2020-05
+    "7.4sp1",  # 2019-11
+    "7.4",  #    2019-10
+    "7.3",  #    2019-06
+    "7.2",  #    2018-11
+    "7.1",  #    2018-02
+    "7.0sp1",  # 2017-11
+    "7.0",
+    "6.95",  #   2016-08
+    "6.9",
+    "6.8",
+    "6.7",
+    "6.6",
+    "6.5",
+    "6.4",
+    "6.3",
+    "6.2",
+    "6.1",
+    "6.0",
+    "5.7",
+    "5.6",
+    "5.5",
+    "5.4",
+    "5.3",
+    "5.2",
+    "5.1",
+    "5.0",
+    "4.9sp1",
+    "4.9",
+    "4.8",
+    "4.7",
+    "4.6",
+    "4.5",
+    "4.4",
+    "4.3",
+    "4.2",
+    "4.1",
+    "4.0",
+    "3.0",
 ]
 
 ALL_IDA_VERSIONS: frozenset[IdaVersion] = frozenset(typing.get_args(IdaVersion))
 
 
 def parse_plugin_version(version: str) -> semantic_version.Version:
+    if re.match(r"\.0\d", version):
+        # 2025.09.24 -> 2025.9.24
+        version = re.sub(r"\.0(\d+)", ".\1", version)
+    #
     # we want to use Version, instead of SimpleSpec, because it is sortable
     return semantic_version.Version(version, partial=True)
 
@@ -136,6 +140,11 @@ def parse_ida_version(version: str) -> semantic_version.Version:
         normalized_version = version + ".0"
 
     return semantic_version.Version(normalized_version)
+
+
+def parse_ida_version_spec(version: str) -> semantic_version.SimpleSpec:
+    normalized_version = version.replace("sp", ".")
+    return semantic_version.SimpleSpec(normalized_version)
 
 
 def split_plugin_version_spec(version_spec: str) -> tuple[str, str]:
@@ -313,22 +322,20 @@ class PluginMetadata(BaseModel):
         try:
             _ = parse_plugin_version(value)
         except Exception as e:
-            raise ValueError("failed to parse version") from e
+            raise ValueError(f"failed to parse version: {e}") from e
         return value
 
     @field_validator("ida_versions", mode="before")
     @classmethod
     def transform_ida_version_spec_to_versions(cls, raw: str | list[IdaVersion]) -> list[IdaVersion]:
-        # hardcoded the handling of a few common versions to ease the migration.
-        # remove this after a short while.
-        if raw == ">=9.2":
-            return ["9.2"]
-        elif raw == ">=9.1":
-            return ["9.1", "9.2"]
-        elif raw == ">=9.0":
-            return ["9.0", "9.0sp1", "9.1", "9.2"]
-        elif isinstance(raw, str):
-            raise ValueError(f"unexpected idaVersions: {raw}")
+        if isinstance(raw, str):
+            spec = parse_ida_version_spec(raw)
+
+            versions: list[IdaVersion] = []
+            for version in ALL_IDA_VERSIONS:
+                if parse_ida_version(version) in spec:
+                    versions.append(version)
+            return versions
         else:
             return raw
 
