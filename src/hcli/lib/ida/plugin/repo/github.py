@@ -466,8 +466,54 @@ def get_candidate_github_repos_cache() -> list[str]:
     return json.loads(cache_path.read_text())
 
 
-def find_github_repos_with_plugins(token: str) -> list[str]:
+def read_repos_from_file(repos_file_path: str | Path) -> list[str]:
+    """Read GitHub repository names from a file.
+
+    Args:
+        repos_file_path: Path to file containing repository names, one per line (format: owner/repo)
+
+    Returns:
+        List of repositories in "owner/repo" format
+
+    Raises:
+        ValueError: If a repository name is not in the correct format
+        FileNotFoundError: If the file doesn't exist
+    """
+    repos_path = Path(repos_file_path)
+    if not repos_path.exists():
+        raise FileNotFoundError(f"Repository list file not found: {repos_file_path}")
+
+    repos = []
+    with repos_path.open("r", encoding="utf-8") as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            if not line or line.startswith("#"):  # Skip empty lines and comments
+                continue
+
+            # Validate format: owner/repo
+            if not line.count("/") == 1 or len(line.split("/")) != 2:
+                raise ValueError(
+                    f"Invalid repository format on line {line_num}: '{line}'. Expected format: 'owner/repo'"
+                )
+
+            owner, repo = line.split("/")
+            if not owner or not repo:
+                raise ValueError(
+                    f"Invalid repository format on line {line_num}: '{line}'. Owner and repo cannot be empty"
+                )
+
+            repos.append(line)
+
+    logger.debug(f"Read {len(repos)} repositories from {repos_file_path}")
+    return repos
+
+
+def find_github_repos_with_plugins(token: str, additional_repos: list[str] | None = None) -> list[str]:
     """Find GitHub repositories that contain ida-plugin.json files using GitHub's search API.
+
+    Args:
+        token: GitHub API token
+        additional_repos: Optional list of additional repositories to include in the results
 
     Returns:
         List of repositories in "owner/repo" format
@@ -518,6 +564,11 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
             except Exception as e:
                 logger.warning(f"Failed to search GitHub repositories on page {page}: {e}")
                 break
+
+    # Merge with additional repos if provided
+    if additional_repos:
+        logger.debug(f"Adding {len(additional_repos)} additional repositories from file")
+        repos.update(additional_repos)
 
     return sorted(list(repos))
 
