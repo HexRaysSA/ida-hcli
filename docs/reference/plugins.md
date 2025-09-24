@@ -476,3 +476,43 @@ https://github.com/JusticeRage/Gepetto/pull/105
 Claude Code did it. Straightforward.
 
 There's a config.ini file used to store settings.
+
+
+#### IFL
+
+https://github.com/HexRays-plugin-contributions/ida_ifl
+
+Trivial single file python.
+Already using GH releases.
+
+https://github.com/HexRays-plugin-contributions/ida_ifl/releases/tag/v1.5.2
+
+Qt error:
+
+```
+  Loading Interactive Function List...
+IDAPython: Error while calling Python callback <OnCreate>:
+Traceback (most recent call last):
+  File "/Users/user/.idapro/plugins/IFL/ifl.py", line 1256, in OnCreate
+    self.adjustColumnsToContents()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/user/.idapro/plugins/IFL/ifl.py", line 1147, in adjustColumnsToContents
+    self.addr_view.resizeColumnToContents(0)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/Users/user/.idapro/plugins/IFL/ifl.py", line 502, in data
+    elif role == QtCore.Qt.BackgroundColorRole:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: Error calling Python override of QAbstractTableModel::data(): type object 'PySide6.QtCore.Qt' has no attribute 'BackgroundColorRole'
+```
+#### Diaphora
+
+Has a config file that points to the directory containing Diaphora.
+Lots of library code, some with common names, might make sense to use relative imports,
+ or otherwise reorganize code a little bit.
+
+
+#### DeREFerencing
+
+https://github.com/HexRays-plugin-contributions/deREferencing
+
+> Config options can be modified vía deferencing/config.py file.
