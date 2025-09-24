@@ -57,29 +57,29 @@ jobs:
       - name: Bump version
         id: version
         run: |
-          CURRENT_VERSION=$(uvx --from taskipy task current-version | tail -1)
+          CURRENT_VERSION=$(uv run task current-version | tail -1)
           case "${{ github.event.inputs.release_type }}" in
             "dev")
               if [[ "$CURRENT_VERSION" == *dev* ]]; then
-                uvx --from taskipy task dev-patch
+                uv run task dev-patch
               else
-                uvx --from taskipy task dev-start
+                uv run task dev-start
               fi
               echo "is_release=false" >> $GITHUB_OUTPUT
               ;;
             "release-major"|"release-minor")
-              uvx --from taskipy task ${{ github.event.inputs.release_type }}
+              uv run task ${{ github.event.inputs.release_type }}
               echo "is_release=true" >> $GITHUB_OUTPUT
               ;;
             "release-patch")
               # Remove local dev tags to ensure patch increments from last stable release
               git tag -d $(git tag -l | grep -E "dev") 2>/dev/null || true
-              uvx --from taskipy task release-patch
+              uv run task release-patch
               echo "is_release=true" >> $GITHUB_OUTPUT
               ;;
           esac
 
-          VERSION=$(uvx --from taskipy task current-version | tail -1)
+          VERSION=$(uv run task current-version | tail -1)
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
           echo "Created version: ${VERSION}"
