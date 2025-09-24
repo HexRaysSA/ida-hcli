@@ -7,7 +7,7 @@ It should be very easy for you extend the capabilities of IDA Pro with plugins,
 The underlying index of plugins is published at https://github.com/HexRaysSA/plugin-repository, and
  Hex-Rays maintains https://plugins.hex-rays.com as a website showing the available plugins.
 
-Status: the plugin manager is roughly done, and we're now migrating plugins and documentation.
+Status: the plugin manager is done, and we're now migrating plugins and documentation.
 
 ## Quickstart
 

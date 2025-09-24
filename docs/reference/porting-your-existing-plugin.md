@@ -113,7 +113,7 @@ and the changed fields:
 
 and new optional fields:
 
-  - `.plugin.platforms` is recommended, defaults to all platforms
+  - `.plugin.platforms` is recommended, defaults to all platforms. The possible values are: `windows-x86_64`, `linux-x86_64`, `macos-x86_64`, and `macos-aarch64`.
   - `.plugin.license`
   - `.plugin.pythonDependencies` is a list of packages on PyPI that will be installed
   - `.plugin.keywords` is a list of terms to help users searching for plugins
@@ -127,8 +127,89 @@ So, you can use `hcli plugin lint /path/to/plugin[.zip]` to check for problems a
 
 
 ## 3. Publish releases on GitHub
-  
 
 
+
+
+## Migrating Plugins to the Plugin Repository
+
+(Rough notes:)
+
+Plugins should try to use GitHub Actions for builds and GitHub Releases for tagging versions.
+
+The plugin repository's discovery script uses GitHub Releases to identify new candidate versions. 
+GH Releases is also a reasonable experience for users, due to the stable links, changelogs, and attached artifacts.
+While we may add support for other hosting sites, GitHub is the only platform available today.
+
+Pure Python plugins won't need a build step and can rely on source archives automatically attached to GitHub Release pages.
+Other plugins can use any CI system they want (including manual builds, if they insist),
+ but Hex-Rays provides examples and support for GitHub Actions.
+Don't hesitate to reach out for help!
+
+As you modify `ida-plugin.json`, use `hcli plugin lint /path/to/plugin/directory` to validate the contents and highlight issues.
+
+Anyways, determine if the plugin is pure Python or a native plugin. More detailed notes follow.
+
+Finally, remember to update the readme to explain that users should now use hcli instead of manual installing the plugin.
+
+
+### Migrating pure Python Plugins
+
+For simple single-file plugins, all you need to do is add an `ida-plugin.json` file.
+Then do releases via GitHub Actions and the automatically attached source archive will be the plugin archive.
+
+In fact, most pure Python plugins can get away with no build step, and just tagging releases via GitHub Releases.
+
+If there are multiple plugins in the same repo, this is ok, as long as they're in separate directories.
+See "Multi-Plugin Archives" above.
+
+If a Python plugin relies on a third-party dependency, declare this in the `pythonDependencies` array in `ida-plugin.json`.
+
+If there's many files related to the plugin, ensure they're all in the same directory (or nested subdirectory) as `ida-plugin.json`.
+Python plugins can rely on imports relative to the entry point script, so the following are ok:
+
+```
+plugins.zip
+└── plugin1
+    ├── ida-plugin.json
+    ├── plugin_entry.py
+    └── myutils.py
+
+# import myutils
+```
+
+or
+
+```
+plugins.zip
+└── plugin1
+    ├── ida-plugin.json
+    ├── plugin_entry.py
+    └── mylib
+        ├── __init__.py
+        └── foo
+
+# import mylib.foo
+```
+
+Some plugins have published most of their code to PyPI via a tradional Python package, and then refer to this in a trivial entrypoint stub.
+This is fine. They can keep doing this, updating `pythonDependencies` to reference that package;
+or they can migrate to keeping the Python package as a relative import.
+
+
+### Migrating a Native Plugin
+
+If its a native plugin, migrate the build configuration (if it exists) to GitHub Actions.
+To acquire the SDK, either use a Git submodule or use hcli to fetch it.
+The latter is probably a better solution but requires an active IDA Pro license (but you can get one through the Plugin Contributor Program),
+and enables you to build against 8.4, 9.0, 9.1, as well as 9.2+.
+The open source SDK on GitHub only has tags for 9.2+.
+
+Here's an example workflow:
+https://github.com/williballenthin/zydisinfo/blob/gha-hcli/.github/workflows/build.yml
+
+Once you have built the shared object files, package them up along with the `ida-plugin.json` file.
+You can create one artifact per platform, or do a "fat" binary archive (see above).
+Separate files might be easier; just make sure you set `idaPlatforms` in `ida-plugin.json` to reflect the contents, so we don't try to install .dll files on macOS.
 
 
