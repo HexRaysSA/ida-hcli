@@ -523,23 +523,29 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
 
 
 class GithubPluginRepo(BasePluginRepo):
-    def __init__(self, token: str, extra_repos: list[str] | None = None):
+    def __init__(self, token: str, extra_repos: list[str] | None = None, ignored_repos: list[str] | None = None):
         super().__init__()
         self.token = token
         self.extra_repos = extra_repos or []
+        self.ignored_repos = ignored_repos or []
         self.client = GitHubGraphQLClient(token)
 
-        warm_releases_metadata_cache(self.client, self._get_repos())
+        # warm cache
         _ = self._get_repos()
+
+        warm_releases_metadata_cache(self.client, self._get_repos())
 
     def _get_repos(self):
         try:
-            repos = get_candidate_github_repos_cache()
+            repos = set(get_candidate_github_repos_cache())
         except KeyError:
-            repos = find_github_repos_with_plugins(self.token)
-            set_candidate_github_repos_cache(repos)
+            repos = set(find_github_repos_with_plugins(self.token))
+            set_candidate_github_repos_cache(list(sorted(repos)))
 
-        return [parse_repository(repo) for repo in sorted(set(repos + self.extra_repos))]
+        repos |= set(self.extra_repos)
+        repos -= set(self.ignored_repos)
+
+        return [parse_repository(repo) for repo in sorted(repos)]
 
     @functools.cache
     def get_plugins(self) -> list[Plugin]:
