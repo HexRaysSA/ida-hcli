@@ -112,13 +112,13 @@ def is_installable(download: DownloadResource) -> bool:
 
 def get_ida_user_dir() -> Path:
     """Get the IDA Pro user directory."""
-    if ENV.HCLI_IDAUSR is not None:
-        return Path(ENV.HCLI_IDAUSR)
     # duplicate here, because we prefer access through ENV
     # but tests might update env vars for the current process.
     idausr = os.environ.get("HCLI_IDAUSR")
     if idausr:
         return Path(idausr)
+    if ENV.HCLI_IDAUSR is not None:
+        return Path(ENV.HCLI_IDAUSR)
 
     # Check for standard IDAUSR environment variable
     idausr = os.environ.get("IDAUSR")
@@ -528,13 +528,13 @@ def get_ida_config() -> IDAConfigJson:
 
 
 def find_current_ida_install_directory() -> Path:
-    if ENV.HCLI_CURRENT_IDA_INSTALL_DIR is not None:
-        return Path(ENV.HCLI_CURRENT_IDA_INSTALL_DIR)
     # duplicate here, because we prefer access through ENV
     # but tests might update env vars for the current process.
     env = os.environ.get("HCLI_CURRENT_IDA_INSTALL_DIR")
     if env:
         return Path(env)
+    if ENV.HCLI_CURRENT_IDA_INSTALL_DIR is not None:
+        return Path(ENV.HCLI_CURRENT_IDA_INSTALL_DIR)
 
     config = get_ida_config()
     if not config.paths.installation_directory:
@@ -664,13 +664,13 @@ sys.exit()
 
 def find_current_ida_platform() -> str:
     """find the platform associated with the current IDA installation"""
-    if ENV.HCLI_CURRENT_IDA_PLATFORM is not None:
-        return ENV.HCLI_CURRENT_IDA_PLATFORM
     # duplicate here, because we prefer access through ENV
     # but tests might update env vars for the current process.
     env = os.environ.get("HCLI_CURRENT_IDA_PLATFORM")
     if env:
         return env
+    if ENV.HCLI_CURRENT_IDA_PLATFORM is not None:
+        return ENV.HCLI_CURRENT_IDA_PLATFORM
 
     os_ = get_os()
     if os_ == "windows":
@@ -727,13 +727,13 @@ sys.exit()
 
 def find_current_ida_version() -> str:
     """find the version of the current IDA installation, like '9.1'"""
-    if ENV.HCLI_CURRENT_IDA_VERSION is not None:
-        return ENV.HCLI_CURRENT_IDA_VERSION
     # duplicate here, because we prefer access through ENV
     # but tests might update env vars for the current process.
     env = os.environ.get("HCLI_CURRENT_IDA_VERSION")
     if env:
         return env
+    if ENV.HCLI_CURRENT_IDA_VERSION is not None:
+        return ENV.HCLI_CURRENT_IDA_VERSION
 
     ida_dir = find_current_ida_install_directory()
     try:

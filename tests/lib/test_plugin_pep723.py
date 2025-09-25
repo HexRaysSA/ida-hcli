@@ -69,12 +69,12 @@ def test_get_python_dependencies_from_plugin_directory_inline():
         metadata_content = textwrap.dedent("""{
             "IDAMetadataDescriptorVersion": 1,
             "plugin": {
-              "name": "plugin1", 
+              "name": "plugin1",
               "version": "4.0.0",
               "entryPoint": "plugin1.py",
               "description": "test plugin",
               "pythonDependencies": "inline",
-              "authors": [{"name": "Willi Ballenthin"}],
+              "authors": [{"name": "Willi Ballenthin", "email": "wballenthin@hex-rays.com"}],
               "urls": {"repository": "https://github.com/HexRaysSA/ida-hcli"}
             }
         }""")
