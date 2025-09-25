@@ -26,8 +26,9 @@ from .upgrade import upgrade_plugin
     "--repo", help="'github', or path to directory containing plugins, or path to JSON file, or URL to JSON file"
 )
 @click.option("--with-repos-list", help="path to file containing known GitHub repositories")
+@click.option("--with-ignored-repos-list", help="path to file containing ignored GitHub repositories")
 @click.pass_context
-def plugin(ctx, repo: str | None, with_repos_list: str | None) -> None:
+def plugin(ctx, repo: str | None, with_repos_list: str | None, with_ignored_repos_list: str | None) -> None:
     """Manage IDA Pro plugins."""
     # TODO: cleanup list and anything else touching github
     ctx.ensure_object(dict)
@@ -61,7 +62,18 @@ def plugin(ctx, repo: str | None, with_repos_list: str | None) -> None:
 
             extra_repos = [repo.strip() for repo in repos_list_path.read_text().split("\n") if repo.strip()]
 
-        plugin_repo = hcli.lib.ida.plugin.repo.github.GithubPluginRepo(token, extra_repos=extra_repos)
+        ignored_repos = []
+        if with_ignored_repos_list is not None:
+            ignored_repos_list_path = Path(with_ignored_repos_list)
+            if not ignored_repos_list_path.exists():
+                console.print("[red]ignored repos list file doesn't exist[/red].")
+                raise click.Abort()
+
+            ignored_repos = [repo.strip() for repo in ignored_repos_list_path.read_text().split("\n") if repo.strip()]
+
+        plugin_repo = hcli.lib.ida.plugin.repo.github.GithubPluginRepo(
+            token, extra_repos=extra_repos, ignored_repos=ignored_repos
+        )
 
     else:
         path = Path(repo)
