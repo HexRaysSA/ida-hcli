@@ -178,14 +178,8 @@ def split_plugin_version_spec(version_spec: str) -> tuple[str, str]:
 
 
 class Contact(BaseModel):
+    email: str
     name: str | None = None
-    email: str | None = None
-
-    @model_validator(mode="after")
-    def check_at_least_one(self):
-        if not self.name and not self.email:
-            raise ValueError("name or email must be present")
-        return self
 
 
 class URLs(BaseModel):

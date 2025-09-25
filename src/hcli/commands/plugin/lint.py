@@ -51,23 +51,21 @@ def _validate_and_lint_metadata(metadata: IDAMetadataDescriptor, source_name: st
 
     if not metadata.plugin.authors and not metadata.plugin.maintainers:
         console.print(
-            f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.authors or plugin.maintainers"
+            f"[red]Error[/red] ({source_name}): ida-plugin.json: provide plugin.authors or plugin.maintainers"
         )
-        console.print("  Contact information helps users report issues and contribute")
+        console.print("  Contact information is required for authors or maintainers")
     else:
         # Check if contacts have both name and email for better completeness
         for i, author in enumerate(metadata.plugin.authors):
-            if not author.name or not author.email:
+            if not author.name:
                 console.print(
-                    f"[yellow]Recommendation[/yellow] ({source_name}): plugin.authors[{i}]: provide both name and email"
+                    f"[yellow]Recommendation[/yellow] ({source_name}): plugin.authors[{i}]: provide an author name"
                 )
-                console.print("  Complete contact information improves user trust and communication")
         for i, maintainer in enumerate(metadata.plugin.maintainers):
-            if not maintainer.name or not maintainer.email:
+            if not maintainer.name:
                 console.print(
-                    f"[yellow]Recommendation[/yellow] ({source_name}): plugin.maintainers[{i}]: provide both name and email"
+                    f"[yellow]Recommendation[/yellow] ({source_name}): plugin.maintainers[{i}]: provide a maintainer name"
                 )
-                console.print("  Complete contact information improves user trust and communication")
 
 
 def _lint_plugin_directory(plugin_path: Path) -> None:
