@@ -494,30 +494,25 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
             params = f"q={urllib.parse.quote(query)}&per_page=100&page={page}"
             url = f"{search_url}?{params}"
 
-            try:
-                req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req) as response:
-                    result = json.loads(response.read().decode("utf-8"))
+            # there can be failures here,
+            # but rather than try to handle them with retries
+            # lets prefer to fail fast and retry when things are fully working.
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req) as response:
+                result = json.loads(response.read().decode("utf-8"))
 
-                    items = result.get("items", [])
-                    if not items:
-                        break
+                items = result.get("items", [])
+                if not items:
+                    break
 
-                    for item in items:
-                        repo_full_name = item["repository"]["full_name"]
-                        repos.add(repo_full_name)
+                for item in items:
+                    repo_full_name = item["repository"]["full_name"]
+                    repos.add(repo_full_name)
 
-                    if len(items) < 100:
-                        break
+                if len(items) < 100:
+                    break
 
-                    page += 1
-            except urllib.error.HTTPError as e:
-                error_body = e.read().decode("utf-8")
-                logger.warning(f"GitHub search API error on page {page}: HTTP {e.code}: {error_body}")
-                break
-            except Exception as e:
-                logger.warning(f"Failed to search GitHub repositories on page {page}: {e}")
-                break
+                page += 1
 
     return sorted(list(repos))
 
