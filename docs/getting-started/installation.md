@@ -1,34 +1,47 @@
 # Installation
 
-## Prerequisites
 
-- Python 3.10 or higher
-- IDA Pro (for plugin management features)
+This will automatically install the **hcli** standalone executable
 
-# Using pipx 
+=== "macOS and Linux"
+    ```bash
+    curl -LsSf https://hcli.docs.hex-rays.com/install | sh 
+    ```
+    Request a specific version by including it in the URL:
+    ```bash
+    curl -LsSf https://hcli.docs.hex-rays.com/install | sh -s -- --version 0.12.0
+    ```
 
-```bash
-pipx install ida-hcli
-hcli --help
-```
+=== "Windows"
+    ```cmd
+    iwr -useb https://hcli.docs.hex-rays.com/install.ps1 | iex
+    ```
+    To request a specific version: 
+    ```cmd
+    iwr https://hcli.docs.hex-rays.com/install.ps1 -OutFile install.ps1
+    ```
+    Then run locally with the -Version argument 
+    ```cmd
+    .\install.ps1 -Version "0.12.0"
+    ```
 
-# Using pip   
+!!! tip
 
-```bash
-python3 -m venv ~/.venvs/ida-hcli
-source ~/.venvs/ida-hcli/bin/activate
-pip install ida-hcli
-hcli --help
-```
+    The installation script may be inspected before use:
 
-## Install from Source
+    === "macOS and Linux"
 
-```bash
-git clone https://github.com/HexRaysSA/ida-hcli.git
-cd ida-hcli
-uv sync
-uv run hcli --version
-```
+        ```console
+        $ curl -LsSf https://hcli.docs.hex-rays.com/install | less
+        ```
+
+    === "Windows"
+
+        ```pwsh-session
+        PS> powershell -c "irm https://hcli.docs.hex-rays.com/install.ps1 | more"
+        ```
+
+    Alternatively, the binaries can be downloaded directly from [GitHub](#github-releases).
 
 ## Verify Installation
 
