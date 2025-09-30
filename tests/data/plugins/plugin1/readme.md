@@ -7,3 +7,4 @@ Changelog:
   - v2.0.0: version is "v2.0.0"
   - v3.0.0: added pythonDependencies (packaging==v25.0)
   - v4.0.0: use PEP 723 inline dependencies
+  - v5.0.0: has a few settings

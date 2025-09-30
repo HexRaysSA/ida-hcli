@@ -12,6 +12,7 @@ import hcli.lib.ida.plugin.repo.github
 from hcli.lib.console import console
 from hcli.lib.ida import get_ida_config
 
+from .config import config
 from .install import install_plugin
 from .lint import lint_plugin_directory
 from .repo import repo
@@ -96,3 +97,4 @@ plugin.add_command(lint_plugin_directory, name="lint")
 plugin.add_command(upgrade_plugin, name="upgrade")
 plugin.add_command(uninstall_plugin, name="uninstall")
 plugin.add_command(repo, name="repo")
+plugin.add_command(config, name="config")
