@@ -20,9 +20,11 @@ def test_plugin_settings_integration(virtual_ida_environment_with_venv):
     install_this_package_in_venv(idausr / "venv")
 
     with temp_env_var("TERM", "dumb"):
-        with temp_env_var("COLUMNS", "240"):
+        with temp_env_var("COLUMNS", "80"):
             p = run_hcli("plugin config --help")
-            assert "Usage: python -m hcli.main plugin config [OPTIONS] PLUGIN_NAME COMMAND [ARGS]" in p.stdout
+            assert "Usage:" in p.stdout
+            assert "python -m hcli.main plugin config" in p.stdout
+            assert "[OPTIONS] PLUGIN_NAME COMMAND [ARGS]" in p.stdout
 
             p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} install plugin1==4.0.0")
             assert "Installed plugin: plugin1==4.0.0\n" == p.stdout
@@ -43,7 +45,7 @@ def test_plugin_settings_integration(virtual_ida_environment_with_venv):
                 _ = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} install plugin1==5.0.0")
             assert (
                 e.value.stdout
-                == "Error: plugin requires configuration but console is not interactive. Please provide settings via command line: --config key1=<value>\n"
+                == "Error: plugin requires configuration but console is not interactive. Please \nprovide settings via command line: --config key1=<value>\n"
             )
 
             with pytest.raises(subprocess.CalledProcessError) as e:

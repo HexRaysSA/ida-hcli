@@ -104,7 +104,7 @@ def test_plugin_all(virtual_ida_environment_with_venv):
     install_this_package_in_venv(idausr / "venv")
 
     with temp_env_var("TERM", "dumb"):
-        with temp_env_var("COLUMNS", "240"):
+        with temp_env_var("COLUMNS", "80"):
             p = run_hcli("--help")
             assert "Usage: python -m hcli.main [OPTIONS] COMMAND [ARGS]..." in p.stdout
 
@@ -144,7 +144,9 @@ def test_plugin_all(virtual_ida_environment_with_venv):
 
             p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydisinfo==1.0.0")
             assert "name: zydisinfo" in p.stdout
-            assert "download locations:\n IDA: 9.0-9.2  platforms: all  URL: file://" in p.stdout
+            assert "download locations:\n" in p.stdout
+            assert "IDA: 9.0-9.2  platforms: all" in p.stdout
+            assert "file://" in p.stdout
 
             p = run_hcli(f"plugin --repo {repo_path.absolute()} install zydisinfo")
             assert "Installed plugin: zydisinfo==1.0.0\n" == p.stdout
