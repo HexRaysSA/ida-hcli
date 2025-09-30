@@ -58,19 +58,19 @@ def test_plugin_settings_integration(virtual_ida_environment_with_venv):
             p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 list")
             assert "Key   Value                Description" in p.stdout
             assert "key1  bar                  the value for key 1" in p.stdout
-            assert "key2  default 2 (default)  the value for key 2" in p.stdout
+            assert "key2  default-2 (default)  the value for key 2" in p.stdout
 
             with pytest.raises(subprocess.CalledProcessError) as e:
                 _ = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 set key2 baz")
             assert "Error: failed to validate setting value: plugin1: key2: 'baz'" in e.value.stdout
 
-            p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 set key2 'default 3'")
+            p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 set key2 default-3")
             assert "Set plugin1.key2\n" == p.stdout
 
             p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 list")
             assert "Key   Value      Description" in p.stdout
             assert "key1  bar        the value for key 1" in p.stdout
-            assert "key2  default 3  the value for key 2" in p.stdout
+            assert "key2  default-3  the value for key 2" in p.stdout
 
             with pytest.raises(subprocess.CalledProcessError) as e:
                 p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 del key1")
@@ -82,4 +82,4 @@ def test_plugin_settings_integration(virtual_ida_environment_with_venv):
             p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 list")
             assert "Key   Value                Description" in p.stdout
             assert "key1  bar                  the value for key 1" in p.stdout
-            assert "key2  default 2 (default)  the value for key 2" in p.stdout
+            assert "key2  default-2 (default)  the value for key 2" in p.stdout
