@@ -102,9 +102,7 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
                     if needed_settings and not console.is_interactive:
                         setting_names = ", ".join(f"--config {s.key}=<value>" for s in needed_settings)
                         raise ValueError(
-                            "plugin requires configuration but console is not interactive. " +
-                            "Please provide settings via command line: " +
-                            setting_names
+                            f"plugin requires configuration but console is not interactive. Please provide settings via command line: {setting_names}"
                         )
 
                     console.print(f"configure {len(metadata.plugin.settings)} settings:")
