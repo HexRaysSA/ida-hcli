@@ -11,7 +11,7 @@ def set_plugin_setting(plugin_name: str, key: str, value: str):
 
     # extend this if we ever support non-string setting values
     if not (descr.type == "string" and isinstance(value, str)):
-        raise ValueError(f"mismatching settings types: {plugin_name}: {key}: {descr.type} vs {type(str)}")
+        raise ValueError(f"mismatching settings types: {plugin_name}: {key}: {descr.type} vs {type(value).__name__}")
 
     try:
         descr.validate_value(value)
