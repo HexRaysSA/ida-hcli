@@ -1,5 +1,5 @@
 # Define all zip targets
-ZIPS = plugin1-v1.0.0.zip plugin1-v2.0.0.zip plugin1-v3.0.0.zip plugin1-v4.0.0.zip
+ZIPS = plugin1-v1.0.0.zip plugin1-v2.0.0.zip plugin1-v3.0.0.zip plugin1-v4.0.0.zip plugin1-v5.0.0.zip
 
 .PHONY: all clean
 
@@ -16,6 +16,9 @@ plugin1-v3.0.0.zip: src-v3/*
 
 plugin1-v4.0.0.zip: src-v4/*
 	zip -r plugin1-v4.0.0.zip src-v4/
+
+plugin1-v5.0.0.zip: src-v5/*
+	zip -r plugin1-v5.0.0.zip src-v5/
 
 clean:
 	rm -rf $(ZIPS)

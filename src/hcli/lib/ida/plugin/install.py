@@ -61,7 +61,6 @@ def validate_path_component(name: str):
         raise ValueError(f"Invalid path component: '{name}'. Cannot contain slashes")
 
 
-# TODO: dedup
 def get_plugin_directory(name: str) -> Path:
     """$IDAUSR/plugins/<name>"""
     plugins_dir = get_plugins_directory()
@@ -348,7 +347,6 @@ def _install_plugin_archive(zip_data: bytes, name: str):
     metadata_path = get_metadata_path_from_plugin_archive(zip_data, name)
     plugin_subdirectory = metadata_path.parent
 
-    # TODO: log steps (and revert if necessary)
     # TODO: install idaPluginDependencies
 
     # Get Python dependencies using helper function

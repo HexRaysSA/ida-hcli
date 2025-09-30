@@ -11,7 +11,7 @@ import tempfile
 from dataclasses import dataclass
 from functools import total_ordering
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -497,19 +497,27 @@ class PluginRepositoryConfig(BaseModel):
 class SettingsConfig(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
 
-    # plugin name -> key -> value
-    plugins: dict[str, dict[str, str | int]] = Field(default_factory=dict)
     plugin_repository: PluginRepositoryConfig = Field(
         alias="plugin-repository", default_factory=lambda: PluginRepositoryConfig()
     )
+
+
+class PluginConfig(BaseModel):
+    # `ida-plugin.json` `.plugin.settings` describes the schema for these settings.
+    settings: dict[str, str] = Field(default_factory=dict)
 
 
 # describes contents of IDAUSR/ida-config.json
 class IDAConfigJson(BaseModel):
     """IDA configuration $IDAUSR/ida-config.json"""
 
+    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+
+    version: Literal[1] | None = Field(alias="Version", default=1)
     paths: PathsConfig = Field(alias="Paths", default_factory=lambda: PathsConfig())
     settings: SettingsConfig = Field(alias="Settings", default_factory=lambda: SettingsConfig())
+    # from plugin name to config.
+    plugins: dict[str, PluginConfig] = Field(alias="Plugins", default_factory=dict)
 
 
 def get_ida_config_path() -> Path:
@@ -525,6 +533,15 @@ def get_ida_config() -> IDAConfigJson:
         return IDAConfigJson()
 
     return IDAConfigJson.model_validate_json(ida_config_path.read_text(encoding="utf-8"))
+
+
+def set_ida_config(config: IDAConfigJson):
+    ida_config_path = get_ida_config_path()
+    if not ida_config_path.exists():
+        logger.debug("creating $IDAUSR directory")
+        ida_config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    _ = ida_config_path.write_text(config.model_dump_json())
 
 
 def find_current_ida_install_directory() -> Path:

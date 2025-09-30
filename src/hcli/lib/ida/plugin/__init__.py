@@ -199,6 +199,39 @@ class URLs(BaseModel):
         return v
 
 
+class PluginSettingDescriptor(BaseModel):
+    # unique code-level identifier for the setting
+    # like `open_ai_key`
+    key: str
+
+    type: Literal["string"]
+
+    required: bool
+
+    # this is not written into `ida-config.json`
+    # but provided on-demand when no config can provide the setting.
+    default: str | None = None
+
+    # human readable name for the setting
+    # like `OpenAI API key`
+    name: str
+
+    # human readable explanation for the setting
+    # like: `OpenAI API key acquired from https://platform.openai.com/api-keys`
+    documentation: str | None = None
+
+    # regular expression used to validate candidate values
+    # like: `[a-z]{32}`
+    validation_pattern: str | None = None
+
+    def validate_value(self, candidate_value: str) -> None:
+        if not self.validation_pattern:
+            return
+
+        if not re.match(self.validation_pattern, candidate_value):
+            raise ValueError(f"failed to validate setting value: {self.key}: '{candidate_value}'")
+
+
 class PluginMetadata(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
@@ -300,6 +333,8 @@ class PluginMetadata(BaseModel):
     # The dependency syntax is intended to be used by pip.
     python_dependencies: list[str] | str = Field(alias="pythonDependencies", default_factory=list)
 
+    settings: list[PluginSettingDescriptor] = Field(default_factory=list)
+
     @field_validator("name", mode="after")
     @classmethod
     def is_ok_name(cls, v: str) -> str:
@@ -347,6 +382,38 @@ class PluginMetadata(BaseModel):
     @field_serializer("platforms")
     def serialize_sorted_platforms(self, platforms: list[Platform]):
         return sorted(platforms)
+
+    @field_validator("settings", mode="after")
+    @classmethod
+    def has_unique_setting_keys(cls, settings: list[PluginSettingDescriptor]) -> list[PluginSettingDescriptor]:
+        keys = [setting.key for setting in settings]
+        if len(set(keys)) != len(keys):
+            raise ValueError("setting keys must be unique")
+
+        return settings
+
+    @field_validator("settings", mode="after")
+    @classmethod
+    def do_defaults_validate(cls, settings: list[PluginSettingDescriptor]) -> list[PluginSettingDescriptor]:
+        for setting in settings:
+            if not setting.validation_pattern:
+                continue
+            if not setting.default:
+                continue
+
+            if not re.match(setting.validation_pattern, setting.default):
+                raise ValueError(
+                    f"setting default value does not validate: {setting.key}: '{setting.default}'",
+                )
+
+        return settings
+
+    def get_setting(self, key: str) -> PluginSettingDescriptor:
+        for setting in self.settings:
+            if setting.key == key:
+                return setting
+
+        raise KeyError(f"unknown setting: {key}")
 
     @property
     def host(self) -> str:
