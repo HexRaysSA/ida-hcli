@@ -41,7 +41,10 @@ def test_plugin_settings_integration(virtual_ida_environment_with_venv):
 
             with pytest.raises(subprocess.CalledProcessError) as e:
                 _ = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} install plugin1==5.0.0")
-            assert e.value.stdout == "Error: plugin requires configuration but console is not interactive. Please provide settings via command line: --config key1=<value>\n"
+            assert (
+                e.value.stdout
+                == "Error: plugin requires configuration but console is not interactive. Please provide settings via command line: --config key1=<value>\n"
+            )
 
             with pytest.raises(subprocess.CalledProcessError) as e:
                 _ = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} install plugin1==5.0.0 --config foo=bar")
