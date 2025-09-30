@@ -1,0 +1,83 @@
+name: Test Binary Installation
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions: read-all
+
+concurrency:
+  group: test-install-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-binary-install:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install hcli (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          curl -LsSf https://hcli.docs.hex-rays.com/install | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install hcli (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          iwr -useb https://hcli.docs.hex-rays.com/install.ps1 | iex
+          echo "$env:USERPROFILE\.local\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Verify hcli installation
+        shell: bash
+        run: |
+          hcli --version
+
+      - name: Test IDA installation command (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          hcli --disable-updates ida install --download-id release/9.2/ida-essential/ida-essential_92_x64linux.run --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
+        env:
+          HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
+
+      - name: Test IDA installation command (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          hcli --disable-updates ida install --download-id release/9.2/ida-essential/ida-essential_92_armmac.app.zip --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
+        env:
+          HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
+
+      - name: Test IDA installation command (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          hcli --disable-updates ida install --download-id release/9.2/ida-essential/ida-essential_92_x64win.exe --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
+        env:
+          HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
+
+      - name: Verify IDA installation (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          if [[ ! -d "${{ runner.temp }}/app/ida/" ]]; then
+            echo "ERROR: IDA installation directory does not exist"
+            exit 1
+          fi
+          echo "✓ IDA successfully installed via hcli"
+
+      - name: Verify IDA installation (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (!(Test-Path "${{ runner.temp }}\app\ida\")) {
+            Write-Error "ERROR: IDA installation directory does not exist"
+            exit 1
+          }
+          Write-Host "✓ IDA successfully installed via hcli"
