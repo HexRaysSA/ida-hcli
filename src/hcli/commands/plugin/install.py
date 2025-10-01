@@ -121,6 +121,13 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
                                 message=setting.name,
                                 default=default_bool,
                             )
+                        elif setting.choices:
+                            default_str = str(setting.default) if setting.default is not None else setting.choices[0]
+                            question = questionary.select(
+                                message=setting.name,
+                                choices=setting.choices,
+                                default=default_str,
+                            )
                         else:
 
                             def make_validator(s):

@@ -38,6 +38,16 @@
         "default": false,
         "name": "key 3",
         "documentation": "the value for key 3"
+      },
+
+      {
+        "key": "key4",
+        "type": "string",
+        "required": false,
+        "default": "option-a",
+        "name": "key 4",
+        "documentation": "the value for key 4",
+        "choices": ["option-a", "option-b", "option-c"]
       }
     ]
   }

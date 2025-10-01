@@ -28,6 +28,23 @@ from pydantic import (
 logger = logging.getLogger(__name__)
 
 
+class ChoiceValueError(ValueError):
+    """Error raised when a setting value doesn't match available choices.
+
+    Args:
+        key: the setting key
+        value: the invalid value provided
+        choices: the tuple of valid choices
+    """
+
+    def __init__(self, key: str, value: str, choices: tuple[str, ...]):
+        self.key = key
+        self.value = value
+        self.choices = choices
+        choices_str = ", ".join(choices)
+        super().__init__(f"failed to validate setting value: {key}: '{value}' (must be one of: {choices_str})")
+
+
 PLATFORM_WINDOWS = "windows-x86_64"
 PLATFORM_LINUX = "linux-x86_64"
 PLATFORM_MACOS_INTEL = "macos-x86_64"
@@ -225,10 +242,34 @@ class PluginSettingDescriptor(BaseModel):
     # only used for string types
     validation_pattern: str | None = None
 
+    # tuple of acceptable string values
+    # like: `("option-a", "option-b", "option-c")`
+    # only used for string types
+    # mutually exclusive with validation_pattern
+    choices: tuple[str, ...] | None = None
+
+    @field_validator("choices", mode="before")
+    @classmethod
+    def validate_choices_not_empty(cls, v: list[str] | tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if v is None:
+            return None
+        if isinstance(v, list):
+            v = tuple(v)
+        if len(v) == 0:
+            raise ValueError("choices must not be empty")
+        return v
+
     @model_validator(mode="after")
-    def validate_boolean_constraints(self):
-        if self.type == "boolean" and self.validation_pattern is not None:
-            raise ValueError(f"validation_pattern is only supported for string settings, not boolean: {self.key}")
+    def validate_constraints(self):
+        if self.type == "boolean":
+            if self.validation_pattern is not None:
+                raise ValueError(f"validation_pattern is only supported for string settings, not boolean: {self.key}")
+            if self.choices is not None:
+                raise ValueError(f"choices is only supported for string settings, not boolean: {self.key}")
+
+        if self.validation_pattern is not None and self.choices is not None:
+            raise ValueError(f"validation_pattern and choices are mutually exclusive: {self.key}")
+
         return self
 
     def validate_value(self, candidate_value: str | bool) -> None:
@@ -240,6 +281,8 @@ class PluginSettingDescriptor(BaseModel):
                 raise ValueError(f"failed to validate setting value: {self.key}: '{candidate_value}'")
             if self.validation_pattern and not re.match(self.validation_pattern, candidate_value):
                 raise ValueError(f"failed to validate setting value: {self.key}: '{candidate_value}'")
+            if self.choices and candidate_value not in self.choices:
+                raise ChoiceValueError(self.key, candidate_value, self.choices)
 
 
 class PluginMetadata(BaseModel):
@@ -420,6 +463,10 @@ class PluginMetadata(BaseModel):
                         f"setting default value type mismatch: {setting.key}: expected str, got {type(setting.default).__name__}",
                     )
                 if setting.validation_pattern and not re.match(setting.validation_pattern, setting.default):
+                    raise ValueError(
+                        f"setting default value does not validate: {setting.key}: '{setting.default}'",
+                    )
+                if setting.choices and setting.default not in setting.choices:
                     raise ValueError(
                         f"setting default value does not validate: {setting.key}: '{setting.default}'",
                     )

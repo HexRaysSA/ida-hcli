@@ -113,6 +113,13 @@ def list(ctx) -> None:
                 value_str = "[grey69]<not set>[/grey69]"
 
             description = setting.documentation or ""
+            if setting.choices:
+                choices_str = ", ".join(setting.choices)
+                description = (
+                    f"{description}\n[grey69]Choices: {choices_str}[/grey69]"
+                    if description
+                    else f"[grey69]Choices: {choices_str}[/grey69]"
+                )
 
             table.add_row(setting.key, value_str, description)
 

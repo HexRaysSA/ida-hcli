@@ -110,3 +110,27 @@ def test_plugin_settings_integration(virtual_ida_environment_with_venv):
 
             p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 list")
             assert "key3" in p.stdout and "false (default)" in p.stdout and "the value for key 3" in p.stdout
+            assert "key4" in p.stdout and "option-a (default)" in p.stdout and "the value for key 4" in p.stdout
+
+            p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 set key4 option-b")
+            assert "Set plugin1.key4\n" == p.stdout
+
+            p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 list")
+            assert "key4" in p.stdout and "option-b" in p.stdout and "the value for key 4" in p.stdout
+
+            with pytest.raises(subprocess.CalledProcessError) as e:
+                _ = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 set key4 invalid-option")
+            assert "Error: failed to validate setting value: plugin1: key4: 'invalid-option'" in e.value.stdout
+            assert "option-a, option-b, option-c" in e.value.stdout
+
+            p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 set key4 option-c")
+            assert "Set plugin1.key4\n" == p.stdout
+
+            p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 list")
+            assert "key4" in p.stdout and "option-c" in p.stdout and "the value for key 4" in p.stdout
+
+            p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 del key4")
+            assert "Deleted plugin1.key4\n" == p.stdout
+
+            p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 list")
+            assert "key4" in p.stdout and "option-a (default)" in p.stdout and "the value for key 4" in p.stdout
