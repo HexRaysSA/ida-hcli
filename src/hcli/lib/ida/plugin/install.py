@@ -314,7 +314,11 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
         raise FileExistsError(f"Destination already exists: {destination}")
 
     with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
-        plugin_dir_prefix = str(subdirectory) + "/"
+        if subdirectory and len(subdirectory.parts) == 0:
+            # subdirectory represents the root (e.g., Path(".") has empty parts)
+            plugin_dir_prefix = ""
+        else:
+            plugin_dir_prefix = str(subdirectory) + "/"
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir) / destination.name
@@ -327,6 +331,9 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
                 if file_info.filename == plugin_dir_prefix:
                     continue
 
+                if file_info.filename.startswith(plugin_dir_prefix + ".git/"):
+                    continue
+
                 relative_path = pathlib.PurePosixPath(file_info.filename).relative_to(plugin_dir_prefix.rstrip("/"))
                 if str(relative_path) == ".":
                     continue
@@ -334,13 +341,16 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
                 target_path = temp_path / relative_path
 
                 if file_info.is_dir():
+                    logger.debug("creating directory: %s", relative_path)
                     target_path.mkdir(parents=True, exist_ok=True)
                 else:
                     target_path.parent.mkdir(parents=True, exist_ok=True)
                     with zip_file.open(file_info.filename) as source_file:
                         with target_path.open("wb") as target_file:
+                            logger.debug("creating file:      %s", relative_path)
                             shutil.copyfileobj(source_file, target_file)
 
+            logger.debug("creating plugin directory: %s", destination)
             temp_path.rename(destination)
 
 
