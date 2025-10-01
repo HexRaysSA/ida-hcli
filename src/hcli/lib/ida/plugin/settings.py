@@ -1,7 +1,7 @@
 import inspect
 
 from hcli.lib.ida import PluginConfig, get_ida_config, set_ida_config
-from hcli.lib.ida.plugin import PluginSettingDescriptor
+from hcli.lib.ida.plugin import ChoiceValueError, PluginSettingDescriptor
 from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
 
 
@@ -40,6 +40,11 @@ def set_plugin_setting(plugin_name: str, key: str, value: str | bool):
 
     try:
         descr.validate_value(value)
+    except ChoiceValueError as e:
+        choices_str = ", ".join(e.choices)
+        raise ValueError(
+            f"failed to validate setting value: {plugin_name}: {key}: '{value}' (must be one of: {choices_str})"
+        ) from e
     except ValueError as e:
         raise ValueError(f"failed to validate setting value: {plugin_name}: {key}: '{value}'") from e
 
@@ -80,6 +85,11 @@ def get_plugin_setting(plugin_name: str, key: str) -> str | bool:
     value = plugin_config.settings[key]
     try:
         descr.validate_value(value)
+    except ChoiceValueError as e:
+        choices_str = ", ".join(e.choices)
+        raise ValueError(
+            f"failed to validate existing setting value: {plugin_name}: {key}: '{value}' (must be one of: {choices_str})"
+        ) from e
     except ValueError as e:
         raise ValueError(f"failed to validate existing setting value: {plugin_name}: {key}: '{value}'") from e
 
