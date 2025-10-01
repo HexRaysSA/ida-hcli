@@ -1,16 +1,41 @@
 import inspect
 
 from hcli.lib.ida import PluginConfig, get_ida_config, set_ida_config
+from hcli.lib.ida.plugin import PluginSettingDescriptor
 from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
 
 
-def set_plugin_setting(plugin_name: str, key: str, value: str):
+def parse_setting_value(descriptor: PluginSettingDescriptor, string_value: str) -> str | bool:
+    """Parse a string value to the appropriate type based on the setting descriptor.
+
+    Args:
+        descriptor: the setting descriptor
+        string_value: the string value to parse
+
+    Returns:
+        The parsed value (str or bool)
+    """
+    if descriptor.type == "boolean":
+        if string_value.lower() == "true":
+            return True
+        elif string_value.lower() == "false":
+            return False
+        else:
+            raise ValueError(f"mismatching settings types: expected boolean ('true' or 'false'), got '{string_value}'")
+    elif descriptor.type == "string":
+        return string_value
+    else:
+        raise ValueError(f"unsupported setting type: {descriptor.type}")
+
+
+def set_plugin_setting(plugin_name: str, key: str, value: str | bool):
     plugin_path = get_plugin_directory(plugin_name)
     metadata = get_metadata_from_plugin_directory(plugin_path)
     descr = metadata.plugin.get_setting(key)
 
-    # extend this if we ever support non-string setting values
-    if not (descr.type == "string" and isinstance(value, str)):
+    if descr.type == "string" and not isinstance(value, str):
+        raise ValueError(f"mismatching settings types: {plugin_name}: {key}: {descr.type} vs {type(value).__name__}")
+    elif descr.type == "boolean" and not isinstance(value, bool):
         raise ValueError(f"mismatching settings types: {plugin_name}: {key}: {descr.type} vs {type(value).__name__}")
 
     try:
@@ -33,25 +58,21 @@ def set_plugin_setting(plugin_name: str, key: str, value: str):
     set_ida_config(config)
 
 
-def get_plugin_setting(plugin_name: str, key: str) -> str:
+def get_plugin_setting(plugin_name: str, key: str) -> str | bool:
     plugin_path = get_plugin_directory(plugin_name)
     metadata = get_metadata_from_plugin_directory(plugin_path)
     descr = metadata.plugin.get_setting(key)
 
-    # extend this if we ever support non-string setting values
-    if not descr.type == "string":
-        raise ValueError(f"unexpected settings types: {plugin_name}: {key}: {descr.type}")
-
     config = get_ida_config()
     if plugin_name not in config.plugins:
-        if descr.default:
+        if descr.default is not None:
             return descr.default
         else:
             raise KeyError(f"plugin setting not found: {plugin_name}: {key}")
 
     plugin_config = config.plugins[plugin_name]
     if key not in plugin_config.settings:
-        if descr.default:
+        if descr.default is not None:
             return descr.default
         else:
             raise KeyError(f"plugin setting not found: {plugin_name}: {key}")
@@ -132,6 +153,6 @@ def get_current_plugin() -> str:
     raise RuntimeError("get_current_plugin() must be called from within a plugin module")
 
 
-def get_current_plugin_setting(key: str) -> str:
+def get_current_plugin_setting(key: str) -> str | bool:
     plugin = get_current_plugin()
     return get_plugin_setting(plugin, key)

@@ -12,7 +12,7 @@ import rich_click as click
 from hcli.lib.console import console
 from hcli.lib.ida import get_ida_config
 from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
-from hcli.lib.ida.plugin.settings import del_plugin_setting, get_plugin_setting, set_plugin_setting
+from hcli.lib.ida.plugin.settings import del_plugin_setting, get_plugin_setting, parse_setting_value, set_plugin_setting
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,10 @@ def get(ctx, key: str) -> None:
     plugin_name = ctx.obj["config_plugin_name"]
     try:
         value = get_plugin_setting(plugin_name, key)
-        console.print(value)
+        if isinstance(value, bool):
+            console.print("true" if value else "false")
+        else:
+            console.print(value)
     except KeyError as e:
         console.print(f"[red]Error[/red]: {e}")
         raise click.Abort()
@@ -52,7 +55,11 @@ def set(ctx, key: str, value: str) -> None:
     """Set a plugin configuration setting."""
     plugin_name = ctx.obj["config_plugin_name"]
     try:
-        set_plugin_setting(plugin_name, key, value)
+        plugin_path = get_plugin_directory(plugin_name)
+        metadata = get_metadata_from_plugin_directory(plugin_path)
+        descr = metadata.plugin.get_setting(key)
+        parsed_value = parse_setting_value(descr, value)
+        set_plugin_setting(plugin_name, key, parsed_value)
         console.print(f"[green]Set[/green] {plugin_name}.{key}")
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)
@@ -99,14 +106,15 @@ def list(ctx) -> None:
         for setting in metadata.plugin.settings:
             try:
                 value = get_plugin_setting(plugin_name, setting.key)
+                value_str = "true" if value is True else ("false" if value is False else str(value))
                 if setting.default is not None and value == setting.default:
-                    value = f"{value} [grey69](default)[/grey69]"
+                    value_str = f"{value_str} [grey69](default)[/grey69]"
             except KeyError:
-                value = "[grey69]<not set>[/grey69]"
+                value_str = "[grey69]<not set>[/grey69]"
 
             description = setting.documentation or ""
 
-            table.add_row(setting.key, value, description)
+            table.add_row(setting.key, value_str, description)
 
         console.print(table)
 

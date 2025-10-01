@@ -17,7 +17,7 @@ from hcli.lib.ida.plugin import (
 )
 from hcli.lib.ida.plugin.install import install_plugin_archive, uninstall_plugin
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
-from hcli.lib.ida.plugin.settings import has_plugin_setting, set_plugin_setting
+from hcli.lib.ida.plugin.settings import has_plugin_setting, parse_setting_value, set_plugin_setting
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 @click.command()
 @click.pass_context
 @click.argument("plugin")
-@click.option("--config", multiple=True, help="Configuration setting in key=value format")
+@click.option("--config", multiple=True, help="Configuration setting in key=value format (use true/false for booleans)")
 def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
     plugin_spec = plugin
     try:
@@ -71,20 +71,23 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
             for config_item in config:
                 if "=" not in config_item:
                     raise ValueError(f"invalid config format: {config_item}, expected key=value")
-                key, value = config_item.split("=", 1)
+                key, value_str = config_item.split("=", 1)
                 descr = metadata.plugin.get_setting(key)
-                descr.validate_value(value)
+                parsed_value = parse_setting_value(descr, value_str)
+                descr.validate_value(parsed_value)
 
         install_plugin_archive(buf, plugin_name)
 
         try:
             if metadata.plugin.settings:
-                cli_config: dict[str, str] = {}
+                cli_config: dict[str, str | bool] = {}
                 for config_item in config:
                     if "=" not in config_item:
                         raise ValueError(f"invalid config format: {config_item}, expected key=value")
-                    key, value = config_item.split("=", 1)
-                    cli_config[key] = value
+                    key, value_str = config_item.split("=", 1)
+                    descr = metadata.plugin.get_setting(key)
+                    parsed_value = parse_setting_value(descr, value_str)
+                    cli_config[key] = parsed_value
 
                 if cli_config:
                     for key, value in cli_config.items():
@@ -112,26 +115,36 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
                         if has_plugin_setting(plugin_name, setting.key):
                             continue
 
-                        def make_validator(s):
-                            def validate_func(value: str):
-                                if not s.required and not value:
-                                    return True
-                                if s.required and not value:
-                                    return "This field is required"
-                                try:
-                                    s.validate_value(value)
-                                    return True
-                                except ValueError as e:
-                                    return str(e)
+                        if setting.type == "boolean":
+                            default_bool = setting.default if isinstance(setting.default, bool) else False
+                            question = questionary.confirm(
+                                message=setting.name,
+                                default=default_bool,
+                            )
+                        else:
 
-                            return validate_func
+                            def make_validator(s):
+                                def validate_func(value: str):
+                                    if not s.required and not value:
+                                        return True
+                                    if s.required and not value:
+                                        return "This field is required"
+                                    try:
+                                        parsed = parse_setting_value(s, value)
+                                        s.validate_value(parsed)
+                                        return True
+                                    except ValueError as e:
+                                        return str(e)
 
-                        question = questionary.text(
-                            # TODO: descr.documentation
-                            message=setting.name,
-                            default=setting.default or "",
-                            validate=make_validator(setting),
-                        )
+                                return validate_func
+
+                            default_str = str(setting.default) if setting.default is not None else ""
+                            question = questionary.text(
+                                # TODO: descr.documentation
+                                message=setting.name,
+                                default=default_str,
+                                validate=make_validator(setting),
+                            )
                         questions[setting.key] = question
 
                     answers = questionary.form(**questions).ask()
@@ -139,10 +152,6 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
                     for key, answer in answers.items():
                         descr = metadata.plugin.get_setting(key)
                         if descr.default == answer:
-                            # don't save default values into the settings store
-                            # so that we can potentially layer these in the future.
-                            # if we do store them, we don't know if they're still the default value
-                            # or set by the user.
                             continue
 
                         set_plugin_setting(metadata.plugin.name, descr.key, answer)
