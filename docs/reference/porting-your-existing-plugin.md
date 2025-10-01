@@ -96,7 +96,17 @@ and a more complete `ida-plugin.json` looks like:
     "maintainers": [{
       "name": "Willi Ballenthin",
       "email": "wballenthin@hex-rays.com"
-    }]
+    }],
+    "settings": [
+      {
+        "key": "theme",
+        "type": "string",
+        "required": true,
+        "default": "darcula",
+        "name": "color theme",
+        "documentation": "the color theme name, picked from https://windowsterminalthemes.dev/",
+      }
+    ]
   }
 }
 ```
@@ -117,18 +127,34 @@ and new optional fields:
   - `.plugin.license`
   - `.plugin.pythonDependencies` is a list of packages on PyPI that will be installed
   - `.plugin.keywords` is a list of terms to help users searching for plugins
+  - `.plugin.settings` is a list of descriptors of settings
 
 If there's a problem with the `ida-plugin.json` file, then it will not be indexed by the plugin repository.
 Unfortunately even things like trailing commas will break strict JSON parsers like the one used by hcli.
 So, you can use `hcli plugin lint /path/to/plugin[.zip]` to check for problems and suggestions.
 
 
+### Settings
+
+hcli is aware of settings that plugins declare in `ida-plugin.json` and prompts users for their value
+during installation. The settings are written into `ida-config.json` and can be queried at plugin runtime
+using the [ida-settings](https://pypi.org/project/ida-settings/) (v3) Python package:
+
+```py
+import ida_settings
+
+api_key = ida_settings.get_current_plugin_setting("openai_key")
+```
+
+Plugin authors should consider migrate to this configuration management system because there
+ will be a single place to make edits (cli and gui), users don't have to manually edit source code/config files,
+ and the data can be easily exported/imported.
+
+
 ## 2. Package your plugin
 
 
 ## 3. Publish releases on GitHub
-
-
 
 
 ## Migrating Plugins to the Plugin Repository
@@ -151,6 +177,27 @@ As you modify `ida-plugin.json`, use `hcli plugin lint /path/to/plugin/directory
 Anyways, determine if the plugin is pure Python or a native plugin. More detailed notes follow.
 
 Finally, remember to update the readme to explain that users should now use hcli instead of manual installing the plugin.
+
+### Hex-Rays guide for suggesting changes
+
+1. navigate to the GitHub repo
+2. fork to "HexRays-plugin-contributions" organization, using the defaults
+3. check it out locally, like `git clone git@github.com:HexRays-plugin-contributions/foo.git`
+4. `cd foo`
+5. `git checkout -b ida-plugin-json`
+6. add `ida-plugin.json` and any other migration changes. commit and push them. this will be submitted upstream as a PR.
+  a. look at `plugins-AGENT.md` for some ideas
+  b. `.plugin.urls.repo` should be the upstream repo
+  c. `.plugin.authors` should be the original author
+  d. `hcli plugin lint /path/to/plugin` can help identify issues
+  e. if its pure Python, then the default release source archive is sufficient
+  f. if its a native plugin, you'll need to figure out how to build on GitHub Actions. this might take some time
+7. `git checkout -b hr-test-release`
+8. update `ida-plugin.json` so that this fork can temporarily be used by the plugin repository. commit and push them.
+  a. set `.plugin.urls.repo` to the fork, like `https://github.com/HexRays-plugin-contributions/foo`
+  b. add `.plugin.maintainers` entry for yourself
+9. create a release using the `hr-test-release` branch
+10. ensure the plugin can be installed: `hcli plugin install https://.../url/to/release/zip`
 
 
 ### Migrating pure Python Plugins
