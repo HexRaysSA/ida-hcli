@@ -139,11 +139,11 @@ def export(ctx) -> None:
     try:
         config = get_ida_config()
         if plugin_name not in config.plugins:
-            print("{}")
+            console.print("{}")
             return
 
         plugin_config = config.plugins[plugin_name]
-        print(json.dumps(plugin_config.settings, indent=2))
+        console.print(json.dumps(plugin_config.settings, indent=2))
 
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)
