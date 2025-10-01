@@ -26,6 +26,7 @@ jobs:
         python-version: ["3.10", "3.13"]
         os_ida:
           - name: IDA 9.2 on Linux
+            arch: intel
             os: ubuntu-latest
             ida_version: "9.2"
             slug: "release/9.2/ida-essential/ida-essential_92_x64linux.run"
@@ -33,6 +34,7 @@ jobs:
             default_path: "/home/runner/.local/share/applications/IDA Essential 9.2"
 
           - name: IDA 9.2 on Windows
+            arch: intel
             os: windows-latest
             ida_version: "9.2"
             slug: "release/9.2/ida-essential/ida-essential_92_x64win.exe"
@@ -40,6 +42,7 @@ jobs:
             default_path: "C:\\Program Files\\IDA Essential 9.2"
 
           - name: IDA 9.2 on macOS (Intel)
+            arch: intel
             os: macos-latest
             ida_version: "9.2"
             slug: "release/9.2/ida-essential/ida-essential_92_x64mac.app.zip"
@@ -47,6 +50,7 @@ jobs:
             default_path: "/Applications/IDA Essential 9.2.app"
 
           - name: IDA 9.2 on macOS (ARM)
+            arch: arm
             os: macos-latest
             ida_version: "9.2"
             slug: "release/9.2/ida-essential/ida-essential_92_armmac.app.zip"
@@ -54,6 +58,7 @@ jobs:
             default_path: "/Applications/IDA Essential 9.2.app"
 
           - name: IDA 9.1 on Linux
+            arch: intel
             os: ubuntu-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-essential/ida-essential_91_x64linux.run"
@@ -61,6 +66,7 @@ jobs:
             default_path: "/home/runner/.local/share/applications/IDA Essential 9.1"
 
           - name: IDA 9.1 on Windows
+            arch: intel
             os: windows-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-essential/ida-essential_91_x64win.exe"
@@ -68,6 +74,7 @@ jobs:
             default_path: "C:\\Program Files\\IDA Essential 9.1"
 
           - name: IDA 9.1 on macOS (Intel)
+            arch: intel
             os: macos-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-essential/ida-essential_91_x64mac.app.zip"
@@ -75,6 +82,7 @@ jobs:
             default_path: "/Applications/IDA Essential 9.1.app"
 
           - name: IDA 9.1 on macOS (ARM)
+            arch: arm
             os: macos-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-essential/ida-essential_91_armmac.app.zip"
@@ -82,6 +90,7 @@ jobs:
             default_path: "/Applications/IDA Essential 9.1.app"
 
           - name: IDA 9.0 on Linux
+            arch: intel
             os: ubuntu-latest
             ida_version: "9.0"
             slug: "release/9.0/ida-essential/ida-essential_90_x64linux.run"
@@ -89,6 +98,7 @@ jobs:
             default_path: "/home/runner/.local/share/applications/IDA Essential 9.0"
 
           - name: IDA 9.0 on Windows
+            arch: intel
             os: windows-latest
             ida_version: "9.0"
             slug: "release/9.0/ida-essential/ida-essential_90_x64win.exe"
@@ -96,6 +106,7 @@ jobs:
             default_path: "C:\\Program Files\\IDA Essential 9.0"
 
           - name: IDA 9.0 on macOS (Intel)
+            arch: intel
             os: macos-latest
             ida_version: "9.0"
             slug: "release/9.0/ida-essential/ida-essential_90_x64mac.app.zip"
@@ -103,6 +114,7 @@ jobs:
             default_path: "/Applications/IDA Essential 9.0.app"
 
           - name: IDA 9.0 on macOS (ARM)
+            arch: arm
             os: macos-latest
             ida_version: "9.0"
             slug: "release/9.0/ida-essential/ida-essential_90_armmac.app.zip"
@@ -112,6 +124,7 @@ jobs:
           # #################################################################
           # SP releases
           - name: IDA 9.0 SP1 on macOS (ARM)
+            arch: arm
             os: macos-latest
             ida_version: "9.0sp1"
             slug: "release/9.0sp1/ida-pro/ida-pro_90sp1_armmac.app.zip"
@@ -121,6 +134,7 @@ jobs:
           # #################################################################
           # other product versions
           - name: IDA Home 9.1 on macOS (ARM)
+            arch: arm
             os: macos-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-home/ida-home-pc_91_armmac.app.zip"
@@ -128,6 +142,7 @@ jobs:
             default_path: "/Applications/IDA Home 9.1.app"
 
           - name: IDA Free 9.1 on macOS (ARM)
+            arch: arm
             os: macos-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-free/ida-free-pc_91_armmac.app.zip"
@@ -135,6 +150,7 @@ jobs:
             default_path: "/Applications/IDA Free 9.1.app"
 
           - name: IDA Essential 9.1 on macOS (ARM)
+            arch: arm
             os: macos-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-essential/ida-essential_91_armmac.app.zip"
@@ -142,6 +158,7 @@ jobs:
             default_path: "/Applications/IDA Essential 9.1.app"
 
           - name: IDA Pro 9.1 on macOS (ARM)
+            arch: arm
             os: macos-latest
             ida_version: "9.1"
             slug: "release/9.1/ida-pro/ida-pro_91_armmac.app.zip"
@@ -239,3 +256,18 @@ jobs:
           PYTHONIOENCODING: "UTF-8"
           HCLI_DISABLE_UPDATES: "1"
           HCLI_DEBUG: "1"
+
+      - name: Install idalib
+        # ida-domain requires IDA 9.1+
+        # and i dont know how to setup the multi-arch/python/ida for macOS correctly on GHA, so skip that (but it works in real life)
+        # and IDA Home and IDA Free don't have idalib
+        if: ${{ matrix.os_ida.ida_version != '9.0' && matrix.os_ida.ida_version != '9.0sp1' && matrix.os_ida.arch != 'intel' && matrix.os_ida.idat_path != '' }}
+        run: uv pip install idapro ida-domain
+
+      - name: Run idalib
+        # ida-domain requires IDA 9.1+
+        # and i dont know how to setup the multi-arch/python/ida for macOS correctly on GHA, so skip that (but it works in real life)
+        # and IDA Home and IDA Free don't have idalib
+        if: ${{ matrix.os_ida.ida_version != '9.0' && matrix.os_ida.ida_version != '9.0sp1' && matrix.os_ida.arch != 'intel' && matrix.os_ida.idat_path != '' }}
+        run: |
+          uv run "${{ github.workspace }}/tests/scripts/basic_idalib.py" "${{ github.workspace }}/tests/data/exe/Practical Malware Analysis Lab 01-01.exe_"
