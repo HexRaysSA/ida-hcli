@@ -359,7 +359,7 @@ wheels = [
 
 [[package]]
 name = "ida-hcli"
-version = "0.11.4.dev1"
+version = "0.12.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },

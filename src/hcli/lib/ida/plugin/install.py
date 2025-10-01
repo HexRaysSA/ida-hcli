@@ -21,6 +21,16 @@ from hcli.lib.ida.plugin import (
     validate_metadata_in_plugin_archive,
     validate_path,
 )
+from hcli.lib.ida.plugin.exceptions import (
+    DependencyInstallationError,
+    IDAVersionIncompatibleError,
+    InvalidPluginNameError,
+    PipNotAvailableError,
+    PlatformIncompatibleError,
+    PluginAlreadyInstalledError,
+    PluginNotInstalledError,
+    PluginVersionDowngradeError,
+)
 from hcli.lib.ida.python import (
     CantInstallPackagesError,
     does_current_ida_have_pip,
@@ -227,9 +237,15 @@ def get_installed_legacy_plugins() -> list[Path]:
     return installed_plugins
 
 
-def can_install_python_dependencies(
+def validate_can_install_python_dependencies(
     zip_data: bytes, metadata: IDAMetadataDescriptor, excluded_plugins: list[str] | None = None
-) -> bool:
+) -> None:
+    """Verify Python dependencies can be installed.
+
+    Raises:
+        PipNotAvailableError: If pip is not available in IDA's Python
+        DependencyInstallationError: If dependencies cannot be installed
+    """
     python_dependencies = get_python_dependencies_from_plugin_archive(zip_data, metadata)
     if python_dependencies:
         all_python_dependencies: list[str] = []
@@ -247,44 +263,49 @@ def can_install_python_dependencies(
 
         if not does_current_ida_have_pip(python_exe):
             logger.debug("pip not available")
-            return False
+            raise PipNotAvailableError()
 
         try:
             verify_pip_can_install_packages(python_exe, all_python_dependencies)
-        except CantInstallPackagesError:
-            logger.debug("can't install dependencies")
-            return False
-
-    return True
+        except CantInstallPackagesError as e:
+            logger.debug("can't install dependencies: %s", e)
+            raise DependencyInstallationError(python_dependencies, str(e)) from e
 
 
-def can_install_plugin(
+def validate_can_install_plugin(
     zip_data: bytes, metadata: IDAMetadataDescriptor, current_platform: str, current_version: str
-) -> bool:
+) -> None:
+    """Verify plugin can be installed.
+
+    Raises:
+        InvalidPluginNameError: If plugin name is invalid
+        PluginAlreadyInstalledError: If plugin is already installed
+        PlatformIncompatibleError: If current platform is not supported
+        IDAVersionIncompatibleError: If current IDA version is not supported
+        PipNotAvailableError: If pip is not available (when dependencies are needed)
+        DependencyInstallationError: If dependencies cannot be installed
+    """
     name = metadata.plugin.name
     try:
         destination_path = get_plugin_directory(name)
     except ValueError as e:
         logger.error(f"Can't install plugin: {str(e)}")
-        return False
+        raise InvalidPluginNameError(name, str(e)) from e
 
     if destination_path.exists():
         logger.warning(f"Plugin directory already exists: {destination_path}")
-        return False
+        raise PluginAlreadyInstalledError(name, destination_path)
 
     platforms = metadata.plugin.platforms
     if current_platform not in platforms:
         logger.warning(f"Current platform not supported: {current_platform}")
-        return False
+        raise PlatformIncompatibleError(current_platform, platforms)
 
     if metadata.plugin.ida_versions and not is_ida_version_compatible(current_version, metadata.plugin.ida_versions):
         logger.warning(f"Current IDA version not supported: {current_version}")
-        return False
+        raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
 
-    if not can_install_python_dependencies(zip_data, metadata):
-        return False
-
-    return True
+    validate_can_install_python_dependencies(zip_data, metadata)
 
 
 def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination: Path):
@@ -332,9 +353,8 @@ def _install_plugin_archive(zip_data: bytes, name: str):
     current_platform = find_current_ida_platform()
     current_version = find_current_ida_version()
 
-    if not can_install_plugin(zip_data, metadata, current_platform, current_version):
-        logger.warning("can't install plugin")
-        raise RuntimeError("Plugin installation is not possible")
+    # This will raise specific exceptions if installation is not possible
+    validate_can_install_plugin(zip_data, metadata, current_platform, current_version)
 
     # path within IDAUSR/plugins to the new plugin
     #
@@ -388,19 +408,21 @@ def install_plugin_archive(zip_data: bytes, name: str):
         raise ValueError("Invalid plugin archive")
 
 
-def can_uninstall_plugin(name: str) -> bool:
+def validate_can_uninstall_plugin(name: str) -> None:
+    """Verify plugin can be uninstalled.
+
+    Raises:
+        PluginNotInstalledError: If plugin is not installed
+    """
     if name not in [name for (name, _version) in get_installed_plugins()]:
         logger.warning(f"Plugin directory not installed: {name}")
-        return False
-
-    return True
+        raise PluginNotInstalledError(name)
 
 
 def uninstall_plugin(name: str):
     # NOTE: keep this in sync with upgrade (checkpoint/rollback) which has an inlined copy.
 
-    if not can_uninstall_plugin(name):
-        raise ValueError("can't uninstall plugin")
+    validate_can_uninstall_plugin(name)
 
     plugin_path = get_plugin_directory(name)
     metadata = get_metadata_from_plugin_directory(plugin_path)
@@ -420,33 +442,40 @@ def is_plugin_installed(name: str) -> bool:
     return name in installed_plugins
 
 
-def can_upgrade_plugin(
+def validate_can_upgrade_plugin(
     zip_data: bytes, metadata: IDAMetadataDescriptor, current_platform: str, current_version: str
-) -> bool:
+) -> None:
+    """Verify plugin can be upgraded.
+
+    Raises:
+        InvalidPluginNameError: If plugin name is invalid
+        PluginNotInstalledError: If plugin is not currently installed
+        PlatformIncompatibleError: If current platform is not supported
+        IDAVersionIncompatibleError: If current IDA version is not supported
+        PipNotAvailableError: If pip is not available (when dependencies are needed)
+        DependencyInstallationError: If dependencies cannot be installed
+    """
     name = metadata.plugin.name
     try:
         destination_path = get_plugin_directory(name)
     except ValueError as e:
         logger.error(f"Can't upgrade plugin: {str(e)}")
-        return False
+        raise InvalidPluginNameError(name, str(e)) from e
 
     if not destination_path.exists():
         logger.warning(f"Plugin directory doesn't exist: {destination_path}")
-        return False
+        raise PluginNotInstalledError(name)
 
     platforms = metadata.plugin.platforms
     if current_platform not in platforms:
         logger.warning(f"Current platform not supported: {current_platform}")
-        return False
+        raise PlatformIncompatibleError(current_platform, platforms)
 
     if metadata.plugin.ida_versions and not is_ida_version_compatible(current_version, metadata.plugin.ida_versions):
         logger.warning(f"Current IDA version not supported: {current_version}")
-        return False
+        raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
 
-    if not can_install_python_dependencies(zip_data, metadata, excluded_plugins=[name]):
-        return False
-
-    return True
+    validate_can_install_python_dependencies(zip_data, metadata, excluded_plugins=[name])
 
 
 def upgrade_plugin_archive(zip_data: bytes, name: str):
@@ -454,14 +483,13 @@ def upgrade_plugin_archive(zip_data: bytes, name: str):
     validate_metadata_in_plugin_archive(zip_data, metadata)
 
     if not is_plugin_installed(metadata.plugin.name):
-        raise ValueError(f"plugin is not installed: {metadata.plugin.name}")
+        raise PluginNotInstalledError(metadata.plugin.name)
 
     current_platform = find_current_ida_platform()
     current_version = find_current_ida_version()
 
-    if not can_upgrade_plugin(zip_data, metadata, current_platform, current_version):
-        logger.warning("can't upgrade plugin")
-        raise RuntimeError("Plugin upgrade is not possible")
+    # This will raise specific exceptions if upgrade is not possible
+    validate_can_upgrade_plugin(zip_data, metadata, current_platform, current_version)
 
     plugin_path = get_plugin_directory(metadata.plugin.name)
     existing_metadata = get_metadata_from_plugin_directory(plugin_path)
@@ -473,8 +501,8 @@ def upgrade_plugin_archive(zip_data: bytes, name: str):
         logger.warning(
             f"New version {metadata.plugin.version} is not greater than existing version {existing_metadata.plugin.version}"
         )
-        raise ValueError(
-            f"Cannot upgrade plugin {metadata.plugin.name}: new version {metadata.plugin.version} is not greater than existing version {existing_metadata.plugin.version}"
+        raise PluginVersionDowngradeError(
+            metadata.plugin.name, existing_metadata.plugin.version, metadata.plugin.version
         )
 
     # as long as uninstallation is as simple as removing the directory

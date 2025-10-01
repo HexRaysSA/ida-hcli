@@ -13,6 +13,7 @@ from fixtures import (
     temp_env_var,
 )
 
+from hcli.lib.ida.plugin.exceptions import PluginVersionDowngradeError
 from hcli.lib.ida.plugin.install import (
     get_installed_plugins,
     get_plugin_directory,
@@ -84,7 +85,7 @@ def test_upgrade(virtual_ida_environment):
     uninstall_plugin("plugin1")
 
     install_plugin_archive(v2, "plugin1")
-    with pytest.raises(ValueError):
+    with pytest.raises(PluginVersionDowngradeError):
         # this is a downgrade
         upgrade_plugin_archive(v1, "plugin1")
 
