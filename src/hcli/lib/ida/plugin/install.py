@@ -314,7 +314,7 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
         raise FileExistsError(f"Destination already exists: {destination}")
 
     with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
-        if not subdirectory or subdirectory == Path('.'):
+        if not subdirectory or subdirectory == Path("."):
             # subdirectory represents the root (e.g., None or Path("."))
             plugin_dir_prefix = ""
         else:
