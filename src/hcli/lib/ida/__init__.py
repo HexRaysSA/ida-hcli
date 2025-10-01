@@ -504,7 +504,7 @@ class SettingsConfig(BaseModel):
 
 class PluginConfig(BaseModel):
     # `ida-plugin.json` `.plugin.settings` describes the schema for these settings.
-    settings: dict[str, str] = Field(default_factory=dict)
+    settings: dict[str, str | bool] = Field(default_factory=dict)
 
 
 # describes contents of IDAUSR/ida-config.json

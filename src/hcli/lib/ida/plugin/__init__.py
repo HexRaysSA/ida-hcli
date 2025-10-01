@@ -204,13 +204,13 @@ class PluginSettingDescriptor(BaseModel):
     # like `open_ai_key`
     key: str
 
-    type: Literal["string"]
+    type: Literal["string", "boolean"]
 
     required: bool
 
     # this is not written into `ida-config.json`
     # but provided on-demand when no config can provide the setting.
-    default: str | None = None
+    default: str | bool | None = None
 
     # human readable name for the setting
     # like `OpenAI API key`
@@ -222,14 +222,24 @@ class PluginSettingDescriptor(BaseModel):
 
     # regular expression used to validate candidate values
     # like: `[a-z]{32}`
+    # only used for string types
     validation_pattern: str | None = None
 
-    def validate_value(self, candidate_value: str) -> None:
-        if not self.validation_pattern:
-            return
+    @model_validator(mode="after")
+    def validate_boolean_constraints(self):
+        if self.type == "boolean" and self.validation_pattern is not None:
+            raise ValueError(f"validation_pattern is only supported for string settings, not boolean: {self.key}")
+        return self
 
-        if not re.match(self.validation_pattern, candidate_value):
-            raise ValueError(f"failed to validate setting value: {self.key}: '{candidate_value}'")
+    def validate_value(self, candidate_value: str | bool) -> None:
+        if self.type == "boolean":
+            if not isinstance(candidate_value, bool):
+                raise ValueError(f"failed to validate setting value: {self.key}: '{candidate_value}'")
+        elif self.type == "string":
+            if not isinstance(candidate_value, str):
+                raise ValueError(f"failed to validate setting value: {self.key}: '{candidate_value}'")
+            if self.validation_pattern and not re.match(self.validation_pattern, candidate_value):
+                raise ValueError(f"failed to validate setting value: {self.key}: '{candidate_value}'")
 
 
 class PluginMetadata(BaseModel):
@@ -396,15 +406,23 @@ class PluginMetadata(BaseModel):
     @classmethod
     def do_defaults_validate(cls, settings: list[PluginSettingDescriptor]) -> list[PluginSettingDescriptor]:
         for setting in settings:
-            if not setting.validation_pattern:
-                continue
-            if not setting.default:
+            if setting.default is None:
                 continue
 
-            if not re.match(setting.validation_pattern, setting.default):
-                raise ValueError(
-                    f"setting default value does not validate: {setting.key}: '{setting.default}'",
-                )
+            if setting.type == "boolean":
+                if not isinstance(setting.default, bool):
+                    raise ValueError(
+                        f"setting default value type mismatch: {setting.key}: expected bool, got {type(setting.default).__name__}",
+                    )
+            elif setting.type == "string":
+                if not isinstance(setting.default, str):
+                    raise ValueError(
+                        f"setting default value type mismatch: {setting.key}: expected str, got {type(setting.default).__name__}",
+                    )
+                if setting.validation_pattern and not re.match(setting.validation_pattern, setting.default):
+                    raise ValueError(
+                        f"setting default value does not validate: {setting.key}: '{setting.default}'",
+                    )
 
         return settings
 
