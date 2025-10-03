@@ -327,7 +327,10 @@ def install_ida(installer: Path, install_dir: Path):
       - ...
     """
     if install_dir.exists():
-        raise ValueError("failed to install: destination directory already exists")
+        raise FileExistsError(
+            f"Installation directory already exists: {install_dir}\n"
+            f"Please remove the existing directory first or choose a different location."
+        )
 
     logger.info(f"Installing IDA in {install_dir}")
     install_dir.mkdir(parents=True, exist_ok=False)
