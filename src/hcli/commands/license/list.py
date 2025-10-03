@@ -125,7 +125,7 @@ def _display_licenses_table(licenses) -> None:
 
         table.add_row(
             lic.pubhash,
-            lic.edition.edition_name,
+            lic.edition.edition_name if lic.edition else "Unknown",
             lic.license_type,
             status,
             expiration_text,

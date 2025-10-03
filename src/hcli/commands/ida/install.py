@@ -63,8 +63,10 @@ async def install(
         if download_slug:
             await download.callback(output_dir=tmp_dir, key=download_slug)
             installer_path = Path(tmp_dir) / Path(download_slug).name
-        else:
+        elif installer is not None:
             installer_path = Path(installer)
+        else:
+            raise click.UsageError("Either provide an installer file path or use --download-id to download one")
 
         version = IdaProduct.from_installer_filename(installer_path.name)
 
