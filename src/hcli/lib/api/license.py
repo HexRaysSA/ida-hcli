@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel
 
+from hcli.lib.console import console
+
 from .common import get_api_client
 
 
@@ -108,7 +110,7 @@ class LicenseAPI:
 
             return licenses
         except Exception as e:
-            print(f"Exception occurred: {e}")
+            console.print(f"Exception occurred: {e}")
             return []
 
     async def download_license(

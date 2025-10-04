@@ -25,7 +25,7 @@ def snapshot(ctx) -> None:
     """Create a snapshot of the repository."""
     try:
         repo = JSONFilePluginRepo.from_repo(ctx.obj["plugin_repo"])
-        print(repo.to_json())
+        console.print(repo.to_json())
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")

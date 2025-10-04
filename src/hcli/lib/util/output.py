@@ -4,6 +4,8 @@ import json
 from enum import Enum
 from typing import Any
 
+from hcli.lib.console import console
+
 
 class OutputFormat(Enum):
     """Output format enumeration."""
@@ -62,18 +64,18 @@ def output(
         # Output based on type
         if isinstance(filtered_value, str):
             # Print raw string without quotes for string values
-            print(filtered_value)
+            console.print(filtered_value)
         else:
             # Print other types as JSON
-            print(json.dumps(filtered_value, indent=2, default=str))
+            console.print(json.dumps(filtered_value, indent=2, default=str))
     else:
         # Default to JSON format for text output as well
-        print(json.dumps(value, indent=2, default=str))
+        console.print(json.dumps(value, indent=2, default=str))
 
 
 def output_json(value: Any, indent: int = 2) -> None:
     """Output a value as formatted JSON."""
-    print(json.dumps(value, indent=indent, default=str))
+    console.print(json.dumps(value, indent=indent, default=str))
 
 
 def output_table(data: list, headers: list | None = None, show_headers: bool = True) -> None:
@@ -112,24 +114,24 @@ def output_table(data: list, headers: list | None = None, show_headers: bool = T
             width = col_widths[j] if j < len(col_widths) else 0
             formatted_row.append(cell.ljust(width))
 
-        print("  ".join(formatted_row))
+        console.print("  ".join(formatted_row))
 
         # Print separator after headers
         if i == 0 and headers and show_headers:
             separator = "  ".join("-" * width for width in col_widths)
-            print(separator)
+            console.print(separator)
 
 
 def output_list(items: list, bullet: str = "•") -> None:
     """Output a list of items with bullets."""
     for item in items:
-        print(f"{bullet} {item}")
+        console.print(f"{bullet} {item}")
 
 
 def output_key_value(data: dict[str, Any], separator: str = ": ") -> None:
     """Output key-value pairs."""
     for key, value in data.items():
-        print(f"{key}{separator}{value}")
+        console.print(f"{key}{separator}{value}")
 
 
 def format_size(size_bytes: int) -> str:
@@ -198,24 +200,24 @@ def colorize(text: str, color: str) -> str:
 
 def success(message: str) -> None:
     """Print a success message."""
-    print(colorize(f"✓ {message}", "green"))
+    console.print(colorize(f"✓ {message}", "green"))
 
 
 def error(message: str) -> None:
     """Print an error message."""
-    print(colorize(f"✗ {message}", "red"))
+    console.print(colorize(f"✗ {message}", "red"))
 
 
 def warning(message: str) -> None:
     """Print a warning message."""
-    print(colorize(f"⚠ {message}", "yellow"))
+    console.print(colorize(f"⚠ {message}", "yellow"))
 
 
 def info(message: str) -> None:
     """Print an info message."""
-    print(colorize(f"ℹ {message}", "blue"))
+    console.print(colorize(f"ℹ {message}", "blue"))
 
 
 def progress(message: str) -> None:
     """Print a progress message."""
-    print(colorize(f"⋯ {message}", "cyan"))
+    console.print(colorize(f"⋯ {message}", "cyan"))
