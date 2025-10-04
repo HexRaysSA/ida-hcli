@@ -16,6 +16,7 @@ from hcli.lib.ida.plugin import (
     validate_metadata_in_plugin_archive,
 )
 from hcli.lib.ida.plugin.install import validate_metadata_in_plugin_directory
+from hcli.lib.ida.plugin.repo import fetch_plugin_archive
 
 logger = logging.getLogger(__name__)
 
@@ -104,37 +105,30 @@ def _lint_plugin_directory(plugin_path: Path) -> None:
         raise click.Abort()
 
 
-def _lint_plugin_archive(archive_path: Path) -> None:
-    """Lint plugins in a .zip archive."""
-    logger.debug("reading plugin archive from %s", archive_path)
-    try:
-        zip_data = archive_path.read_bytes()
-    except Exception as e:
-        console.print(f"[red]Error[/red]: Failed to read archive {archive_path}: {e}")
-        raise click.Abort()
-
+def _lint_plugin_archive(zip_data: bytes, source_name: str) -> None:
+    """Lint plugins in a .zip archive from bytes."""
     try:
         plugins_found = list(get_metadatas_with_paths_from_plugin_archive(zip_data))
     except Exception as e:
-        console.print(f"[red]Error[/red]: Failed to read plugins from archive {archive_path}: {e}")
+        console.print(f"[red]Error[/red]: Failed to read plugins from archive {source_name}: {e}")
         raise click.Abort()
     else:
         for path, meta in plugins_found:
             logger.debug("found plugin %s at %s", meta.plugin.name, path)
 
     if not plugins_found:
-        console.print(f"[red]Error[/red]: No valid plugins found in archive {archive_path}")
+        console.print(f"[red]Error[/red]: No valid plugins found in archive {source_name}")
         return
 
     for metadata_path, metadata in plugins_found:
-        source_name = f"{archive_path}:{metadata_path}"
+        plugin_source_name = f"{source_name}:{metadata_path}"
 
         try:
             validate_metadata_in_plugin_archive(zip_data, metadata)
-            _validate_and_lint_metadata(metadata, source_name)
+            _validate_and_lint_metadata(metadata, plugin_source_name)
 
         except ValidationError as e:
-            console.print(f"[red]Error[/red] ({source_name}): ida-plugin.json validation failed")
+            console.print(f"[red]Error[/red] ({plugin_source_name}): ida-plugin.json validation failed")
             for error in e.errors():
                 field_path = ".".join(str(loc) for loc in error["loc"])
                 error_msg = error["msg"]
@@ -147,14 +141,29 @@ def _lint_plugin_archive(archive_path: Path) -> None:
 
         except Exception as e:
             logger.warning("error: %s", e, exc_info=True)
-            console.print(f"[red]Error[/red] ({source_name}): {e}")
+            console.print(f"[red]Error[/red] ({plugin_source_name}): {e}")
             raise click.Abort()
 
 
 @click.command()
-@click.argument("path")
+@click.argument(
+    "path",
+    metavar="PATH|URL",
+    help="Path to plugin directory, .zip archive, or HTTPS URL to .zip archive",
+)
 def lint_plugin_directory(path: str) -> None:
-    """Lint an IDA plugin directory or archive (.zip file)."""
+    """Lint an IDA plugin directory, archive (.zip file), or HTTPS URL."""
+    if path.startswith("https://"):
+        logger.info("linting from HTTP URL")
+        try:
+            buf = fetch_plugin_archive(path)
+        except Exception as e:
+            console.print(f"[red]Error[/red]: Failed to fetch archive from {path}: {e}")
+            raise click.Abort()
+
+        _lint_plugin_archive(buf, path)
+        return
+
     plugin_path = Path(path)
 
     if not plugin_path.exists():
@@ -163,7 +172,14 @@ def lint_plugin_directory(path: str) -> None:
 
     if plugin_path.is_file():
         if plugin_path.suffix.lower() == ".zip":
-            _lint_plugin_archive(plugin_path)
+            logger.debug("reading plugin archive from %s", plugin_path)
+            try:
+                zip_data = plugin_path.read_bytes()
+            except Exception as e:
+                console.print(f"[red]Error[/red]: Failed to read archive {plugin_path}: {e}")
+                raise click.Abort()
+
+            _lint_plugin_archive(zip_data, str(plugin_path))
         else:
             console.print(f"[red]Error[/red]: File must be a .zip archive: {plugin_path}")
     elif plugin_path.is_dir():
