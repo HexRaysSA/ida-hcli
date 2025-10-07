@@ -149,7 +149,6 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> None:
 @click.argument(
     "path",
     metavar="PATH|URL",
-    help="Path to plugin directory, .zip archive, or HTTPS URL to .zip archive",
 )
 def lint_plugin_directory(path: str) -> None:
     """Lint an IDA plugin directory, archive (.zip file), or HTTPS URL."""
