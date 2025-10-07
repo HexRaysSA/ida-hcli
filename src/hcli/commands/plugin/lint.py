@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import logging
+import zipfile
 from pathlib import Path
 
 import rich_click as click
@@ -19,6 +21,63 @@ from hcli.lib.ida.plugin.install import validate_metadata_in_plugin_directory
 from hcli.lib.ida.plugin.repo import fetch_plugin_archive
 
 logger = logging.getLogger(__name__)
+
+
+def _lint_readme_in_directory(plugin_path: Path, source_name: str) -> None:
+    """Check for README.md file in plugin directory."""
+    found_files = []
+    has_exact_match = False
+
+    for item in plugin_path.iterdir():
+        if item.is_file() and item.name == "README.md":
+            has_exact_match = True
+            break
+        if item.is_file() and item.name.lower().startswith("readme"):
+            found_files.append(item.name)
+
+    if has_exact_match:
+        return
+
+    if found_files:
+        console.print(
+            f"[yellow]Recommendation[/yellow] ({source_name}): rename {found_files[0]} to README.md (exact casing)"
+        )
+        console.print("  Use 'README.md' with exact casing for consistency and discoverability")
+    else:
+        console.print(f"[yellow]Recommendation[/yellow] ({source_name}): add a README.md file")
+        console.print("  A README helps users understand what your plugin does and how to use it")
+
+
+def _lint_readme_in_archive(zip_data: bytes, metadata_path: Path, source_name: str) -> None:
+    """Check for README.md file in plugin archive."""
+    plugin_dir = metadata_path.parent
+
+    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
+        namelist = zip_file.namelist()
+
+        found_files = []
+        has_exact_match = False
+
+        for file_path in namelist:
+            path_obj = Path(file_path)
+            if path_obj.parent == plugin_dir:
+                if path_obj.name == "README.md":
+                    has_exact_match = True
+                    break
+                if path_obj.name.lower().startswith("readme"):
+                    found_files.append(path_obj.name)
+
+        if has_exact_match:
+            return
+
+        if found_files:
+            console.print(
+                f"[yellow]Recommendation[/yellow] ({source_name}): rename {found_files[0]} to README.md (exact casing)"
+            )
+            console.print("  Use 'README.md' with exact casing for consistency and discoverability")
+        else:
+            console.print(f"[yellow]Recommendation[/yellow] ({source_name}): add a README.md file")
+            console.print("  A README helps users understand what your plugin does and how to use it")
 
 
 def _validate_and_lint_metadata(metadata: IDAMetadataDescriptor, source_name: str) -> None:
@@ -93,6 +152,8 @@ def _lint_plugin_directory(plugin_path: Path) -> None:
 
         raise click.Abort()
 
+    _lint_readme_in_directory(plugin_path, str(plugin_path))
+
     try:
         # Additional validation
         validate_metadata_in_plugin_directory(plugin_path)
@@ -122,6 +183,8 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> None:
 
     for metadata_path, metadata in plugins_found:
         plugin_source_name = f"{source_name}:{metadata_path}"
+
+        _lint_readme_in_archive(zip_data, metadata_path, plugin_source_name)
 
         try:
             validate_metadata_in_plugin_archive(zip_data, metadata)
