@@ -25,7 +25,8 @@ def snapshot(ctx) -> None:
     """Create a snapshot of the repository."""
     try:
         repo = JSONFilePluginRepo.from_repo(ctx.obj["plugin_repo"])
-        console.print(repo.to_json())
+        # Use print() instead of console.print() to output raw JSON without ANSI control characters
+        print(repo.to_json())
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
