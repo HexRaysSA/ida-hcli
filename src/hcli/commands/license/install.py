@@ -76,7 +76,7 @@ async def install_license(file: Path, ida_dir: str | None) -> None:
 
     # Validate target directory
     target_path = Path(target).expanduser().resolve()
-    print(f"==> {target_path}")
+    console.print(f"==> {target_path}")
     if not target_path.exists():
         console.print(f"[red]Target directory does not exist: {target_path}[/red]")
         create = await safe_ask_async(

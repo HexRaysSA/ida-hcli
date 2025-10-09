@@ -97,19 +97,15 @@ class LicenseAPI:
 
     async def get_licenses(self, customer_id: str) -> list[License]:
         """Get licenses for a customer."""
-        try:
-            client = await get_api_client()
-            data = await client.get_json(f"/api/licenses/{customer_id}?page=1&limit=100")
-            paged_response = PagedResponse(**data)
+        client = await get_api_client()
+        data = await client.get_json(f"/api/licenses/{customer_id}?page=1&limit=100")
+        paged_response = PagedResponse(**data)
 
-            # Sort licenses by end_date (descending, with null dates last)
-            licenses = paged_response.items
-            licenses.sort(key=lambda x: (x.end_date is None, x.end_date), reverse=True)
+        # Sort licenses by end_date (descending, with null dates last)
+        licenses = paged_response.items
+        licenses.sort(key=lambda x: (x.end_date is None, x.end_date), reverse=True)
 
-            return licenses
-        except Exception as e:
-            print(f"Exception occurred: {e}")
-            return []
+        return licenses
 
     async def download_license(
         self, customer_id: str, license_id: str, asset_type: str, target_dir: str = "./"

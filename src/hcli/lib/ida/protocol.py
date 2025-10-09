@@ -16,8 +16,6 @@ def setup_macos_protocol_handler() -> None:
     try:
         hcli_path = get_hcli_executable_path()
 
-        print(hcli_path)
-
         # Create AppleScript application
         applescript_content = f'''
 on open location this_URL

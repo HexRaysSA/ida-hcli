@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
@@ -17,6 +18,8 @@ from hcli.lib.constants.auth import (
     CredentialsConfig,
     CredentialType,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:
@@ -381,16 +384,10 @@ class AuthService:
                 self.add_credentials(source)
 
                 return source
-            except Exception as e:
-                print(f"error {e}")
             finally:
                 self._current_source = old_source
-                # exit ? invalid key ?
 
-            return None
-
-        except Exception as e:
-            print(f"error {e}")
+        except Exception:
             return None
 
     def logout_current(self) -> None:
@@ -406,25 +403,27 @@ class AuthService:
 
     def show_login_info(self) -> None:
         """Display current login status and user information."""
+        from hcli.lib.console import console
+
         if not self.is_logged_in():
-            print("You are not logged in.")
+            console.print("You are not logged in.")
             return
 
         # Handle environment variable case
         if ENV.HCLI_API_KEY and not self._current_source:
             user = self.get_user()
             email = user["email"] if user else "unknown"
-            print(f"You are logged in as {email} using an API key from HCLI_API_KEY environment variable")
+            console.print(f"You are logged in as {email} using an API key from HCLI_API_KEY environment variable")
             return
 
         source = self.get_current_credentials()
         if not source:
-            print("You are not logged in.")
+            console.print("You are not logged in.")
             return
 
         # Simplified output for single source scenarios
         if not self._should_show_multi_auth_ui():
-            print(f"You are logged in as {source.email}")
+            console.print(f"You are logged in as {source.email}")
             return
 
         # Detailed output for multiple sources
@@ -441,12 +440,14 @@ class AuthService:
             default_info = " (default)"
 
         label = getattr(source, "label", source.email)
-        print(f"You are logged in as {label}{auth_info}{default_info}")
+        console.print(f"You are logged in as {label}{auth_info}{default_info}")
 
     # OAuth flow implementation (unchanged)
     async def _login_flow(self, prompt: bool = False):
         """Handle OAuth login flow with local HTTP server."""
-        print(f"Starting Google OAuth login{'with prompt' if prompt else ''}...")
+        from hcli.lib.console import console
+
+        console.print(f"Starting Google OAuth login{'with prompt' if prompt else ''}...")
 
         # Build OAuth URL with optional prompt parameter
         query_params = {}
@@ -466,10 +467,10 @@ class AuthService:
 
         oauth_url = auth_response.url
         if not oauth_url:
-            print("No OAuth URL received")
+            console.print("No OAuth URL received")
             return
 
-        print(f"Open this URL in your browser to continue login: {oauth_url}")
+        console.print(f"Open this URL in your browser to continue login: {oauth_url}")
         webbrowser.open(oauth_url)
 
         # Start local HTTP server to handle callback
@@ -516,7 +517,7 @@ class AuthService:
                             handler_self.send_response(400)
                             handler_self.end_headers()
                     except Exception as e:
-                        print(f"Failed to process token: {e}")
+                        logger.warning(f"Failed to process token: {e}")
                         handler_self.send_response(500)
                         handler_self.end_headers()
                 else:
@@ -543,6 +544,8 @@ class AuthService:
         server.server_close()
 
         if self._oauth_result:
+            from hcli.lib.console import console
+
             # Set session with received tokens
             self.supabase.auth.set_session(self._oauth_result["access_token"], self._oauth_result["refresh_token"])
 
@@ -551,9 +554,11 @@ class AuthService:
             if user_response and user_response.user:
                 self.user = user_response.user
                 self.session = self.supabase.auth.get_session()
-                print(f"{self.user.email} logged in successfully!")
+                console.print(f"{self.user.email} logged in successfully!")
         else:
-            print("Login timeout or failed")
+            from hcli.lib.console import console
+
+            console.print("Login timeout or failed")
 
 
 # Global auth service instance accessor
