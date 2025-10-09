@@ -364,35 +364,26 @@ class AuthService:
     async def add_api_key_credentials(self, name: str, token: str) -> Credentials | None:
         """Add a new API key credentials."""
         # Get user email from API
+        from hcli.lib.api.auth import auth
+
+        # Temporarily set the API key to test it
+        old_source = self._current_source
+        temp_source = Credentials.create_credentials("temp", CredentialType.KEY, token, "temp@example.com")
+        self._current_source = temp_source
+
         try:
-            from hcli.lib.api.auth import auth
+            user_info = await auth.whoami()
+            email = user_info.email
+            # Create and add the source with key_name for label generation
+            source = Credentials.create_credentials(name, CredentialType.KEY, token, email)
 
-            # Temporarily set the API key to test it
-            old_source = self._current_source
-            temp_source = Credentials.create_credentials("temp", CredentialType.KEY, token, "temp@example.com")
-            self._current_source = temp_source
+            self.remove_credentials(name)
+            self.add_credentials(source)
 
-            try:
-                user_info = await auth.whoami()
-                email = user_info.email
-                # Create and add the source with key_name for label generation
-                source = Credentials.create_credentials(name, CredentialType.KEY, token, email)
-
-                self.remove_credentials(name)
-                self.add_credentials(source)
-
-                return source
-            except Exception as e:
-                console.print(f"error {e}")
-            finally:
-                self._current_source = old_source
-                # exit ? invalid key ?
-
-            return None
-
-        except Exception as e:
-            console.print(f"error {e}")
-            return None
+            return source
+        finally:
+            self._current_source = old_source
+            # exit ? invalid key ?
 
     def logout_current(self) -> None:
         """Logout from current session (for interactive auth)."""
