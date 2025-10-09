@@ -580,7 +580,7 @@ def explain_missing_current_installation_directory(console: rich.console.Console
     console.print("")
     console.print("1. set the default value in $IDAUSR/ida-config.json, which you can do via:")
     console.print("")
-    console.print("     [grey69]python /path/to/IDA/installation/py-activate-idalib.py[/grey69]")
+    console.print("     [grey69]hcli ida set-default /path/to/IDA/installation/[/grey69]")
     console.print("")
     console.print("2. provide the HCLI_CURRENT_IDA_INSTALL_DIR environment variable, like:")
     console.print("")
