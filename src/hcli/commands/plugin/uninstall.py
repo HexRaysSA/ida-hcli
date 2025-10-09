@@ -22,7 +22,7 @@ def uninstall_plugin(plugin: str) -> None:
         console.print(f"[red]{e}[/red]")
         raise click.Abort()
     except Exception as e:
-        logger.error("failed to uninstall: %s", e, exc_info=True)
+        logger.debug("failed to uninstall: %s", e, exc_info=True)
         console.print(f"[red]uninstall failed: {e}[/red]")
         raise click.Abort()
 

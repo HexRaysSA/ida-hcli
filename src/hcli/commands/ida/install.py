@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import rich_click as click
+from rich.prompt import Confirm
 
 from hcli.commands.download import download
 from hcli.commands.license.get import get_license
@@ -28,6 +29,7 @@ from hcli.lib.util.io import get_temp_dir
 @click.option("-i", "--install-dir", "install_dir", required=False, help="Install dir")
 @click.option("-a", "--accept-eula", "eula", is_flag=True, help="Accept EULA", default=True)
 @click.option("--set-default", is_flag=True, help="Mark this IDA installation as the default", default=False)
+@click.option("--dry-run", is_flag=True, help="Show what would be done without actually installing")
 @click.argument("installer", required=False)
 @click.command()
 @click.pass_context
@@ -40,6 +42,7 @@ async def install(
     download_slug: str | None,
     license_id: str | None,
     set_default: bool,
+    dry_run: bool,
 ) -> None:
     """Installs IDA unattended.
 
@@ -63,8 +66,10 @@ async def install(
         if download_slug:
             await download.callback(output_dir=tmp_dir, key=download_slug)
             installer_path = Path(tmp_dir) / Path(download_slug).name
-        else:
+        elif installer is not None:
             installer_path = Path(installer)
+        else:
+            raise click.UsageError("Either provide an installer file path or use --download-id to download one")
 
         version = IdaProduct.from_installer_filename(installer_path.name)
 
@@ -72,6 +77,35 @@ async def install(
             install_dir_path = get_default_ida_install_directory(version)
         else:
             install_dir_path = Path(install_dir)
+
+        # Show installation details
+        console.print("\n[bold]Installation details:[/bold]")
+        console.print(f"  Installer: {installer_path}")
+        console.print(f"  Destination: {install_dir_path}")
+        if license_id:
+            console.print(f"  License: {license_id}")
+        if set_default:
+            console.print("  Set as default: Yes")
+
+        # Dry run mode
+        if dry_run:
+            console.print("\n[bold cyan]Dry run mode - no changes will be made[/bold cyan]")
+            console.print("\n[bold]Would perform the following actions:[/bold]")
+            console.print(f"  1. Extract installer to: {install_dir_path}")
+            if license_id:
+                license_dir_path = get_license_dir(install_dir_path)
+                console.print(f"  2. Install license to: {license_dir_path}")
+            if set_default:
+                config_path = get_ida_config_path()
+                console.print(f"  3. Update default IDA path in: {config_path}")
+            if eula:
+                console.print("  4. Accept EULA")
+            return
+
+        # Confirmation prompt
+        if not Confirm.ask("\n[bold yellow]Proceed with installation?[/bold yellow]"):
+            console.print("[yellow]Installation cancelled.[/yellow]")
+            return
 
         console.print(f"[yellow]Installing {installer_path} to {install_dir_path}...[/yellow]")
 

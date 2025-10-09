@@ -6,10 +6,16 @@ import logging
 from pathlib import Path
 
 import questionary
+import rich.status
 import rich_click as click
 
-from hcli.lib.console import console
-from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
+from hcli.lib.console import console, stderr_console
+from hcli.lib.ida import (
+    MissingCurrentInstallationDirectory,
+    explain_missing_current_installation_directory,
+    find_current_ida_platform,
+    find_current_ida_version,
+)
 from hcli.lib.ida.plugin import (
     get_metadata_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
@@ -29,8 +35,9 @@ logger = logging.getLogger(__name__)
 def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
     plugin_spec = plugin
     try:
-        current_ida_platform = find_current_ida_platform()
-        current_ida_version = find_current_ida_version()
+        with rich.status.Status("collecting environment", console=stderr_console):
+            current_ida_platform = find_current_ida_platform()
+            current_ida_version = find_current_ida_version()
 
         if Path(plugin_spec).exists() and plugin_spec.endswith(".zip"):
             logger.info("installing from the local file system")
@@ -51,7 +58,8 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
 
         elif plugin_spec.startswith("https://"):
             logger.info("installing from HTTP URL")
-            buf = fetch_plugin_archive(plugin_spec)
+            with rich.status.Status("fetching plugin", console=stderr_console):
+                buf = fetch_plugin_archive(plugin_spec)
             items = list(get_metadatas_with_paths_from_plugin_archive(buf))
             if len(items) != 1:
                 raise ValueError("plugin archive must contain a single plugin for HTTP URL installation")
@@ -63,7 +71,10 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
             logger.debug("plugin name: %s", plugin_name)
 
             plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
-            buf = plugin_repo.fetch_compatible_plugin_from_spec(plugin_spec, current_ida_platform, current_ida_version)
+            with rich.status.Status("fetching plugin", console=stderr_console):
+                buf = plugin_repo.fetch_compatible_plugin_from_spec(
+                    plugin_spec, current_ida_platform, current_ida_version
+                )
 
         metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 
@@ -76,7 +87,8 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
                 parsed_value = parse_setting_value(descr, value_str)
                 descr.validate_value(parsed_value)
 
-        install_plugin_archive(buf, plugin_name)
+        with rich.status.Status("installing plugin", console=stderr_console):
+            install_plugin_archive(buf, plugin_name)
 
         try:
             if metadata.plugin.settings:
@@ -165,10 +177,15 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
 
         except Exception as e:
             logger.warning("failed to configure settings, removing installation...")
-            uninstall_plugin(plugin_name)
+            with rich.status.Status("rolling back installation", console=stderr_console):
+                uninstall_plugin(plugin_name)
             raise e
 
         console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}")
+    except MissingCurrentInstallationDirectory:
+        explain_missing_current_installation_directory(console)
+        raise click.Abort()
+
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")

@@ -13,6 +13,7 @@ from functools import total_ordering
 from pathlib import Path
 from typing import Literal, NamedTuple
 
+import rich.console
 from pydantic import BaseModel, ConfigDict, Field
 
 from hcli.env import ENV
@@ -327,7 +328,10 @@ def install_ida(installer: Path, install_dir: Path):
       - ...
     """
     if install_dir.exists():
-        raise ValueError("failed to install: destination directory already exists")
+        raise FileExistsError(
+            f"Installation directory already exists: {install_dir}\n"
+            f"Please remove the existing directory first or choose a different location."
+        )
 
     logger.info(f"Installing IDA in {install_dir}")
     install_dir.mkdir(parents=True, exist_ok=False)
@@ -544,6 +548,11 @@ def set_ida_config(config: IDAConfigJson):
     _ = ida_config_path.write_text(config.model_dump_json())
 
 
+class MissingCurrentInstallationDirectory(ValueError):
+    def __init__(self, msg):
+        super().__init__(f"failed to determine current IDA installation directory: {msg}")
+
+
 def find_current_ida_install_directory() -> Path:
     # duplicate here, because we prefer access through ENV
     # but tests might update env vars for the current process.
@@ -555,13 +564,34 @@ def find_current_ida_install_directory() -> Path:
 
     config = get_ida_config()
     if not config.paths.installation_directory:
-        raise ValueError("failed to determine current IDA installation directory")
+        raise MissingCurrentInstallationDirectory("directory doesn't exist")
 
     if not config.paths.installation_directory.exists():
-        raise ValueError("ida-config.json invalid: ida-install-dir doesn't exist")
+        raise MissingCurrentInstallationDirectory("ida-config.json invalid: ida-install-dir doesn't exist")
 
     logger.debug("current IDA installation: %s", config.paths.installation_directory)
     return config.paths.installation_directory
+
+
+def explain_missing_current_installation_directory(console: rich.console.Console):
+    console.print("[red]Error[/red]: failed to find the current IDA Pro installation directory.")
+    console.print("")
+    console.print("You can configure this in two ways:")
+    console.print("")
+    console.print("1. set the default value in $IDAUSR/ida-config.json, which you can do via:")
+    console.print("")
+    console.print("     [grey69]python /path/to/IDA/installation/py-activate-idalib.py[/grey69]")
+    console.print("")
+    console.print("2. provide the HCLI_CURRENT_IDA_INSTALL_DIR environment variable, like:")
+    console.print("")
+    console.print("     [grey69]export HCLI_CURRENT_IDA_INSTALL_DIR=/path/to/IDA/installation/[/grey69] # Linux, or")
+    console.print(
+        '     [grey69]export HCLI_CURRENT_IDA_INSTALL_DIR="/Applications/IDA Professional 9.2.app/Contents/MacOS/"[/grey69] # macOS, or'
+    )
+    console.print(
+        '     [grey69]set HCLI_CURRENT_IDA_INSTALL_DIR="C:\\Program Files\\IDA Professional 9.2"[/grey69]  # Windows'
+    )
+    console.print("")
 
 
 def find_current_idat_executable() -> Path:

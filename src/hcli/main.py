@@ -9,7 +9,7 @@ from hcli.commands import register_commands
 from hcli.env import ENV
 from hcli.lib.console import console, stderr_console
 from hcli.lib.extensions import get_extensions
-from hcli.lib.update.version import BackgroundUpdateChecker
+from hcli.lib.update.version import BackgroundUpdateChecker, is_binary
 
 # Configure rich-click styling
 click.rich_click.USE_RICH_MARKUP = True
@@ -82,7 +82,7 @@ def handle_command_completion(_ctx, _result, **_kwargs):
 @click.pass_context
 def cli(_ctx, quiet, auth, auth_credentials, disable_updates: bool):
     """Main CLI entry point with background update checking."""
-    if not (disable_updates or ENV.HCLI_DISABLE_UPDATES):
+    if is_binary() and not (disable_updates or ENV.HCLI_DISABLE_UPDATES):
         global update_checker
 
         # Initialize update checker

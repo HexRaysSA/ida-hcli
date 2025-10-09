@@ -6,6 +6,9 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import rich.status
+
+from hcli.lib.console import stderr_console
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version, get_ida_user_dir
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
@@ -360,8 +363,9 @@ def _install_plugin_archive(zip_data: bytes, name: str):
 
     logger.info("installing plugin: %s (%s)", metadata.plugin.name, metadata.plugin.version)
 
-    current_platform = find_current_ida_platform()
-    current_version = find_current_ida_version()
+    with rich.status.Status("finding IDA installation", console=stderr_console):
+        current_platform = find_current_ida_platform()
+        current_version = find_current_ida_version()
 
     # This will raise specific exceptions if installation is not possible
     validate_can_install_plugin(zip_data, metadata, current_platform, current_version)
@@ -379,24 +383,29 @@ def _install_plugin_archive(zip_data: bytes, name: str):
 
     # TODO: install idaPluginDependencies
 
-    # Get Python dependencies using helper function
     python_dependencies = get_python_dependencies_from_plugin_archive(zip_data, metadata)
     if python_dependencies:
-        all_python_dependencies: list[str] = []
-        for existing_plugin_path in get_installed_plugin_paths():
-            existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
-            existing_deps = get_python_dependencies_from_plugin_directory(existing_plugin_path, existing_metadata)
-            all_python_dependencies.extend(existing_deps)
+        with rich.status.Status(
+            f"installing Python dependencies: {', '.join(python_dependencies)}", console=stderr_console
+        ):
+            all_python_dependencies: list[str] = []
+            for existing_plugin_path in get_installed_plugin_paths():
+                existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
+                existing_deps = get_python_dependencies_from_plugin_directory(existing_plugin_path, existing_metadata)
+                all_python_dependencies.extend(existing_deps)
 
-        logger.debug("installing new python dependencies: %s", python_dependencies)
-        all_python_dependencies.extend(python_dependencies)
+            logger.debug("installing new python dependencies: %s", python_dependencies)
+            all_python_dependencies.extend(python_dependencies)
 
-        python_exe = find_current_python_executable()
-        try:
-            pip_install_packages(python_exe, all_python_dependencies)
-        except CantInstallPackagesError:
-            logger.debug("can't install dependencies")
-            raise
+            with rich.status.Status("finding Python interpreter", console=stderr_console):
+                python_exe = find_current_python_executable()
+
+            with rich.status.Status("invoking pip", console=stderr_console):
+                try:
+                    pip_install_packages(python_exe, all_python_dependencies)
+                except CantInstallPackagesError:
+                    logger.debug("can't install dependencies")
+                    raise
 
     extract_zip_subdirectory_to(zip_data, plugin_subdirectory, destination_path)
 
