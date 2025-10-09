@@ -8,7 +8,12 @@ import rich.table
 import rich_click as click
 
 from hcli.lib.console import console
-from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
+from hcli.lib.ida import (
+    MissingCurrentInstallationDirectory,
+    explain_missing_current_installation_directory,
+    find_current_ida_platform,
+    find_current_ida_version,
+)
 from hcli.lib.ida.plugin import parse_plugin_version
 from hcli.lib.ida.plugin.install import (
     get_installed_legacy_plugins,
@@ -82,7 +87,11 @@ def get_plugin_status(ctx) -> None:
             console.print("[yellow]Legacy plugins[/yellow] are old, single-file plugins.")
             console.print("They aren't managed by hcli. Try finding an updated version in the plugin repository.")
 
+    except MissingCurrentInstallationDirectory:
+        explain_missing_current_installation_directory(console)
+        raise click.Abort()
+
     except Exception as e:
-        logger.warning("error: %s", e, exc_info=True)
+        logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
         raise click.Abort()

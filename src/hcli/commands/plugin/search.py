@@ -10,7 +10,12 @@ import rich_click as click
 import yaml
 
 from hcli.lib.console import console
-from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
+from hcli.lib.ida import (
+    MissingCurrentInstallationDirectory,
+    explain_missing_current_installation_directory,
+    find_current_ida_platform,
+    find_current_ida_version,
+)
 from hcli.lib.ida.plugin import (
     ALL_IDA_VERSIONS,
     ALL_PLATFORMS,
@@ -285,7 +290,11 @@ def search_plugins(ctx, query: str | None = None) -> None:
         else:
             handle_keyword_query(plugins, query or "", current_version, current_platform)
 
+    except MissingCurrentInstallationDirectory:
+        explain_missing_current_installation_directory(console)
+        raise click.Abort()
+
     except Exception as e:
-        logger.warning("error: %s", e, exc_info=True)
+        logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
         raise click.Abort()

@@ -102,7 +102,7 @@ def _lint_metadata(metadata: IDAMetadataDescriptor, source_name: str) -> int:
     returns: number of recommendations made
     """
     recommendation_count = 0
-    
+
     if not parse_plugin_version(metadata.plugin.version):
         console.print(f"[red]Error[/red] ({source_name}): plugin version should look like 'X.Y.Z'")
         recommendation_count += 1
@@ -167,7 +167,7 @@ def _lint_plugin_directory(plugin_path: Path) -> int:
     returns: number of recommendations made
     """
     recommendation_count = 0
-    
+
     metadata_file = plugin_path / "ida-plugin.json"
     if not metadata_file.exists():
         console.print(f"[red]Error[/red]: ida-plugin.json not found in {plugin_path}")
@@ -205,7 +205,6 @@ def _lint_plugin_directory(plugin_path: Path) -> int:
     return recommendation_count
 
 
-
 def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
     """Lint plugins in a .zip archive from bytes.
 
@@ -234,7 +233,9 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
         try:
             validate_metadata_in_plugin_archive(zip_data, metadata)
         except ValidationError as e:
-            console.print(f"[red]Error[/red] ({plugin_source_name}): {metadata_path}: ida-plugin.json validation failed")
+            console.print(
+                f"[red]Error[/red] ({plugin_source_name}): {metadata_path}: ida-plugin.json validation failed"
+            )
             for error in e.errors():
                 field_path = ".".join(str(loc) for loc in error["loc"])
                 error_msg = error["msg"]

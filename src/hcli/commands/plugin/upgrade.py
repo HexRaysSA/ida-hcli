@@ -6,7 +6,12 @@ from pathlib import Path
 import rich_click as click
 
 from hcli.lib.console import console
-from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
+from hcli.lib.ida import (
+    MissingCurrentInstallationDirectory,
+    explain_missing_current_installation_directory,
+    find_current_ida_platform,
+    find_current_ida_version,
+)
 from hcli.lib.ida.plugin import get_metadata_from_plugin_archive, split_plugin_version_spec
 from hcli.lib.ida.plugin.install import upgrade_plugin_archive
 from hcli.lib.ida.plugin.repo import BasePluginRepo
@@ -44,6 +49,10 @@ def upgrade_plugin(ctx, plugin: str) -> None:
         metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 
         console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}")
+    except MissingCurrentInstallationDirectory:
+        explain_missing_current_installation_directory(console)
+        raise click.Abort()
+
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")

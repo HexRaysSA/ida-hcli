@@ -10,7 +10,12 @@ import rich.status
 import rich_click as click
 
 from hcli.lib.console import console, stderr_console
-from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
+from hcli.lib.ida import (
+    MissingCurrentInstallationDirectory,
+    explain_missing_current_installation_directory,
+    find_current_ida_platform,
+    find_current_ida_version,
+)
 from hcli.lib.ida.plugin import (
     get_metadata_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
@@ -177,6 +182,10 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
             raise e
 
         console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}")
+    except MissingCurrentInstallationDirectory:
+        explain_missing_current_installation_directory(console)
+        raise click.Abort()
+
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
