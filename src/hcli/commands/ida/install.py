@@ -30,6 +30,7 @@ from hcli.lib.util.io import get_temp_dir
 @click.option("-a", "--accept-eula", "eula", is_flag=True, help="Accept EULA", default=True)
 @click.option("--set-default", is_flag=True, help="Mark this IDA installation as the default", default=False)
 @click.option("--dry-run", is_flag=True, help="Show what would be done without actually installing")
+@click.option("--yes", "-y", "auto_confirm", is_flag=True, help="Auto-accept confirmation prompts", default=False)
 @click.argument("installer", required=False)
 @click.command()
 @click.pass_context
@@ -43,6 +44,7 @@ async def install(
     license_id: str | None,
     set_default: bool,
     dry_run: bool,
+    auto_confirm: bool,
 ) -> None:
     """Installs IDA unattended.
 
@@ -103,7 +105,7 @@ async def install(
             return
 
         # Confirmation prompt
-        if not Confirm.ask("\n[bold yellow]Proceed with installation?[/bold yellow]"):
+        if not auto_confirm and not Confirm.ask("\n[bold yellow]Proceed with installation?[/bold yellow]"):
             console.print("[yellow]Installation cancelled.[/yellow]")
             return
 

@@ -45,21 +45,21 @@ jobs:
       - name: Test IDA installation command (Linux)
         if: runner.os == 'Linux'
         run: |
-          hcli --disable-updates ida install --download-id release/9.2/ida-essential/ida-essential_92_x64linux.run --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
+          hcli --disable-updates ida install --yes --download-id release/9.2/ida-essential/ida-essential_92_x64linux.run --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
 
       - name: Test IDA installation command (macOS)
         if: runner.os == 'macOS'
         run: |
-          hcli --disable-updates ida install --download-id release/9.2/ida-essential/ida-essential_92_armmac.app.zip --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
+          hcli --disable-updates ida install --yes --download-id release/9.2/ida-essential/ida-essential_92_armmac.app.zip --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
 
       - name: Test IDA installation command (Windows)
         if: runner.os == 'Windows'
         run: |
-          hcli --disable-updates ida install --download-id release/9.2/ida-essential/ida-essential_92_x64win.exe --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
+          hcli --disable-updates ida install --yes --download-id release/9.2/ida-essential/ida-essential_92_x64win.exe --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
 
