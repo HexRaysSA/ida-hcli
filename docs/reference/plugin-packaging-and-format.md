@@ -87,6 +87,35 @@ hcli requires the following fields in `ida-plugin.json`:
   - `urls.repository`: the repository that publishes the plugin
   - `authors` (or `maintainers`): name and/or email. Social media handles are ok!
 
+And there are new optional fields:
+
+  - `.plugin.pythonDependencies` is a list of packages on PyPI that will be installed
+  - `.plugin.keywords` is a list of terms to help users searching for plugins
+  - `.plugin.platforms` is recommended, defaults to all platforms. The possible values are: `windows-x86_64`, `linux-x86_64`, `macos-x86_64`, and `macos-aarch64`.
+  - `.plugin.license` for the code license of your project
+  - `.plugin.settings` is a list of descriptors of settings
+
+If there's a problem with the `ida-plugin.json` file, then the plugin is invalid and won't work with the repo.
+Unfortunately even things like trailing commas will break strict JSON parsers like the one used by hcli.
+So, you can use `hcli plugin lint /path/to/plugin[.zip]` to check for problems and suggestions.
+
+
+### Settings
+
+hcli is aware of settings that plugins declare in `ida-plugin.json` and prompts users for their value
+during installation. The settings are written into `ida-config.json` and can be queried at plugin runtime
+using the [ida-settings](https://pypi.org/project/ida-settings/) (v3) Python package:
+
+```py
+import ida_settings
+
+api_key = ida_settings.get_current_plugin_setting("openai_key")
+```
+
+Plugin authors should consider migrate to this configuration management system because there
+ will be a single place to make edits (cli and gui), users don't have to manually edit source code/config files,
+ and the data can be easily exported/imported.
+
 
 ### Source Archives and Binary Archives
 
