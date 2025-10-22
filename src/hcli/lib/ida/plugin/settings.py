@@ -166,3 +166,32 @@ def get_current_plugin() -> str:
 def get_current_plugin_setting(key: str) -> str | bool:
     plugin = get_current_plugin()
     return get_plugin_setting(plugin, key)
+
+
+def set_current_plugin_setting(key: str, value: str | bool):
+    plugin = get_current_plugin()
+    return set_plugin_setting(plugin, key, value)
+
+
+def del_current_plugin_setting(key: str):
+    plugin = get_current_plugin()
+    return del_plugin_setting(plugin, key)
+
+
+def has_current_plugin_setting(key: str) -> bool:
+    plugin = get_current_plugin()
+    return has_plugin_setting(plugin, key)
+
+
+def list_current_plugin_settings() -> list[PluginSettingDescriptor]:
+    """List all setting descriptors for the current plugin.
+
+    This must only be called from IDA Pro plugins, or it will raise RuntimeError.
+
+    Returns:
+        List of PluginSettingDescriptor instances defined for the current plugin.
+    """
+    plugin = get_current_plugin()
+    plugin_path = get_plugin_directory(plugin)
+    metadata = get_metadata_from_plugin_directory(plugin_path)
+    return metadata.plugin.settings
