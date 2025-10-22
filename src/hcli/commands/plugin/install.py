@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 import questionary
+import requests
 import rich.status
 import rich_click as click
 
@@ -58,8 +59,13 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
 
         elif plugin_spec.startswith("https://"):
             logger.info("installing from HTTP URL")
-            with rich.status.Status("fetching plugin", console=stderr_console):
-                buf = fetch_plugin_archive(plugin_spec)
+            try:
+                with rich.status.Status("fetching plugin", console=stderr_console):
+                    buf = fetch_plugin_archive(plugin_spec)
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+                console.print(f"[red]Cannot connect to {plugin_spec} - network unavailable.[/red]")
+                console.print("Please check your internet connection.")
+                raise click.Abort()
             items = list(get_metadatas_with_paths_from_plugin_archive(buf))
             if len(items) != 1:
                 raise ValueError("plugin archive must contain a single plugin for HTTP URL installation")
