@@ -69,7 +69,7 @@ async def install(
             await download.callback(output_dir=tmp_dir, key=download_slug)
             installer_path = Path(tmp_dir) / Path(download_slug).name
         elif installer is not None:
-            installer_path = Path(installer)
+            installer_path = Path(installer).resolve()
         else:
             raise click.UsageError("Either provide an installer file path or use --download-id to download one")
 
