@@ -1,88 +1,76 @@
 """Tests for IDA install command path resolution."""
 
-import os
-import tempfile
 from pathlib import Path
 
+import pytest
 
-def test_relative_path_resolution():
+
+@pytest.mark.unit
+def test_relative_path_resolution(tmp_path, monkeypatch):
     """Test that Path.resolve() correctly handles relative paths."""
-    # Create a temporary directory and file to simulate an installer
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Create a fake installer file
-        installer_name = "ida-pro_92_x64linux.run"
-        installer_path = Path(tmpdir) / installer_name
-        installer_path.touch()
+    # Create a fake installer file
+    installer_name = "ida-pro_92_x64linux.run"
+    installer_path = tmp_path / installer_name
+    installer_path.touch()
 
-        # Change to the temp directory so we can use a relative path
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(tmpdir)
+    # Change to the temp directory so we can use a relative path
+    monkeypatch.chdir(tmp_path)
 
-            # Test with relative path (./installer_name)
-            relative_path = Path(f"./{installer_name}")
-            resolved_path = relative_path.resolve()
+    # Test with relative path (./installer_name)
+    relative_path = Path(f"./{installer_name}")
+    resolved_path = relative_path.resolve()
 
-            # Verify that resolve() converts to absolute path
-            assert not relative_path.is_absolute(), "Original path should be relative"
-            assert resolved_path.is_absolute(), f"Resolved path should be absolute: {resolved_path}"
-            assert resolved_path.name == installer_name
-            assert resolved_path.exists()
+    # Verify that resolve() converts to absolute path
+    assert not relative_path.is_absolute(), "Original path should be relative"
+    assert resolved_path.is_absolute(), f"Resolved path should be absolute: {resolved_path}"
+    assert resolved_path.name == installer_name
+    assert resolved_path.exists()
 
-            # Verify that the resolved path points to the same file
-            assert resolved_path == installer_path.absolute()
-
-        finally:
-            os.chdir(original_cwd)
+    # Verify that the resolved path points to the same file
+    assert resolved_path == installer_path.absolute()
 
 
-def test_absolute_path_resolution():
+@pytest.mark.unit
+def test_absolute_path_resolution(tmp_path):
     """Test that Path.resolve() handles absolute paths correctly."""
-    # Create a temporary directory and file to simulate an installer
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Create a fake installer file
-        installer_name = "ida-pro_92_x64linux.run"
-        installer_path = Path(tmpdir) / installer_name
-        installer_path.touch()
+    # Create a fake installer file
+    installer_name = "ida-pro_92_x64linux.run"
+    installer_path = tmp_path / installer_name
+    installer_path.touch()
 
-        # Test with absolute path
-        absolute_path = installer_path.absolute()
-        resolved_path = absolute_path.resolve()
+    # Test with absolute path
+    absolute_path = installer_path.absolute()
+    resolved_path = absolute_path.resolve()
 
-        # Verify that resolve() preserves absolute paths
-        assert absolute_path.is_absolute(), "Original path should be absolute"
-        assert resolved_path.is_absolute(), "Resolved path should be absolute"
-        assert resolved_path == absolute_path
-        assert resolved_path.exists()
+    # Verify that resolve() preserves absolute paths
+    assert absolute_path.is_absolute(), "Original path should be absolute"
+    assert resolved_path.is_absolute(), "Resolved path should be absolute"
+    assert resolved_path == absolute_path
+    assert resolved_path.exists()
 
 
-def test_relative_path_with_parent_directory():
+@pytest.mark.unit
+def test_relative_path_with_parent_directory(tmp_path, monkeypatch):
     """Test that Path.resolve() handles relative paths with parent directory references."""
-    # Create a temporary directory structure
-    with tempfile.TemporaryDirectory() as tmpdir:
-        subdir = Path(tmpdir) / "subdir"
-        subdir.mkdir()
+    # Create a subdirectory
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
 
-        # Create a fake installer file in the parent directory
-        installer_name = "ida-pro_92_x64linux.run"
-        installer_path = Path(tmpdir) / installer_name
-        installer_path.touch()
+    # Create a fake installer file in the parent directory
+    installer_name = "ida-pro_92_x64linux.run"
+    installer_path = tmp_path / installer_name
+    installer_path.touch()
 
-        # Change to subdirectory
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(subdir)
+    # Change to subdirectory
+    monkeypatch.chdir(subdir)
 
-            # Test with relative path using parent directory reference (../installer_name)
-            relative_path = Path(f"../{installer_name}")
-            resolved_path = relative_path.resolve()
+    # Test with relative path using parent directory reference (../installer_name)
+    relative_path = Path(f"../{installer_name}")
+    resolved_path = relative_path.resolve()
 
-            # Verify that resolve() converts to absolute path
-            assert not relative_path.is_absolute(), "Original path should be relative"
-            assert resolved_path.is_absolute(), f"Resolved path should be absolute: {resolved_path}"
-            assert resolved_path.name == installer_name
-            assert resolved_path.exists()
-            assert resolved_path == installer_path.absolute()
-
-        finally:
-            os.chdir(original_cwd)
+    # Verify that resolve() converts to absolute path
+    assert not relative_path.is_absolute(), "Original path should be relative"
+    assert resolved_path.is_absolute(), f"Resolved path should be absolute: {resolved_path}"
+    assert resolved_path.name == installer_name
+    assert resolved_path.exists()
+    assert resolved_path == installer_path.absolute()
