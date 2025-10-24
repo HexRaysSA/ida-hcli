@@ -50,7 +50,8 @@ async def select_asset(nodes: list[TreeNode], current_path: str = "") -> Asset |
             # Get display info from asset metadata if available
             display_name = file.name
             if file.asset and file.asset.metadata and "operating_system" in file.asset.metadata:
-                display_name = f"{file.asset.metadata['name']} ({file.asset.key.split('/')[-1]})"
+                metadata_name = file.asset.metadata.get("name", file.name)
+                display_name = f"{metadata_name} ({file.asset.key.split('/')[-1]})"
             choices.append(Choice(f"📄 {display_name}", value=file))
 
         if not choices:
