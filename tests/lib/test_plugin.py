@@ -83,3 +83,20 @@ def test_parse_ida_versions():
     assert "9.1" in m.plugin.ida_versions
     assert "8.5" not in m.plugin.ida_versions
     assert "9.2" not in m.plugin.ida_versions
+
+
+def test_unexpected_keys_in_plugin_metadata():
+    metadata_path = PLUGINS_DIR / "plugin1" / "src-v1" / "ida-plugin.json"
+
+    doc = json.loads(metadata_path.read_text())
+    doc["plugin"]["unexpectedKey"] = "some value"
+    doc["plugin"]["anotherBadKey"] = 123
+
+    m = IDAMetadataDescriptor.model_validate_json(json.dumps(doc))
+
+    assert hasattr(m.plugin, "__pydantic_extra__")
+    assert m.plugin.__pydantic_extra__ is not None
+    assert "unexpectedKey" in m.plugin.__pydantic_extra__
+    assert "anotherBadKey" in m.plugin.__pydantic_extra__
+    assert m.plugin.__pydantic_extra__["unexpectedKey"] == "some value"
+    assert m.plugin.__pydantic_extra__["anotherBadKey"] == 123

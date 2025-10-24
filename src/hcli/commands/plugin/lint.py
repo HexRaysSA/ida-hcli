@@ -97,12 +97,31 @@ def _lint_readme_in_archive(zip_data: bytes, metadata_path: Path, source_name: s
         return recommendation_count
 
 
+def _check_unexpected_keys(metadata: IDAMetadataDescriptor, source_name: str) -> int:
+    """Check for unexpected keys in the plugin metadata.
+
+    returns: number of recommendations made
+    """
+    recommendation_count = 0
+
+    if hasattr(metadata.plugin, "__pydantic_extra__") and metadata.plugin.__pydantic_extra__:
+        extra_keys = sorted(metadata.plugin.__pydantic_extra__.keys())
+        for key in extra_keys:
+            console.print(f"[yellow]Warning[/yellow] ({source_name}): unexpected key in plugin metadata: '{key}'")
+            console.print("  This key is not part of the ida-plugin.json schema and will be ignored")
+            recommendation_count += 1
+
+    return recommendation_count
+
+
 def _lint_metadata(metadata: IDAMetadataDescriptor, source_name: str) -> int:
     """Validate a single plugin metadata and show lint recommendations.
 
     returns: number of recommendations made
     """
     recommendation_count = 0
+
+    recommendation_count += _check_unexpected_keys(metadata, source_name)
 
     if not parse_plugin_version(metadata.plugin.version):
         console.print(f"[red]Error[/red] ({source_name}): plugin version should look like 'X.Y.Z'")
