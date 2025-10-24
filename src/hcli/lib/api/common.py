@@ -17,6 +17,8 @@ from hcli.env import ENV
 from hcli.lib.auth import get_auth_service
 from hcli.lib.console import console
 from hcli.lib.constants.auth import CredentialType
+from hcli.lib.util.cache import get_cache_directory
+from hcli.lib.util.string import slugify
 
 
 class NotLoggedInError(Exception):
@@ -89,8 +91,6 @@ class APIClient:
             timeout=httpx.Timeout(60.0, write=None),  # No timeout for uploads
             headers={"User-Agent": f"hcli/{__version__}"},
         )
-        self._cache_dir = Path.home() / ".hcli" / "cache"
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
 
     async def __aenter__(self):
         return self
@@ -226,7 +226,9 @@ class APIClient:
             parsed = urlparse(url)
             filename = Path(parsed.path).name or "download"
 
-        cache_path = self._cache_dir / filename
+        # Create cache path using XDG_CACHE_HOME with "downloads" key and slugified filename
+        slug = slugify(filename, separator="_")
+        cache_path = get_cache_directory("downloads", slug) / filename
         target_path = target_dir / filename
 
         # Check cache
