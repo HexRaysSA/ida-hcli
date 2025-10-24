@@ -18,7 +18,6 @@ from hcli.lib.auth import get_auth_service
 from hcli.lib.console import console
 from hcli.lib.constants.auth import CredentialType
 from hcli.lib.util.cache import get_cache_directory
-from hcli.lib.util.string import slugify
 
 
 class NotLoggedInError(Exception):
@@ -214,8 +213,18 @@ class APIClient:
         target_filename: str | None = None,
         force: bool = False,
         auth: bool = False,
+        asset_key: str | None = None,
     ) -> str:
-        """Download file with progress bar and caching."""
+        """Download file with progress bar and caching.
+
+        Args:
+            url: URL to download from
+            target_dir: Directory to save the file
+            target_filename: Override filename (if not provided, extracted from URL)
+            force: Skip cache and force download
+            auth: Use authentication
+            asset_key: Full asset key (e.g., 'release/9.2/ida-pro/filename.zip') for cache path
+        """
         target_dir = Path(target_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -226,9 +235,10 @@ class APIClient:
             parsed = urlparse(url)
             filename = Path(parsed.path).name or "download"
 
-        # Create cache path using XDG_CACHE_HOME with "downloads" key and slugified filename
-        slug = slugify(filename, separator="_")
-        cache_path = get_cache_directory("downloads", slug) / filename
+        # Create cache path using XDG_CACHE_HOME with "downloads" key
+        # Use the full asset_key if provided, otherwise fall back to filename
+        cache_key = asset_key if asset_key else filename
+        cache_path = get_cache_directory("downloads") / cache_key
         target_path = target_dir / filename
 
         # Check cache
