@@ -25,8 +25,9 @@ from .upgrade import upgrade_plugin
 
 @click.group()
 @click.option(
-    "--repo", help="'github', or path to directory containing plugins, or path to JSON file, or URL to JSON file",
-    hidden=True
+    "--repo",
+    help="'github', or path to directory containing plugins, or path to JSON file, or URL to JSON file",
+    hidden=True,
 )
 @click.option("--with-repos-list", help="path to file containing known GitHub repositories", hidden=True)
 @click.option("--with-ignored-repos-list", help="path to file containing ignored GitHub repositories", hidden=True)
