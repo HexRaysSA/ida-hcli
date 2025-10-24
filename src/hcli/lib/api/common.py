@@ -239,6 +239,7 @@ class APIClient:
         # Use the full asset_key if provided, otherwise fall back to filename
         cache_key = asset_key if asset_key else filename
         cache_path = get_cache_directory("downloads") / cache_key
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         target_path = target_dir / filename
 
         # Check cache
