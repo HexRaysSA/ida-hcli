@@ -1,5 +1,5 @@
 Your goal is to package the given IDA Pro plugin git repository for the HCLI plugin infrastructure.
-Read `./plugin-manager.md` for context about how this works.
+Read `../user-guide/plugin-manager.md` for context about how this works.
 
 Here are your specific instructions. Ask for guidance and clarification along the way.
 

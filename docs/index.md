@@ -49,7 +49,7 @@ This will automatically install the **HCLI** standalone executable
         PS> powershell -c "irm https://hcli.docs.hex-rays.com/install.ps1 | more"
         ```
 
-    Alternatively, the binaries can be downloaded directly from [GitHub](#github-releases).
+    Alternatively, the binaries can be downloaded directly from [GitHub Releases](https://github.com/HexRaysSA/ida-hcli/releases).
 
 ## Key Features
 
@@ -57,4 +57,8 @@ This will automatically install the **HCLI** standalone executable
 - **License Management** - Install and manage your IDA Pro licenses
 - **Plugin Manager** - discover, install, and configure IDA Pro plugins.
 - **File Sharing** - Securely share analysis files with Hex-Rays for support tickets
+
+## What's New
+
+Check out the [Changelog](changelog.md) to see what's new in the latest version and view the [GitHub Releases](https://github.com/HexRaysSA/ida-hcli/releases) for complete release details.
 

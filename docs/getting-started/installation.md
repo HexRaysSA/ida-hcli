@@ -41,7 +41,7 @@ This will automatically install the **HCLI** standalone executable
         PS> powershell -c "irm https://hcli.docs.hex-rays.com/install.ps1 | more"
         ```
 
-    Alternatively, the binaries can be downloaded directly from [GitHub](#github-releases).
+    Alternatively, the binaries can be downloaded directly from [GitHub Releases](https://github.com/HexRaysSA/ida-hcli/releases).
 
 ## Verify Installation
 

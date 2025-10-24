@@ -12,8 +12,8 @@ Subscription Licenses (2):
 ┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ ID              ┃ Edition          ┃ Type  ┃ Status ┃ Expiration ┃ Addons                           ┃
 ┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ 96-XXXX-XXXX-01 │ IDA Essential PC │ named │ Active │ 2026-08-25 │ 2 decompiler(s)                  │
-│ 96-XXXX-XXXX-02 │ IDA Ultimate     │ named │ Active │ 2026-07-02 │ 11 decompiler(s) + TEAMS, LUMINA │
+│ 96-0000-0000-01 │ IDA Essential PC │ named │ Active │ 2026-08-25 │ 2 decompiler(s)                  │
+│ 96-0000-0000-01 │ IDA Ultimate     │ named │ Active │ 2026-07-02 │ 11 decompiler(s) + TEAMS, LUMINA │
 └─────────────────┴──────────────────┴───────┴────────┴────────────┴──────────────────────────────────┘
 ```
 
@@ -64,7 +64,7 @@ $ hcli ida install --help
 │ --set-default            Mark this IDA installation as the default                 │
 │ --accept-eula  -a        Accept EULA                                               │
 │ --install-dir  -i  TEXT  Install dir                                               │
-│ --license-id   -l  TEXT  License ID (e.g., 48-307B-71D4-46)                        │
+│ --license-id   -l  TEXT  License ID (e.g., 96-0000-0000-01)                        │
 │ --download-id  -d  TEXT  Installer slug                                            │
 │ --help                   Show this message and exit.                               │
 ╰────────────────────────────────────────────────────────────────────────────────────╯

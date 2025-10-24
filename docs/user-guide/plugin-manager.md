@@ -75,6 +75,6 @@ HCLI supports installing plugins to be loaded by IDA 9.0 and newer.
 Hex-Rays wants to help you package and distribute plugins for IDA Pro!
 Check out the following resources and don't hesitate to contact us for support:
 
-  - [Plugin repository architecture](./plugin-repository-architecture.md)
-  - [Plugin packaging and format](./plugin-packaging-and-format.md)
-  - [Packaging your existing plugin](./packaging-your-existing-plugin.md)
+  - [Plugin repository architecture](../reference/plugin-repository-architecture.md)
+  - [Plugin packaging and format](../reference/plugin-packaging-and-format.md)
+  - [Packaging your existing plugin](../reference/packaging-your-existing-plugin.md)

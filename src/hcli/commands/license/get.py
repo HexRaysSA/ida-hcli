@@ -14,7 +14,7 @@ from hcli.lib.console import console
 
 
 @auth_command()
-@click.option("-i", "--id", "lid", help="License ID (e.g., 48-307B-71D4-46)")
+@click.option("-i", "--id", "lid", help="License ID (e.g., 96-0000-0000-01)")
 @click.option(
     "-p",
     "--plan",
