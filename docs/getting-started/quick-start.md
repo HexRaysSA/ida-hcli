@@ -7,7 +7,7 @@
 3. **Verify your setup**:
    ```bash
    hcli whoami
-   You are logged in as wballenthin@hex-rays.com using an API key from HCLI_API_KEY environment variable
+   You are logged in as user@example.com using an API key from HCLI_API_KEY environment variable
    ```
 
 
@@ -153,9 +153,10 @@ $ hcli ida install --help
 Now lets run the automated installer, which doesn't show any dialog or popups - really convenient!
 
 Note:
-- we're setting this as the "default" IDA installation, so this is what idalib and the plugin manager will use
-- in this example we set `--dry-run`, but you should remove this in real-life
-- HCLI also fetches and installs the associated license key file so everything's ready to go
+
+  - we're setting this as the "default" IDA installation, so this is what idalib and the plugin manager will use
+  - in this example we set `--dry-run`, but you should remove this in real-life
+  - HCLI also fetches and installs the associated license key file so everything's ready to go
    
 
 ```bash

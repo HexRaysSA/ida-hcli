@@ -83,7 +83,7 @@ API key 'hcli-test-key' has been revoked
 Check your authentication status:
 ```bash
 hcli whoami
-You are logged in as wballenthin@hex-rays.com using an API key from HCLI_API_KEY environment variable
+You are logged in as user@example.com using an API key from HCLI_API_KEY environment variable
 ```
 
 ## Environment Variables

@@ -1,4 +1,4 @@
-You goal is to migrate the given IDA Pro plugin git repository to use the new HCLI plugin infrastructure.
+Your goal is to package the given IDA Pro plugin git repository for the HCLI plugin infrastructure.
 Read `./plugin-manager.md` for context about how this works.
 
 Here are your specific instructions. Ask for guidance and clarification along the way.
@@ -29,7 +29,7 @@ Here are your specific instructions. Ask for guidance and clarification along th
   "settings": [
     # configuration values described in the readme or code
     # that would typically require manual source code editing or config file changes
-    # but will be migrated into the plugin system
+    # but will be moved into the plugin system
     {
       "key": str, code identifier, like "api_key"
       "type": "string"
@@ -63,7 +63,7 @@ Here are your specific instructions. Ask for guidance and clarification along th
 }
 ```
 
-3. Next develop a plan of action to migrate the plugin into the new hcli ecosystem. Ultrathink about this.
+3. Next develop a plan of action to package the plugin for the HCLI ecosystem. Ultrathink about this.
   a. Identify if this is a pure-Python plugin or a native plugin.
   b. Using the documentation, create a plan for any changes that need
      to be made to the repo and its code structure so that it can be packaged into a plugin archive.

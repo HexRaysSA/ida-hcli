@@ -1,4 +1,4 @@
-# Porting your existing IDA Pro plugin
+# Packaging your existing IDA Pro plugin
 
 HCLI helps users discover, install, and manage IDA Pro plugins distributed via a central index.
 As the author of an existing plugin, you can make the following updates so that your project is compatible with the new ecosystem.
@@ -149,18 +149,18 @@ So once you've updated the metadata file and made a new release in GitHub, your 
 In other words, inclusion into the plugin repository is completely self-service - its just a matter of putting a well-formed plugin in a place we can find it.
 
 
-## Example: migrating eset/DelphiHelper
+## Example: Packaging eset/DelphiHelper
 
-Because this is a pure-Python plugin, the migration was very easy! Just add the metadata file and do releases on GitHub:
+Because this is a pure-Python plugin, packaging was very easy! Just add the metadata file and do releases on GitHub:
 
-1. added `ida-plugin.json`: https://github.com/eset/DelphiHelper/pull/5/files
+1. added `ida-plugin.json`: [PR#5](https://github.com/eset/DelphiHelper/pull/5/files)
 2. asked to start using GitHub Releases via the web interface
 3. ...done
 
 
-## Example: migrating milankovo/zydishelper
+## Example: Packaging milankovo/zydishelper
 
-Because this is a plugin written in C++ and compiled to a native shared object, the migration took a little more work:
+Because this is a plugin written in C++ and compiled to a native shared object, packaging took a little more work:
 
 1. added `ida-plugin.json`: [PR#4](https://github.com/milankovo/zydisinfo/pull/4/files#diff-601834cd7516c6a40f96dda33295f21abd1f8e96f85095ab0823375f6479da3f)
 2. added a [workflow for GitHub Actions](https://github.com/milankovo/zydisinfo/pull/4/files#diff-5c3fa597431eda03ac3339ae6bf7f05e1a50d6fc7333679ec38e21b337cb6721) to build the plugin
@@ -182,7 +182,7 @@ For example, I used it to kickstart the [build of the BinDiff plugin](https://gi
 3. check it out locally, like `git clone git@github.com:HexRays-plugin-contributions/foo.git`
 4. `cd foo`
 5. `git checkout -b ida-plugin-json`
-6. add `ida-plugin.json` and any other migration changes. commit and push them. this will be submitted upstream as a PR.
+6. add `ida-plugin.json` and any other packaging changes. commit and push them. this will be submitted upstream as a PR.
   a. look at `plugins-AGENT.md` for some ideas
   b. `.plugin.urls.repo` should be the upstream repo
   c. `.plugin.authors` should be the original author
@@ -200,7 +200,7 @@ For example, I used it to kickstart the [build of the BinDiff plugin](https://gi
 10. ensure the plugin can be installed: `hcli plugin install https://.../url/to/release/zip`
 
 
-#### Migrating pure Python Plugins
+#### Packaging Pure Python Plugins
 
 For simple single-file plugins, all you need to do is add an `ida-plugin.json` file.
 Then do releases via GitHub Actions and the automatically attached source archive will be the plugin archive.
@@ -241,19 +241,18 @@ plugins.zip
 
 Some plugins have published most of their code to PyPI via a tradional Python package, and then refer to this in a trivial entrypoint stub.
 This is fine. IPyIDA is an example.
-They can keep doing this, updating `pythonDependencies` to reference that package; or they can migrate to keeping the Python package as a relative import.
+They can keep doing this, updating `pythonDependencies` to reference that package; or they can package the Python code as a relative import.
 
 
-#### Migrating a Native Plugin
+#### Packaging a Native Plugin
 
-If its a native plugin, migrate the build configuration (if it exists) to GitHub Actions.
+If its a native plugin, adapt the build configuration (if it exists) to GitHub Actions.
 To acquire the SDK, either use a Git submodule or use HCLI to fetch it.
 The latter is probably a better solution but requires an active IDA Pro license (but you can get one through the Plugin Contributor Program),
 and enables you to build against 8.4, 9.0, 9.1, as well as 9.2+.
 The open source SDK on GitHub only has tags for 9.2+.
 
-Here's an example workflow:
-https://github.com/milankovo/zydisinfo/pull/4
+Here's an example workflow: [PR#4](https://github.com/milankovo/zydisinfo/pull/4)
 
 Once you have built the shared object files, package them up along with the `ida-plugin.json` file.
 You can create one artifact per platform, or do a "fat" binary archive (see above).
@@ -266,7 +265,7 @@ Separate files might be easier; just make sure you set `idaPlatforms` in `ida-pl
 #### Do I need to submit my plugin anywhere?
 
 No, if you're using GitHub Releases to share plugin ZIP archives with valid `ida-plugin.json` files, then your plugins should be auto-included into the Hex-Rays plugin repository!
-While there used to be an explicit submission process and web form, we've migrated to a self-service flow that's (hopefully) open and transparent.
+While there used to be an explicit submission process and web form, we've moved to a self-service flow that's (hopefully) open and transparent.
 
 In the future, we may re-open a web form or accept PRs to add plugins not hosted on GitHub, but this isn't supported quite yet.
 
@@ -274,9 +273,9 @@ In the future, we may re-open a web form or accept PRs to add plugins not hosted
 
 1. Ensure the plugin file (the ZIP archive) is well formed: `hcli plugin lint /path/to/plugin.zip`
 2. Check that plugin is recognized by the indexer by inspecting [plugin-repository.json](https://github.com/HexRaysSA/plugin-repository/blob/v1/plugin-repository.json).
-  a. ensure you can find your plugin in the search results: https://github.com/search?q=path%3A**%2Fida-plugin.json&type=code
+  a. ensure you can find your plugin in the [search results](https://github.com/search?q=path%3A**%2Fida-plugin.json&type=code)
   b. otherewise, you can propose to add your plugin to the explicit list here: [known-repositories.json](https://github.com/HexRaysSA/plugin-repository/blob/v1/known-repositories.txt)
-3. Open an issue here and Hex-Rays will be happy to help debug: https://github.com/HexRaysSA/plugin-repository/issues
+3. Open an issue [here](https://github.com/HexRaysSA/plugin-repository/issues) and Hex-Rays will be happy to help debug
 
 
 The indexer runs daily, so it might take a little time for your plugin to show up.

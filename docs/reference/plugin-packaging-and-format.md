@@ -112,9 +112,19 @@ import ida_settings
 api_key = ida_settings.get_current_plugin_setting("openai_key")
 ```
 
-Plugin authors should consider migrate to this configuration management system because there
- will be a single place to make edits (cli and gui), users don't have to manually edit source code/config files,
+Plugin authors should consider moving to this configuration management system because there
+ will be a single place to make edits (CLI and GUI), users don't have to manually edit source code/config files,
  and the data can be easily exported/imported.
+
+ida-settings has an associated IDA Pro plugin `ida-settings-editor` that lets users configure plugin settings within IDA:
+
+<img width="798"  alt="image" src="https://github.com/user-attachments/assets/fa9b2e2c-fce9-4a87-af9c-94850acaa520" />
+
+You can install it like this:
+
+```bash
+hcli plugin install ida-settings-editor
+```
 
 
 ### Source Archives and Binary Archives

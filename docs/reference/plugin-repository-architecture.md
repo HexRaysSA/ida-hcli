@@ -14,7 +14,7 @@ The service will index all the found archives and their metadata, and expose thi
  (and/or other plugin managers, like a GUI version within IDA).
 
 Note that the plugin repository requires more metadata than originally documented on the Hex-Rays website.
-Keep reading to see what's required and how to migrate your plugin.
+Keep reading to see what's required to package your plugin.
 
 ## HCLI IDA Pro Plugin Manager
 

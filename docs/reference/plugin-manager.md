@@ -4,10 +4,10 @@ HCLI can help you discover, install, and manage IDA Pro plugins distributed via 
 It should be very easy for you extend the capabilities of IDA Pro with plugins,
  whether they are written in IDAPython or compiled languages like C/C++.
 
-The underlying index of plugins is published at https://github.com/HexRaysSA/plugin-repository, and
- Hex-Rays maintains https://plugins.hex-rays.com as a website showing the available plugins.
+The underlying index of plugins is published at [github.com/HexRaysSA/plugin-repository](https://github.com/HexRaysSA/plugin-repository),
+ and Hex-Rays maintains [plugins.hex-rays.com](https://plugins.hex-rays.com) as a website showing the available plugins.
 
-Status: the plugin manager is done, and we're now migrating plugins and documentation.
+Status: the plugin manager is done, and we're now packaging plugins and documentation.
 
 ## Quickstart
 
@@ -64,8 +64,8 @@ where IDA Pro will load them the next time the application is opened.
 You can discover interesting plugins via:
 
   - `hcli plugin search` CLI program, or
-  - https://plugins.hex-rays.com website, or
-  - https://github.com/HexRaysSA/plugin-repository raw index data.
+  - [plugins.hex-rays.com](https://plugins.hex-rays.com) website, or
+  - [github.com/HexRaysSA/plugin-repository](https://github.com/HexRaysSA/plugin-repository) raw index data.
 
 HCLI supports installing plugins to be loaded by IDA 9.0 and newer.
 
@@ -75,6 +75,6 @@ HCLI supports installing plugins to be loaded by IDA 9.0 and newer.
 Hex-Rays wants to help you package and distribute plugins for IDA Pro!
 Check out the following resources and don't hesitate to contact us for support:
 
-  - [Porting your existing plugin](./porting-your-existing-plugin.md)
-  - [Plugin packaging and format](./plugin-packaging-and-format.md)
   - [Plugin repository architecture](./plugin-repository-architecture.md)
+  - [Plugin packaging and format](./plugin-packaging-and-format.md)
+  - [Packaging your existing plugin](./packaging-your-existing-plugin.md)

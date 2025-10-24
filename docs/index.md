@@ -2,9 +2,12 @@
 
 ![](assets/screenshot.png)
 
-**HCLI** is a modern command-line interface for managing IDA Pro licenses, installations, ... Designed for both interactive use and automation workflows.
+**HCLI** is a modern command-line interface for managing IDA Pro licenses, installations, and plugins.
+Its designed for both interactive use and automation workflows.
 
-## Binary Installation
+Head over to [Getting Started](getting-started/quick-start.md) to learn more.
+
+## Installation (Quick Start)
 
 This will automatically install the **HCLI** standalone executable
 
@@ -50,8 +53,8 @@ This will automatically install the **HCLI** standalone executable
 
 ## Key Features
 
-- **Downloads** - Download and install IDA   
-- **License Management** - Install and manage your IDA Pro licenses seamlessly  
+- **Install IDA** - Download and install IDA, interactively or headlessly
+- **License Management** - Install and manage your IDA Pro licenses
+- **Plugin Manager** - discover, install, and configure IDA Pro plugins.
 - **File Sharing** - Securely share analysis files with Hex-Rays for support tickets
-- **Cross-Platform** - Works on Windows, macOS, and Linux
 

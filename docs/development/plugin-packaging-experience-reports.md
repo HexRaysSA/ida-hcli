@@ -1,4 +1,4 @@
-### Experience Reports: Migrating to the Plugin Repository
+### Experience Reports: Packaging for the Plugin Repository
 
 #### idawilli plugins
 
@@ -124,7 +124,7 @@ https://github.com/ida-community-plugins/mkYARA
 
 https://github.com/AzzOnFire/yarka/pull/1
 
-Very easy to port, but I had Claude do it, and it took a little bit to write ./plugins-AGENT.md.
+Very easy to package, but I had Claude do it, and it took a little bit to write ./plugins-AGENT.md.
 Then I drafted the text for maintainers. This can also generally be reused.
 
 There are some user preferences that the user can set by modifying the source code, like formatting of the yara rules.
