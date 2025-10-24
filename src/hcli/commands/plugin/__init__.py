@@ -25,10 +25,11 @@ from .upgrade import upgrade_plugin
 
 @click.group()
 @click.option(
-    "--repo", help="'github', or path to directory containing plugins, or path to JSON file, or URL to JSON file"
+    "--repo", help="'github', or path to directory containing plugins, or path to JSON file, or URL to JSON file",
+    hidden=True
 )
-@click.option("--with-repos-list", help="path to file containing known GitHub repositories")
-@click.option("--with-ignored-repos-list", help="path to file containing ignored GitHub repositories")
+@click.option("--with-repos-list", help="path to file containing known GitHub repositories", hidden=True)
+@click.option("--with-ignored-repos-list", help="path to file containing ignored GitHub repositories", hidden=True)
 @click.pass_context
 def plugin(ctx, repo: str | None, with_repos_list: str | None, with_ignored_repos_list: str | None) -> None:
     """Manage IDA Pro plugins."""
