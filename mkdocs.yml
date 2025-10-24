@@ -85,23 +85,18 @@ nav:
     - License Management: user-guide/licenses.md
     - File Sharing: user-guide/file-sharing.md
     - IDA Pro Plugin Manager: user-guide/plugin-manager.md
-    - Troubleshooting: user-guide/troubleshooting.md
   - How-To Guides:
     - Use HCLI in Docker: how-to/use-hcli-in-docker.md
     - Share Files with Support: how-to/share-files-with-support.md
     - Test Plugin Before Publishing: how-to/test-plugin-before-publishing.md
+    - CI/CD Integration: advanced/ci-cd-integration.md
   - Plugin Development:
     - Overview: user-guide/plugin-manager.md
     - Repository Architecture: reference/plugin-repository-architecture.md
     - Packaging Format: reference/plugin-packaging-and-format.md
     - Packaging Your Plugin: reference/packaging-your-existing-plugin.md
-    - Experience Reports: development/plugin-packaging-experience-reports.md
-  - Advanced:
-    - CI/CD Integration: advanced/ci-cd-integration.md
   - Reference:
     - Environment Variables: reference/environment-variables.md
-  - Development:
-    - Development Setup: development/setup.md
   - Changelog: changelog.md
 
 plugins:
