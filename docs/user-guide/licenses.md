@@ -2,7 +2,7 @@
 
 ## Overview
 
-hcli helps you manage your IDA Pro licenses, including viewing, installing, and configuring license files.
+HCLI helps you manage your IDA Pro licenses, including viewing, installing, and configuring license files.
 
 ## Viewing Licenses
 

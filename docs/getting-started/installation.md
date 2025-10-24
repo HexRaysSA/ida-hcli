@@ -1,7 +1,7 @@
 # Installation
 
 
-This will automatically install the **hcli** standalone executable
+This will automatically install the **HCLI** standalone executable
 
 === "macOS and Linux"
     ```bash
@@ -46,7 +46,7 @@ This will automatically install the **hcli** standalone executable
 ## Verify Installation
 
 ```bash
-uv run hcli --version
+hcli --version
 ```
 
 ## Next Steps

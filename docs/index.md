@@ -4,9 +4,9 @@
 
 **HCLI** is a modern command-line interface for managing IDA Pro licenses, installations, ... Designed for both interactive use and automation workflows.
 
-## Binary Installation 
+## Binary Installation
 
-This will automatically install the **hcli** standalone executable
+This will automatically install the **HCLI** standalone executable
 
 === "macOS and Linux"
     ```bash

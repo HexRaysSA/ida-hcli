@@ -1,4 +1,4 @@
-## IDA Pro Plugin Repository Architecture
+# IDA Pro Plugin Repository Architecture
 
 plugins.hex-rays.com is a web interface to the collection of available IDA Pro plugins (the "plugin repository").
 The plugin repository publishes a JSON document within https://github.com/HexRaysSA/plugin-repository.
@@ -10,16 +10,16 @@ The plugin repository's GitHub Action watches for GitHub repositories that conta
 For each repo, it will watch for releases. When it sees a release, it will inspect the release archives for either
  source archives (pure-Python) or binary archives (containing .so/.dll/.dylib plugins).
 In either case, it'll expect to find an `ida-plugin.json` file in the archive describing the plugin.
-The service will index all the found archives and their metadata, and expose this to hcli
+The service will index all the found archives and their metadata, and expose this to HCLI
  (and/or other plugin managers, like a GUI version within IDA).
 
 Note that the plugin repository requires more metadata than originally documented on the Hex-Rays website.
 Keep reading to see what's required and how to migrate your plugin.
 
-## hcli IDA Pro plugin manager
+## HCLI IDA Pro Plugin Manager
 
-hcli uses the plugin repository JSON file to list/search for plugins and retrieve the download URL.
-After various validation steps, hcli then extracts the archive subdirectory containing
+HCLI uses the plugin repository JSON file to list/search for plugins and retrieve the download URL.
+After various validation steps, HCLI then extracts the archive subdirectory containing
  `ida-plugin.json` into `$IDAUSR/plugins/`, and the plugin is installed.
 If there are Python dependencies declared within the metadata file, then these are installed via pip first.
 There are obvious upgrade and uninstallation routines, too.

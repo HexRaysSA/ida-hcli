@@ -2,7 +2,7 @@
 
 ## Overview
 
-hcli provides secure file sharing capabilities, allowing you to upload and share files with Hex-Rays support team or within your organization. The shared files are accessible via unique shortcodes and can be managed through various commands.
+HCLI provides secure file sharing capabilities, allowing you to upload and share files with Hex-Rays support team or within your organization. The shared files are accessible via unique shortcodes and can be managed through various commands.
 
 ## Sharing Files
 
@@ -36,7 +36,7 @@ hcli share put analysis.txt --force
 
 ### Interactive ACL Selection
 
-When no ACL is specified, hcli will interactively prompt you to choose:
+When no ACL is specified, HCLI will interactively prompt you to choose:
 1. **[private] Just for me** - Only you can access
 2. **[domain] Anyone from my domain** - Anyone with your email domain
 3. **[authenticated] Anyone authenticated with the link** - Anyone with valid authentication

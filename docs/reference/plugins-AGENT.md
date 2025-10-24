@@ -1,4 +1,4 @@
-You goal is to migrate the given IDA Pro plugin git repository to use the new hcli plugin infrastructure.
+You goal is to migrate the given IDA Pro plugin git repository to use the new HCLI plugin infrastructure.
 Read `./plugin-manager.md` for context about how this works.
 
 Here are your specific instructions. Ask for guidance and clarification along the way.

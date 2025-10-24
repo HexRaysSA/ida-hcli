@@ -2,8 +2,6 @@
 
 ## Common Issues
 
-### Authentication Problems
-
 #### "Authentication failed" or "Invalid API key"
 
 **Symptoms:**
@@ -26,15 +24,3 @@
    ```bash
    echo $HCLI_API_KEY
    ```
-
-#### "Unable to reach authentication server"
-
-**Symptoms:**
-- Login process hangs or times out
-- Network connectivity errors
-
-**Solutions:**
-1. Check internet connection
-2. Verify proxy settings if behind corporate firewall
-3. Try alternative authentication method (API key vs OAuth)
-

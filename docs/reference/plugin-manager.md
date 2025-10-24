@@ -1,6 +1,6 @@
 # IDA Pro Plugin Manager
 
-hcli can help you discover, install, and manage IDA Pro plugins distributed via a central index.
+HCLI can help you discover, install, and manage IDA Pro plugins distributed via a central index.
 It should be very easy for you extend the capabilities of IDA Pro with plugins,
  whether they are written in IDAPython or compiled languages like C/C++.
 
@@ -35,11 +35,11 @@ Installed plugin: hint-calls==0.1.3
  (incompatible) IPyIDA               2.2    found at: $IDAPLUGINS/IPyIDA/
  (legacy) foo.py                            found at: $IDAPLUGINS/foo.py
 
-Incompatible plugins don't work with this version of hcli.
+Incompatible plugins don't work with this version of HCLI.
 They might be broken or outdated. Try using `hcli plugin lint /path/to/plugin`.
 
 Legacy plugins are old, single-file plugins.
-They aren't managed by hcli. Try finding an updated version in the plugin repository.
+They aren't managed by HCLI. Try finding an updated version in the plugin repository.
 ```
 
 We'll also work to provide an IDA-native GUI for list/install/upgrade/removing plugins in the future.
@@ -58,7 +58,7 @@ you'll want to know the hcli commands:
 ❯ hcli plugin uninstall plugin-name
 ```
 
-Plugins are written to `$IDAUSR/plugins`, which is typically `~/idapro/plugins` on Unix-like systems,
+Plugins are written to `$IDAUSR/plugins`, which is typically `~/.idapro/plugins` on Unix-like systems,
 where IDA Pro will load them the next time the application is opened.
 
 You can discover interesting plugins via:
@@ -67,7 +67,7 @@ You can discover interesting plugins via:
   - https://plugins.hex-rays.com website, or
   - https://github.com/HexRaysSA/plugin-repository raw index data.
 
-hcli supports installing plugins to be loaded by IDA 9.0 and newer.
+HCLI supports installing plugins to be loaded by IDA 9.0 and newer.
 
 
 ## As a plugin author...

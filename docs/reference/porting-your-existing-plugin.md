@@ -1,10 +1,10 @@
 # Porting your existing IDA Pro plugin
 
-hcli helps users discover, install, and manage IDA Pro plugins distributed via a central index.
+HCLI helps users discover, install, and manage IDA Pro plugins distributed via a central index.
 As the author of an existing plugin, you can make the following updates so that your project is compatible with the new ecosystem.
 If you have any questions, open an issue on this repo or email support@hex-rays.com.
 
-We think that the hcli plugin manager brings some nice benefits to plugin authors, and that its worthwhile to update your code for:
+We think that the HCLI plugin manager brings some nice benefits to plugin authors, and that its worthwhile to update your code for:
 
   - much easier plugin installation
   - better plugin discovery through the central index
@@ -164,7 +164,7 @@ Because this is a plugin written in C++ and compiled to a native shared object, 
 
 1. added `ida-plugin.json`: [PR#4](https://github.com/milankovo/zydisinfo/pull/4/files#diff-601834cd7516c6a40f96dda33295f21abd1f8e96f85095ab0823375f6479da3f)
 2. added a [workflow for GitHub Actions](https://github.com/milankovo/zydisinfo/pull/4/files#diff-5c3fa597431eda03ac3339ae6bf7f05e1a50d6fc7333679ec38e21b337cb6721) to build the plugin
-  a. use [hcli](https://hcli.docs.hex-rays.com/) to fetch IDA Pro SDKs for 9.0, 9.1, and 9.2
+  a. use [HCLI](https://hcli.docs.hex-rays.com/) to fetch IDA Pro SDKs for 9.0, 9.1, and 9.2
   b. use [ida-cmake](https://github.com/allthingsida/ida-cmake) for configuration
   c. matrixed across Windows/Linux/macOS runners
   d. build the plugin
@@ -247,7 +247,7 @@ They can keep doing this, updating `pythonDependencies` to reference that packag
 #### Migrating a Native Plugin
 
 If its a native plugin, migrate the build configuration (if it exists) to GitHub Actions.
-To acquire the SDK, either use a Git submodule or use hcli to fetch it.
+To acquire the SDK, either use a Git submodule or use HCLI to fetch it.
 The latter is probably a better solution but requires an active IDA Pro license (but you can get one through the Plugin Contributor Program),
 and enables you to build against 8.4, 9.0, 9.1, as well as 9.2+.
 The open source SDK on GitHub only has tags for 9.2+.

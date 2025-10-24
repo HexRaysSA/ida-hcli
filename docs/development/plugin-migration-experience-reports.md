@@ -16,7 +16,7 @@ Took 15 minutes.
 #### ipyida
 
 Python source plugin with Python dependencies.
-Notably it supports IDA 6.6+ - that will be hard to reproduce with hcli.
+Notably it supports IDA 6.6+ - that will be hard to reproduce with HCLI.
 
 These are actually moderately complex:
 

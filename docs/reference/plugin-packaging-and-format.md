@@ -81,7 +81,7 @@ And a minimal `ida-plugin.json` could look like this:
 ```
 
 In addition to the fields described on the Hex-Rays website,
-hcli requires the following fields in `ida-plugin.json`:
+HCLI requires the following fields in `ida-plugin.json`:
 
   - `version`: the version of the plugin archive
   - `urls.repository`: the repository that publishes the plugin
@@ -96,13 +96,13 @@ And there are new optional fields:
   - `.plugin.settings` is a list of descriptors of settings
 
 If there's a problem with the `ida-plugin.json` file, then the plugin is invalid and won't work with the repo.
-Unfortunately even things like trailing commas will break strict JSON parsers like the one used by hcli.
+Unfortunately even things like trailing commas will break strict JSON parsers like the one used by HCLI.
 So, you can use `hcli plugin lint /path/to/plugin[.zip]` to check for problems and suggestions.
 
 
 ### Settings
 
-hcli is aware of settings that plugins declare in `ida-plugin.json` and prompts users for their value
+HCLI is aware of settings that plugins declare in `ida-plugin.json` and prompts users for their value
 during installation. The settings are written into `ida-config.json` and can be queried at plugin runtime
 using the [ida-settings](https://pypi.org/project/ida-settings/) (v3) Python package:
 

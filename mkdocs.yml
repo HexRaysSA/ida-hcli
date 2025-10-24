@@ -81,12 +81,12 @@ nav:
     - Authentication: getting-started/authentication.md
     - Quick Start: getting-started/quick-start.md
   - User Guide:
+    - Installing IDA Pro: user-guide/installing-ida.md
     - License Management: user-guide/licenses.md
     - File Sharing: user-guide/file-sharing.md
-    - Extending: user-guide/extensions.md
+    - IDA Pro Plugin Manager: reference/plugin-manager.md
     - Troubleshooting: user-guide/troubleshooting.md
   - Reference:
-    - CLI Commands: reference/cli-commands.md
     - Environment Variables: reference/environment-variables.md
   - Development:
     - Development Setup: development/setup.md
