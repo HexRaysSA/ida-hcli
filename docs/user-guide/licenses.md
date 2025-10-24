@@ -1,4 +1,4 @@
-# License Management
+# Managing Licenses
 
 ## Overview
 

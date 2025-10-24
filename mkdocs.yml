@@ -81,9 +81,9 @@ nav:
     - Authentication: getting-started/authentication.md
     - Quick Start: getting-started/quick-start.md
   - User Guide:
-    - Installing IDA Pro: user-guide/installing-ida.md
-    - License Management: user-guide/licenses.md
-    - File Sharing: user-guide/file-sharing.md
+    - Installing IDA: user-guide/installing-ida.md
+    - Managing Licenses: user-guide/licenses.md
+    - Sharing Files: user-guide/file-sharing.md
     - IDA Pro Plugin Manager: user-guide/plugin-manager.md
   - How-To Guides:
     - Use HCLI in Docker: how-to/use-hcli-in-docker.md

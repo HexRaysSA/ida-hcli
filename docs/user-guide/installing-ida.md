@@ -1,4 +1,4 @@
-# Installing IDA Pro with HCLI
+# Installing IDA
 
 You can use HCLI to install IDA Pro unattended, non-interactively, or just conveniently.
 This is great for CI/CD pipelines that rely on IDA Pro, such as testing tools that use idalib.
