@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @click.command()
 @click.argument("plugin")
 def uninstall_plugin(plugin: str) -> None:
+    """Remove an installed plugin."""
     try:
         uninstall_plugin_impl(plugin)
     except PluginNotInstalledError as e:

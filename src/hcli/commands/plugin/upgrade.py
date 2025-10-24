@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 @click.pass_context
 @click.argument("plugin")
 def upgrade_plugin(ctx, plugin: str) -> None:
+    """Upgrade an installed plugin to the latest compatible version."""
     plugin_spec = plugin
     try:
         current_ida_platform = find_current_ida_platform()

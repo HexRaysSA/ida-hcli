@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 @click.argument("plugin")
 @click.option("--config", multiple=True, help="Configuration setting in key=value format (use true/false for booleans)")
 def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
+    """Install a plugin from repository, local .zip file, or URL."""
     plugin_spec = plugin
     try:
         with rich.status.Status("collecting environment", console=stderr_console):

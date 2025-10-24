@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 @click.command()
 @click.pass_context
 def get_plugin_status(ctx) -> None:
+    """Show installed plugins and their upgrade status."""
     plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
     try:
         current_platform = find_current_ida_platform()

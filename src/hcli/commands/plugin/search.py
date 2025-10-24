@@ -271,6 +271,7 @@ def handle_keyword_query(plugins: list[Plugin], query: str, current_version: str
 @click.argument("query", required=False)
 @click.pass_context
 def search_plugins(ctx, query: str | None = None) -> None:
+    """Search for plugins by name, keyword, category, or author."""
     try:
         current_platform = find_current_ida_platform()
         current_version = find_current_ida_version()
