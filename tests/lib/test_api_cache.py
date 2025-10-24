@@ -40,7 +40,9 @@ def test_cache_path_construction_for_download(temp_cache_dir):
         cache_path = get_cache_directory("downloads") / asset_key
 
         # Verify the cache path includes the full asset key structure
-        assert asset_key in str(cache_path), f"Cache path should contain full asset key: {cache_path}"
+        # Normalize path separators for cross-platform compatibility
+        normalized_asset_key = asset_key.replace("/", os.sep)
+        assert normalized_asset_key in str(cache_path), f"Cache path should contain full asset key: {cache_path}"
 
         # Verify it's within the downloads directory
         assert "downloads" in cache_path.parts, f"Cache path should be in downloads directory: {cache_path}"
