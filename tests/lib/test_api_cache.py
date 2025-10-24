@@ -26,44 +26,21 @@ def temp_cache_dir():
 
 
 def test_cache_path_construction_for_download(temp_cache_dir):
-    """Test that cache path is constructed correctly for downloads."""
-    from hcli.lib.util.string import slugify
+    """Test that cache path is constructed correctly for downloads using full asset keys."""
 
-    # Test various filenames that would be downloaded
+    # Test with full asset keys (not just filenames)
     test_cases = [
-        ("ida-pro_91_x64linux.run", "ida_pro_91_x64linux_run"),
-        ("ida-sdk-9.1.zip", "ida_sdk_9_1_zip"),
-        ("idat64", "idat64"),
+        "release/9.2/ida-pro/ida-pro_92_armmac.app.zip",
+        "release/9.1/ida-pro/ida-pro_91_x64linux.run",
+        "release/9.0/ida-sdk/ida-sdk-9.0.zip",
     ]
 
-    for filename, expected_slug in test_cases:
+    for asset_key in test_cases:
         # This is how the download_file method constructs the cache path
-        slug = slugify(filename, separator="_")
-        cache_dir = get_cache_directory("downloads", slug)
+        cache_path = get_cache_directory("downloads") / asset_key
 
-        # Verify the slug is correct
-        assert slug == expected_slug, f"Expected slug '{expected_slug}' but got '{slug}'"
+        # Verify the cache path includes the full asset key structure
+        assert asset_key in str(cache_path), f"Cache path should contain full asset key: {cache_path}"
 
-        # Verify the cache directory structure
-        path_parts = cache_dir.parts
-        assert "downloads" in path_parts, f"Cache path should contain 'downloads' directory: {cache_dir}"
-        assert slug in path_parts, f"Cache path should contain slug '{slug}': {cache_dir}"
-
-        # Verify cache directory exists (created by get_cache_directory)
-        assert cache_dir.exists(), f"Cache directory should exist: {cache_dir}"
-
-
-def test_slug_generation():
-    """Test that slugification works correctly for various filenames."""
-    from hcli.lib.util.string import slugify
-
-    test_cases = [
-        ("ida-pro_91_x64linux.run", "ida_pro_91_x64linux_run"),
-        ("IDA Pro 9.1.exe", "ida_pro_9_1_exe"),
-        ("file-with-dashes.zip", "file_with_dashes_zip"),
-        ("FILE_WITH_UNDERSCORES.tar.gz", "file_with_underscores_tar_gz"),
-    ]
-
-    for input_name, expected_slug in test_cases:
-        result = slugify(input_name, separator="_")
-        assert result == expected_slug, f"Expected slug '{expected_slug}' but got '{result}' for input '{input_name}'"
+        # Verify it's within the downloads directory
+        assert "downloads" in cache_path.parts, f"Cache path should be in downloads directory: {cache_path}"

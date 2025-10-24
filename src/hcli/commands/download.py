@@ -219,7 +219,7 @@ async def download(
             console.print(f"[yellow]Starting download of {selected_key}...[/yellow]")
             try:
                 target_path = await client.download_file(
-                    download_asset.url, target_dir=output_dir, force=force, auth=True
+                    download_asset.url, target_dir=output_dir, force=force, auth=True, asset_key=selected_key
                 )
                 downloaded_files.append(target_path)
                 console.print(f"[green]Download complete! File saved to: {target_path}[/green]")
