@@ -237,7 +237,6 @@ $ hcli share list
 At this point, you can share the short code (`efja98`) with support@hex-rays.com and they can access the file:
    
 ```bash
-
 $ hcli share get efja98
 Downloading a49e9ff8d53a9af8ef20a383a276449d.exe_.i64 100%
 ✓ File downloaded successfully!
@@ -258,9 +257,86 @@ Delete file a49e9ff8d53a9af8ef20a383a276449d.exe_.i64 ? [y/n]: y
 
 ### Find and Install an IDA Pro plugin
 
+```bash
+❯ hcli plugin
+
+ Usage: hcli plugin [OPTIONS] COMMAND [ARGS]...
+
+ Manage IDA Pro plugins.
+
+╭─ Options ──────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help      Show this message and exit.                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ─────────────────────────────────────────────────────────────────────────────────────────╮
+│ config         Manage plugin configuration settings.                                               │
+│ install                                                                                            │
+│ lint           Lint an IDA plugin directory, archive (.zip file), or HTTPS URL.                    │
+│ search                                                                                             │
+│ status                                                                                             │
+│ uninstall                                                                                          │
+│ upgrade                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────╯
+```
 
 
+```bash
+$ hcli plugin search
+current platform: macos-aarch64
+current version: 9.2
 
+ bindiff                8.0.0      installed              
+ binexport              12.0.0     installed              
+ bookmark-hints         0.1.3                             
+ capa (incompatible)    9.2.1                             
+ colorize-calls         0.1.3                             
+ comida (incompatible)  2025.9.24                         
+ deREferencing          2025.9.24  installed              
+ extensible-hints       0.1.3                             
+ hint-calls             0.1.3      upgradable from 0.1.2  
+ ida-cyberchef          0.1.0      installed              
+ ida-settings-editor    1.0.2      upgradable from 1.0.1  
+ ida-terminal-plugin    0.0.6                             
+ IFL                    1.5.2      installed              
+ ipyida                 2.3                               
+ oplog                  0.1.3      installed              
+ tag-func               0.1.3                             
+ xray                   2025.9.24                         
+ zydisinfo              1.1        upgradable from 1.0    
+
+
+$ hcli plugin search ipython
+ ipyida  2.3  installed
+```
+
+```bash
+$ hcli plugin install ipyida
+Installed plugin: ipyida==2.3
+
+$ hcli plugin status
+ ida-settings-editor   1.0.1       upgradable to 1.0.2
+ zydisinfo             1.0         upgradable to 1.1
+ plugin1               5.0.0       not found in repository
+ oplog                 0.1.3
+ ida_vmray_presence    0.1.0       not found in repository
+ HashDB                1.10.0      not found in repository
+ DelphiHelper          1.21        not found in repository
+ ipyida                2.3
+ bindiff               8.0.0
+ ida-cyberchef         0.1.0
+ deREferencing         2025.9.24
+ binexport             12.0.0
+ xrefer                2025.10.14  not found in repository
+ IFL                   1.5.2
+ hint-calls            0.1.2       upgradable to 0.1.3
+ (incompatible) yarka  0.7.0       found at: $IDAPLUGINS/yarka/
+ (legacy) foo.py                   found at: $IDAPLUGINS/foo.py
+
+Incompatible plugins don't work with this version of hcli.
+They might be broken or outdated. Try using `hcli plugin lint /path/to/plugin`.
+
+Legacy plugins are old, single-file plugins.
+They aren't managed by hcli. Try finding an updated version in the plugin repository.
+```
    
 
 ## Next Steps
