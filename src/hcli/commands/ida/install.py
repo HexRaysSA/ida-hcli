@@ -73,6 +73,14 @@ async def install(
         else:
             raise click.UsageError("Either provide an installer file path or use --download-id to download one")
 
+        # Check if installer file exists
+        if not installer_path.exists():
+            console.print(f"[red]Error: Installer file not found: {installer_path}[/red]")
+            if not installer_path.is_absolute():
+                console.print(f"[yellow]Note: The path was resolved relative to: {Path.cwd()}[/yellow]")
+            console.print("[yellow]Please check that the file exists and the path is correct.[/yellow]")
+            raise click.Abort()
+
         version = IdaProduct.from_installer_filename(installer_path.name)
 
         if not install_dir:
@@ -166,6 +174,12 @@ async def install(
 
         console.print("[green]Installation complete![/green]")
 
+    except click.Abort:
+        # User cancelled or file not found - already printed error message
+        raise
+    except click.UsageError:
+        # Usage errors are already printed by click
+        raise
     except Exception as e:
-        console.print(f"[red]Download failed: {e}[/red]")
+        console.print(f"[red]Installation failed: {e}[/red]")
         raise

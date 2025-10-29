@@ -369,6 +369,10 @@ def _install_ida_mac(installer: Path, prefix: Path) -> None:
     if not shutil.which("unzip"):
         raise RuntimeError("unzip is required to install IDA on macOS")
 
+    # Verify installer exists before proceeding
+    if not installer.exists():
+        raise FileNotFoundError(f"Installer file not found: {installer}")
+
     with tempfile.TemporaryDirectory(prefix="hcli_") as temp_unpack_dir:
         with tempfile.TemporaryDirectory(prefix="hcli_") as temp_install_dir:
             logger.info(f"Unpacking installer to {temp_unpack_dir}...")
@@ -377,7 +381,11 @@ def _install_ida_mac(installer: Path, prefix: Path) -> None:
             process = subprocess.run(["unzip", "-qq", str(installer), "-d", temp_unpack_dir], capture_output=True)
 
             if process.returncode != 0:
-                raise RuntimeError("Failed to unpack installer")
+                error_msg = process.stderr.decode("utf-8", errors="replace").strip() if process.stderr else ""
+                if error_msg:
+                    raise RuntimeError(f"Failed to unpack installer: {error_msg}")
+                else:
+                    raise RuntimeError("Failed to unpack installer")
 
             entries = list(Path(temp_unpack_dir).iterdir())
             if len(entries) != 1:
@@ -405,7 +413,11 @@ def _install_ida_mac(installer: Path, prefix: Path) -> None:
             process = subprocess.run([str(installer_path)] + args, capture_output=True)
 
             if process.returncode != 0:
-                raise RuntimeError("Installer execution failed")
+                error_msg = process.stderr.decode("utf-8", errors="replace").strip() if process.stderr else ""
+                if error_msg:
+                    raise RuntimeError(f"Installer execution failed: {error_msg}")
+                else:
+                    raise RuntimeError("Installer execution failed")
 
             # Find installed folder and copy to prefix
             installed_folders = list(temp_install_path.iterdir())
@@ -423,14 +435,21 @@ def _install_ida_unix(installer: Path, prefix: Path) -> None:
 
     installer_path = Path(installer)
 
+    # Verify installer exists before proceeding
+    if not installer_path.exists():
+        raise FileNotFoundError(f"Installer file not found: {installer_path}")
+
     # If installer is not absolute and has no directory component, prefix with './'
     if not installer_path.is_absolute() and installer_path.parent == Path("."):
         installer_path = Path(f"./{installer}")
 
     if not os.access(installer_path, os.X_OK):
         logger.info(f"Setting executable permission on {installer_path}")
-        current_mode = os.stat(installer_path).st_mode
-        os.chmod(installer_path, current_mode | stat.S_IXUSR)
+        try:
+            current_mode = os.stat(installer_path).st_mode
+            os.chmod(installer_path, current_mode | stat.S_IXUSR)
+        except OSError as e:
+            raise RuntimeError(f"Failed to set executable permission on installer: {e}")
 
     home_dir = get_user_home_dir()
     share_dir = Path(home_dir) / ".local" / "share" / "applications"
@@ -439,17 +458,29 @@ def _install_ida_unix(installer: Path, prefix: Path) -> None:
     process = subprocess.run([str(installer_path)] + args, capture_output=True)
 
     if process.returncode != 0:
-        raise RuntimeError("Installer execution failed")
+        error_msg = process.stderr.decode("utf-8", errors="replace").strip() if process.stderr else ""
+        if error_msg:
+            raise RuntimeError(f"Installer execution failed: {error_msg}")
+        else:
+            raise RuntimeError("Installer execution failed")
 
 
 def _install_ida_windows(installer: Path, prefix: Path) -> None:
     """Install IDA on Windows."""
+    # Verify installer exists before proceeding
+    if not installer.exists():
+        raise FileNotFoundError(f"Installer file not found: {installer}")
+
     args = _get_installer_args(prefix)
 
     process = subprocess.run(["cmd", "/c", str(installer)] + args, capture_output=True)
 
     if process.returncode != 0:
-        raise RuntimeError("Installer execution failed")
+        error_msg = process.stderr.decode("utf-8", errors="replace").strip() if process.stderr else ""
+        if error_msg:
+            raise RuntimeError(f"Installer execution failed: {error_msg}")
+        else:
+            raise RuntimeError("Installer execution failed")
 
 
 def _get_installer_args(prefix: Path) -> list[str]:
