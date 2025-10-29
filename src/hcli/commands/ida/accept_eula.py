@@ -60,8 +60,8 @@ def accept_eula_cmd(path: str | None) -> None:
         if any(product in dir_name for product in ["IDA Free", "IDA Home", "IDA Classroom"]):
             console.print(f"[yellow]Warning: {dir_name} may not include idalib.[/yellow]")
             console.print("[yellow]EULA acceptance might not work for this product.[/yellow]")
-    except Exception:
-        # If we can't determine the product, just continue
+    except (AttributeError, TypeError):
+        # If we can't determine the product (e.g., install_dir.name fails), just continue
         pass
 
     console.print(f"[yellow]Accepting EULA for: {install_dir}[/yellow]")
