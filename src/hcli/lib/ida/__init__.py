@@ -448,10 +448,10 @@ def _install_ida_unix(installer: Path, prefix: Path) -> None:
         try:
             current_mode = os.stat(installer_path).st_mode
             os.chmod(installer_path, current_mode | stat.S_IXUSR)
+        except PermissionError as e:
+            raise RuntimeError(f"Failed to set executable permission on installer (permission denied): {e}")
         except OSError as e:
-            raise RuntimeError(
-                f"Failed to set executable permission on installer (permission denied or I/O error): {e}"
-            )
+            raise RuntimeError(f"Failed to set executable permission on installer: {e}")
 
     home_dir = get_user_home_dir()
     share_dir = Path(home_dir) / ".local" / "share" / "applications"
