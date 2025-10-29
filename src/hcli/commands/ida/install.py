@@ -69,14 +69,17 @@ async def install(
             await download.callback(output_dir=tmp_dir, key=download_slug)
             installer_path = Path(tmp_dir) / Path(download_slug).name
         elif installer is not None:
-            installer_path = Path(installer).resolve()
+            # Store whether original path was relative before resolving
+            original_path = Path(installer)
+            is_relative_path = not original_path.is_absolute()
+            installer_path = original_path.resolve()
         else:
             raise click.UsageError("Either provide an installer file path or use --download-id to download one")
 
         # Check if installer file exists
         if not installer_path.exists():
             console.print(f"[red]Error: Installer file not found: {installer_path}[/red]")
-            if not installer_path.is_absolute():
+            if installer is not None and is_relative_path:
                 console.print(f"[yellow]Note: The path was resolved relative to: {Path.cwd()}[/yellow]")
             console.print("[yellow]Please check that the file exists and the path is correct.[/yellow]")
             raise click.Abort()
