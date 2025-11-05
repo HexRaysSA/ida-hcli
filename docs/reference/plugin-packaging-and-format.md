@@ -23,9 +23,7 @@ plugin.zip
 
 ### ida-plugin.json
 
-The `ida-plugin.json` file is the marker for an IDA Pro plugin.
-https://docs.hex-rays.com/user-guide/plugins/plugin-submission-guide#define-plugin-metadata-with-ida-plugin.json
-
+The [`ida-plugin.json` file](https://docs.hex-rays.com/user-guide/plugins/plugin-submission-guide#define-plugin-metadata-with-ida-plugin.json) is the marker for an IDA Pro plugin.
 A typical `ida-plugin.json` file might look like this:
 
 ```json
@@ -80,8 +78,7 @@ And a minimal `ida-plugin.json` could look like this:
 }
 ```
 
-In addition to the fields described on the Hex-Rays website,
-HCLI requires the following fields in `ida-plugin.json`:
+In addition to the primary fields described initially on the [Hex-Rays docs](https://docs.hex-rays.com/user-guide/plugins/plugin-submission-guide#define-plugin-metadata-with-ida-plugin.json), **HCLI compatibility added new, required fields** in `ida-plugin.json`:
 
   - `version`: the version of the plugin archive
   - `urls.repository`: the repository that publishes the plugin
@@ -179,10 +176,11 @@ You don't have to support all platforms. It's also ok to publish multiple "thin"
 But "fat" archives are convenient.
 
 The file extensions must be exactly:
+
   - `.dll` - Windows x86-64
   - `.so` - Linux 86-64
-  - `_x86_64.dylib` - macOS x86_64 (TODO: not yet supported by IDA)
-  - `_aarch64.dylib` - macOS aarch64 (TODO: not yet supported by IDA)
+  - `_x86_64.dylib` - macOS x86_64 (not yet supported by IDA)
+  - `_aarch64.dylib` - macOS aarch64 (not yet supported by IDA)
   - `.dylib` - macOS Universal Binary, only if Intel/ARM dylibs aren't present. (note: you must use this for macOS today)
 
 TODO: we need changes in IDA to support the non-Universal Binary paths. It only constructs paths like `.dylib` today.

@@ -1,25 +1,33 @@
-# Packaging your existing IDA Pro plugin
+# Publishing your plugin to IDA Plugin Manager
 
-HCLI helps users discover, install, and manage IDA Pro plugins distributed via a central index.
-As the author of an existing plugin, you can make the following updates so that your project is compatible with the new ecosystem.
-If you have any questions, open an issue on this repo or email support@hex-rays.com.
+## Why Publish Your Plugin?
 
-We think that the HCLI plugin manager brings some nice benefits to plugin authors, and that its worthwhile to update your code for:
+As the author of an existing or new plugin, we encourage you to make the following updates so that your project is compatible with the HCLI and Plugin Manager, and can benefit from the new ecosystem. 
 
-  - much easier plugin installation
-  - better plugin discovery through the central index
+Making your plugin available via Plugin Manager offers several benefits:
+
+  - simplified plugin installation
+  - improved plugin discoverability through the central index
   - easy Python dependency management
 
-We'll also soon add plugin configuration management to handle things like user preferences, API key storage, etc.
 
-If you're having trouble or don't have the bandwidth, please don't hesistate to reach out to us at Hex-Rays - we're here to support you.
+If you have any questions, open an issue on this repo or contact our [support](https://support.hex-rays.com/)
 
-Anyways, the key points are:
 
-  1. update `ida-plugin.json`
-  2. package your plugin into a ZIP archive
-  3. publish releases on GitHub
+!!! note "Coming Soon"
 
+      We plan to add plugin configuration management to handle things like user preferences, API key storage, etc.
+
+
+If you're having trouble or don't have the bandwidth, please don't hesitate to reach out to us at Hex-Rays - we're here to support you.
+
+## Steps to Publication
+
+The key points to make your IDA plugin available via Plugin Manager are:
+
+  1. Update `ida-plugin.json`
+  2. Package your plugin into a ZIP archive
+  3. Publish releases on GitHub
 
 For further details on how your plugin fits into the greater ecosystem, you can also review:
 
@@ -27,10 +35,13 @@ For further details on how your plugin fits into the greater ecosystem, you can 
   - [Plugin repository architecture](./plugin-repository-architecture.md)
 
 
-## 1. Update `ida-plugin.json`
+The plugin ecosystem is fully automated. After you publish a new GitHub release with updated metadata, your plugin will automatically be indexed and made available to IDA users.
+
+
+## 1. Update or create `ida-plugin.json`
 
 IDA 9.0 introduced `ida-plugin.json` as a way to declare metadata about plugins, such as name and entry point.
-We're adding new required and optional fields to make this metadata more useful.
+We extends this format with **new required and optional fields** to ensure compatibility with HCLI and the Plugin Manager, and to make the metadata more informative.
 
 A minimal `ida-plugin.json` file now looks like:
 
@@ -111,7 +122,7 @@ and a more complete `ida-plugin.json` looks like:
 }
 ```
 
-Here are the new required fields:
+Here are the **new required** fields:
 
   - `.plugin.version` is now required
   - `.plugin.urls.repository` is required
@@ -125,18 +136,21 @@ and new optional fields:
   - `.plugin.license` for the code license of your project
   - `.plugin.settings` is a list of descriptors of settings
 
-If there's a problem with the `ida-plugin.json` file, then it will not be indexed by the plugin repository.
-Unfortunately even things like trailing commas will break strict JSON parsers like the one used by hcli.
-So, you can use `hcli plugin lint /path/to/plugin[.zip]` to check for problems and suggestions.
+
+!!! tip "Validating Your `ida-plugin.json` File"
+
+    If there's a problem with the `ida-plugin.json` file, then it will not be indexed by the plugin repository. Unfortunately even things like trailing commas will break strict JSON parsers like the one used by HCLI.  
+    We recommend to use `hcli plugin lint /path/to/plugin[.zip]` to check for problems and suggestions.
 
 
 ## 2. Package your plugin
 
 You must distribute plugins via ZIP archives.
 See [Plugin packaging and format](./plugin-packaging-and-format.md) for more details on the contents of the ZIP archives.
-But essentially, collect the plugin files (Python source or `.dll`/`.so`/`.dylib` shared objects) and the `ida-plugin.json` and any other supporting resources into a single file.
-a. For pure-Python plugins, you can probably rely on the source archive automatically attached to GitHub Releases and Tags.
-b. For native plugins, you should consider using GitHub Actions to build the artifacts - and Hex-Rays is happy to provide templates and/or propose an initial workflow. You can see an example here: [milankovo/zydisinfo .../build.yml](https://github.com/milankovo/zydisinfo/blob/main/.github/workflows/build.yml)
+Essentially, collect the plugin files (Python source or `.dll`/`.so`/`.dylib` shared objects) and the `ida-plugin.json` and any other supporting resources into a single file.
+
+- For **pure-Python plugins**, you can probably rely on the source archive automatically attached to GitHub Releases and Tags.
+- For **native plugins**, you should consider using GitHub Actions to build the artifacts - and Hex-Rays is happy to provide templates and/or propose an initial workflow. You can see an example here: [milankovo/zydisinfo .../build.yml](https://github.com/milankovo/zydisinfo/blob/main/.github/workflows/build.yml)
 
 ## 3. Publish releases on GitHub
 
