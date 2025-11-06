@@ -40,8 +40,8 @@ The plugin ecosystem is fully automated. After you publish a new GitHub release 
 
 ## 1. Update or create `ida-plugin.json`
 
-IDA 9.0 introduced `ida-plugin.json` as a way to declare metadata about plugins, such as name and entry point.
-We extends this format with **new required and optional fields** to ensure compatibility with HCLI and the Plugin Manager, and to make the metadata more informative.
+IDA 9.0 introduced `ida-plugin.json` as a way to [declare metadata about plugins](https://docs.hex-rays.com/user-guide/plugins/plugin-submission-guide#define-plugin-metadata-with-ida-plugin.json), such as name and entry point.
+We extend this format with **new required and optional fields** to ensure compatibility with HCLI and the Plugin Manager, and to make the metadata more informative.
 
 A minimal `ida-plugin.json` file now looks like:
 
@@ -197,19 +197,21 @@ For example, I used it to kickstart the [build of the BinDiff plugin](https://gi
 4. `cd foo`
 5. `git checkout -b ida-plugin-json`
 6. add `ida-plugin.json` and any other packaging changes. commit and push them. this will be submitted upstream as a PR.
-  a. look at `plugins-AGENT.md` for some ideas
-  b. `.plugin.urls.repo` should be the upstream repo
-  c. `.plugin.authors` should be the original author
-  d. `hcli plugin lint /path/to/plugin` can help identify issues
-  e. if its pure Python, then the default release source archive is likely sufficient
-  f. if its a native plugin, you'll need to figure out how to build on GitHub Actions. this might take some time
-  g. pay special attention to the two areas of complexity:
-    i. Python (or other) dependencies
-    ii. configuration/settings
+
+      1. look at `plugins-AGENT.md` for some ideas
+      1. `.plugin.urls.repo` should be the upstream repo
+      1. `.plugin.authors` should be the original author
+      1. `hcli plugin lint /path/to/plugin` can help identify issues
+      1. if its pure Python, then the default release source archive is likely sufficient
+      1. if its a native plugin, you'll need to figure out how to build on GitHub Actions. this might take some time
+      1. pay special attention to the two areas of complexity:
+        1. Python (or other) dependencies
+        1. configuration/settings
+
 7. `git checkout -b hr-test-release`
 8. update `ida-plugin.json` so that this fork can temporarily be used by the plugin repository. commit and push them.
-  a. set `.plugin.urls.repo` to the fork, like `https://github.com/HexRays-plugin-contributions/foo`
-  b. add `.plugin.maintainers` entry for yourself
+      1. set `.plugin.urls.repo` to the fork, like `https://github.com/HexRays-plugin-contributions/foo`
+      1. add `.plugin.maintainers` entry for yourself
 9. create a release using the `hr-test-release` branch
 10. ensure the plugin can be installed: `hcli plugin install https://.../url/to/release/zip`
 
@@ -262,7 +264,7 @@ They can keep doing this, updating `pythonDependencies` to reference that packag
 
 If its a native plugin, adapt the build configuration (if it exists) to GitHub Actions.
 To acquire the SDK, either use a Git submodule or use HCLI to fetch it.
-The latter is probably a better solution but requires an active IDA Pro license (but you can get one through the Plugin Contributor Program),
+The latter is probably a better solution but requires an active IDA Pro license (but you can get one through the [Plugin Contributor Program](https://hex-rays.com/contributor-program)),
 and enables you to build against 8.4, 9.0, 9.1, as well as 9.2+.
 The open source SDK on GitHub only has tags for 9.2+.
 
@@ -279,7 +281,7 @@ Separate files might be easier; just make sure you set `idaPlatforms` in `ida-pl
 #### Do I need to submit my plugin anywhere?
 
 No, if you're using GitHub Releases to share plugin ZIP archives with valid `ida-plugin.json` files, then your plugins should be auto-included into the Hex-Rays plugin repository!
-While there used to be an explicit submission process and web form, we've moved to a self-service flow that's (hopefully) open and transparent.
+While there used to be an explicit submission process via My Hex-Rays portal, we've moved to a self-service flow that's (hopefully) open and transparent.
 
 In the future, we may re-open a web form or accept PRs to add plugins not hosted on GitHub, but this isn't supported quite yet.
 
@@ -287,8 +289,8 @@ In the future, we may re-open a web form or accept PRs to add plugins not hosted
 
 1. Ensure the plugin file (the ZIP archive) is well formed: `hcli plugin lint /path/to/plugin.zip`
 2. Check that plugin is recognized by the indexer by inspecting [plugin-repository.json](https://github.com/HexRaysSA/plugin-repository/blob/v1/plugin-repository.json).
-  a. ensure you can find your plugin in the [search results](https://github.com/search?q=path%3A**%2Fida-plugin.json&type=code)
-  b. otherewise, you can propose to add your plugin to the explicit list here: [known-repositories.json](https://github.com/HexRaysSA/plugin-repository/blob/v1/known-repositories.txt)
+    1. ensure you can find your plugin in the [search results](https://github.com/search?q=path%3A**%2Fida-plugin.json&type=code)
+    1. otherewise, you can propose to add your plugin to the explicit list here: [known-repositories.json](https://github.com/HexRaysSA/plugin-repository/blob/v1/known-repositories.txt)
 3. Open an issue [here](https://github.com/HexRaysSA/plugin-repository/issues) and Hex-Rays will be happy to help debug
 
 
@@ -306,7 +308,7 @@ Open an issue on the plugin repository and the Hex-Rays team will investigate an
 Plugins can be removed from the plugin repository so that HCLI does not serve them to users.
 
 At a technical level, the plugin repository *is* the JSON file available [here](https://github.com/HexRaysSA/plugin-repository).
-Its produced by an indexer that runs periodically, and uses a [denylist](https://github.com/HexRaysSA/plugin-repository/blob/v1/ignored-repositories.txt) to filter out repositories that Hex-Rays deems inappriopriate (malware, illegal, abusive, etc.).
+Its produced by an indexer that runs periodically, and uses a [denylist](https://github.com/HexRaysSA/plugin-repository/blob/v1/ignored-repositories.txt) to filter out repositories that Hex-Rays deems inappropriate (malware, illegal, abusive, etc.).
 Because the entire repository is within a git repository on GitHub, anyone can review the enforcement actions (such as adding to the denylist) and see what has happened.
 We designed transparency into the system from the start, to help everyone understand and trust the infrastructure.
 
