@@ -1,6 +1,6 @@
 # How to Test Your Plugin Before Publishing
 
-This guide shows you how to thoroughly test your IDA Pro plugin before publishing it to the plugin repository, ensuring it meets quality standards and works correctly across different environments.
+This guide shows you how to thoroughly test your IDA plugin before publishing it to the plugin repository, ensuring it meets quality standards and works correctly across different environments.
 
 ## Problem Statement
 
