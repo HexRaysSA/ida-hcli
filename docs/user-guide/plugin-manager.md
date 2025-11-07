@@ -1,7 +1,6 @@
 # IDA Plugin Manager
 
-HCLI can help you discover, install, and manage IDA plugins distributed via a central index.
-It simplifies extending IDA capabilities, whether the plugins are written in IDAPython or compiled languages like C/C++.
+Plugin Manager can help you discover, install, and manage IDA plugins distributed via a central index. It simplifies extending IDA capabilities, whether the plugins are written in IDAPython or compiled languages like C/C++.
 
 The underlying index of plugins is published at [github.com/HexRaysSA/plugin-repository](https://github.com/HexRaysSA/plugin-repository),
  and Hex-Rays maintains [plugins.hex-rays.com](https://plugins.hex-rays.com) as a website showing the available plugins.
