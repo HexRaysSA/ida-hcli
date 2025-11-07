@@ -49,7 +49,7 @@ They aren't managed by HCLI. Try finding an updated version in the plugin reposi
 
 
 
-## As a user of IDA Pro...
+## As a user of IDA...
 
 You'll want to know the HCLI commands:
 
@@ -62,8 +62,7 @@ You'll want to know the HCLI commands:
 ❯ hcli plugin uninstall <plugin-name>
 ```
 
-Plugins are written to `$IDAUSR/plugins`, which is typically `~/.idapro/plugins` on Unix-like systems,
-where IDA Pro will load them the next time the application is opened.
+Plugins are written to `$IDAUSR/plugins`, which is typically `~/.idapro/plugins` on Unix-like systems, where IDA Pro will load them the next time the application is opened.
 
 You can discover interesting plugins via:
 
@@ -76,7 +75,7 @@ HCLI supports installing plugins to be loaded by IDA 9.0 and newer.
 
 ## As a plugin author...
 
-Hex-Rays wants to help you package and distribute plugins for IDA Pro!
+Hex-Rays wants to help you package and distribute plugins for IDA!
 Check out the following resources and don't hesitate to contact us for support:
 
   - [Plugin repository architecture](../reference/plugin-repository-architecture.md)
