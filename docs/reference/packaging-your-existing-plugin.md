@@ -239,7 +239,7 @@ In the future, we may re-open a web form or accept PRs to add plugins not hosted
 1. Ensure the plugin file (the ZIP archive) is well formed: `hcli plugin lint /path/to/plugin.zip`
 2. Check that plugin is recognized by the indexer by inspecting [plugin-repository.json](https://github.com/HexRaysSA/plugin-repository/blob/v1/plugin-repository.json).
     1. ensure you can find your plugin in the [search results](https://github.com/search?q=path%3A**%2Fida-plugin.json&type=code)
-    1. otherwise, you can propose to add your plugin to the explicit list here: [known-repositories.json](https://github.com/HexRaysSA/plugin-repository/blob/v1/known-repositories.txt)
+    2. otherwise, you can propose to add your plugin to the explicit list here: [known-repositories.json](https://github.com/HexRaysSA/plugin-repository/blob/v1/known-repositories.txt)
 3. Open an issue [here](https://github.com/HexRaysSA/plugin-repository/issues) and Hex-Rays will be happy to help debug
 
 
