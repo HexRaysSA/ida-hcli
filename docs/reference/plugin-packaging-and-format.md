@@ -176,9 +176,6 @@ The file extensions must be exactly:
   - `_aarch64.dylib` - macOS aarch64 (not yet supported by IDA)
   - `.dylib` - macOS Universal Binary, only if Intel/ARM dylibs aren't present. (note: you must use this for macOS currently)
 
-!!! note "Coming Soon"
-
-      We plan to add support for the non-Universal Binary paths
 
 
 Remember, plugin names must be unique within a plugin archive, which means:
