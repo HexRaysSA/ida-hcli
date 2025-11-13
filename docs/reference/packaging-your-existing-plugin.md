@@ -1,4 +1,4 @@
-# Publishing your plugin to IDA Plugin Manager
+# Publishing your plugin to the IDA Plugin Repository
 
 ## Why Publish Your Plugin?
 
