@@ -7,12 +7,13 @@ import rich_click as click
 from questionary import Choice
 
 from hcli.commands.common import safe_ask_async
-from hcli.lib.api.asset import Asset, TreeNode
+from hcli.lib.api.asset import Asset, Tag, TreeNode
 from hcli.lib.api.asset import asset as asset_api
 from hcli.lib.api.common import get_api_client
 from hcli.lib.commands import async_command, auth_command
 from hcli.lib.console import console
 from hcli.lib.constants import cli
+from hcli.lib.util.io import get_tag_os
 
 
 class BackNavigationResult:
@@ -136,6 +137,63 @@ def validate_pattern_for_direct_mode(ctx, param, value):
     return value
 
 
+async def resolve_tag(tag_spec: str) -> str | None:
+    """Resolve a tag specification (e.g., 'ida:latest' or 'ida:9.2') to an asset key.
+
+    Args:
+        tag_spec: Tag specification in format 'name' or 'name:version'
+
+    Returns:
+        The resolved asset key, or None if tag not found
+    """
+    try:
+        tags = await asset_api.get_tags()
+
+        # Try exact match first
+        for tag in tags:
+            if tag.tag == tag_spec:
+                return tag.key
+
+        # If no exact match, try case-insensitive
+        tag_spec_lower = tag_spec.lower()
+        for tag in tags:
+            if tag.tag.lower() == tag_spec_lower:
+                return tag.key
+
+        return None
+    except Exception as e:
+        console.print(f"[yellow]Warning: Failed to resolve tag: {e}[/yellow]")
+        return None
+
+
+def is_tag_format(key: str) -> bool:
+    """Check if the key looks like a tag format (contains ':' and no '/')."""
+    return ":" in key and "/" not in key
+
+
+def normalize_tag_with_os(tag_spec: str) -> str:
+    """Normalize a tag by adding the current OS if not present.
+
+    Args:
+        tag_spec: Tag specification like 'ida:latest' or 'ida:9.2' or 'ida:latest:armmac'
+
+    Returns:
+        Tag with OS appended if needed, e.g., 'ida:latest:armmac'
+    """
+    parts = tag_spec.split(":")
+
+    # If tag already has 3 parts (category:version:os), return as-is
+    if len(parts) >= 3:
+        return tag_spec
+
+    # If tag has 2 parts (category:version), append current OS
+    if len(parts) == 2:
+        return f"{tag_spec}:{get_tag_os()}"
+
+    # Otherwise return as-is
+    return tag_spec
+
+
 @auth_command()
 @click.option("-f", "--force", is_flag=True, help="Skip cache")
 @click.option("--mode", "mode", default="interactive", help="One of interactive or direct")
@@ -143,6 +201,7 @@ def validate_pattern_for_direct_mode(ctx, param, value):
 @click.option(
     "--pattern", "pattern", default=None, help="Pattern to search for assets", callback=validate_pattern_for_direct_mode
 )
+@click.option("--list-tags", is_flag=True, help="List all available download tags and exit")
 @click.argument("key", required=False)
 @async_command
 async def download(
@@ -151,20 +210,75 @@ async def download(
     mode: str = "interactive",
     pattern: str | None = None,
     key: str | None = None,
+    list_tags: bool = False,
 ) -> None:
     """Download IDA binaries, SDKs, and utilities.
 
     KEY: The asset key for direct download eg. release/9.1/ida-pro/ida-pro_91_x64linux.run (optional)
+
+    Can also be a tag in one of these formats:
+    - 'category:version' (e.g., 'ida:latest' or 'ida-pro:9.2') - OS is auto-detected
+    - 'category:version:os' (e.g., 'ida:latest:armmac') - explicit OS specification
 
     \b
     When using direct mode, a pattern is required.
 
     """
     try:
+        # Handle --list-tags flag
+        if list_tags:
+            console.print("[yellow]Fetching available tags...[/yellow]")
+            tags = await asset_api.get_tags()
+
+            if not tags:
+                console.print("[yellow]No tags available[/yellow]")
+                return
+
+            # Sort tags alphabetically by tag name
+            sorted_tags = sorted(tags, key=lambda t: t.tag)
+
+            console.print(f"\n[bold]Available Download Tags ({len(tags)} total):[/bold]\n")
+            console.print(f"[bold]{'Tag':<45} {'Name':<40} {'Asset Key'}[/bold]")
+            console.print("─" * 150)
+
+            for tag in sorted_tags:
+                console.print(f"[green]{tag.tag:<45}[/green] [cyan]{tag.description:<40}[/cyan] [blue]{tag.key}[/blue]")
+
+            console.print()
+            console.print(f"[blue]Detected current platform: {get_tag_os()}[/blue]")
+            console.print(
+                "[grey69]Use 'category:version' to auto-detect OS, or 'category:version:os' for explicit OS[/grey69]"
+            )
+            return
+
         if pattern:
             mode = "direct"
 
         if key:
+            # Check if key is a tag format and resolve it
+            if is_tag_format(key):
+                console.print(f"[yellow]Resolving tag: {key}...[/yellow]")
+
+                # Normalize tag by adding current OS if needed
+                normalized_tag = normalize_tag_with_os(key)
+                if normalized_tag != key:
+                    console.print(f"[blue]Normalized to: {normalized_tag} (current platform)[/blue]")
+
+                resolved_key = await resolve_tag(normalized_tag)
+                if resolved_key:
+                    console.print(f"[green]Tag resolved to: {resolved_key}[/green]")
+                    key = resolved_key
+                else:
+                    console.print(f"[red]Tag '{normalized_tag}' not found[/red]")
+                    available_tags = await asset_api.get_tags()
+                    if available_tags:
+                        console.print("[yellow]Available tags:[/yellow]")
+                        for tag in available_tags[:10]:  # Show first 10
+                            console.print(f"  • {tag.tag}")
+                        if len(available_tags) > 10:
+                            console.print(f"  ... and {len(available_tags) - 10} more")
+                    return
+
             selected_keys = [key]
         else:
             console.print("[yellow]Fetching available downloads...[/yellow]")
