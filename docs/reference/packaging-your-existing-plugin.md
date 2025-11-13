@@ -210,6 +210,31 @@ Once you have built the shared object files, package them up along with the `ida
 You can create one artifact per platform, or do a "fat" binary archive (see above).
 Separate files might be easier; just make sure you set `.plugin.platforms` in `ida-plugin.json` to reflect the contents, so we don't try to install .dll files on macOS.
 
+#### Example: Packaging eset/DelphiHelper
+
+Because this is a pure-Python plugin, packaging was very easy! Just add the metadata file and do releases on GitHub:
+
+1. added `ida-plugin.json`: [PR#5](https://github.com/eset/DelphiHelper/pull/5/files)
+2. asked to start using GitHub Releases via the web interface
+3. ...done
+
+
+#### Example: Packaging milankovo/zydishelper
+
+Because this is a plugin written in C++ and compiled to a native shared object, packaging took a little more work:
+
+1. added `ida-plugin.json`: [PR#4](https://github.com/milankovo/zydisinfo/pull/4/files#diff-601834cd7516c6a40f96dda33295f21abd1f8e96f85095ab0823375f6479da3f)
+2. added a [workflow for GitHub Actions](https://github.com/milankovo/zydisinfo/pull/4/files#diff-5c3fa597431eda03ac3339ae6bf7f05e1a50d6fc7333679ec38e21b337cb6721) to build the plugin
+  a. use [HCLI](https://hcli.docs.hex-rays.com/) to fetch IDA Pro SDKs for 9.0, 9.1, and 9.2
+  b. use [ida-cmake](https://github.com/allthingsida/ida-cmake) for configuration
+  c. matrixed across Windows/Linux/macOS runners
+  d. build the plugin
+  e. upload to the GitHub Releases page
+3. asked to start using [GitHub Releases](https://github.com/milankovo/zydisinfo/releases) via the web interface
+
+While it took a little while to get working, this workflow should serve as a solid template for many plugins written in C++.
+For example, we used it to kickstart the [build of the BinDiff plugin](https://github.com/HexRays-plugin-contributions/bindiff/blob/ci-gha/.github/workflows/build.yml).
+
 ### 3. Publish releases on GitHub
 
 In the near term, you must use GitHub Releases to tag releases, because the plugin repository backend (initially) uses GitHub to discover and index available plugins.
