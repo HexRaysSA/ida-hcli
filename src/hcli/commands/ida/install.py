@@ -24,7 +24,13 @@ from hcli.lib.ida import (
 from hcli.lib.util.io import get_temp_dir
 
 
-@click.option("-d", "--download-id", "download_slug", required=False, help="Installer slug")
+@click.option(
+    "-d",
+    "--download-id",
+    "download_id",
+    required=False,
+    help="Full installer asset key, or tag (e.g., 'ida-pro:latest', 'ida-essential:9.2')",
+)
 @click.option("-l", "--license-id", "license_id", required=False, help="License ID (e.g., 96-0000-0000-01)")
 @click.option("-i", "--install-dir", "install_dir", required=False, help="Install dir")
 @click.option("-a", "--accept-eula", "eula", is_flag=True, help="Accept EULA", default=True)
@@ -40,13 +46,17 @@ async def install(
     install_dir: str | None,
     eula: bool,
     installer: str,
-    download_slug: str | None,
+    download_id: str | None,
     license_id: str | None,
     set_default: bool,
     dry_run: bool,
     auto_confirm: bool,
 ) -> None:
     """Installs IDA unattended.
+
+    The --download-id option supports tags for simplified version specification:
+    - 'category:version' (e.g., 'ida-pro:latest') - OS is auto-detected
+    - 'category:version:os' (e.g., 'ida-pro:9.2:x64linux') - explicit OS
 
     If install_dir is /tmp/myida, the ida binary will be located:
 
@@ -58,16 +68,28 @@ async def install(
         # download installer using the download command
         tmp_dir = get_temp_dir()
 
-        if download_slug or license_id:
+        if download_id or license_id:
             auth_service = get_auth_service()
             auth_service.init()
 
             # Enforce login
             enforce_login()
 
-        if download_slug:
-            await download.callback(output_dir=tmp_dir, key=download_slug)
-            installer_path = Path(tmp_dir) / Path(download_slug).name
+        if download_id:
+            # Download the installer (may be a tag like 'ida-pro:latest' or a full key)
+            await download.callback(output_dir=tmp_dir, key=download_id)
+
+            # Find the downloaded installer file in tmp_dir
+            # Look for common IDA installer extensions
+            installer_files: list[Path] = []
+            for pattern in ["*.app.zip", "*.run", "*.exe", "*.zip"]:
+                installer_files.extend(Path(tmp_dir).glob(pattern))
+
+            if not installer_files:
+                raise FileNotFoundError(f"No installer file found in {tmp_dir} after download")
+
+            # Use the most recently modified file (should be the one we just downloaded)
+            installer_path = max(installer_files, key=lambda p: p.stat().st_mtime)
         elif installer is not None:
             installer_path = Path(installer).resolve()
         else:

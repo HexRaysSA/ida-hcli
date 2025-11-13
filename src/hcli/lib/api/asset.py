@@ -65,6 +65,18 @@ class Bucket(BaseModel):
     requiredMetadata: dict[str, RequiredField]
 
 
+class Tag(BaseModel):
+    """Asset tag with resolved bucket and key."""
+
+    tag: str
+    description: str
+    bucket: str
+    key: str
+    category: str
+    channel: str
+    version: str
+
+
 class PagingFilter(BaseModel):
     """Paging filter parameters."""
 
@@ -202,6 +214,19 @@ class AssetAPI:
             f"/api/assets/{bucket}?type=file&view=tree&limit={filter_params.limit}&offset={filter_params.offset}"
         )
         return [TreeNode(**item) for item in data]
+
+    async def get_tags(self) -> list[Tag]:
+        """Get all available tags with resolved bucket and key."""
+        client = await get_api_client()
+        data = await client.get_json("/api/assets/tags")
+        # API returns {"tags": [...]}
+        if isinstance(data, dict) and "tags" in data:
+            return [Tag(**item) for item in data["tags"]]
+        # Fallback for direct array
+        elif isinstance(data, list):
+            return [Tag(**item) for item in data]
+        else:
+            raise ValueError(f"Unexpected tags format: {type(data)}")
 
 
 def get_permissions_from_acl_type(acl_type: str, user_email: str) -> dict[str, list[str] | None]:

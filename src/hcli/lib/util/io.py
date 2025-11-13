@@ -198,15 +198,41 @@ def get_os() -> str:
 
 def get_arch() -> str:
     """Get the system architecture."""
-    system = platform.system()
-    if system == "Windows":
+    machine = platform.machine().lower()
+    # Normalize common architecture names
+    if machine in ("x86_64", "amd64"):
         return "x86_64"
-    elif system == "Linux":
-        return platform.machine()
-    elif system == "Darwin":
+    elif machine in ("arm64", "aarch64", "arm"):
         return "arm64"
     else:
         return platform.machine()
+
+
+def get_tag_os() -> str:
+    """Get the current OS in the format used by asset tags.
+
+    Returns OS identifier in format: {arch}{os}
+    Examples: x64win, x64linux, x64mac, armmac, armwin, armlinux
+    """
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+
+    # Determine architecture
+    is_arm = machine in ("arm64", "aarch64", "arm")
+    arch_prefix = "arm" if is_arm else "x64"
+
+    # Determine OS
+    if system == "darwin":
+        os_suffix = "mac"
+    elif system == "linux":
+        os_suffix = "linux"
+    elif system == "windows":
+        os_suffix = "win"
+    else:
+        # Default to linux if unknown
+        os_suffix = "linux"
+
+    return f"{arch_prefix}{os_suffix}"
 
 
 def get_file_size(path: str) -> int:
