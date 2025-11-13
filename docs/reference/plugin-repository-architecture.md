@@ -1,4 +1,4 @@
-# IDA Plugin Manager Repository Architecture
+# IDA Plugin Repository Architecture
 
 ## Core Components
 
