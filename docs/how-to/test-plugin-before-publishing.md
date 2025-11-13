@@ -1,10 +1,10 @@
 # How to Test Your Plugin Before Publishing
 
-This guide shows you how to thoroughly test your IDA Pro plugin before publishing it to the plugin repository, ensuring it meets quality standards and works correctly across different environments.
+This guide shows you how to thoroughly test your IDA plugin before publishing it to the plugin repository, ensuring it meets quality standards and works correctly across different environments.
 
 ## Problem Statement
 
-You've developed an IDA Pro plugin and want to test it comprehensively before releasing it to ensure:
+You've developed an IDA plugin and want to test it comprehensively before releasing it to ensure:
 
 - The plugin metadata is valid
 - It installs correctly
@@ -362,7 +362,6 @@ Before creating a GitHub release:
 - [ ] ZIP archive attached to release (for non-Python plugins)
 - [ ] Release notes describe changes
 
-## Automated Testing
 
 ## Common Testing Pitfalls
 
@@ -415,7 +414,7 @@ config_path = os.path.join(ida_diskio.get_user_idadir(), "plugin-config")
 }
 ```
 
-Prefer not to pin to specific versions (`==2.28.0`) because its difficult for many plugins to agree on precisely the same version.
+Prefer not to pin to specific versions (`==2.28.0`) because it's difficult for many plugins to agree on precisely the same version.
 
 ## Reference Documentation
 
@@ -431,9 +430,9 @@ For more detailed information:
 If you encounter issues:
 
 1. **Check the linter output:** `hcli plugin lint` provides detailed error messages
-2. **Review example plugins:** https://github.com/HexRaysSA/plugin-repository
-3. **Open an issue:** https://github.com/HexRaysSA/ida-hcli/issues
-4. **Contact Hex-Rays:** support@hex-rays.com
+2. **[Review example plugins](https://github.com/HexRaysSA/plugin-repository)**
+3. **[Open an issue](https://github.com/HexRaysSA/ida-hcli/issues)**
+4. **[Contact Hex-Rays](mailto:support@hex-rays.com)**
 
 ## Publishing Your Plugin
 

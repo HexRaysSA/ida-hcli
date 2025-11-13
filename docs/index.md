@@ -53,10 +53,10 @@ This will automatically install the **HCLI** standalone executable
 
 ## Key Features
 
-- **Install IDA** - Download and install IDA, interactively or headlessly
-- **License Management** - Install and manage your IDA Pro licenses
-- **Plugin Manager** - discover, install, and configure IDA Pro plugins.
-- **File Sharing** - Securely share analysis files with Hex-Rays for support tickets
+- **[Install IDA](user-guide/installing-ida.md)** - Download and install IDA, interactively or headlessly
+- **[License Management](user-guide/licenses.md)** - Install and manage your IDA Pro licenses
+- **[Plugin Manager](user-guide/plugin-manager.md)** - discover, install, and configure IDA Pro plugins.
+- **[File Sharing](user-guide/file-sharing.md)** - Securely share analysis files with Hex-Rays for support tickets
 
 ## What's New
 

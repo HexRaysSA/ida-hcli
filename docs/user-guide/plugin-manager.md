@@ -1,13 +1,13 @@
-# IDA Pro Plugin Manager
+# IDA Plugin Manager
 
-HCLI can help you discover, install, and manage IDA Pro plugins distributed via a central index.
-It should be very easy for you extend the capabilities of IDA Pro with plugins,
- whether they are written in IDAPython or compiled languages like C/C++.
+The IDA Plugin Manager can help you discover, install, and manage IDA plugins distributed via a central index. It simplifies extending IDA capabilities, whether the plugins are written in IDAPython or compiled languages like C/C++.
 
 The underlying index of plugins is published at [github.com/HexRaysSA/plugin-repository](https://github.com/HexRaysSA/plugin-repository),
  and Hex-Rays maintains [plugins.hex-rays.com](https://plugins.hex-rays.com) as a website showing the available plugins.
 
-Status: the plugin manager is done, and we're now packaging plugins and documentation.
+!!! note "Development status"
+
+      The plugin manager is complete, and we’re now in the process of packaging plugins. Documentation updates are ongoing, and minor adjustments are expected.
 
 ## Quickstart
 
@@ -42,24 +42,26 @@ Legacy plugins are old, single-file plugins.
 They aren't managed by HCLI. Try finding an updated version in the plugin repository.
 ```
 
-We'll also work to provide an IDA-native GUI for list/install/upgrade/removing plugins in the future.
+!!! note "Coming Soon"
+
+      We plan to provide an IDA-native GUI for listing, installing, upgrading, and removing plugins in a future release.
 
 
-## As a user of IDA Pro...
 
-you'll want to know the hcli commands:
+## As a user of IDA...
+
+You'll want to know the HCLI commands:
 
 ```
 ❯ hcli plugin search 
-❯ hcli plugin search [keyword or plugin name]
-❯ hcli plugin install plugin-name
+❯ hcli plugin search [keyword or plugin-name]
+❯ hcli plugin install <plugin-name>
 ❯ hcli plugin status
-❯ hcli plugin upgrade plugin-name
-❯ hcli plugin uninstall plugin-name
+❯ hcli plugin upgrade <plugin-name>
+❯ hcli plugin uninstall <plugin-name>
 ```
 
-Plugins are written to `$IDAUSR/plugins`, which is typically `~/.idapro/plugins` on Unix-like systems,
-where IDA Pro will load them the next time the application is opened.
+Plugins are written to `$IDAUSR/plugins`, which is typically `~/.idapro/plugins` on Unix-like systems, where IDA Pro will load them the next time the application is opened.
 
 You can discover interesting plugins via:
 
@@ -72,9 +74,9 @@ HCLI supports installing plugins to be loaded by IDA 9.0 and newer.
 
 ## As a plugin author...
 
-Hex-Rays wants to help you package and distribute plugins for IDA Pro!
+Hex-Rays wants to help you package and distribute plugins for IDA!
 Check out the following resources and don't hesitate to contact us for support:
 
   - [Plugin repository architecture](../reference/plugin-repository-architecture.md)
   - [Plugin packaging and format](../reference/plugin-packaging-and-format.md)
-  - [Packaging your existing plugin](../reference/packaging-your-existing-plugin.md)
+  - [Publishing your existing plugin](../reference/packaging-your-existing-plugin.md)

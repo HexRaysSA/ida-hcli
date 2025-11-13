@@ -23,9 +23,7 @@ plugin.zip
 
 ### ida-plugin.json
 
-The `ida-plugin.json` file is the marker for an IDA Pro plugin.
-https://docs.hex-rays.com/user-guide/plugins/plugin-submission-guide#define-plugin-metadata-with-ida-plugin.json
-
+The [`ida-plugin.json` file](https://docs.hex-rays.com/user-guide/plugins/plugin-submission-guide#define-plugin-metadata-with-ida-plugin.json) is the marker for an IDA Pro plugin.
 A typical `ida-plugin.json` file might look like this:
 
 ```json
@@ -80,8 +78,7 @@ And a minimal `ida-plugin.json` could look like this:
 }
 ```
 
-In addition to the fields described on the Hex-Rays website,
-HCLI requires the following fields in `ida-plugin.json`:
+In addition to the primary fields described initially on the [Hex-Rays docs](https://docs.hex-rays.com/user-guide/plugins/plugin-submission-guide#define-plugin-metadata-with-ida-plugin.json), **HCLI compatibility added new, required fields** in `ida-plugin.json`:
 
   - `version`: the version of the plugin archive
   - `urls.repository`: the repository that publishes the plugin
@@ -100,7 +97,7 @@ Unfortunately even things like trailing commas will break strict JSON parsers li
 So, you can use `hcli plugin lint /path/to/plugin[.zip]` to check for problems and suggestions.
 
 
-### Settings
+### Shared Settings
 
 HCLI is aware of settings that plugins declare in `ida-plugin.json` and prompts users for their value
 during installation. The settings are written into `ida-config.json` and can be queried at plugin runtime
@@ -112,19 +109,13 @@ import ida_settings
 api_key = ida_settings.get_current_plugin_setting("openai_key")
 ```
 
-Plugin authors should consider moving to this configuration management system because there
- will be a single place to make edits (CLI and GUI), users don't have to manually edit source code/config files,
- and the data can be easily exported/imported.
+Plugin authors are encouraged to adopt this configuration system, as it provides a centralized way to manage edits from both the CLI and (eventually) the GUI, users don't have to manually edit source code/config files,
+and the data can be easily exported/imported.
 
-ida-settings has an associated IDA Pro plugin `ida-settings-editor` that lets users configure plugin settings within IDA:
+!!! note "Coming Soon"
 
-<img width="798"  alt="image" src="https://github.com/user-attachments/assets/fa9b2e2c-fce9-4a87-af9c-94850acaa520" />
+      The associated IDA plugin `ida-settings-editor` that lets users configure plugin settings within IDA is not yet available. We plan to introduce it in a future release.
 
-You can install it like this:
-
-```bash
-hcli plugin install ida-settings-editor
-```
 
 
 ### Source Archives and Binary Archives
@@ -175,19 +166,17 @@ from ida_plugin1.ida_plugin import PLUGIN_ENTRY
 
 Plugin archives can contain multiple compiled versions of a plugin, e.g., `foo-plugin.so` and `foo-plugin.dylib`.
 In this case, the entry point must specify the bare path to the plugin, e.g., `foo-plugin`, and IDA will append the appropriate extension based on the platform.
-You don't have to support all platforms. It's also ok to publish multiple "thin" archives, one for each platform.
-But "fat" archives are convenient.
+You don't have to support all platforms. It's acceptable to publish multiple "thin" archives, one for each platform; however, "fat" archives are convenient.
 
 The file extensions must be exactly:
+
   - `.dll` - Windows x86-64
   - `.so` - Linux 86-64
-  - `_x86_64.dylib` - macOS x86_64 (TODO: not yet supported by IDA)
-  - `_aarch64.dylib` - macOS aarch64 (TODO: not yet supported by IDA)
-  - `.dylib` - macOS Universal Binary, only if Intel/ARM dylibs aren't present. (note: you must use this for macOS today)
+  - `_x86_64.dylib` - macOS x86_64 (not yet supported by IDA)
+  - `_aarch64.dylib` - macOS aarch64 (not yet supported by IDA)
+  - `.dylib` - macOS Universal Binary, only if Intel/ARM dylibs aren't present. (note: you must use this for macOS currently)
 
-TODO: we need changes in IDA to support the non-Universal Binary paths. It only constructs paths like `.dylib` today.
-TODO: we could let entry point also be a dict, mapping from platform to path. This also require changes to IDA.
-However, Apple will soon drop support for Intel macs, so maybe we won't need x86_64 support for much longer.
+
 
 Remember, plugin names must be unique within a plugin archive, which means:
 

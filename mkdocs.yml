@@ -84,7 +84,7 @@ nav:
     - Installing IDA: user-guide/installing-ida.md
     - Managing Licenses: user-guide/licenses.md
     - Sharing Files: user-guide/file-sharing.md
-    - IDA Pro Plugin Manager: user-guide/plugin-manager.md
+    - IDA Plugin Manager: user-guide/plugin-manager.md
   - How-To Guides:
     - Use HCLI in Docker: how-to/use-hcli-in-docker.md
     - Share Files with Support: how-to/share-files-with-support.md
@@ -94,7 +94,7 @@ nav:
     - Overview: user-guide/plugin-manager.md
     - Repository Architecture: reference/plugin-repository-architecture.md
     - Packaging Format: reference/plugin-packaging-and-format.md
-    - Packaging Your Plugin: reference/packaging-your-existing-plugin.md
+    - Publishing Your Plugin: reference/packaging-your-existing-plugin.md
   - Reference:
     - Environment Variables: reference/environment-variables.md
   - Changelog: changelog.md
@@ -140,6 +140,9 @@ markdown_extensions:
       slugify: !!python/object/apply:pymdownx.slugs.slugify
         kwds:
           case: lower
+  - pymdownx.tasklist:
+      custom_checkbox: true 
+      clickable_checkbox: true   
   - admonition
   - pymdownx.snippets:
   - pymdownx.details
