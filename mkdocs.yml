@@ -157,5 +157,10 @@ validation:
 extra_css:
   - stylesheets/extra.css
 
+extra:
+  analytics:
+    provider: google
+    property: G-Y2G1VBHRDB 
+
 watch:
   - "src/hcli"
