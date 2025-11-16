@@ -160,7 +160,7 @@ extra_css:
 extra:
   analytics:
     provider: google
-    property: G-Y2G1VBHRDB 
+    property: G-Y2G1VBHRDB
 
 watch:
   - "src/hcli"
