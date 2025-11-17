@@ -210,10 +210,17 @@ class PluginArchiveIndex:
 
         Optionally filter out plugins whose host does not match the expected host.
         """
-        for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
+        for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf, context=url):
             try:
                 validate_metadata_in_plugin_archive(buf, metadata)
-            except ValueError:
+            except ValueError as e:
+                logger.debug(
+                    "failed to validate plugin metadata: %s==%s at %s: %s",
+                    metadata.plugin.name,
+                    metadata.plugin.version,
+                    url,
+                    e
+                )
                 return
 
             h = hashlib.sha256()

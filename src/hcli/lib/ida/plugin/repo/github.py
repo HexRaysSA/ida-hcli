@@ -537,7 +537,14 @@ class GithubPluginRepo(BasePluginRepo):
             repos = set(find_github_repos_with_plugins(self.token))
             set_candidate_github_repos_cache(list(sorted(repos)))
 
+        for repo in sorted(set(self.extra_repos) & repos):
+            logger.debug("extra repo '%s' already found by GitHub index", repo)
+        for repo in sorted(set(self.extra_repos) - repos):
+            logger.debug("extra repo '%s' not yet found by GitHub index", repo)
+        for repo in sorted(repos - set(self.extra_repos)):
+            logger.debug("GitHub repo '%s' not in extra repo list", repo)
         repos |= set(self.extra_repos)
+
         repos -= set(self.ignored_repos)
 
         return [parse_repository(repo) for repo in sorted(repos)]

@@ -640,18 +640,19 @@ def get_python_dependencies_from_plugin_directory(plugin_path: Path, metadata: I
 
 def get_metadatas_with_paths_from_plugin_archive(
     zip_data: bytes,
+    context: str | None = None,
 ) -> Iterator[tuple[Path, IDAMetadataDescriptor]]:
     with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
         for file_path in zip_file.namelist():
             if not file_path.endswith("ida-plugin.json"):
                 continue
 
-            logger.debug("found metadata path: %s", file_path)
+            logger.debug("found metadata path: %s: %s", context or "", file_path)
             with zip_file.open(file_path) as f:
                 try:
                     metadata = IDAMetadataDescriptor.model_validate_json(f.read().decode("utf-8"))
                 except (ValueError, ValidationError) as e:
-                    logger.debug("failed to validate: %s", e)
+                    logger.debug("failed to validate: %s: %s", context or "", e)
                     continue
                 else:
                     yield Path(file_path), metadata
