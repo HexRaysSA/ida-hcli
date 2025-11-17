@@ -23,6 +23,22 @@ from .uninstall import uninstall_plugin
 from .upgrade import upgrade_plugin
 
 
+def read_repos_file(path: Path) -> list[str]:
+    if not path.exists():
+        raise ValueError(f"file doesn't exist: {path}")
+
+    repos = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line:
+            continue
+        if line.startswith("#"):
+            continue
+
+        repos.append(line.strip())
+
+    return repos
+
+
 @click.group()
 @click.option(
     "--repo",
@@ -61,22 +77,21 @@ def plugin(ctx, repo: str | None, with_repos_list: str | None, with_ignored_repo
             extra_repos = []
             if with_repos_list is not None:
                 repos_list_path = Path(with_repos_list)
-                if not repos_list_path.exists():
-                    console.print("[red]repos list file doesn't exist[/red].")
+                try:
+                    extra_repos = read_repos_file(repos_list_path)
+                except ValueError as e:
+                    console.print(f"[red]failed to read repos list file[/red]: {str(e)}.")
                     raise click.Abort()
-
-                extra_repos = [repo.strip() for repo in repos_list_path.read_text().split("\n") if repo.strip()]
 
             ignored_repos = []
             if with_ignored_repos_list is not None:
-                ignored_repos_list_path = Path(with_ignored_repos_list)
-                if not ignored_repos_list_path.exists():
-                    console.print("[red]ignored repos list file doesn't exist[/red].")
-                    raise click.Abort()
 
-                ignored_repos = [
-                    repo.strip() for repo in ignored_repos_list_path.read_text().split("\n") if repo.strip()
-                ]
+                ignored_repos_list_path = Path(with_ignored_repos_list)
+                try:
+                    ignored_repos = read_repos_file(ignored_repos_list_path)
+                except ValueError as e:
+                    console.print(f"[red]failed to read ignored repos list file[/red]: {str(e)}.")
+                    raise click.Abort()
 
             plugin_repo = hcli.lib.ida.plugin.repo.github.GithubPluginRepo(
                 token, extra_repos=extra_repos, ignored_repos=ignored_repos
