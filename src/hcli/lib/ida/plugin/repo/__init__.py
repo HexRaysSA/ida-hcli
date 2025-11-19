@@ -20,6 +20,7 @@ from hcli.lib.ida.plugin import (
     split_plugin_version_spec,
     validate_metadata_in_plugin_archive,
 )
+from hcli.lib.util.logging import m
 
 logger = logging.getLogger(__name__)
 
@@ -205,21 +206,30 @@ class PluginArchiveIndex:
             ],
         ] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
-    def index_plugin_archive(self, buf: bytes, url: str, expected_host: str | None = None):
+    def index_plugin_archive(
+        self, buf: bytes, url: str, expected_host: str | None = None, context: dict[str, str] = {}
+    ):
         """Parse the given plugin archive and index the encountered plugins.
 
         Optionally filter out plugins whose host does not match the expected host.
         """
-        for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf, context=url):
+        logging.debug(m("indexing plugin archive: %s", url, **context))
+        for path, metadata in get_metadatas_with_paths_from_plugin_archive(buf, context=context):
             try:
-                validate_metadata_in_plugin_archive(buf, metadata)
+                validate_metadata_in_plugin_archive(buf, path, metadata)
             except ValueError as e:
                 logger.debug(
-                    "failed to validate plugin metadata: %s==%s at %s: %s",
-                    metadata.plugin.name,
-                    metadata.plugin.version,
-                    url,
-                    e
+                    m(
+                        "failed to validate plugin metadata: %s",
+                        path,
+                        **dict(
+                            context,
+                            path=str(path),
+                            plugin_name=metadata.plugin.name,
+                            plugin_version=metadata.plugin.version,
+                            error=str(e),
+                        ),
+                    )
                 )
                 return
 
@@ -234,18 +244,22 @@ class PluginArchiveIndex:
             platforms = frozenset(metadata.plugin.platforms)
             spec = (ida_versions, platforms)
 
-            logger.debug(
-                "found plugin: %s==%s, %d versions, for: %s, at: %s",
-                name,
-                version,
-                len(ida_versions),
-                platforms,
-                url,
-            )
-
             if expected_host and expected_host != host:
-                logger.debug("%s: host mismatch: %s versus expected %s", name, host, expected_host)
+                logger.debug(m("host mismatch: %s: %s versus expected %s", name, host, expected_host, **context))
                 continue
+
+            logger.debug(
+                m(
+                    "found valid plugin: %s",
+                    path,
+                    **dict(
+                        context,
+                        path=str(path),
+                        plugin_name=metadata.plugin.name,
+                        plugin_version=metadata.plugin.version,
+                    ),
+                )
+            )
 
             versions = self.index[(name, host)]
             specs = versions[version]
@@ -267,18 +281,11 @@ class PluginArchiveIndex:
             for version, specs in sorted(versions.items(), key=lambda p: parse_plugin_version(p[0])):
                 # sorted arbitrarily (but stably)
                 for spec, urls in sorted(specs.items()):
-                    ida_versions, platforms = spec
-
                     # sorted arbitrarily (but stably)
                     for url, sha256, metadata in sorted(urls):
                         location = PluginArchiveLocation(
                             url=url,
                             sha256=sha256,
-                            name=name,
-                            host=host,
-                            version=version,
-                            ida_versions=ida_versions,
-                            platforms=platforms,
                             metadata=metadata,
                         )
                         locations_by_version[version].append(location)

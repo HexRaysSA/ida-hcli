@@ -358,8 +358,8 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
 
 
 def _install_plugin_archive(zip_data: bytes, name: str):
-    metadata = get_metadata_from_plugin_archive(zip_data, name)
-    validate_metadata_in_plugin_archive(zip_data, metadata)
+    path, metadata = get_metadata_from_plugin_archive(zip_data, name)
+    validate_metadata_in_plugin_archive(zip_data, path, metadata)
 
     logger.info("installing plugin: %s (%s)", metadata.plugin.name, metadata.plugin.version)
 
@@ -498,8 +498,8 @@ def validate_can_upgrade_plugin(
 
 
 def upgrade_plugin_archive(zip_data: bytes, name: str):
-    metadata = get_metadata_from_plugin_archive(zip_data, name)
-    validate_metadata_in_plugin_archive(zip_data, metadata)
+    path, metadata = get_metadata_from_plugin_archive(zip_data, name)
+    validate_metadata_in_plugin_archive(zip_data, path, metadata)
 
     if not is_plugin_installed(metadata.plugin.name):
         raise PluginNotInstalledError(metadata.plugin.name)

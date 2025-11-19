@@ -25,6 +25,8 @@ from pydantic import (
     model_validator,
 )
 
+from hcli.lib.util.logging import m
+
 logger = logging.getLogger(__name__)
 
 
@@ -640,21 +642,25 @@ def get_python_dependencies_from_plugin_directory(plugin_path: Path, metadata: I
 
 def get_metadatas_with_paths_from_plugin_archive(
     zip_data: bytes,
-    context: str | None = None,
+    context: dict[str, str] = {},
 ) -> Iterator[tuple[Path, IDAMetadataDescriptor]]:
+    logger.debug(m("finding plugin metadata", **context))
     with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
         for file_path in zip_file.namelist():
             if not file_path.endswith("ida-plugin.json"):
                 continue
 
-            logger.debug("found metadata path: %s: %s", context or "", file_path)
+            logger.debug(m("found metadata path: %s", file_path, **context))
             with zip_file.open(file_path) as f:
                 try:
                     metadata = IDAMetadataDescriptor.model_validate_json(f.read().decode("utf-8"))
                 except (ValueError, ValidationError) as e:
-                    logger.debug("failed to validate: %s: %s", context or "", e)
+                    logger.debug(
+                        m("failed to validate metadata: %s", file_path, **(dict(context, path=file_path, error=str(e))))
+                    )
                     continue
                 else:
+                    logger.debug(m("found valid metadata: %s", file_path, **context))
                     yield Path(file_path), metadata
 
 
@@ -666,12 +672,12 @@ def get_metadata_path_from_plugin_archive(zip_data: bytes, name: str) -> Path:
     raise ValueError(f"plugin '{name}' not found in zip archive")
 
 
-def get_metadata_from_plugin_archive(zip_data: bytes, name: str) -> IDAMetadataDescriptor:
+def get_metadata_from_plugin_archive(zip_data: bytes, name: str) -> tuple[Path, IDAMetadataDescriptor]:
     """Extract ida-plugin.json metadata for plugin with the given name from zip archive without extracting"""
 
-    for _path, metadata in get_metadatas_with_paths_from_plugin_archive(zip_data):
+    for path, metadata in get_metadatas_with_paths_from_plugin_archive(zip_data):
         if metadata.plugin.name == name:
-            return metadata
+            return path, metadata
 
     raise ValueError(f"plugin '{name}' not found in zip archive")
 
@@ -681,11 +687,9 @@ def does_path_exist_in_zip_archive(zip_data: bytes, path: str) -> bool:
         return path in zip_file.namelist()
 
 
-def does_plugin_path_exist_in_plugin_archive(zip_data: bytes, plugin_name: str, relative_path: str) -> bool:
+def does_plugin_path_exist_in_plugin_archive(zip_data: bytes, plugin_root: Path, relative_path: str) -> bool:
     """does the given path exist relative to the metadata file of the given plugin?"""
-    metadata_path = get_metadata_path_from_plugin_archive(zip_data, plugin_name)
-    plugin_root_path = Path(metadata_path).parent
-    candidate_path = plugin_root_path / Path(relative_path)
+    candidate_path = plugin_root / Path(relative_path)
     # zip files always use forward slashes
     return does_path_exist_in_zip_archive(zip_data, candidate_path.as_posix())
 
@@ -722,7 +726,7 @@ def validate_path(path: str, field_name: str) -> None:
         raise ValueError(f"Invalid {field_name} path: '{path}'")
 
 
-def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAMetadataDescriptor):
+def validate_metadata_in_plugin_archive(zip_data: bytes, metadata_path: Path, metadata: IDAMetadataDescriptor):
     """validate the `ida-plugin.json` metadata within the given plugin archive.
 
     The following things must be checked:
@@ -733,21 +737,21 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAMetadataDe
       - entry point
       - logo path
     """
-    name = metadata.plugin.name
+    plugin_root = metadata_path.parent
 
     validate_path(metadata.plugin.entry_point, "entry point")
     if metadata.plugin.logo_path:
         validate_path(metadata.plugin.logo_path, "logo path")
 
     if metadata.plugin.entry_point.endswith(".py"):
-        if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point):
+        if not does_plugin_path_exist_in_plugin_archive(zip_data, plugin_root, metadata.plugin.entry_point):
             logger.debug("Missing python entry point file: %s", metadata.plugin.entry_point)
             raise ValueError(f"Entry point file not found in archive: '{metadata.plugin.entry_point}'")
     else:
         # binary plugin
         has_bare_name = False
         for ext in (".so", ".dll", ".dylib"):
-            if does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point + ext):
+            if does_plugin_path_exist_in_plugin_archive(zip_data, plugin_root, metadata.plugin.entry_point + ext):
                 has_bare_name = True
 
         if has_bare_name:
@@ -759,15 +763,17 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAMetadataDe
             ]
             for ext, platform in extensions:
                 if platform in metadata.plugin.platforms:
-                    if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point + ext):
+                    if not does_plugin_path_exist_in_plugin_archive(
+                        zip_data, plugin_root, metadata.plugin.entry_point + ext
+                    ):
                         raise ValueError("missing native entry point: %s", metadata.plugin.entry_point + ext)
 
         else:
             if set(metadata.plugin.platforms) == {PLATFORM_MACOS_ARM, PLATFORM_MACOS_INTEL}:
-                if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point):
+                if not does_plugin_path_exist_in_plugin_archive(zip_data, plugin_root, metadata.plugin.entry_point):
                     raise ValueError("missing native entry point: %s", metadata.plugin.entry_point)
             elif len(set(metadata.plugin.platforms)) == 1:
-                if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.entry_point):
+                if not does_plugin_path_exist_in_plugin_archive(zip_data, plugin_root, metadata.plugin.entry_point):
                     raise ValueError("missing native entry point: %s", metadata.plugin.entry_point)
             else:
                 raise ValueError("plugin declares multiple platforms for single native entry point")
@@ -777,7 +783,7 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAMetadataDe
             raise ValueError(f"Binary plugin file not found in archive: '{metadata.plugin.entry_point}'")
 
     if metadata.plugin.logo_path:
-        if not does_plugin_path_exist_in_plugin_archive(zip_data, name, metadata.plugin.logo_path):
+        if not does_plugin_path_exist_in_plugin_archive(zip_data, plugin_root, metadata.plugin.logo_path):
             logger.debug("Missing logo file: %s", metadata.plugin.logo_path)
             raise ValueError(f"Logo file not found in archive: '{metadata.plugin.logo_path}'")
 
@@ -785,8 +791,8 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata: IDAMetadataDe
 def is_plugin_archive(zip_data: bytes, name: str) -> bool:
     """is the given archive an IDA plugin archive for the given plugin name?"""
     try:
-        metadata = get_metadata_from_plugin_archive(zip_data, name)
-        validate_metadata_in_plugin_archive(zip_data, metadata)
+        path, metadata = get_metadata_from_plugin_archive(zip_data, name)
+        validate_metadata_in_plugin_archive(zip_data, path, metadata)
         return True
     except (ValueError, Exception):
         return False
@@ -799,7 +805,7 @@ def is_source_plugin_archive(zip_data: bytes, name: str) -> bool:
         if not is_plugin_archive(zip_data, name):
             return False
 
-        metadata = get_metadata_from_plugin_archive(zip_data, name)
+        _, metadata = get_metadata_from_plugin_archive(zip_data, name)
 
         return metadata.plugin.entry_point.endswith(".py")
     except (ValueError, Exception):
@@ -814,7 +820,7 @@ def is_binary_plugin_archive(zip_data: bytes, name: str) -> bool:
         if not is_plugin_archive(zip_data, name):
             return False
 
-        metadata = get_metadata_from_plugin_archive(zip_data, name)
+        _, metadata = get_metadata_from_plugin_archive(zip_data, name)
         entry_point = metadata.plugin.entry_point
 
         if "/" in entry_point or "\\" in entry_point:

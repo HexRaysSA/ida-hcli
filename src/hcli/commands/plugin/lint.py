@@ -251,7 +251,7 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
         plugin_source_name = f"{source_name}:{metadata_path}"
 
         try:
-            validate_metadata_in_plugin_archive(zip_data, metadata)
+            validate_metadata_in_plugin_archive(zip_data, metadata_path, metadata)
         except ValidationError as e:
             console.print(
                 f"[red]Error[/red] ({plugin_source_name}): {metadata_path}: ida-plugin.json validation failed"

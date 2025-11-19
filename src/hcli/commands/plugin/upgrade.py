@@ -53,7 +53,7 @@ def upgrade_plugin(ctx, plugin: str) -> None:
 
         upgrade_plugin_archive(buf, plugin_name)
 
-        metadata = get_metadata_from_plugin_archive(buf, plugin_name)
+        _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 
         console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}")
     except MissingCurrentInstallationDirectory:

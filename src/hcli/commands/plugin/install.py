@@ -83,7 +83,7 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
                     plugin_spec, current_ida_platform, current_ida_version
                 )
 
-        metadata = get_metadata_from_plugin_archive(buf, plugin_name)
+        _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 
         if metadata.plugin.settings:
             for config_item in config:

@@ -53,7 +53,7 @@ def test_get_python_dependencies_from_plugin_archive_inline():
     plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v4.0.0.zip"
     buf = plugin_path.read_bytes()
 
-    metadata = get_metadata_from_plugin_archive(buf, "plugin1")
+    _, metadata = get_metadata_from_plugin_archive(buf, "plugin1")
     assert metadata.plugin.python_dependencies == "inline"
 
     dependencies = get_python_dependencies_from_plugin_archive(buf, metadata)
