@@ -10,6 +10,8 @@ from typing import Any
 
 import rich.progress
 from pydantic import BaseModel, ConfigDict, Field
+from tenacity import RetryCallState, retry, retry_if_exception, stop_after_attempt
+from tenacity.wait import wait_base
 
 from hcli.lib.console import stderr_console
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveIndex
@@ -20,6 +22,61 @@ logger = logging.getLogger(__name__)
 
 # Maximum file size to download (100MB)
 MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024
+
+
+class WaitGitHubRateLimit(wait_base):
+    """Custom wait strategy that respects GitHub's rate limit headers.
+
+    GitHub provides these headers:
+    - retry-after: seconds to wait before retrying
+    - x-ratelimit-reset: UTC epoch timestamp when limit resets
+    - x-ratelimit-remaining: requests remaining in current window
+
+    If retry-after is present, use that.
+    Otherwise, if x-ratelimit-remaining is 0, wait until x-ratelimit-reset.
+    Otherwise, use exponential backoff with a minimum of 60 seconds.
+    """
+
+    def __init__(self, min_wait: int = 60, max_wait: int = 3600):
+        self.min_wait = min_wait
+        self.max_wait = max_wait
+
+    def __call__(self, retry_state: RetryCallState) -> float:
+        if retry_state.outcome and retry_state.outcome.failed:
+            exception = retry_state.outcome.exception()
+            if isinstance(exception, urllib.error.HTTPError):
+                if "retry-after" in exception.headers:
+                    retry_after = int(exception.headers["retry-after"])
+                    logger.info(f"GitHub rate limit hit, respecting retry-after: {retry_after}s")
+                    return min(retry_after, self.max_wait)
+
+                if "x-ratelimit-remaining" in exception.headers and exception.headers["x-ratelimit-remaining"] == "0":
+                    if "x-ratelimit-reset" in exception.headers:
+                        reset_time = int(exception.headers["x-ratelimit-reset"])
+                        wait_time = max(reset_time - time.time(), 0)
+                        logger.info(f"GitHub rate limit exhausted, waiting until reset: {wait_time:.0f}s")
+                        return min(wait_time, self.max_wait)
+
+        attempt = retry_state.attempt_number
+        exponential_wait = min(self.min_wait * (2 ** (attempt - 1)), self.max_wait)
+        logger.info(f"GitHub rate limit hit, using exponential backoff: {exponential_wait:.0f}s (attempt {attempt})")
+        return exponential_wait
+
+
+def _is_rate_limit_error(exception: BaseException) -> bool:
+    """Check if exception is a GitHub rate limit error (403 or 429)."""
+    return isinstance(exception, urllib.error.HTTPError) and exception.code in (403, 429)
+
+
+@retry(
+    retry=retry_if_exception(_is_rate_limit_error),
+    wait=WaitGitHubRateLimit(min_wait=60, max_wait=3600),
+    stop=stop_after_attempt(5),
+    reraise=True,
+)
+def _urlopen_with_retry(req: urllib.request.Request):
+    """Wrapper around urllib.request.urlopen with GitHub rate limit retry logic."""
+    return urllib.request.urlopen(req)
 
 
 class GitHubReleaseAsset(BaseModel):
@@ -138,7 +195,7 @@ class GitHubGraphQLClient:
         req = urllib.request.Request(self.api_url, data=json.dumps(data).encode("utf-8"), headers=self.headers)
 
         try:
-            with urllib.request.urlopen(req) as response:
+            with _urlopen_with_retry(req) as response:
                 result = json.loads(response.read().decode("utf-8"))
 
                 if "errors" in result:
@@ -376,8 +433,7 @@ def download_release_asset(owner: str, repo: str, release_id: str, asset: GitHub
 
     logger.info(f"downloading asset: {asset.name} ({asset.size}) from {asset.download_url}")
     req = urllib.request.Request(asset.download_url)
-    # TODO: there are network-related exceptions possible here.
-    with urllib.request.urlopen(req) as response:
+    with _urlopen_with_retry(req) as response:
         asset_data = response.read()
 
     logger.debug(f"downloaded {len(asset_data)} bytes for asset {asset.name}")
@@ -415,7 +471,7 @@ def get_source_archive_cache(owner: str, repo: str, commit_hash: str) -> bytes:
 def download_source_archive(zip_url: str) -> bytes:
     logger.info(f"downloading source archive from {zip_url}")
     req = urllib.request.Request(zip_url)
-    with urllib.request.urlopen(req) as response:
+    with _urlopen_with_retry(req) as response:
         buf = response.read()
 
     logger.debug(f"downloaded {len(buf)} bytes from {zip_url}")
@@ -495,11 +551,8 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
             params = f"q={urllib.parse.quote(query)}&per_page=100&page={page}"
             url = f"{search_url}?{params}"
 
-            # there can be failures here,
-            # but rather than try to handle them with retries
-            # lets prefer to fail fast and retry when things are fully working.
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req) as response:
+            with _urlopen_with_retry(req) as response:
                 result = json.loads(response.read().decode("utf-8"))
 
                 items = result.get("items", [])
