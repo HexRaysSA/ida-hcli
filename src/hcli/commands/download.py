@@ -7,7 +7,7 @@ import rich_click as click
 from questionary import Choice
 
 from hcli.commands.common import safe_ask_async
-from hcli.lib.api.asset import Asset, Tag, TreeNode
+from hcli.lib.api.asset import Asset, TreeNode
 from hcli.lib.api.asset import asset as asset_api
 from hcli.lib.api.common import get_api_client
 from hcli.lib.commands import async_command, auth_command

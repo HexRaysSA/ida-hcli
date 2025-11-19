@@ -85,7 +85,6 @@ def plugin(ctx, repo: str | None, with_repos_list: str | None, with_ignored_repo
 
             ignored_repos = []
             if with_ignored_repos_list is not None:
-
                 ignored_repos_list_path = Path(with_ignored_repos_list)
                 try:
                     ignored_repos = read_repos_file(ignored_repos_list_path)
