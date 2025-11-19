@@ -45,17 +45,22 @@ class WaitGitHubRateLimit(wait_base):
         if retry_state.outcome and retry_state.outcome.failed:
             exception = retry_state.outcome.exception()
             if isinstance(exception, urllib.error.HTTPError):
-                if "retry-after" in exception.headers:
-                    retry_after = int(exception.headers["retry-after"])
-                    logger.info(f"GitHub rate limit hit, respecting retry-after: {retry_after}s")
-                    return min(retry_after, self.max_wait)
+                logger.debug(f"Rate limit headers received: {dict(exception.headers)}")
 
-                if "x-ratelimit-remaining" in exception.headers and exception.headers["x-ratelimit-remaining"] == "0":
-                    if "x-ratelimit-reset" in exception.headers:
-                        reset_time = int(exception.headers["x-ratelimit-reset"])
-                        wait_time = max(reset_time - time.time(), 0)
-                        logger.info(f"GitHub rate limit exhausted, waiting until reset: {wait_time:.0f}s")
-                        return min(wait_time, self.max_wait)
+                retry_after = exception.headers.get("retry-after") or exception.headers.get("Retry-After")
+                if retry_after:
+                    retry_after_seconds = int(retry_after)
+                    logger.info(f"GitHub rate limit hit, respecting retry-after: {retry_after_seconds}s")
+                    return min(retry_after_seconds, self.max_wait)
+
+                reset_time_str = exception.headers.get("x-ratelimit-reset") or exception.headers.get(
+                    "X-RateLimit-Reset"
+                )
+                if reset_time_str:
+                    reset_time = int(reset_time_str)
+                    wait_time = max(reset_time - time.time(), 0)
+                    logger.info(f"GitHub rate limit exhausted, waiting until reset: {wait_time:.0f}s")
+                    return min(wait_time, self.max_wait)
 
         attempt = retry_state.attempt_number
         exponential_wait = min(self.min_wait * (2 ** (attempt - 1)), self.max_wait)
@@ -548,7 +553,7 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
 
         page = 1
         while True:
-            params = f"q={urllib.parse.quote(query)}&per_page=100&page={page}"
+            params = f"q={urllib.parse.quote(query)}&per_page=25&page={page}"
             url = f"{search_url}?{params}"
 
             req = urllib.request.Request(url, headers=headers)
