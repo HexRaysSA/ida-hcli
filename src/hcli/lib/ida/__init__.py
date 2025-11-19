@@ -169,6 +169,21 @@ def get_default_ida_install_directory(ver: IdaProduct) -> Path:
     if get_os() == "windows":
         return Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / app_directory_name
     elif get_os() == "linux":
+        # workaround for #99: idat from IDA 9.2 on Linux fails to start if the path contains a space.
+        # so we avoid using the path component "IDA Professional 9.2" and instead use "IDA-Professional-9.2"
+        # which is ugly but works.
+        #
+        # typically idat isn't widely used; however, HCLI does use it to discover the path to IDA's Python interpreter,
+        # as well as the installed arch (ARM or Intel on macOS). The latter could probably be discovered by inspecting
+        # the installed files; however, figuring out the Python configuration is messy, and much easier to leave to idat.
+        if ver.major == 9 and ver.minor == 2 and " " in app_directory_name:
+            # "IDA Professional 9.2" -> "IDA-Professional-9.2"
+            sanitized_name = app_directory_name.replace(" ", "-")
+            logger.info(
+                f"Sanitized installation directory name for IDA 9.2 on Linux: '{app_directory_name}' -> '{sanitized_name}'"
+            )
+            app_directory_name = sanitized_name
+
         return get_user_home_dir() / ".local" / "share" / "applications" / app_directory_name
     elif get_os() == "mac":
         return Path("/Applications/") / f"{app_directory_name}.app"

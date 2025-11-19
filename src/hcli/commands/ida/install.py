@@ -21,7 +21,7 @@ from hcli.lib.ida import (
     install_ida,
     install_license,
 )
-from hcli.lib.util.io import get_temp_dir
+from hcli.lib.util.io import get_os, get_temp_dir
 
 
 @click.option(
@@ -65,16 +65,15 @@ async def install(
     On Mac: /tmp/myida/Contents/MacOS/ida
     """
     try:
-        # download installer using the download command
         tmp_dir = get_temp_dir()
 
         if download_id or license_id:
             auth_service = get_auth_service()
             auth_service.init()
 
-            # Enforce login
             enforce_login()
 
+        # download installer using the download command
         if download_id:
             # Download the installer (may be a tag like 'ida-pro:latest' or a full key)
             await download.callback(output_dir=tmp_dir, key=download_id)
@@ -102,7 +101,28 @@ async def install(
         else:
             install_dir_path = Path(install_dir)
 
-        # Show installation details
+        # prominent warning for #99: idat from IDA 9.2 on Linux fails to start if the path contains a space.
+        #
+        # typically idat isn't widely used; however, HCLI does use it to discover the path to IDA's Python interpreter,
+        # as well as the installed arch (ARM or Intel on macOS). The latter could probably be discovered by inspecting
+        # the installed files; however, figuring out the Python configuration is messy, and much easier to leave to idat.
+        #
+        # see also the special handling in hcli.lib.ida
+        if get_os() == "linux" and version.major == 9 and version.minor == 2 and install_dir:
+            if " " in str(install_dir_path.absolute()):
+                console.print(
+                    "[yellow]Warning[/yellow]: Avoid installation paths with a space for this release (IDA 9.2 on Linux).\n",
+                    "This specific release of IDA has a bug in idat, preventing it from working\n",
+                    "when the path contains a space.\n\n",
+                    "You can find alternative workarounds in #99.\n\n",
+                    f"[grey69]Current directory name:[/grey69] '{install_dir_path}'",
+                )
+
+                if not auto_confirm:
+                    if not Confirm.ask("[bold yellow]Continue anyway?[/bold yellow]", default=False):
+                        console.print("[yellow]Installation cancelled.[/yellow]")
+                        return
+
         console.print("\n[bold]Installation details:[/bold]")
         console.print(f"  Installer: {installer_path}")
         console.print(f"  Destination: {install_dir_path}")
@@ -111,7 +131,6 @@ async def install(
         if set_default:
             console.print("  Set as default: Yes")
 
-        # Dry run mode
         if dry_run:
             console.print("\n[bold cyan]Dry run mode - no changes will be made[/bold cyan]")
             console.print("\n[bold]Would perform the following actions:[/bold]")
@@ -126,7 +145,6 @@ async def install(
                 console.print("  4. Accept EULA")
             return
 
-        # Confirmation prompt
         if not auto_confirm and not Confirm.ask("\n[bold yellow]Proceed with installation?[/bold yellow]"):
             console.print("[yellow]Installation cancelled.[/yellow]")
             return
@@ -136,7 +154,6 @@ async def install(
         install_ida(installer_path, install_dir_path)
 
         if license_id:
-            # Call get_license command with the license ID
             await get_license.callback(lid=license_id, output_dir=tmp_dir)
 
             # Find a file *{license_id}.hexlic in tmp_dir
@@ -147,7 +164,6 @@ async def install(
 
             license_dir_path = get_license_dir(install_dir_path)
 
-            # Copy license file to install dir
             install_license(Path(tmp_dir) / license_file, license_dir_path)
 
         if set_default:
@@ -189,5 +205,5 @@ async def install(
         console.print("[green]Installation complete![/green]")
 
     except Exception as e:
-        console.print(f"[red]Download failed: {e}[/red]")
+        console.print(f"[red]Install failed: {e}[/red]")
         raise
