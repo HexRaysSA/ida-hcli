@@ -32,7 +32,11 @@ def find_current_python_executable() -> Path:
     if ENV.HCLI_CURRENT_IDA_PYTHON_EXE is not None:
         return Path(ENV.HCLI_CURRENT_IDA_PYTHON_EXE)
 
-    exe = run_py_in_current_idapython(FIND_PYTHON_PY)
+    try:
+        exe = run_py_in_current_idapython(FIND_PYTHON_PY)
+    except RuntimeError as e:
+        raise RuntimeError("failed to determine current IDA python interpreter") from e
+
     logger.debug("found python path: %s", exe)
     return Path(exe)
 

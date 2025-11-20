@@ -176,6 +176,8 @@ def get_default_ida_install_directory(ver: IdaProduct) -> Path:
         # typically idat isn't widely used; however, HCLI does use it to discover the path to IDA's Python interpreter,
         # as well as the installed arch (ARM or Intel on macOS). The latter could probably be discovered by inspecting
         # the installed files; however, figuring out the Python configuration is messy, and much easier to leave to idat.
+        #
+        # see also the warnings in commands/ida/install.py.
         if ver.major == 9 and ver.minor == 2 and " " in app_directory_name:
             # "IDA Professional 9.2" -> "IDA-Professional-9.2"
             sanitized_name = app_directory_name.replace(" ", "-")
@@ -661,7 +663,7 @@ def run_py_in_current_idapython(src: str) -> str:
             logger.debug(f"idat stderr: {result.stderr}")
 
         if not log_path.exists():
-            raise RuntimeError(f"Log file was not created: {log_path}")
+            raise RuntimeError(f"failed to invoke idat: log file was not created: {log_path}")
 
         for line in log_path.read_text().splitlines():
             if not line.startswith("__hcli__:"):
@@ -669,7 +671,7 @@ def run_py_in_current_idapython(src: str) -> str:
 
             return json.loads(line[len("__hcli__:") :])
 
-        raise RuntimeError("Could not find __hcli__: prefix in log output")
+        raise RuntimeError("failed to invoke idat: could not find expected lines in log output")
 
 
 def get_current_ida_platform_cache_path() -> Path:
@@ -745,7 +747,10 @@ def find_current_ida_platform() -> str:
             return get_current_ida_platform_cache(ida_dir)
         except KeyError:
             pass
-        platform = run_py_in_current_idapython(FIND_PLATFORM_PY)
+        try:
+            platform = run_py_in_current_idapython(FIND_PLATFORM_PY)
+        except RuntimeError as e:
+            raise RuntimeError("failed to determine current IDA platform") from e
         set_current_ida_platform_cache(ida_dir, platform)
         return platform
     else:
@@ -802,7 +807,10 @@ def find_current_ida_version() -> str:
         return get_current_ida_version_cache(ida_dir)
     except KeyError:
         pass
-    version = run_py_in_current_idapython(FIND_VERSION_PY)
+    try:
+        version = run_py_in_current_idapython(FIND_VERSION_PY)
+    except RuntimeError as e:
+        raise RuntimeError("failed to determine current IDA version") from e
     set_current_ida_version_cache(ida_dir, version)
     return version
 
