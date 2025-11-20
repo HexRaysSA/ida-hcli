@@ -22,7 +22,7 @@ COPY --from=hcli-installer /root/.local/bin/hcli /usr/local/bin/hcli
 # Build arguments for IDA installation
 ARG HCLI_API_KEY
 ARG IDA_LICENSE_ID
-ARG IDA_DOWNLOAD_ID=release/9.2/ida-pro/ida-pro_92_x64linux.run
+ARG IDA_DOWNLOAD_ID=ida-pro:latest
 ARG IDA_INSTALL_DIR=/opt/ida
 
 # Validate required build arguments
