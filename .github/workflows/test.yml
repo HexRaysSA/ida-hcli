@@ -31,7 +31,7 @@ jobs:
             ida_version: "9.2"
             slug: "release/9.2/ida-essential/ida-essential_92_x64linux.run"
             idat_path: "/idat"
-            default_path: "/home/runner/.local/share/applications/IDA Essential 9.2"
+            default_path: "/home/runner/.local/share/applications/IDA-Essential-9.2"
 
           - name: IDA 9.2 on Windows
             arch: intel
