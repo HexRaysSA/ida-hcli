@@ -14,12 +14,12 @@ from pydantic import ValidationError
 from hcli.lib.console import console
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
-    get_metadatas_with_paths_from_plugin_archive,
     parse_plugin_version,
     validate_metadata_in_plugin_archive,
 )
 from hcli.lib.ida.plugin.install import validate_metadata_in_plugin_directory
 from hcli.lib.ida.plugin.repo import fetch_plugin_archive
+from hcli.lib.util.logging import m
 
 logger = logging.getLogger(__name__)
 
@@ -232,15 +232,36 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
     """
     recommendation_count = 0
 
-    try:
-        plugins_found = list(get_metadatas_with_paths_from_plugin_archive(zip_data))
-    except Exception as e:
-        console.print(f"[red]Error[/red]: Failed to read plugins from archive {source_name}: {e}")
-        recommendation_count += 1
-        return recommendation_count
-    else:
-        for path, meta in plugins_found:
-            logger.debug("found plugin %s at %s", meta.plugin.name, path)
+    plugins_found = []
+    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
+        for file_path in zip_file.namelist():
+            if not file_path.endswith("ida-plugin.json"):
+                continue
+
+            logger.debug(m("found metadata path: %s", file_path))
+            with zip_file.open(file_path) as f:
+                try:
+                    metadata = IDAMetadataDescriptor.model_validate_json(f.read().decode("utf-8"))
+                except ValidationError as e:
+                    logger.debug(m("failed to validate metadata: %s", file_path, path=file_path, error=str(e)))
+                    console.print(f"[red]Error[/red] ({source_name}): {file_path}: ida-plugin.json validation failed")
+                    for error in e.errors():
+                        field_path = ".".join(str(loc) for loc in error["loc"])
+                        error_msg = error["msg"]
+                        error_type = error["type"]
+
+                        if error_type == "missing":
+                            console.print(f"  [red]Missing required field[/red]: {field_path}")
+                        else:
+                            console.print(f"  [red]Invalid value[/red] for {field_path}: {error_msg}")
+                        recommendation_count += 1
+                    continue
+                else:
+                    logger.debug(m("found valid metadata: %s", file_path))
+                    plugins_found.append((Path(file_path), metadata))
+
+    for path, meta in plugins_found:
+        logger.debug("found plugin %s at %s", meta.plugin.name, path)
 
     if not plugins_found:
         console.print(f"[red]Error[/red]: No valid plugins found in archive {source_name}")
