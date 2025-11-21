@@ -354,6 +354,7 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
                             shutil.copyfileobj(source_file, target_file)
 
             logger.debug("creating plugin directory: %s", destination)
+            # `move` rather than `rename` to support cross-filesystem operations 
             shutil.move(temp_path, destination)
 
 
@@ -532,6 +533,7 @@ def upgrade_plugin_archive(zip_data: bytes, name: str):
     rollback_path = plugin_path.parent / (metadata.plugin.name + ".rollback")
     if rollback_path.exists():
         raise RuntimeError("rollback path already exists for some reason")
+    # `move` rather than `rename` to support cross-filesystem operations 
     shutil.move(plugin_path, rollback_path)
 
     try:
