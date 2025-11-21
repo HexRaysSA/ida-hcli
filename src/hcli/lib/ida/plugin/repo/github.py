@@ -49,18 +49,44 @@ class WaitGitHubRateLimit(wait_base):
 
                 retry_after = exception.headers.get("retry-after") or exception.headers.get("Retry-After")
                 if retry_after:
-                    retry_after_seconds = int(retry_after)
+                    retry_after_seconds = max(int(retry_after), self.min_wait)
                     logger.info(f"GitHub rate limit hit, respecting retry-after: {retry_after_seconds}s")
                     return min(retry_after_seconds, self.max_wait)
 
+                remaining_str = exception.headers.get("x-ratelimit-remaining") or exception.headers.get(
+                    "X-RateLimit-Remaining"
+                )
                 reset_time_str = exception.headers.get("x-ratelimit-reset") or exception.headers.get(
                     "X-RateLimit-Reset"
                 )
+
                 if reset_time_str:
                     reset_time = int(reset_time_str)
-                    wait_time = max(reset_time - time.time(), 0)
+                    current_time = time.time()
+                    raw_wait_time = reset_time - current_time
+
+                    logger.debug(
+                        f"Rate limit calculation: reset={reset_time}, current={current_time:.0f}, "
+                        f"raw_wait={raw_wait_time:.0f}s, remaining={remaining_str}"
+                    )
+
+                    if raw_wait_time < 0:
+                        logger.warning(
+                            f"Clock skew detected: reset time {reset_time} is in the past "
+                            f"(current time: {current_time:.0f}), using minimum wait"
+                        )
+                        wait_time = float(self.min_wait)
+                    elif raw_wait_time > self.max_wait:
+                        logger.warning(
+                            f"Calculated wait time {raw_wait_time:.0f}s exceeds maximum {self.max_wait}s, "
+                            f"capping to maximum"
+                        )
+                        wait_time = float(self.max_wait)
+                    else:
+                        wait_time = max(raw_wait_time, float(self.min_wait))
+
                     logger.info(f"GitHub rate limit exhausted, waiting until reset: {wait_time:.0f}s")
-                    return min(wait_time, self.max_wait)
+                    return wait_time
 
         attempt = retry_state.attempt_number
         exponential_wait = min(self.min_wait * (2 ** (attempt - 1)), self.max_wait)
@@ -73,6 +99,26 @@ def _is_rate_limit_error(exception: BaseException) -> bool:
     return isinstance(exception, urllib.error.HTTPError) and exception.code in (403, 429)
 
 
+def _check_and_handle_proactive_rate_limit(response) -> None:
+    """Check response headers and proactively wait if rate limit is nearly exhausted."""
+    remaining_str = response.headers.get("x-ratelimit-remaining") or response.headers.get("X-RateLimit-Remaining")
+    reset_time_str = response.headers.get("x-ratelimit-reset") or response.headers.get("X-RateLimit-Reset")
+
+    if remaining_str and reset_time_str:
+        remaining = int(remaining_str)
+        if remaining <= 2:
+            reset_time = int(reset_time_str)
+            current_time = time.time()
+            wait_time = max(reset_time - current_time, 30)
+
+            if 0 < wait_time < 3600:
+                logger.warning(
+                    f"Proactive rate limit: only {remaining} requests remaining, "
+                    f"waiting {wait_time:.0f}s until reset to avoid exhaustion"
+                )
+                time.sleep(wait_time)
+
+
 @retry(
     retry=retry_if_exception(_is_rate_limit_error),
     wait=WaitGitHubRateLimit(min_wait=60, max_wait=3600),
@@ -81,7 +127,9 @@ def _is_rate_limit_error(exception: BaseException) -> bool:
 )
 def _urlopen_with_retry(req: urllib.request.Request):
     """Wrapper around urllib.request.urlopen with GitHub rate limit retry logic."""
-    return urllib.request.urlopen(req)
+    response = urllib.request.urlopen(req)
+    _check_and_handle_proactive_rate_limit(response)
+    return response
 
 
 class GitHubReleaseAsset(BaseModel):
