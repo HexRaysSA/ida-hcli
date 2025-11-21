@@ -354,7 +354,7 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
                             shutil.copyfileobj(source_file, target_file)
 
             logger.debug("creating plugin directory: %s", destination)
-            temp_path.rename(destination)
+            shutil.move(temp_path, destination)
 
 
 def _install_plugin_archive(zip_data: bytes, name: str):
@@ -532,7 +532,7 @@ def upgrade_plugin_archive(zip_data: bytes, name: str):
     rollback_path = plugin_path.parent / (metadata.plugin.name + ".rollback")
     if rollback_path.exists():
         raise RuntimeError("rollback path already exists for some reason")
-    plugin_path.rename(rollback_path)
+    shutil.move(plugin_path, rollback_path)
 
     try:
         install_plugin_archive(zip_data, name)
@@ -540,7 +540,7 @@ def upgrade_plugin_archive(zip_data: bytes, name: str):
         logger.debug("error during upgrade: install: %s", e)
         logger.debug("rolling back to prior version")
         shutil.rmtree(plugin_path, ignore_errors=True)
-        rollback_path.rename(plugin_path)
+        shutil.move(rollback_path, plugin_path)
         raise e
     else:
         shutil.rmtree(rollback_path)
