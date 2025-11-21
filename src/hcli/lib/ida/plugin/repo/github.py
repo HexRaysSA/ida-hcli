@@ -634,8 +634,14 @@ class GithubPluginRepo(BasePluginRepo):
             md = get_releases_metadata(self.client, owner, repo)
             seen_zipball_urls = set()
             for release in md.releases:
+                context = {
+                    "owner": owner,
+                    "repo": repo,
+                    "release": release.tag_name,
+                    "date": release.published_at,
+                }
                 logger.debug(
-                    m("considering release: %s", release.tag_name, owner=owner, repo=repo, release=release.tag_name)
+                    m("considering release: %s", release.tag_name, **context)
                 )
 
                 if release.published_at < "2025-09-01":
@@ -643,20 +649,18 @@ class GithubPluginRepo(BasePluginRepo):
                         m(
                             "skipping old release: %s < 2025-09-01",
                             release.published_at,
-                            owner=owner,
-                            repo=repo,
-                            release=release.tag_name,
+                            **context,
                         )
                     )
                     continue
 
-                logger.debug(m("found release: %s", release.tag_name, owner=owner, repo=repo, release=release.tag_name))
+                logger.debug(m("found release: %s", release.tag_name, **context))
 
                 # source archives
-                source_archives.append((owner, repo, release.commit_hash, release.zipball_url))
+                source_archives.append((owner, repo, release.commit_hash, release.zipball_url, release.published_at))
                 seen_zipball_urls.add(release.zipball_url)
                 logger.debug(
-                    m("found zipball URL: %s", release.zipball_url, owner=owner, repo=repo, release=release.tag_name)
+                    m("found zipball URL: %s", release.zipball_url, **context)
                 )
 
                 # assets (distribution/binary archives)
@@ -664,23 +668,27 @@ class GithubPluginRepo(BasePluginRepo):
                     if asset.content_type != "application/zip":
                         continue
 
-                    assets.append((owner, repo, release.tag_name, asset))
+                    assets.append((owner, repo, release.tag_name, asset, release.published_at))
                     logger.debug(
                         m(
                             "found zip asset: %s",
                             asset.download_url,
-                            owner=owner,
-                            repo=repo,
-                            release=release.tag_name,
-                            asset=asset.name,
+                            **dict(context, asset=asset.name),
                         )
                     )
 
             for tag in md.tags:
-                logger.debug(m("considering tag: %s", tag.tag_name, owner=owner, repo=repo, tag=tag.tag_name))
+                context = {
+                    "owner": owner,
+                    "repo": repo,
+                    "tag": tag.tag_name,
+                    "date": tag.committed_date,
+                }
+
+                logger.debug(m("considering tag: %s", tag.tag_name, **context))
 
                 if not tag.tag_name.startswith("v"):
-                    logger.debug(m("skipping non-v* tag: %s", tag.tag_name, owner=owner, repo=repo, tag=tag.tag_name))
+                    logger.debug(m("skipping non-v* tag: %s", tag.tag_name, **context))
                     continue
 
                 if tag.committed_date < "2025-09-01":
@@ -688,27 +696,25 @@ class GithubPluginRepo(BasePluginRepo):
                         m(
                             "skipping old tag: %s < 2025-09-01",
                             tag.committed_date,
-                            owner=owner,
-                            repo=repo,
-                            tag=tag.tag_name,
+                            **context,
                         )
                     )
                     continue
 
-                logger.debug(m("found tag: %s", tag.tag_name, owner=owner, repo=repo, tag=tag.tag_name))
+                logger.debug(m("found tag: %s", tag.tag_name, **context))
 
                 if tag.zipball_url in seen_zipball_urls:
                     logger.debug(
-                        m("already found URL for tag: %s", tag.zipball_url, owner=owner, repo=repo, tag=tag.tag_name)
+                        m("already found URL for tag: %s", tag.zipball_url, **context)
                     )
                 else:
-                    source_archives.append((owner, repo, tag.commit_hash, tag.zipball_url))
+                    source_archives.append((owner, repo, tag.commit_hash, tag.zipball_url, tag.committed_date))
                     seen_zipball_urls.add(tag.zipball_url)
-                    logger.debug(m("found zipball URL: %s", tag.zipball_url, owner=owner, repo=repo, tag=tag.tag_name))
+                    logger.debug(m("found zipball URL: %s", tag.zipball_url, **context))
 
         index = PluginArchiveIndex()
 
-        for owner, repo, tag_name, asset in rich.progress.track(
+        for owner, repo, tag_name, asset, date in rich.progress.track(
             assets, description="Fetching plugin assests", transient=True, console=stderr_console
         ):
             logger.debug(m("fetching release asset: %s", asset.download_url, owner=owner, repo=repo, tag=tag_name))
@@ -722,10 +728,10 @@ class GithubPluginRepo(BasePluginRepo):
                 buf,
                 asset.download_url,
                 expected_host=host_url,
-                context=dict(owner=owner, repo=repo, type="release asset", tag=tag_name, url=asset.download_url),
+                context=dict(owner=owner, repo=repo, type="release asset", tag=tag_name, url=asset.download_url, date=date),
             )
 
-        for owner, repo, commit_hash, url in rich.progress.track(
+        for owner, repo, commit_hash, url, date in rich.progress.track(
             source_archives, description="Fetching plugin source archives", transient=True, console=stderr_console
         ):
             logger.debug(m("fetching source archive: %s", url, owner=owner, repo=repo, commit=commit_hash))
@@ -739,7 +745,7 @@ class GithubPluginRepo(BasePluginRepo):
                 buf,
                 url,
                 expected_host=host_url,
-                context=dict(owner=owner, repo=repo, type="source archive", commit=commit_hash, url=url),
+                context=dict(owner=owner, repo=repo, type="source archive", commit=commit_hash, url=url, date=date),
             )
 
         return index.get_plugins()
