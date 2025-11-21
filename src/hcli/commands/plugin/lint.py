@@ -324,8 +324,7 @@ def lint_plugin_directory(path: str) -> None:
         recommendation_count = _lint_plugin_archive(buf, path)
 
     else:
-        # must be a file or directory
-        plugin_path = Path(path)
+        plugin_path = Path(path).expanduser().resolve()
         if not plugin_path.exists():
             console.print(f"[red]Error[/red]: Path does not exist: {plugin_path}")
             raise click.Abort()

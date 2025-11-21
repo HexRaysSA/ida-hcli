@@ -45,14 +45,12 @@ async def get(shortcode: str, output_dir: Path | None, output_file: Path | None,
             console.print(f"[red]Error: File with shortcode '{shortcode}' not found[/red]")
             return
 
-        # Determine download parameters
         if output_file:
-            # Use specific output file
+            output_file = output_file.expanduser().resolve()
             download_dir = output_file.parent
             filename = output_file.name
         else:
-            # Use output directory (or current directory)
-            download_dir = output_dir or Path(".")
+            download_dir = output_dir.expanduser().resolve() if output_dir else Path(".").resolve()
             filename = file_info.filename
 
         # Check if file already exists

@@ -88,18 +88,23 @@ async def install(
                 raise FileNotFoundError(f"No installer file found in {tmp_dir} after download")
 
             # Use the most recently modified file (should be the one we just downloaded)
-            installer_path = max(installer_files, key=lambda p: p.stat().st_mtime)
+            installer_path = max(installer_files, key=lambda p: p.stat().st_mtime).resolve()
         elif installer is not None:
             installer_path = Path(installer).resolve()
         else:
             raise click.UsageError("Either provide an installer file path or use --download-id to download one")
+
+        if not installer_path.exists():
+            raise FileNotFoundError(
+                f"Installer file not found: {installer_path}\nPlease ensure the file exists at the specified location."
+            )
 
         version = IdaProduct.from_installer_filename(installer_path.name)
 
         if not install_dir:
             install_dir_path = get_default_ida_install_directory(version)
         else:
-            install_dir_path = Path(install_dir)
+            install_dir_path = Path(install_dir).expanduser().resolve()
 
         # prominent warning for #99: idat from IDA 9.2 on Linux fails to start if the path contains a space.
         #

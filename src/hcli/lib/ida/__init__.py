@@ -442,7 +442,7 @@ def _install_ida_unix(installer: Path, prefix: Path) -> None:
 
     # If installer is not absolute and has no directory component, prefix with './'
     if not installer_path.is_absolute() and installer_path.parent == Path("."):
-        installer_path = Path(f"./{installer}")
+        installer_path = Path(f"./{installer_path}")
 
     if not os.access(installer_path, os.X_OK):
         logger.info(f"Setting executable permission on {installer_path}")

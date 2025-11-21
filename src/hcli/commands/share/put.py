@@ -28,8 +28,8 @@ from hcli.lib.util.string import get_email_domain
 @async_command
 async def put(path: Path, acl: str | None, code: str | None, force: bool) -> None:
     """Upload a shared file."""
+    path = path.expanduser().resolve()
 
-    # Validate file exists
     if not path.exists():
         console.print(f"[red]Error: File not found: {path}[/red]")
         raise click.Abort()

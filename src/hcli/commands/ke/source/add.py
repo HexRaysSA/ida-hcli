@@ -19,7 +19,12 @@ def add(name: str, path: Path) -> None:
     NAME: Logical name for the source
     PATH: Filesystem path to the source
     """
-    # Get existing sources or initialize empty dict
+    path = path.expanduser().resolve()
+
+    if not path.exists():
+        console.print(f"[red]Path does not exist: {path}[/red]")
+        raise click.Abort()
+
     sources: dict[str, str] = config_store.get_object("ke.sources", {}) or {}
 
     if name in sources:

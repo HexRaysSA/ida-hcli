@@ -225,7 +225,7 @@ class APIClient:
             auth: Use authentication
             asset_key: Full asset key (e.g., 'release/9.2/ida-pro/filename.zip') for cache path
         """
-        target_dir = Path(target_dir)
+        target_dir = Path(target_dir).expanduser().resolve()
         target_dir.mkdir(parents=True, exist_ok=True)
 
         # Determine filename

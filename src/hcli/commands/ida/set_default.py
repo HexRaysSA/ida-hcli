@@ -14,8 +14,8 @@ from hcli.lib.ida import (
 
 
 @click.command(name="set-default")
-@click.argument("path", required=False)
-def set_default_ida(path: str | None) -> None:
+@click.argument("path", type=click.Path(path_type=Path), required=False)
+def set_default_ida(path: Path | None) -> None:
     """Set or show the default IDA installation directory."""
     config_path = get_ida_config_path()
 
@@ -39,7 +39,7 @@ def set_default_ida(path: str | None) -> None:
             console.print("\n[grey69]No standard installations found.[/grey69]")
         return
 
-    install_dir = Path(path)
+    install_dir = path.expanduser().resolve()
 
     if not install_dir.exists():
         console.print(f"[red]Path does not exist: {install_dir}[/red]")

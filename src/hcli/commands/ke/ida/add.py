@@ -135,7 +135,16 @@ def _add_auto_discovered_instances() -> None:
 
 def _add_manual_instance(name: str, path: Path) -> None:
     """Add a specific IDA instance manually."""
-    # Check if it's a valid IDA directory
+    path = path.expanduser().resolve()
+
+    if not path.exists():
+        console.print(f"[red]Path does not exist: {path}[/red]")
+        raise click.Abort()
+
+    if not path.is_dir():
+        console.print(f"[red]Path is not a directory: {path}[/red]")
+        raise click.Abort()
+
     if not is_ida_dir(path):
         console.print(f"[red]Invalid IDA installation directory: {path}[/red]")
         console.print("[yellow]The directory should contain the IDA binary[/yellow]")
