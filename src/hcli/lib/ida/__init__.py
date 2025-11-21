@@ -627,7 +627,9 @@ def run_py_in_current_idapython(src: str) -> str:
         raise ValueError(f"can't find idat: {idat_path}")
 
     if get_os() == "linux" and "9.2" in str(idat_path.absolute()):
-        logger.warning("invoking idat on IDA 9.2/Linux with a space in the full path, you might encounter HCLI GitHub issue #99")
+        logger.warning(
+            "invoking idat on IDA 9.2/Linux with a space in the full path, you might encounter HCLI GitHub issue #99"
+        )
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
