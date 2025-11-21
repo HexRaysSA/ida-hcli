@@ -640,9 +640,7 @@ class GithubPluginRepo(BasePluginRepo):
                     "release": release.tag_name,
                     "date": release.published_at,
                 }
-                logger.debug(
-                    m("considering release: %s", release.tag_name, **context)
-                )
+                logger.debug(m("considering release: %s", release.tag_name, **context))
 
                 if release.published_at < "2025-09-01":
                     logger.debug(
@@ -659,9 +657,7 @@ class GithubPluginRepo(BasePluginRepo):
                 # source archives
                 source_archives.append((owner, repo, release.commit_hash, release.zipball_url, release.published_at))
                 seen_zipball_urls.add(release.zipball_url)
-                logger.debug(
-                    m("found zipball URL: %s", release.zipball_url, **context)
-                )
+                logger.debug(m("found zipball URL: %s", release.zipball_url, **context))
 
                 # assets (distribution/binary archives)
                 for asset in release.assets:
@@ -704,9 +700,7 @@ class GithubPluginRepo(BasePluginRepo):
                 logger.debug(m("found tag: %s", tag.tag_name, **context))
 
                 if tag.zipball_url in seen_zipball_urls:
-                    logger.debug(
-                        m("already found URL for tag: %s", tag.zipball_url, **context)
-                    )
+                    logger.debug(m("already found URL for tag: %s", tag.zipball_url, **context))
                 else:
                     source_archives.append((owner, repo, tag.commit_hash, tag.zipball_url, tag.committed_date))
                     seen_zipball_urls.add(tag.zipball_url)
@@ -728,7 +722,9 @@ class GithubPluginRepo(BasePluginRepo):
                 buf,
                 asset.download_url,
                 expected_host=host_url,
-                context=dict(owner=owner, repo=repo, type="release asset", tag=tag_name, url=asset.download_url, date=date),
+                context=dict(
+                    owner=owner, repo=repo, type="release asset", tag=tag_name, url=asset.download_url, date=date
+                ),
             )
 
         for owner, repo, commit_hash, url, date in rich.progress.track(
