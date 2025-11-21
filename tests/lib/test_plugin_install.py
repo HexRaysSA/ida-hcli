@@ -211,3 +211,27 @@ def test_plugin_all(virtual_ida_environment_with_venv):
 
             p = run_hcli("plugin install hint-calls")
             assert "Installed plugin: hint-calls==" in p.stdout
+
+
+def test_case_insensitive_plugin_install(virtual_ida_environment_with_venv):
+    """Test that plugin install works with case-insensitive name matching."""
+    idausr = Path(os.environ["HCLI_IDAUSR"])
+    install_this_package_in_venv(idausr / "venv")
+
+    with temp_env_var("TERM", "dumb"):
+        with temp_env_var("COLUMNS", "80"):
+            p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} repo snapshot")
+            repo_path = idausr / "repo.json"
+            repo_path.write_text(p.stdout)
+
+            # Install using uppercase name "PLUGIN1" but expect it to resolve to "plugin1"
+            p = run_hcli(f"plugin --repo {repo_path.absolute()} install PLUGIN1==1.0.0")
+            assert "Installed plugin: plugin1==1.0.0\n" == p.stdout
+
+            # Verify the plugin is installed with the correct case
+            assert is_plugin_installed("plugin1")
+            assert ("plugin1", "1.0.0") in get_installed_plugins()
+
+            # Clean up
+            p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall plugin1")
+            assert "Uninstalled plugin: plugin1\n" == p.stdout

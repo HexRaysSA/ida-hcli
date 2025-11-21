@@ -20,7 +20,6 @@ from hcli.lib.ida import (
 from hcli.lib.ida.plugin import (
     get_metadata_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
-    split_plugin_version_spec,
 )
 from hcli.lib.ida.plugin.install import install_plugin_archive, uninstall_plugin
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
@@ -74,12 +73,9 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
 
         else:
             logger.info("finding plugin in repository")
-            plugin_name, _ = split_plugin_version_spec(plugin_spec)
-            logger.debug("plugin name: %s", plugin_name)
-
             plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
             with rich.status.Status("fetching plugin", console=stderr_console):
-                buf = plugin_repo.fetch_compatible_plugin_from_spec(
+                plugin_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
                     plugin_spec, current_ida_platform, current_ida_version
                 )
 

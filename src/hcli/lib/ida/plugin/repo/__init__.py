@@ -172,8 +172,23 @@ class BasePluginRepo(ABC):
 
         raise KeyError(f"plugin not found: {plugin_spec}")
 
-    def fetch_compatible_plugin_from_spec(self, plugin_spec: str, current_platform: str, current_version: str) -> bytes:
+    def fetch_compatible_plugin_from_spec(
+        self, plugin_spec: str, current_platform: str, current_version: str
+    ) -> tuple[str, bytes]:
+        """Fetch compatible plugin from spec with SHA256 verification.
+
+        Args:
+            plugin_spec: Plugin specification (e.g., "plugin1", "plugin1==1.0.0")
+            current_platform: Current IDA platform (e.g., "macos-aarch64")
+            current_version: Current IDA version (e.g., "9.1")
+
+        Returns:
+            Tuple of (actual_plugin_name, plugin_archive_bytes).
+            The plugin name returned uses the correct casing from the metadata.
+        """
         location = self.find_compatible_plugin_from_spec(plugin_spec, current_platform, current_version)
+        plugin_name = location.metadata.plugin.name
+        logger.debug("plugin name: %s", plugin_name)
         buf = fetch_plugin_archive(location.url)
 
         h = hashlib.sha256()
@@ -183,7 +198,7 @@ class BasePluginRepo(ABC):
         if sha256 != location.sha256:
             raise ValueError(f"hash mismatch: expected {location.sha256} but found {sha256} for {location.url}")
 
-        return buf
+        return plugin_name, buf
 
 
 class PluginArchiveIndex:
