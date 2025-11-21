@@ -14,10 +14,9 @@ FIND_PYTHON_PY = """
 # output like:
 #
 #     __hcli__:"/Users/user/.idapro/venv/bin/python"
-import shutil
 import sys
 import json
-print("__hcli__:" + json.dumps(shutil.which("python")))
+print("__hcli__:" + json.dumps(sys.executable))
 sys.exit()
 """
 
