@@ -139,7 +139,7 @@ def get_ida_user_dir() -> Path:
             raise ValueError("Failed to determine home directory: environment variable not set")
         return Path(home) / ".idapro"
     else:
-        raise ValueError(f"Unsupported operating system: {os}")
+        raise ValueError(f"Unsupported operating system: {os_}")
 
 
 def get_user_home_dir() -> Path:
@@ -157,7 +157,7 @@ def get_user_home_dir() -> Path:
             raise ValueError("Failed to determine home directory: environment variable not set")
         return Path(home)
     else:
-        raise ValueError(f"Unsupported operating system: {os}")
+        raise ValueError(f"Unsupported operating system: {os_}")
 
 
 def get_default_ida_install_directory(ver: IdaProduct) -> Path:
@@ -166,9 +166,10 @@ def get_default_ida_install_directory(ver: IdaProduct) -> Path:
     # like "IDA Professional 9.1sp1"
     app_directory_name = str(ver)
 
-    if get_os() == "windows":
+    os_ = get_os()
+    if os_ == "windows":
         return Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / app_directory_name
-    elif get_os() == "linux":
+    elif os_ == "linux":
         # workaround for #99: idat from IDA 9.2 on Linux fails to start if the path contains a space.
         # so we avoid using the path component "IDA Professional 9.2" and instead use "IDA-Professional-9.2"
         # which is ugly but works.
@@ -187,10 +188,10 @@ def get_default_ida_install_directory(ver: IdaProduct) -> Path:
             app_directory_name = sanitized_name
 
         return get_user_home_dir() / ".local" / "share" / "applications" / app_directory_name
-    elif get_os() == "mac":
+    elif os_ == "mac":
         return Path("/Applications/") / f"{app_directory_name}.app"
     else:
-        raise ValueError(f"Unsupported operating system: {os}")
+        raise ValueError(f"Unsupported operating system: {os_}")
 
 
 def get_ida_path(ida_dir: Path) -> Path:
@@ -282,14 +283,15 @@ def find_standard_installations() -> list[Path]:
     except ValueError:
         pass
 
-    if get_os() == "windows":
+    os_ = get_os()
+    if os_ == "windows":
         ret.update(find_standard_windows_installations())
-    elif get_os() == "linux":
+    elif os_ == "linux":
         ret.update(find_standard_linux_installations())
-    elif get_os() == "mac":
+    elif os_ == "mac":
         ret.update(find_standard_mac_installations())
     else:
-        raise ValueError(f"Unsupported operating system: {os}")
+        raise ValueError(f"Unsupported operating system: {os_}")
 
     return list(ret)
 
