@@ -1,8 +1,12 @@
 import inspect
+import logging
+from pathlib import Path
 
 from hcli.lib.ida import PluginConfig, get_ida_config, set_ida_config
 from hcli.lib.ida.plugin import ChoiceValueError, PluginSettingDescriptor
-from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
+from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory, get_plugins_directory
+
+logger = logging.getLogger(__name__)
 
 
 def parse_setting_value(descriptor: PluginSettingDescriptor, string_value: str) -> str | bool:
@@ -147,15 +151,43 @@ def get_current_plugin() -> str:
     Returns:
         The plugin name extracted from the first plugin module found in the call stack.
     """
+
+    # to determine the current plugin, we'll walk the call stack
+    # searching for modules that seem to be an IDA plugin.
+    #
+    # while we'd prefer to use the module name, which is set to `__plugins__<name>`,
+    # this doesn't work when we're not in the entrypoint of a module
+    # (such as a registered plugmod_t thats not found in the entrypoint python file).
+    #
+    # so, we fall back to also checking the file system path to see if it
+    # falls within the plugins directory ($IDAUSR/plugins/).
+    # this also helps when the plugin name has been normalized from "my-foo" to "__plugins__my_foo".
+
     frame = inspect.currentframe()
     if frame is None:
         raise RuntimeError("failed to get current frame")
 
+    plugins_path = str(get_plugins_directory().absolute())
+
     current_frame = frame.f_back
     while current_frame is not None:
+        logger.debug("inspecting frame: %s", current_frame)
         module_name = current_frame.f_globals.get("__name__")
-        if module_name and module_name.startswith("__plugins__"):
+        module_filename = current_frame.f_code.co_filename
+        if module_filename.startswith(plugins_path):
+            # check file path first, because it handles normalization better
+
+            module_relative_path = Path(module_filename).relative_to(plugins_path)
+            plugin_directory_name = module_relative_path.parts[0]
+
+            plugin_directory = Path(plugins_path) / plugin_directory_name
+            metadata = get_metadata_from_plugin_directory(plugin_directory)
+            plugin_name = metadata.plugin.name
+            logger.debug("found plugin by path: %s %s", module_filename, plugin_name)
+            return plugin_name
+        elif module_name and module_name.startswith("__plugins__"):
             plugin_name = module_name[len("__plugins__") :]
+            logger.debug("found plugin by module name: %s %s", module_name, plugin_name)
             return plugin_name
 
         current_frame = current_frame.f_back
