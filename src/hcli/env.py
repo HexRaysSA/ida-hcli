@@ -32,6 +32,9 @@ class ENV:
 
     HCLI_DISABLE_UPDATES: bool = os.getenv("HCLI_DISABLE_UPDATES", "").lower() in ("true", "yes", "on", "1")
 
+    IDAUSR: str | None = os.getenv("IDAUSR")
+    IDADIR: str | None = os.getenv("IDADIR")
+
     # IDA-specific environment variables
     HCLI_IDAUSR: str | None = os.getenv("HCLI_IDAUSR")
     HCLI_CURRENT_IDA_INSTALL_DIR: str | None = os.getenv("HCLI_CURRENT_IDA_INSTALL_DIR")

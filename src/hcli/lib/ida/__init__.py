@@ -121,10 +121,8 @@ def get_ida_user_dir() -> Path:
     if ENV.HCLI_IDAUSR is not None:
         return Path(ENV.HCLI_IDAUSR)
 
-    # Check for standard IDAUSR environment variable
-    idausr = os.environ.get("IDAUSR")
-    if idausr is not None:
-        return Path(idausr)
+    if ENV.IDAUSR is not None:
+        return Path(ENV.IDAUSR)
 
     os_ = get_os()
     if os_ == "windows":
@@ -578,6 +576,9 @@ def find_current_ida_install_directory() -> Path:
         return Path(env)
     if ENV.HCLI_CURRENT_IDA_INSTALL_DIR is not None:
         return Path(ENV.HCLI_CURRENT_IDA_INSTALL_DIR)
+
+    if ENV.IDADIR is not None:
+        return Path(ENV.IDADIR)
 
     config = get_ida_config()
     if not config.paths.installation_directory:
