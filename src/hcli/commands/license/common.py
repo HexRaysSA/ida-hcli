@@ -77,19 +77,6 @@ async def select_licenses(customer_id: str, predicate: Callable[[License], bool]
         return selected
 
 
-async def download_licenses(customer_id: str, licenses: list[License], target_dir: str) -> None:
-    """
-    Download multiple licenses.
-
-    Args:
-        customer_id: Customer ID
-        licenses: List of licenses to download
-        target_dir: Target directory for downloads
-    """
-    for lic in licenses:
-        await download_license(customer_id, lic, target_dir, ask_assets=False)
-
-
 async def download_license(
     customer_id: str,
     lic: License,

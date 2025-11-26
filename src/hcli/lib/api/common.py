@@ -4,7 +4,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from httpx import AsyncByteStream
 from rich.progress import (
     DownloadColumn,
     Progress,
@@ -51,34 +50,6 @@ class RateLimitError(APIError):
     """429 rate limit exceeded."""
 
     pass
-
-
-class ProgressAsyncStream(AsyncByteStream):
-    def __init__(self, file_path, progress_bar, task_id, chunk_size=64 * 1024):
-        self.file_path = file_path
-        self.progress_bar = progress_bar
-        self.task_id = task_id
-        self.chunk_size = chunk_size
-        self.file = None
-
-    async def __aenter__(self):
-        self.file = open(self.file_path, "rb")
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        if self.file:
-            self.file.close()
-
-    async def aiter_bytes(self):
-        if not self.file:
-            raise RuntimeError("File not opened. Use this stream as an async context manager.")
-
-        while True:
-            chunk = self.file.read(self.chunk_size)
-            if not chunk:
-                break
-            self.progress_bar.update(self.task_id, advance=len(chunk))
-            yield chunk
 
 
 class APIClient:

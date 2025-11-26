@@ -33,11 +33,6 @@ from hcli.lib.util.io import get_arch, get_executable_path, get_os
     hidden=True,
 )
 @click.option(
-    "--check-only",
-    is_flag=True,
-    help="Only check for updates, do not suggest installation.",
-)
-@click.option(
     "--auto-install", is_flag=True, help="Automatically install update if available (for binary version only)."
 )
 @click.option(
@@ -50,7 +45,6 @@ async def update(
     force: bool = False,
     mode: str = "auto",
     auto_install: bool = False,
-    check_only: bool = False,
     include_prereleases: bool = False,
 ) -> None:
     """Check for hcli updates."""

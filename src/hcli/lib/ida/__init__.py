@@ -317,11 +317,9 @@ def accept_eula(install_dir: Path) -> None:
     # Accept the EULA (to be persistent across runs - you need to mount $HOME/.idapro as a volume)
     os.environ["IDADIR"] = str(install_dir)
     try:
-        if True:
-            # force this to be imported first and not reordered by ruff
-            import idapro  # noqa: F401
-
-        import ida_registry
+        # force this to be imported first and not reordered by ruff
+        import idapro  # noqa: F401
+        import ida_registry  # isort: skip
     except Exception:
         raise RuntimeError("idalib not available")
 

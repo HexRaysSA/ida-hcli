@@ -187,17 +187,6 @@ def format_size(bytes_count: int) -> str:
     return f"{bytes_count / math.pow(1024, i):.1f} {sizes[i]}"
 
 
-def format_date(iso_string: str) -> str:
-    """Format ISO date string to readable format."""
-    from datetime import datetime
-
-    try:
-        dt = datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
-        return dt.strftime("%Y-%m-%d")
-    except Exception:
-        return iso_string
-
-
 def format_date_time(iso_string: str) -> str:
     """Format ISO date string to readable format."""
     from datetime import datetime

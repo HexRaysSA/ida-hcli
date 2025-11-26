@@ -98,11 +98,6 @@ class UploadResponse(BaseModel):
 class AssetAPI:
     """File sharing API client."""
 
-    async def get_bucket(self, bucket: str):
-        client = await get_api_client()
-        data = await client.get_json(f"/api/assets/buckets/{bucket}")
-        return Bucket(**data)
-
     async def upload_asset(
         self,
         bucket: str,
@@ -181,12 +176,6 @@ class AssetAPI:
             return Asset(**data)
         except httpx.HTTPStatusError:
             return None
-
-    async def get_file_versions(self, bucket: str, code: str) -> Asset:
-        """Get all versions of a shared file."""
-        client = await get_api_client()
-        data = await client.get_json(f"/api/assets/{bucket}/{code}/versions")
-        return Asset(**data)
 
     async def get_files(self, bucket: str, filter_params: PagingFilter | None = None) -> PagedAsset:
         """Get all shared files for the current user."""
