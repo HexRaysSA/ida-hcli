@@ -235,14 +235,6 @@ def get_tag_os() -> str:
     return f"{arch_prefix}{os_suffix}"
 
 
-def get_file_size(path: str) -> int:
-    """Get the size of a file in bytes."""
-    try:
-        return Path(path).stat().st_size
-    except (OSError, ValueError):
-        return 0
-
-
 def ensure_dir(path: str) -> None:
     """Ensure that a directory exists, creating it if necessary."""
     try:
