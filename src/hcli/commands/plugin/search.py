@@ -110,7 +110,7 @@ def handle_plugin_name_query(plugins: list[Plugin], query: str, current_version:
     plugin = get_plugin_by_name(plugins, query)
     latest_metadata = get_latest_plugin_metadata(plugin)
 
-    metadata_dict = latest_metadata.plugin.model_dump()
+    metadata_dict = latest_metadata.plugin.model_dump(by_alias=True)
     del metadata_dict["platforms"]
     metadata_dict["idaVersions"] = render_ida_versions(metadata_dict["idaVersions"])
 
@@ -187,7 +187,7 @@ def handle_plugin_spec_query(plugins: list[Plugin], query: str, current_version:
     locations = plugin.versions[version]
     metadata = locations[0].metadata
 
-    metadata_dict = metadata.plugin.model_dump()
+    metadata_dict = metadata.plugin.model_dump(by_alias=True)
     del metadata_dict["platforms"]
     metadata_dict["idaVersions"] = render_ida_versions(metadata_dict["idaVersions"])
 

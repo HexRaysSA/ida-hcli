@@ -90,8 +90,7 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
                 parsed_value = parse_setting_value(descr, value_str)
                 descr.validate_value(parsed_value)
 
-        with rich.status.Status("installing plugin", console=stderr_console):
-            install_plugin_archive(buf, plugin_name)
+        install_plugin_archive(buf, plugin_name)
 
         try:
             if metadata.plugin.settings:
