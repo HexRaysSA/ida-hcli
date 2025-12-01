@@ -5,6 +5,8 @@ from fixtures import PLUGINS_DIR
 
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
+    PluginMetadata,
+    URLs,
     is_binary_plugin_archive,
     is_ida_version_compatible,
     is_plugin_archive,
@@ -100,3 +102,28 @@ def test_unexpected_keys_in_plugin_metadata():
     assert "anotherBadKey" in m.plugin.__pydantic_extra__
     assert m.plugin.__pydantic_extra__["unexpectedKey"] == "some value"
     assert m.plugin.__pydantic_extra__["anotherBadKey"] == 123
+
+
+def test_plugin_metadata_model_dump_uses_aliases():
+    """Verify model_dump() returns JSON-aliased keys, not Python attribute names.
+
+    Regression test for issue #128: search.py accesses metadata_dict["idaVersions"]
+    which requires serialize_by_alias=True on PluginMetadata.
+    """
+    urls = URLs(repository="https://github.com/test/test")
+    metadata = PluginMetadata(
+        name="test",
+        version="1.0.0",
+        entryPoint="test.py",
+        urls=urls,
+        authors=[{"name": "Test Author", "email": "test@example.com"}],
+    )
+    dump = metadata.model_dump()
+
+    # Keys must use JSON aliases (camelCase), not Python attribute names (snake_case)
+    assert "idaVersions" in dump, "model_dump() must use alias 'idaVersions', not 'ida_versions'"
+    assert "ida_versions" not in dump
+    assert "entryPoint" in dump, "model_dump() must use alias 'entryPoint', not 'entry_point'"
+    assert "entry_point" not in dump
+    assert "logoPath" in dump, "model_dump() must use alias 'logoPath', not 'logo_path'"
+    assert "logo_path" not in dump
