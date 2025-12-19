@@ -20,7 +20,7 @@ update_checker: BackgroundUpdateChecker | None = None
 
 def get_help_text():
     """Generate help text with extensions information."""
-    base_help = f"[bold blue]{ENV.HCLI_BINARY_NAME.upper()}[/bold blue] [dim](v{ENV.HCLI_VERSION}{ENV.HCLI_VERSION_EXTRA})[/dim]\n\n[yellow]Hex-Rays Command-line interface for managing IDA installation, licenses and more.[/yellow]"
+    base_help = f"[bold blue]{ENV.HCLI_BINARY_NAME.upper()}[/bold blue] [dim](v{ENV.HCLI_VERSION}{ENV.HCLI_VERSION_EXTRA})[/dim]\n\n[yellow]!!!!! Hex-Rays Command-line interface for managing IDA installation, licenses and more.[/yellow]"
 
     # Check for available extensions
     extensions = get_extensions()
