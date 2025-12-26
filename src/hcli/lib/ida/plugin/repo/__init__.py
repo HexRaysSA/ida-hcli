@@ -259,7 +259,7 @@ class PluginArchiveIndex:
             platforms = frozenset(metadata.plugin.platforms)
             spec = (ida_versions, platforms)
 
-            if expected_host and expected_host != host:
+            if expected_host and expected_host.lower() != host.lower():
                 logger.debug(m("host mismatch: %s: %s versus expected %s", name, host, expected_host, **context))
                 continue
 
