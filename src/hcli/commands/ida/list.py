@@ -16,12 +16,12 @@ console = Console()
 def list_instances() -> None:
     """List all registered IDA Pro instances."""
     # Get existing instances and default
-    instances: dict[str, str] = config_store.get_object("ke.ida.instances", {}) or {}
-    default_instance = config_store.get_string("ke.ida.default", "")
+    instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
+    default_instance = config_store.get_string("ida.default", "")
 
     if not instances:
         console.print("[yellow]No IDA Pro instances registered.[/yellow]")
-        console.print("[yellow]Use 'hcli ke ida add --auto' to discover and add IDA installations.[/yellow]")
+        console.print("[yellow]Use 'hcli ida add --auto' to discover and add IDA installations.[/yellow]")
         return
 
     # Create table
@@ -65,4 +65,4 @@ def list_instances() -> None:
         else:
             console.print(f"[red]Default instance '{default_instance}' no longer exists![/red]")
     else:
-        console.print("[yellow]No default instance set. Use 'hcli ke ida switch' to set one.[/yellow]")
+        console.print("[yellow]No default instance set. Use 'hcli ida switch' to set one.[/yellow]")
