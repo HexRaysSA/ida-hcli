@@ -651,19 +651,25 @@ class GithubPluginRepo(BasePluginRepo):
             repos = set(get_candidate_github_repos_cache())
         except KeyError:
             repos = set(find_github_repos_with_plugins(self.token))
-            set_candidate_github_repos_cache(list(sorted(repos)))
+            repos = {r.lower() for r in repos}
+            set_candidate_github_repos_cache(sorted(repos))
+        else:
+            repos = {r.lower() for r in repos}
 
-        for repo in sorted(self.extra_repos & repos):
+        extra = {r.lower() for r in self.extra_repos}
+        ignored = {r.lower() for r in self.ignored_repos}
+
+        for repo in sorted(extra & repos):
             logger.debug("extra repo already found by GitHub index: %s", repo)
-        for repo in sorted(self.extra_repos - repos):
+        for repo in sorted(extra - repos):
             logger.debug("extra repo not yet found by GitHub index: %s", repo)
-        for repo in sorted(repos - self.extra_repos):
+        for repo in sorted(repos - extra):
             logger.debug("GitHub repo not in extra repo list: %s", repo)
-        repos |= self.extra_repos
+        repos |= extra
 
-        for repo in sorted(self.ignored_repos & repos):
+        for repo in sorted(ignored & repos):
             logger.debug("ignoring found repo: %s", repo)
-        repos -= self.ignored_repos
+        repos -= ignored
 
         return [parse_repository(repo) for repo in sorted(repos)]
 
