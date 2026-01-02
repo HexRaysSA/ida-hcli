@@ -217,6 +217,15 @@ class AssetAPI:
         else:
             raise ValueError(f"Unexpected tags format: {type(data)}")
 
+    async def get_bucket(self, bucket: str) -> Bucket | None:
+        """Get bucket configuration and metadata requirements."""
+        client = await get_api_client()
+        try:
+            data = await client.get_json(f"/api/assets/buckets/{bucket}")
+            return Bucket(**data)
+        except httpx.HTTPStatusError:
+            return None
+
 
 def get_permissions_from_acl_type(acl_type: str, user_email: str) -> dict[str, list[str] | None]:
     if acl_type == "authenticated":
