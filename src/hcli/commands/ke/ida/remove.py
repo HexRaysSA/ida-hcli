@@ -14,6 +14,7 @@ console = Console()
 def remove(all: bool, name: str | None) -> None:
     """Remove an IDA Pro instance.
 
+    \b
     NAME: Name of the IDA instance to remove (required unless using --all)
     """
     # Validate arguments

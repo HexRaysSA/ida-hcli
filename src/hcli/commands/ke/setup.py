@@ -22,6 +22,7 @@ async def setup(force: bool = False, unregister: bool = False) -> None:
     allowing web browsers and other applications to automatically open IDA-related
     URLs with hcli. Use --unregister to remove the protocol handlers.
 
+    \b
     The setup/removal process varies by platform:
     - macOS: Creates/removes an AppleScript application and registers/unregisters with Launch Services
     - Windows: Adds/removes registry entries for the ida:// protocol

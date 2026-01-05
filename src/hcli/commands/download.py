@@ -216,13 +216,13 @@ async def download(
 
     KEY: The asset key for direct download eg. release/9.1/ida-pro/ida-pro_91_x64linux.run (optional)
 
+    \b
     Can also be a tag in one of these formats:
     - 'category:version' (e.g., 'ida:latest' or 'ida-pro:9.2') - OS is auto-detected
     - 'category:version:os' (e.g., 'ida:latest:armmac') - explicit OS specification
 
     \b
     When using direct mode, a pattern is required.
-
     """
     try:
         # Handle --list-tags flag

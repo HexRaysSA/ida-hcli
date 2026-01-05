@@ -54,15 +54,16 @@ async def install(
 ) -> None:
     """Installs IDA unattended.
 
+    \b
     The --download-id option supports tags for simplified version specification:
     - 'category:version' (e.g., 'ida-pro:latest') - OS is auto-detected
     - 'category:version:os' (e.g., 'ida-pro:9.2:x64linux') - explicit OS
 
+    \b
     If install_dir is /tmp/myida, the ida binary will be located:
-
-    On Windows: /tmp/myida/ida
-    On Linux: /tmp/myida/ida
-    On Mac: /tmp/myida/Contents/MacOS/ida
+    - on Windows: /tmp/myida/ida
+    - on Linux: /tmp/myida/ida
+    - on Mac: /tmp/myida/Contents/MacOS/ida
     """
     try:
         tmp_dir = get_temp_dir()

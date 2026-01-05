@@ -14,6 +14,7 @@ console = Console()
 def switch(name: str | None) -> None:
     """Switch the default IDA Pro instance.
 
+    \b
     NAME: Name of the IDA instance to set as default (optional - will prompt if not provided)
     """
     # Get existing instances

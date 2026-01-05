@@ -13,6 +13,7 @@ console = Console()
 def remove(name: str) -> None:
     """Remove a knowledge source.
 
+    \b
     NAME: Name of the source to remove
     """
     # Get existing sources

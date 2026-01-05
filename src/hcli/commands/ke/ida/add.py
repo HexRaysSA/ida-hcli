@@ -20,9 +20,11 @@ console = Console()
 def add(auto: bool, name: str | None, path: Path | None) -> None:
     """Add an IDA Pro instance.
 
+    \b
     Without --auto: Add a specific IDA instance by name and path.
     With --auto: Discover and interactively add standard IDA installations.
 
+    \b
     NAME: Logical name for the IDA instance
     PATH: Base path to the IDA installation directory
     """

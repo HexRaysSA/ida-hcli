@@ -16,6 +16,7 @@ console = Console()
 def add(name: str, path: Path) -> None:
     """Add a knowledge source.
 
+    \b
     NAME: Logical name for the source
     PATH: Filesystem path to the source
     """
