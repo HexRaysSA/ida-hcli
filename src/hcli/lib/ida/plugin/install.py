@@ -321,7 +321,7 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
             # subdirectory represents the root (e.g., None or Path("."))
             plugin_dir_prefix = ""
         else:
-            plugin_dir_prefix = str(subdirectory) + "/"
+            plugin_dir_prefix = subdirectory.as_posix() + "/"
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir) / destination.name

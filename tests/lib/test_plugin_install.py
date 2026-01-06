@@ -1,7 +1,10 @@
+import io
 import json
 import logging
 import os
 import subprocess
+import tempfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -15,6 +18,7 @@ from fixtures import (
 
 from hcli.lib.ida.plugin.exceptions import PluginVersionDowngradeError
 from hcli.lib.ida.plugin.install import (
+    extract_zip_subdirectory_to,
     get_installed_plugins,
     get_plugin_directory,
     install_plugin_archive,
@@ -235,3 +239,30 @@ def test_case_insensitive_plugin_install(virtual_ida_environment_with_venv):
             # Clean up
             p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall plugin1")
             assert "Uninstalled plugin: plugin1\n" == p.stdout
+
+
+def test_extract_zip_subdirectory_to_posix_paths():
+    """
+    Test that extract_zip_subdirectory_to works with forward-slash paths.
+
+    ZIP files always use forward slashes internally (per ZIP specification).
+    On Windows, Path objects convert to backslashes when str() is called,
+    which would break path matching. This test verifies the fix using .as_posix().
+    """
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("repo-main/plugin/ida-plugin.json", '{"test": true}')
+        zf.writestr("repo-main/plugin/plugin.py", "# plugin code")
+        zf.writestr("repo-main/plugin/subdir/helper.py", "# helper code")
+    zip_data = buf.getvalue()
+
+    subdirectory = Path("repo-main/plugin")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        destination = Path(temp_dir) / "myplugin"
+        extract_zip_subdirectory_to(zip_data, subdirectory, destination)
+
+        assert destination.exists()
+        assert (destination / "ida-plugin.json").exists()
+        assert (destination / "plugin.py").exists()
+        assert (destination / "subdir" / "helper.py").exists()
