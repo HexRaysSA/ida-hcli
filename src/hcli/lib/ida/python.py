@@ -55,7 +55,7 @@ def does_current_ida_have_pip(python_exe: Path) -> bool:
     """Check if pip is available in the given Python executable."""
     try:
         process = subprocess.run(
-            [str(python_exe), "-m", "pip", "help"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1.0
+            [str(python_exe), "-m", "pip", "help"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10.0
         )
         return process.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
