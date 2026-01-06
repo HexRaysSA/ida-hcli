@@ -14,9 +14,17 @@ FIND_PYTHON_PY = """
 # output like:
 #
 #     __hcli__:"/Users/user/.idapro/venv/bin/python"
+import shutil
+import os.path
 import sys
 import json
-print("__hcli__:" + json.dumps(sys.executable))
+def find_python_executable():
+    exe = sys.executable
+    if "python" in os.path.basename(exe).lower():
+      return exe
+
+    return shutil.which("python3") or shutil.which("python")
+print("__hcli__:" + json.dumps(find_python_executable()))
 sys.exit()
 """
 
@@ -34,9 +42,12 @@ def find_current_python_executable() -> Path:
     try:
         exe = run_py_in_current_idapython(FIND_PYTHON_PY)
     except RuntimeError as e:
-        raise RuntimeError("failed to determine current IDA python interpreter") from e
+        raise RuntimeError("failed to determine current IDA Python interpreter") from e
 
-    logger.debug("found python path: %s", exe)
+    if "python" not in exe:
+        logger.warning("'python' not found in discovered IDA Python interpreter path: %s", exe)
+
+    logger.debug("found IDA Python interpreter path: %s", exe)
     return Path(exe)
 
 
