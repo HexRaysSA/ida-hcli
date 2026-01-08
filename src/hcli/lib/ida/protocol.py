@@ -17,7 +17,7 @@ def setup_macos_protocol_handler() -> None:
         hcli_path = get_hcli_executable_path()
 
         # Create AppleScript application
-        applescript_content = f'''
+        applescript_content = f"""
 on open location this_URL
     do shell script "{hcli_path} ke open " & quoted form of this_URL
 end open location
@@ -25,7 +25,7 @@ end open location
 on run
     -- This handler is called when the app is launched directly
 end run
-'''
+"""
 
         # Create temporary directory for the AppleScript
         with tempfile.TemporaryDirectory() as temp_dir:
