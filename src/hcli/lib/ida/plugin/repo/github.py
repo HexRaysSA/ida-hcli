@@ -715,7 +715,27 @@ class GithubPluginRepo(BasePluginRepo):
 
                 # assets (distribution/binary archives)
                 for asset in release.assets:
-                    if asset.content_type != "application/zip":
+                    if asset.content_type not in {"application/zip", "raw"}:
+                        # GitHub incorrectly detects some ZIP archives as "raw" filetype,
+                        # such as: https://github.com/binsync/binsync/releases/download/v5.10.1/binsync-ida-plugin.zip
+                        # so we loosen the content type restrictions, but enforce filename ending with .zip below
+                        logger.debug(
+                            m(
+                                "skipping asset with type: %s",
+                                asset.content_type,
+                                **dict(context, asset=asset.name),
+                            )
+                        )
+                        continue
+
+                    if not asset.name.lower().endswith(".zip"):
+                        logger.debug(
+                            m(
+                                "skipping asset with name: %s",
+                                asset.name,
+                                **dict(context, asset=asset.name),
+                            )
+                        )
                         continue
 
                     assets.append((owner, repo, release.tag_name, asset, release.published_at))
