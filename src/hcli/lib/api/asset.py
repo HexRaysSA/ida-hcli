@@ -104,6 +104,7 @@ class AssetAPI:
         file_path: str,
         allowed_segments: list[str] | None = None,
         allowed_emails: list[str] | None = None,
+        allowed_editions: list[str] | None = None,
         metadata: dict | None = None,
         force: bool = False,
         code: str | None = None,
@@ -135,6 +136,8 @@ class AssetAPI:
             upload_data["allowed_segments"] = allowed_segments
         if allowed_emails is not None:
             upload_data["allowed_emails"] = allowed_emails
+        if allowed_editions is not None:
+            upload_data["allowed_editions"] = allowed_editions
         if metadata is not None:
             upload_data["metadata"] = metadata
 
