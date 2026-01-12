@@ -1,4 +1,6 @@
+import errno
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -17,6 +19,7 @@ from hcli.lib.auth import get_auth_service
 from hcli.lib.console import console
 from hcli.lib.constants.auth import CredentialType
 from hcli.lib.util.cache import get_cache_directory
+from hcli.lib.util.io import NoSpaceError, check_free_space
 
 
 class NotLoggedInError(Exception):
@@ -218,16 +221,26 @@ class APIClient:
             try:
                 # Check if cached file matches remote size
                 headers = self._get_headers(auth) if auth else {}
-                head_response = await self.client.head(url, headers=headers)
+                head_response = await self.client.head(url, headers=headers, follow_redirects=True)
                 await self._handle_response(head_response)
                 content_length = head_response.headers.get("content-length")
 
                 if content_length and cache_path.stat().st_size == int(content_length):
                     console.print(f"Using cached file: {cache_path}")
-                    import shutil
 
-                    shutil.copy2(cache_path, target_path)
+                    # Check space at target before copying from cache
+                    check_free_space(target_dir, cache_path.stat().st_size)
+                    try:
+                        shutil.copy2(cache_path, target_path)
+                    except OSError as e:
+                        if e.errno == errno.ENOSPC:
+                            if target_path.exists():
+                                target_path.unlink()
+                            raise NoSpaceError(target_dir) from e
+                        raise
                     return str(target_path)
+            except (NoSpaceError, APIError):
+                raise
             except Exception:
                 # Continue with download if cache check fails
                 pass
@@ -235,10 +248,15 @@ class APIClient:
         # Download file
         headers = self._get_headers(auth) if auth else {}
 
-        async with self.client.stream("GET", url, headers=headers) as response:
+        async with self.client.stream("GET", url, headers=headers, follow_redirects=True) as response:
             await self._handle_response(response)
 
-            total_size = int(response.headers.get("content-length", 0))
+            total_size_str = response.headers.get("content-length")
+            total_size = int(total_size_str) if total_size_str else 0
+
+            # Proactive space check if total_size is known
+            if total_size > 0:
+                check_free_space(cache_path.parent, total_size)
 
             with Progress(
                 "[progress.description]{task.description}",
@@ -253,17 +271,32 @@ class APIClient:
                     total=total_size if total_size > 0 else None,
                 )
 
-                # Write to cache first
-                with open(cache_path, "wb") as f:
-                    async for chunk in response.aiter_bytes(chunk_size=8192):
-                        f.write(chunk)
-                        if total_size > 0:
-                            progress.update(download_task, advance=len(chunk))
+                try:
+                    with open(cache_path, "wb") as f:
+                        async for chunk in response.aiter_bytes(chunk_size=8192):
+                            f.write(chunk)
+                            if total_size > 0:
+                                progress.update(download_task, advance=len(chunk))
+                except OSError as e:
+                    if e.errno == errno.ENOSPC:
+                        if cache_path.exists():
+                            cache_path.unlink()
+                        raise NoSpaceError(cache_path.parent) from e
+                    raise
+
+        # Check space at target before copying from cache
+        file_size = cache_path.stat().st_size
+        check_free_space(target_dir, file_size)
 
         # Copy from cache to target
-        import shutil
-
-        shutil.copy2(cache_path, target_path)
+        try:
+            shutil.copy2(cache_path, target_path)
+        except OSError as e:
+            if e.errno == errno.ENOSPC:
+                if target_path.exists():
+                    target_path.unlink()
+                raise NoSpaceError(target_dir) from e
+            raise
 
         return str(target_path)
 

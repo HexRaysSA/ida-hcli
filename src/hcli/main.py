@@ -41,9 +41,29 @@ class MainGroup(click.RichGroup):
             return super().main(*args, **kwargs)
         except Exception as e:
             # Import here to avoid circular imports
-            from hcli.lib.api.common import APIError, AuthenticationError, NotFoundError, RateLimitError
+            from hcli.lib.api.common import (
+                APIError,
+                AuthenticationError,
+                NotFoundError,
+                RateLimitError,
+            )
+            from hcli.lib.util.io import NoSpaceError
 
-            if isinstance(e, AuthenticationError):
+            if isinstance(e, NoSpaceError):
+                console.print(f"[bold red]Error: No space left on device at {e.path}[/bold red]")
+                if e.required_bytes and e.available_bytes:
+                    console.print(
+                        f"  [dim]Required: {e.required_bytes} bytes, Available: {e.available_bytes} bytes[/dim]"
+                    )
+
+                if "/tmp" in str(e.path) or "temp" in str(e.path).lower():
+                    import platform
+
+                    env_var = "TMPDIR" if platform.system() != "Windows" else "TEMP/TMP"
+                    console.print(
+                        f"\n[yellow]Suggestion:[/yellow] If your temporary directory is full, you can use a different one by setting the [bold]{env_var}[/bold] environment variable."
+                    )
+            elif isinstance(e, AuthenticationError):
                 console.print("[red]Authentication failed. Please check your credentials or use 'hcli login'.[/red]")
             elif isinstance(e, NotFoundError):
                 console.print(f"[red]Resource not found: {e}[/red]")

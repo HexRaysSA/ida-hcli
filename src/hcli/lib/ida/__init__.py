@@ -1,5 +1,6 @@
 """IDA Pro utilities for installation and path management."""
 
+import errno
 import json
 import logging
 import os
@@ -18,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from hcli.env import ENV
 from hcli.lib.util.cache import get_cache_directory
-from hcli.lib.util.io import get_os
+from hcli.lib.util.io import NoSpaceError, check_free_space, get_os
 
 logger = logging.getLogger(__name__)
 
@@ -349,6 +350,10 @@ def install_ida(installer: Path, install_dir: Path):
         )
 
     logger.info(f"Installing IDA in {install_dir}")
+
+    installer_size = installer.stat().st_size
+    check_free_space(install_dir.parent, installer_size * 3)
+
     install_dir.mkdir(parents=True, exist_ok=False)
 
     try:
@@ -495,7 +500,14 @@ def _copy_dir(src_path: Path, dest_path: Path) -> None:
             dest_item.mkdir(parents=True, exist_ok=True)
         elif item.is_file():
             dest_item.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(item, dest_item)
+            try:
+                shutil.copy2(item, dest_item)
+            except OSError as e:
+                if e.errno == errno.ENOSPC:
+                    if dest_item.exists():
+                        dest_item.unlink()
+                    raise NoSpaceError(dest_path) from e
+                raise
 
 
 class PathsConfig(BaseModel):

@@ -1,3 +1,4 @@
+import errno
 import io
 import logging
 import pathlib
@@ -9,7 +10,11 @@ from pathlib import Path
 import rich.status
 
 from hcli.lib.console import stderr_console
-from hcli.lib.ida import find_current_ida_platform, find_current_ida_version, get_ida_user_dir
+from hcli.lib.ida import (
+    find_current_ida_platform,
+    find_current_ida_version,
+    get_ida_user_dir,
+)
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
     MinimalIDAPluginMetadata,
@@ -41,6 +46,7 @@ from hcli.lib.ida.python import (
     pip_install_packages,
     verify_pip_can_install_packages,
 )
+from hcli.lib.util.io import NoSpaceError
 
 logger = logging.getLogger(__name__)
 
@@ -348,14 +354,25 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
                     target_path.mkdir(parents=True, exist_ok=True)
                 else:
                     target_path.parent.mkdir(parents=True, exist_ok=True)
-                    with zip_file.open(file_info.filename) as source_file:
-                        with target_path.open("wb") as target_file:
-                            logger.debug("creating file:      %s", relative_path)
-                            shutil.copyfileobj(source_file, target_file)
+                    try:
+                        with zip_file.open(file_info.filename) as source_file:
+                            with target_path.open("wb") as target_file:
+                                logger.debug("creating file:      %s", relative_path)
+                                shutil.copyfileobj(source_file, target_file)
+                    except OSError as e:
+                        if e.errno == errno.ENOSPC:
+                            shutil.rmtree(temp_path, ignore_errors=True)
+                            raise NoSpaceError(target_path.parent) from e
+                        raise
 
             logger.debug("creating plugin directory: %s", destination)
             # `move` rather than `rename` to support cross-filesystem operations
-            shutil.move(temp_path, destination)
+            try:
+                shutil.move(temp_path, destination)
+            except OSError as e:
+                if e.errno == errno.ENOSPC:
+                    raise NoSpaceError(destination.parent) from e
+                raise
 
 
 def _install_plugin_archive(zip_data: bytes, name: str):
