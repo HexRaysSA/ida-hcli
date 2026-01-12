@@ -32,9 +32,20 @@ class NoSpaceError(Exception):
 
 def check_free_space(path: str | Path, required_bytes: int) -> None:
     """Check if there is enough free space at the given path."""
-    usage = shutil.disk_usage(path)
-    if usage.free < required_bytes:
-        raise NoSpaceError(path, required_bytes, usage.free)
+    path_obj = Path(path)
+    check_path = path_obj
+    while not check_path.exists() and check_path.parent != check_path:
+        check_path = check_path.parent
+
+    try:
+        usage = shutil.disk_usage(check_path)
+        if usage.free < required_bytes:
+            raise NoSpaceError(path, required_bytes, usage.free)
+    except OSError:
+        # If we can't check disk usage (e.g. permission error on parent),
+        # we skip the check rather than failing, as the subsequent IO
+        # will fail anyway if there's a real problem.
+        pass
 
 
 async def open_url(url: str) -> None:
