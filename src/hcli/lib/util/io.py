@@ -12,6 +12,31 @@ from pathlib import Path
 from hcli.env import ENV
 
 
+class NoSpaceError(Exception):
+    """Exception raised when there is no space left on device."""
+
+    def __init__(
+        self,
+        path: str | Path,
+        required_bytes: int | None = None,
+        available_bytes: int | None = None,
+    ):
+        self.path = str(path)
+        self.required_bytes = required_bytes
+        self.available_bytes = available_bytes
+        message = f"No space left on device at {self.path}"
+        if required_bytes and available_bytes:
+            message += f" (Required: {required_bytes}, Available: {available_bytes})"
+        super().__init__(message)
+
+
+def check_free_space(path: str | Path, required_bytes: int) -> None:
+    """Check if there is enough free space at the given path."""
+    usage = shutil.disk_usage(path)
+    if usage.free < required_bytes:
+        raise NoSpaceError(path, required_bytes, usage.free)
+
+
 async def open_url(url: str) -> None:
     """Open a URL in the default browser."""
     if platform.system() == "Windows":

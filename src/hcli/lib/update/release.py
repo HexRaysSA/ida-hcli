@@ -1,4 +1,5 @@
 import dataclasses
+import errno
 import itertools
 import json
 import logging
@@ -15,6 +16,7 @@ import requests
 from semantic_version import SimpleSpec, Version
 
 from hcli.env import ENV
+from hcli.lib.util.io import NoSpaceError, check_free_space
 
 
 @dataclasses.dataclass
@@ -173,11 +175,22 @@ def download_asset(
     headers["Accept"] = "application/octet-stream"
 
     response = requests.get(asset_url, stream=True, headers=headers)
-    with open(out_dir.joinpath(asset.name), "wb") as file:
-        for i, data in enumerate(response.iter_content(block_size)):
-            file.write(data)
-            callback(i * block_size, asset.size)
-        callback(asset.size, asset.size)
+
+    check_free_space(out_dir, asset.size)
+
+    try:
+        with open(out_dir.joinpath(asset.name), "wb") as file:
+            for i, data in enumerate(response.iter_content(block_size)):
+                file.write(data)
+                callback(i * block_size, asset.size)
+            callback(asset.size, asset.size)
+    except OSError as e:
+        if e.errno == errno.ENOSPC:
+            cleanup_path = out_dir.joinpath(asset.name)
+            if cleanup_path.exists():
+                cleanup_path.unlink()
+            raise NoSpaceError(out_dir) from e
+        raise
 
 
 def default_download_callback(asset: ReleaseAsset, downloaded: int):
