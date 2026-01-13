@@ -580,6 +580,14 @@ class MissingCurrentInstallationDirectory(ValueError):
         super().__init__(f"failed to determine current IDA installation directory: {msg}")
 
 
+class FailedToDetectIDAVersion(RuntimeError):
+    def __init__(self, msg: str | None = None):
+        if msg:
+            super().__init__(f"failed to determine current IDA version: {msg}")
+        else:
+            super().__init__("failed to determine current IDA version")
+
+
 def find_current_ida_install_directory() -> Path:
     # duplicate here, because we prefer access through ENV
     # but tests might update env vars for the current process.
@@ -621,6 +629,27 @@ def explain_missing_current_installation_directory(console: rich.console.Console
     console.print(
         '     [grey69]set HCLI_CURRENT_IDA_INSTALL_DIR="C:\\Program Files\\IDA Professional 9.2"[/grey69]  # Windows'
     )
+    console.print("")
+
+
+def explain_failed_to_detect_ida_version(console: rich.console.Console):
+    console.print("[red]Error[/red]: failed to determine current IDA version.")
+    console.print("")
+    console.print("hcli needs to run IDA to detect its version, but this failed.")
+    console.print("")
+    console.print("You can work around this by explicitly setting the version:")
+    console.print("")
+    console.print("1. set the HCLI_CURRENT_IDA_VERSION environment variable:")
+    console.print("")
+    console.print("     [grey69]export HCLI_CURRENT_IDA_VERSION=9.2[/grey69]")
+    console.print("")
+    console.print("2. also ensure IDA installation directory is configured:")
+    console.print("")
+    console.print("     [grey69]hcli ida set-default /path/to/IDA/installation/[/grey69]")
+    console.print("")
+    console.print("   or via environment variable:")
+    console.print("")
+    console.print("     [grey69]export HCLI_CURRENT_IDA_INSTALL_DIR=/path/to/IDA/installation/[/grey69]")
     console.print("")
 
 
@@ -828,7 +857,7 @@ def find_current_ida_version() -> str:
     try:
         version = run_py_in_current_idapython(FIND_VERSION_PY)
     except RuntimeError as e:
-        raise RuntimeError("failed to determine current IDA version") from e
+        raise FailedToDetectIDAVersion() from e
     set_current_ida_version_cache(ida_dir, version)
     return version
 

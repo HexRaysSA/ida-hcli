@@ -9,7 +9,9 @@ import rich_click as click
 
 from hcli.lib.console import console
 from hcli.lib.ida import (
+    FailedToDetectIDAVersion,
     MissingCurrentInstallationDirectory,
+    explain_failed_to_detect_ida_version,
     explain_missing_current_installation_directory,
     find_current_ida_platform,
     find_current_ida_version,
@@ -90,6 +92,10 @@ def get_plugin_status(ctx) -> None:
 
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
+        raise click.Abort()
+
+    except FailedToDetectIDAVersion:
+        explain_failed_to_detect_ida_version(console)
         raise click.Abort()
 
     except Exception as e:
