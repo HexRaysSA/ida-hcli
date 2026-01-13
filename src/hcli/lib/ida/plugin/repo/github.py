@@ -1,6 +1,7 @@
 import functools
 import json
 import logging
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -8,6 +9,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+import requests
 import rich.progress
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import RetryCallState, retry, retry_if_exception, stop_after_attempt
@@ -22,6 +24,113 @@ logger = logging.getLogger(__name__)
 
 # Maximum file size to download (100MB)
 MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024
+
+GITHUB_API_URL = "https://api.github.com"
+
+
+def is_github_url(url: str) -> bool:
+    """Check if URL is a GitHub repository URL."""
+    return "github.com/" in url or url.startswith("git@github.com:")
+
+
+def parse_github_url(url: str) -> tuple[str, str, str | None]:
+    """Parse GitHub URL into (owner, repo, tag).
+
+    Supports:
+    - https://github.com/owner/repo
+    - https://github.com/owner/repo.git
+    - https://github.com/owner/repo@tag
+    - git@github.com:owner/repo.git
+    - git@github.com:owner/repo.git@tag
+    """
+    # Extract optional @tag suffix
+    tag: str | None = None
+    if "@" in url:
+        # Handle git@ prefix separately
+        if url.startswith("git@"):
+            # git@github.com:owner/repo.git@tag
+            parts = url.split("@", 2)  # ['git', 'github.com:owner/repo.git', 'tag'] or ['git', 'github.com:owner/repo.git']
+            if len(parts) == 3:
+                tag = parts[2]
+                url = f"git@{parts[1]}"
+        else:
+            # https://github.com/owner/repo@tag
+            url, tag = url.rsplit("@", 1)
+
+    # Parse the URL to get owner/repo
+    if url.startswith("git@"):
+        # git@github.com:owner/repo.git
+        match = re.match(r"git@github\.com:([^/]+)/(.+?)(?:\.git)?$", url)
+        if not match:
+            raise ValueError(f"Invalid GitHub SSH URL: {url}")
+        owner, repo = match.groups()
+    else:
+        # https://github.com/owner/repo(.git)
+        parsed = urllib.parse.urlparse(url)
+        path = parsed.path.lstrip("/")
+        if path.endswith(".git"):
+            path = path[:-4]
+        parts = path.split("/")
+        if len(parts) < 2:
+            raise ValueError(f"Invalid GitHub URL: {url}")
+        owner, repo = parts[0], parts[1]
+
+    return owner, repo, tag
+
+
+def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None) -> bytes:
+    """Fetch .zip asset from GitHub release using REST API.
+
+    Args:
+        owner: Repository owner
+        repo: Repository name
+        tag: Release tag (e.g., "v1.0.0"). If None, fetches latest release.
+
+    Returns:
+        The .zip asset bytes.
+
+    Raises:
+        ValueError: If no .zip asset or multiple .zip assets found.
+        requests.RequestException: If API request fails.
+    """
+    headers = {"Accept": "application/vnd.github.v3+json"}
+
+    # Fetch release metadata
+    if tag:
+        release_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/tags/{tag}"
+    else:
+        release_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/latest"
+
+    logger.info(f"fetching release from {release_url}")
+    response = requests.get(release_url, headers=headers, timeout=30.0)
+    response.raise_for_status()
+    release_data = response.json()
+
+    # Find .zip assets
+    assets = release_data.get("assets", [])
+    zip_assets = [a for a in assets if a.get("name", "").lower().endswith(".zip")]
+
+    if not zip_assets:
+        tag_info = f" ({tag})" if tag else " (latest)"
+        raise ValueError(f"No .zip asset found in release{tag_info} for {owner}/{repo}")
+
+    if len(zip_assets) > 1:
+        asset_names = [a["name"] for a in zip_assets]
+        raise ValueError(f"Multiple .zip assets found in release: {', '.join(asset_names)}. Cannot determine which to install.")
+
+    asset = zip_assets[0]
+    asset_name = asset["name"]
+    asset_size = asset.get("size", 0)
+    download_url = asset["browser_download_url"]
+
+    if asset_size > MAX_DOWNLOAD_SIZE:
+        raise ValueError(f"Asset {asset_name} ({asset_size} bytes) exceeds maximum size limit ({MAX_DOWNLOAD_SIZE} bytes)")
+
+    logger.info(f"downloading asset: {asset_name} ({asset_size} bytes) from {download_url}")
+    response = requests.get(download_url, timeout=60.0)
+    response.raise_for_status()
+
+    return response.content
 
 
 class WaitGitHubRateLimit(wait_base):
