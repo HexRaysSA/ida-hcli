@@ -49,7 +49,9 @@ def parse_github_url(url: str) -> tuple[str, str, str | None]:
         # Handle git@ prefix separately
         if url.startswith("git@"):
             # git@github.com:owner/repo.git@tag
-            parts = url.split("@", 2)  # ['git', 'github.com:owner/repo.git', 'tag'] or ['git', 'github.com:owner/repo.git']
+            parts = url.split(
+                "@", 2
+            )  # ['git', 'github.com:owner/repo.git', 'tag'] or ['git', 'github.com:owner/repo.git']
             if len(parts) == 3:
                 tag = parts[2]
                 url = f"git@{parts[1]}"
@@ -116,7 +118,9 @@ def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None
 
     if len(zip_assets) > 1:
         asset_names = [a["name"] for a in zip_assets]
-        raise ValueError(f"Multiple .zip assets found in release: {', '.join(asset_names)}. Cannot determine which to install.")
+        raise ValueError(
+            f"Multiple .zip assets found in release: {', '.join(asset_names)}. Cannot determine which to install."
+        )
 
     asset = zip_assets[0]
     asset_name = asset["name"]
@@ -124,7 +128,9 @@ def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None
     download_url = asset["browser_download_url"]
 
     if asset_size > MAX_DOWNLOAD_SIZE:
-        raise ValueError(f"Asset {asset_name} ({asset_size} bytes) exceeds maximum size limit ({MAX_DOWNLOAD_SIZE} bytes)")
+        raise ValueError(
+            f"Asset {asset_name} ({asset_size} bytes) exceeds maximum size limit ({MAX_DOWNLOAD_SIZE} bytes)"
+        )
 
     logger.info(f"downloading asset: {asset_name} ({asset_size} bytes) from {download_url}")
     response = requests.get(download_url, timeout=60.0)

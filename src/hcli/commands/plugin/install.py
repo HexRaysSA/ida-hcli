@@ -63,7 +63,9 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
             try:
                 owner, repo, tag = parse_github_url(plugin_spec)
                 tag_info = f"@{tag}" if tag else " (latest release)"
-                with rich.status.Status(f"fetching plugin from GitHub: {owner}/{repo}{tag_info}", console=stderr_console):
+                with rich.status.Status(
+                    f"fetching plugin from GitHub: {owner}/{repo}{tag_info}", console=stderr_console
+                ):
                     buf = fetch_github_release_zip_asset(owner, repo, tag)
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
                 console.print("[red]Cannot connect to GitHub - network unavailable.[/red]")
