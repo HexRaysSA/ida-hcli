@@ -403,9 +403,7 @@ def _install_plugin_archive(zip_data: bytes, name: str):
 
     python_dependencies = get_python_dependencies_from_plugin_archive(zip_data, metadata)
     if python_dependencies:
-        with rich.status.Status(
-            f"installing Python dependencies: {', '.join(python_dependencies)}", console=stderr_console
-        ):
+        with rich.status.Status("collecting existing Python dependencies", console=stderr_console):
             all_python_dependencies: list[str] = []
             for existing_plugin_path in get_installed_plugin_paths():
                 existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
@@ -415,15 +413,17 @@ def _install_plugin_archive(zip_data: bytes, name: str):
             logger.debug("installing new python dependencies: %s", python_dependencies)
             all_python_dependencies.extend(python_dependencies)
 
-            with rich.status.Status("finding Python interpreter", console=stderr_console):
-                python_exe = find_current_python_executable()
+        with rich.status.Status("finding Python interpreter", console=stderr_console):
+            python_exe = find_current_python_executable()
 
-            with rich.status.Status("invoking pip", console=stderr_console):
-                try:
-                    pip_install_packages(python_exe, all_python_dependencies)
-                except CantInstallPackagesError:
-                    logger.debug("can't install dependencies")
-                    raise
+        with rich.status.Status(
+            f"installing Python dependencies: {', '.join(python_dependencies)}", console=stderr_console
+        ):
+            try:
+                pip_install_packages(python_exe, all_python_dependencies)
+            except CantInstallPackagesError:
+                logger.debug("can't install dependencies")
+                raise
 
     extract_zip_subdirectory_to(zip_data, plugin_subdirectory, destination_path)
 
