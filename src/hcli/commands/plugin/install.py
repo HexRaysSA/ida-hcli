@@ -25,6 +25,7 @@ from hcli.lib.ida.plugin import (
 )
 from hcli.lib.ida.plugin.install import install_plugin_archive, uninstall_plugin
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
+from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, is_github_url, parse_github_url
 from hcli.lib.ida.plugin.settings import has_plugin_setting, parse_setting_value, set_plugin_setting
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,24 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
             items = list(get_metadatas_with_paths_from_plugin_archive(buf))
             if len(items) != 1:
                 raise ValueError("plugin archive must contain a single plugin for local file system installation")
+            plugin_name = items[0][1].plugin.name
+
+        elif is_github_url(plugin_spec):
+            logger.info("installing from GitHub repository")
+            try:
+                owner, repo, tag = parse_github_url(plugin_spec)
+                tag_info = f"@{tag}" if tag else " (latest release)"
+                with rich.status.Status(
+                    f"fetching plugin from GitHub: {owner}/{repo}{tag_info}", console=stderr_console
+                ):
+                    buf = fetch_github_release_zip_asset(owner, repo, tag)
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+                console.print("[red]Cannot connect to GitHub - network unavailable.[/red]")
+                console.print("Please check your internet connection.")
+                raise click.Abort()
+            items = list(get_metadatas_with_paths_from_plugin_archive(buf))
+            if len(items) != 1:
+                raise ValueError("plugin archive must contain a single plugin for GitHub installation")
             plugin_name = items[0][1].plugin.name
 
         elif plugin_spec.startswith("https://"):
