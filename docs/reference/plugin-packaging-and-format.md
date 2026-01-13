@@ -116,6 +116,48 @@ and the data can be easily exported/imported.
 
       The associated IDA plugin `ida-settings-editor` that lets users configure plugin settings within IDA is not yet available. We plan to introduce it in a future release.
 
+#### Setting Fields
+
+Each setting in the `settings` array supports the following fields:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `key` | string | yes | Unique code-level identifier (e.g., `"api_key"`) |
+| `type` | string | yes | Either `"string"` or `"boolean"` |
+| `required` | boolean | yes | Whether the setting must be provided |
+| `default` | string/boolean | no | Default value when not configured |
+| `name` | string | yes | Human-readable name (e.g., `"OpenAI API key"`) |
+| `documentation` | string | no | Human-readable explanation |
+| `validation_pattern` | string | no | Regex pattern for string validation |
+| `choices` | array | no | List of acceptable string values |
+| `prompt` | boolean | no | Whether to prompt during installation (default: `true`) |
+
+Setting `"prompt": false` is useful for advanced or niche settings that have sensible defaults and shouldn't clutter the installation experience. These settings can still be configured later via `hcli plugin config`.
+
+Example settings configuration:
+
+```json
+{
+  "settings": [
+    {
+      "key": "api_key",
+      "type": "string",
+      "required": true,
+      "name": "API Key",
+      "documentation": "Your API key from https://example.com/keys"
+    },
+    {
+      "key": "cache_size",
+      "type": "string",
+      "required": false,
+      "default": "100",
+      "name": "Cache Size",
+      "documentation": "Maximum number of cached items",
+      "prompt": false
+    }
+  ]
+}
+```
 
 
 ### Source Archives and Binary Archives

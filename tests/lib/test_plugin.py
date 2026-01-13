@@ -6,6 +6,7 @@ from fixtures import PLUGINS_DIR
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
     PluginMetadata,
+    PluginSettingDescriptor,
     URLs,
     is_binary_plugin_archive,
     is_ida_version_compatible,
@@ -127,3 +128,71 @@ def test_plugin_metadata_model_dump_uses_aliases():
     assert "entry_point" not in dump
     assert "logoPath" in dump, "model_dump() must use alias 'logoPath', not 'logo_path'"
     assert "logo_path" not in dump
+
+
+def test_setting_prompt_field_defaults_to_true():
+    setting = PluginSettingDescriptor(
+        key="test",
+        type="string",
+        required=True,
+        name="Test Setting",
+    )
+    assert setting.prompt is True
+
+
+def test_setting_prompt_false_requires_default_optional():
+    with pytest.raises(ValueError, match="prompt=False requires a default value"):
+        PluginSettingDescriptor(
+            key="test",
+            type="string",
+            required=False,
+            name="Test Setting",
+            prompt=False,
+        )
+
+
+def test_setting_prompt_false_requires_default_required():
+    with pytest.raises(ValueError, match="prompt=False requires a default value"):
+        PluginSettingDescriptor(
+            key="test",
+            type="string",
+            required=True,
+            name="Test Setting",
+            prompt=False,
+        )
+
+
+def test_setting_required_with_default_can_skip_prompt():
+    setting = PluginSettingDescriptor(
+        key="test",
+        type="string",
+        required=True,
+        default="default-value",
+        name="Test Setting",
+        prompt=False,
+    )
+    assert setting.prompt is False
+    assert setting.required is True
+    assert setting.default == "default-value"
+
+
+def test_setting_prompt_false_with_default():
+    setting = PluginSettingDescriptor(
+        key="test",
+        type="string",
+        required=False,
+        default="default-value",
+        name="Test Setting",
+        prompt=False,
+    )
+    assert setting.prompt is False
+    assert setting.default == "default-value"
+
+
+def test_plugin_with_prompt_false_setting():
+    metadata_path = PLUGINS_DIR / "plugin1" / "src-v5" / "ida-plugin.json"
+    m = IDAMetadataDescriptor.model_validate_json(metadata_path.read_text())
+
+    key5 = m.plugin.get_setting("key5")
+    assert key5.prompt is False
+    assert key5.default == "hidden-default"

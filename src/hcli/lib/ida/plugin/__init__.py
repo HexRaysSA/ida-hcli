@@ -250,6 +250,10 @@ class PluginSettingDescriptor(BaseModel):
     # mutually exclusive with validation_pattern
     choices: tuple[str, ...] | None = None
 
+    # whether to prompt the user for this setting during installation
+    # set to False to use the default value without prompting
+    prompt: bool = True
+
     @field_validator("choices", mode="before")
     @classmethod
     def validate_choices_not_empty(cls, v: list[str] | tuple[str, ...] | None) -> tuple[str, ...] | None:
@@ -271,6 +275,9 @@ class PluginSettingDescriptor(BaseModel):
 
         if self.validation_pattern is not None and self.choices is not None:
             raise ValueError(f"validation_pattern and choices are mutually exclusive: {self.key}")
+
+        if not self.prompt and self.default is None:
+            raise ValueError(f"prompt=False requires a default value: {self.key}")
 
         return self
 

@@ -38,6 +38,7 @@ Here are your specific instructions. Ask for guidance and clarification along th
       "name": human readable name
       "documentation": optional human readable documentation, one line
       "validation_pattern": optional regex pattern
+      "prompt": optional bool, default true, set to false to skip prompting during install
     }
   ],
   "categories": [

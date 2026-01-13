@@ -6,13 +6,13 @@ import rich_click as click
 
 from hcli.lib.console import console
 from hcli.lib.ida import (
+    MissingCurrentInstallationDirectory,
     accept_eula,
     explain_missing_current_installation_directory,
     find_current_ida_install_directory,
     find_standard_installations,
     get_ida_path,
     is_ida_dir,
-    MissingCurrentInstallationDirectory,
 )
 
 

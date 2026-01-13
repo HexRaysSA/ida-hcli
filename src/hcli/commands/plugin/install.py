@@ -130,6 +130,9 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
                         if has_plugin_setting(plugin_name, setting.key):
                             continue
 
+                        if not setting.prompt:
+                            continue
+
                         if setting.type == "boolean":
                             default_bool = setting.default if isinstance(setting.default, bool) else False
                             question = questionary.confirm(

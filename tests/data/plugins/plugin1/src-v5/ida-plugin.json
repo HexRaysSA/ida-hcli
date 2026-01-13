@@ -48,6 +48,16 @@
         "name": "key 4",
         "documentation": "the value for key 4",
         "choices": ["option-a", "option-b", "option-c"]
+      },
+
+      {
+        "key": "key5",
+        "type": "string",
+        "required": false,
+        "default": "hidden-default",
+        "name": "key 5",
+        "documentation": "a setting that is not prompted during installation",
+        "prompt": false
       }
     ]
   }
