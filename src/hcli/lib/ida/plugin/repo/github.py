@@ -740,7 +740,7 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
                         )
                     )
 
-                if len(items) < 100:
+                if len(items) < 25:
                     break
 
                 page += 1
