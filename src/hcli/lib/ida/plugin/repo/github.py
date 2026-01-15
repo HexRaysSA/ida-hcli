@@ -830,9 +830,10 @@ class GithubPluginRepo(BasePluginRepo):
 
                 # assets (distribution/binary archives)
                 for asset in release.assets:
-                    if asset.content_type not in {"application/zip", "raw"}:
-                        # GitHub incorrectly detects some ZIP archives as "raw" filetype,
-                        # such as: https://github.com/binsync/binsync/releases/download/v5.10.1/binsync-ida-plugin.zip
+                    if asset.content_type not in {"application/zip", "application/x-zip-compressed", "raw"}:
+                        # GitHub provides various mimetypes for manually attached ZIP archives, including:
+                        # - https://github.com/binsync/binsync/releases/download/v5.10.1/binsync-ida-plugin.zip (raw)
+                        # - https://github.com/arkup/tc_deer/releases/download/0.1.0/tc_deer_ida_plugin010.zip (application/x-zip-compressed)
                         # so we loosen the content type restrictions, but enforce filename ending with .zip below
                         logger.debug(
                             m(
