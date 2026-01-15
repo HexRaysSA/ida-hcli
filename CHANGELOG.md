@@ -2,6 +2,10 @@
 
 ## unreleased
 
+## [0.15.10] - 2026-01-15
+
+- fix bug paging through GitHub search results #140 @splitline
+
 ## [0.15.9] - 2026-01-15
 
 - accept more mimetypes for plugin ZIP archives
