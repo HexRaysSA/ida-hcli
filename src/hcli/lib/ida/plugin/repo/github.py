@@ -697,6 +697,7 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
     Returns:
         List of repositories in "owner/repo" format
     """
+    BATCH_SIZE = 25
 
     # Note: Forks with fewer stars than the parent repository or no commits are not indexed for code search.
     # via: https://docs.github.com/en/search-github/searching-on-github/searching-code
@@ -716,7 +717,7 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
 
         page = 1
         while True:
-            params = f"q={urllib.parse.quote(query)}&per_page=25&page={page}"
+            params = f"q={urllib.parse.quote(query)}&per_page={BATCH_SIZE}&page={page}"
             url = f"{search_url}?{params}"
 
             req = urllib.request.Request(url, headers=headers)
@@ -740,7 +741,7 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
                         )
                     )
 
-                if len(items) < 25:
+                if len(items) < BATCH_SIZE:
                     break
 
                 page += 1
