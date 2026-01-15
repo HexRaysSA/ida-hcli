@@ -1,5 +1,16 @@
 # Changelog
 
+## unreleased
+
+## [0.15.9] - 2026-01-15
+
+- accept more mimetypes for plugin ZIP archives
+
+## [0.15.8] - 2026-01-13
+
+- Add CHANGELOG.md covering releases since 0.14.1 (12bf8da)
+- Add GitHub URL support for plugin install (#138, 55b7e64)
+
 ## [0.15.7] - 2026-01-13
 
 ### Fixed
