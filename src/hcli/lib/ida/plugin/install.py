@@ -317,6 +317,34 @@ def validate_can_install_plugin(
     validate_can_install_python_dependencies(zip_data, metadata)
 
 
+def validate_archive_entry(file_info: zipfile.ZipInfo, relative_path: pathlib.PurePosixPath) -> None:
+    """Validate a ZIP archive entry before extraction.
+
+    This function prevents path traversal attacks by rejecting:
+    - Symlinks (which can point outside the extraction directory)
+    - Absolute paths
+    - Paths containing '..' (parent directory references)
+
+    Raises:
+        ValueError: If the entry is unsafe to extract
+    """
+    # Reject symlinks - they can escape the extraction directory
+    # Unix symlink has file type 0xA in the high nibble of external_attr
+    if (file_info.external_attr >> 28) == 0xA:
+        logger.warning("Rejecting symlink in archive: %s", file_info.filename)
+        raise ValueError(f"Symlinks not allowed in archive: {file_info.filename}")
+
+    # Reject absolute paths
+    if relative_path.is_absolute():
+        logger.warning("Rejecting absolute path in archive: %s", file_info.filename)
+        raise ValueError(f"Absolute path in archive: {file_info.filename}")
+
+    # Reject path traversal sequences
+    if ".." in relative_path.parts:
+        logger.warning("Rejecting path traversal in archive: %s", file_info.filename)
+        raise ValueError(f"Path traversal in archive: {file_info.filename}")
+
+
 def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination: Path):
     """Extract a subdirectory from a zip archive to a destination path."""
     if destination.exists():
@@ -346,6 +374,9 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
                 relative_path = pathlib.PurePosixPath(file_info.filename).relative_to(plugin_dir_prefix.rstrip("/"))
                 if str(relative_path) == ".":
                     continue
+
+                # Validate entry before extraction to prevent path traversal attacks
+                validate_archive_entry(file_info, relative_path)
 
                 target_path = temp_path / relative_path
 

@@ -25,6 +25,7 @@ from hcli.lib.ida.plugin.install import (
     is_plugin_installed,
     uninstall_plugin,
     upgrade_plugin_archive,
+    validate_archive_entry,
 )
 from hcli.lib.ida.python import pip_freeze
 
@@ -266,3 +267,67 @@ def test_extract_zip_subdirectory_to_posix_paths():
         assert (destination / "ida-plugin.json").exists()
         assert (destination / "plugin.py").exists()
         assert (destination / "subdir" / "helper.py").exists()
+
+
+class TestValidateArchiveEntry:
+    """Tests for validate_archive_entry security function (CVE fix for path traversal)."""
+
+    def test_valid_entry_passes(self):
+        """Normal archive entries should pass validation."""
+        import pathlib
+
+        file_info = zipfile.ZipInfo("plugin/file.py")
+        file_info.external_attr = 0  # Regular file
+        relative_path = pathlib.PurePosixPath("file.py")
+
+        # Should not raise
+        validate_archive_entry(file_info, relative_path)
+
+    def test_rejects_path_traversal(self):
+        """Entries with '..' path components should be rejected."""
+        import pathlib
+
+        file_info = zipfile.ZipInfo("plugin/../../../etc/passwd")
+        file_info.external_attr = 0
+        relative_path = pathlib.PurePosixPath("../../../etc/passwd")
+
+        with pytest.raises(ValueError, match="Path traversal"):
+            validate_archive_entry(file_info, relative_path)
+
+    def test_rejects_symlinks(self):
+        """Symlinks in archives should be rejected."""
+        import pathlib
+
+        file_info = zipfile.ZipInfo("plugin/evil_symlink")
+        # Set external_attr to indicate Unix symlink (0xA in high nibble)
+        file_info.external_attr = 0xA0000000
+        relative_path = pathlib.PurePosixPath("evil_symlink")
+
+        with pytest.raises(ValueError, match="Symlinks not allowed"):
+            validate_archive_entry(file_info, relative_path)
+
+    def test_rejects_absolute_paths(self):
+        """Absolute paths should be rejected."""
+        import pathlib
+
+        file_info = zipfile.ZipInfo("/etc/passwd")
+        file_info.external_attr = 0
+        relative_path = pathlib.PurePosixPath("/etc/passwd")
+
+        with pytest.raises(ValueError, match="Absolute path"):
+            validate_archive_entry(file_info, relative_path)
+
+    def test_extract_rejects_malicious_archive(self):
+        """Integration test: extract_zip_subdirectory_to should reject path traversal."""
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("plugin/ida-plugin.json", '{"test": true}')
+            zf.writestr("plugin/../../../tmp/evil.txt", "malicious content")
+        zip_data = buf.getvalue()
+
+        subdirectory = Path("plugin")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "myplugin"
+            with pytest.raises(ValueError, match="Path traversal"):
+                extract_zip_subdirectory_to(zip_data, subdirectory, destination)
