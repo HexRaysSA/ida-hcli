@@ -2,6 +2,7 @@
 
 import asyncio
 import asyncio.subprocess
+import logging
 import os
 import platform
 import shutil
@@ -10,6 +11,8 @@ import webbrowser
 from pathlib import Path
 
 from hcli.env import ENV
+
+logger = logging.getLogger(__name__)
 
 
 class NoSpaceError(Exception):
@@ -41,11 +44,11 @@ def check_free_space(path: str | Path, required_bytes: int) -> None:
         usage = shutil.disk_usage(check_path)
         if usage.free < required_bytes:
             raise NoSpaceError(path, required_bytes, usage.free)
-    except OSError:
+    except OSError as e:
         # If we can't check disk usage (e.g. permission error on parent),
         # we skip the check rather than failing, as the subsequent IO
         # will fail anyway if there's a real problem.
-        pass
+        logger.debug(f"Could not check disk usage for {check_path}: {e}")
 
 
 async def open_url(url: str) -> None:
@@ -61,14 +64,7 @@ async def open_url(url: str) -> None:
 
 async def is_cmd_available(cmd: str) -> bool:
     """Check if a command is available in the system PATH."""
-    try:
-        process = await asyncio.create_subprocess_exec(
-            cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
-        )
-        await process.communicate()
-        return True
-    except (FileNotFoundError, OSError):
-        return False
+    return shutil.which(cmd) is not None
 
 
 def file_exists(path: str) -> bool:

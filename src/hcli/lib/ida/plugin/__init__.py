@@ -140,9 +140,16 @@ def parse_plugin_version(version: str) -> semantic_version.Version:
     if re.match(r"\.0\d", version):
         # 2025.09.24 -> 2025.9.24
         version = re.sub(r"\.0(\d+)", ".\1", version)
-    #
+
+    # Normalize partial versions to full semver format to avoid deprecation warning
+    # semantic_version 3.0 will remove partial=True support
+    parts = version.split(".")
+    while len(parts) < 3:
+        parts.append("0")
+    normalized_version = ".".join(parts[:3])
+
     # we want to use Version, instead of SimpleSpec, because it is sortable
-    return semantic_version.Version(version, partial=True)
+    return semantic_version.Version(normalized_version)
 
 
 def parse_ida_version(version: str) -> semantic_version.Version:
