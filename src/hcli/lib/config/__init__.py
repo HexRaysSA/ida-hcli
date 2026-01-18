@@ -30,13 +30,13 @@ class ConfigStore:
         else:
             self._data = {}
 
-    def _save_config(self):
+    def _save_config(self) -> None:
         """Save configuration to disk."""
         self._config_dir.mkdir(parents=True, exist_ok=True)
         with open(self._config_file, "w") as f:
             json.dump(self._data, f, indent=2)
 
-    def _migrate_config(self):
+    def _migrate_config(self) -> None:
         """Migrate configuration if version changed."""
         current_version = self.get_string("version", "0.0.0")
         if current_version != ENV.HCLI_VERSION:
@@ -51,18 +51,18 @@ class ConfigStore:
         """Get string value from configuration."""
         return self._data.get(key, default_value) or default_value
 
-    def set_string(self, key: str, value: str = ""):
+    def set_string(self, key: str, value: str = "") -> None:
         """Set string value in configuration."""
         self._data[key] = value
         self._save_config()
 
-    def remove_string(self, key: str):
+    def remove_string(self, key: str) -> None:
         """Remove key from configuration."""
         if key in self._data:
             del self._data[key]
             self._save_config()
 
-    def set_object(self, key: str, value: Any):
+    def set_object(self, key: str, value: Any) -> None:
         """Set object value in configuration."""
         self._data[key] = value
         self._save_config()

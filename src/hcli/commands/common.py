@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import NoReturn
+
 import questionary
 
 from hcli.lib.api.customer import Customer, customer
@@ -30,19 +32,19 @@ async def safe_ask_async(questionary_obj, exit_message: str = "Operation cancell
         raise SystemExit(0)
 
 
-def exit_with_messages(code: int = 1) -> None:
+def exit_with_messages(code: int = 1) -> NoReturn:
     if EXIT_MESSAGES:
         for msg in EXIT_MESSAGES:
             console.print(msg)
     raise SystemExit(code)
 
 
-async def select_customer() -> Customer | None:
+async def select_customer() -> Customer:
     """
     Select a customer interactively or return the single customer if only one exists.
 
     Returns:
-        Selected customer or None if no customers available
+        Selected customer (exits program if no customers available)
     """
     customers = await customer.get_customers()
 
@@ -91,4 +93,3 @@ async def select_customer() -> Customer | None:
     else:
         console.print("[red]No customers found[/red]")
         exit_with_messages(1)
-        return None

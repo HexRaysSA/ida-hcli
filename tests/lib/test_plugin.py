@@ -4,6 +4,7 @@ import pytest
 from fixtures import PLUGINS_DIR
 
 from hcli.lib.ida.plugin import (
+    Contact,
     IDAMetadataDescriptor,
     PluginMetadata,
     PluginSettingDescriptor,
@@ -117,7 +118,7 @@ def test_plugin_metadata_model_dump_uses_aliases():
         version="1.0.0",
         entryPoint="test.py",
         urls=urls,
-        authors=[{"name": "Test Author", "email": "test@example.com"}],
+        authors=[Contact(name="Test Author", email="test@example.com")],
     )
     dump = metadata.model_dump()
 
