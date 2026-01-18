@@ -167,20 +167,23 @@ def get_current_plugin() -> str:
     if frame is None:
         raise RuntimeError("failed to get current frame")
 
-    plugins_path = str(get_plugins_directory().absolute())
+    plugins_path = get_plugins_directory().resolve()
 
     current_frame = frame.f_back
     while current_frame is not None:
         logger.debug("inspecting frame: %s", current_frame)
         module_name = current_frame.f_globals.get("__name__")
         module_filename = current_frame.f_code.co_filename
-        if module_filename.startswith(plugins_path):
+
+        try:
+            module_relative_path = Path(module_filename).resolve().relative_to(plugins_path)
+        except ValueError:
+            module_relative_path = None
+            
+        if module_relative_path is not None:
             # check file path first, because it handles normalization better
-
-            module_relative_path = Path(module_filename).relative_to(plugins_path)
             plugin_directory_name = module_relative_path.parts[0]
-
-            plugin_directory = Path(plugins_path) / plugin_directory_name
+            plugin_directory = plugins_path / plugin_directory_name
             metadata = get_metadata_from_plugin_directory(plugin_directory)
             plugin_name = metadata.plugin.name
             logger.debug("found plugin by path: %s %s", module_filename, plugin_name)
