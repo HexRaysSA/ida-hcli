@@ -239,8 +239,11 @@ class APIClient:
                             raise NoSpaceError(target_dir) from e
                         raise
                     return str(target_path)
-            except (NoSpaceError, APIError):
+            except NoSpaceError:
                 raise
+            except AuthenticationError:
+                # Presigned URLs may not support HEAD requests (403), continue to download
+                pass
             except Exception:
                 # Continue with download if cache check fails
                 pass
