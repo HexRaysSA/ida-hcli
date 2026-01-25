@@ -137,20 +137,10 @@ ALL_IDA_VERSIONS: frozenset[IdaVersion] = frozenset(typing.get_args(IdaVersion))
 
 
 def parse_plugin_version(version: str) -> semantic_version.Version:
-    if re.match(r"\.0\d", version):
-        # 2025.09.24 -> 2025.9.24
-        version = re.sub(r"\.0(\d+)", ".\1", version)
-
-    # Parse as partial first
-    parsed = semantic_version.Version(version, partial=True)
-
-    # Normalize to full version to ensure sortability
-    # None components become 0
-    major = parsed.major if parsed.major is not None else 0
-    minor = parsed.minor if parsed.minor is not None else 0
-    patch = parsed.patch if parsed.patch is not None else 0
-
-    return semantic_version.Version(f"{major}.{minor}.{patch}")
+    # Use Version.coerce() which automatically normalizes partial versions
+    # (e.g., "1.2" -> "1.2.0", "1" -> "1.0.0") and handles leading zeros
+    # (e.g., "2025.09.24" -> "2025.9.24").
+    return semantic_version.Version.coerce(version)
 
 
 def parse_ida_version(version: str) -> semantic_version.Version:
