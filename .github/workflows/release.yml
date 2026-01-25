@@ -13,7 +13,8 @@ on:
           - dev
           - release-patch
           - release-minor
-          - release-major
+          # Disabled: Major releases require careful coordination and are difficult to unpublish
+          # - release-major
         default: 'dev'
 
 permissions:
