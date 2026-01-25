@@ -12,6 +12,7 @@ from hcli.lib.ida.plugin import (
     is_ida_version_compatible,
     is_plugin_archive,
     is_source_plugin_archive,
+    parse_plugin_version,
 )
 
 
@@ -196,3 +197,54 @@ def test_plugin_with_prompt_false_setting():
     key5 = m.plugin.get_setting("key5")
     assert key5.prompt is False
     assert key5.default == "hidden-default"
+
+
+def test_parse_plugin_version_returns_full_version():
+    """Test that parse_plugin_version normalizes partial versions to full versions."""
+    # Full version stays the same
+    v = parse_plugin_version("1.2.3")
+    assert str(v) == "1.2.3"
+
+    # Two-component version gets patch=0
+    v = parse_plugin_version("1.2")
+    assert str(v) == "1.2.0"
+
+    # Single-component version gets minor=0 and patch=0
+    v = parse_plugin_version("1")
+    assert str(v) == "1.0.0"
+
+
+def test_parse_plugin_version_sortable():
+    """Test that parsed versions can be sorted.
+
+    This is a regression test for the fix in commit 414a557.
+    Before the fix, partial versions (like "1.0") would have None components
+    which caused TypeError when sorting because None cannot be compared to int.
+    """
+    versions = ["1.0", "2.0.0", "1.5", "1.0.1", "3"]
+    parsed = [parse_plugin_version(v) for v in versions]
+
+    # This would raise TypeError before the fix:
+    # TypeError: '<' not supported between instances of 'NoneType' and 'int'
+    sorted_versions = sorted(parsed)
+
+    # Verify the sort order is correct
+    assert str(sorted_versions[0]) == "1.0.0"
+    assert str(sorted_versions[1]) == "1.0.1"
+    assert str(sorted_versions[2]) == "1.5.0"
+    assert str(sorted_versions[3]) == "2.0.0"
+    assert str(sorted_versions[4]) == "3.0.0"
+
+
+def test_parse_plugin_version_comparison():
+    """Test that parsed versions can be compared."""
+    v1 = parse_plugin_version("1.0")
+    v2 = parse_plugin_version("1.0.1")
+    v3 = parse_plugin_version("2")
+
+    # These comparisons would fail before the fix with partial versions
+    assert v1 < v2
+    assert v2 < v3
+    assert v1 < v3
+    assert v3 > v1
+    assert v2 > v1
