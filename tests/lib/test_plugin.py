@@ -49,12 +49,18 @@ def test_is_ida_version_compatible():
 
 
 def test_parse_plugin_version():
+    """Test version parsing with leading zeros - they should be normalized."""
     metadata_path = PLUGINS_DIR / "plugin1" / "src-v1" / "ida-plugin.json"
 
+    # Versions with leading zeros are accepted and normalized
     doc = json.loads(metadata_path.read_text())
     doc["plugin"]["version"] = "2025.09.24"
-    with pytest.raises(ValueError):
-        _ = IDAMetadataDescriptor.model_validate_json(json.dumps(doc))
+    m = IDAMetadataDescriptor.model_validate_json(json.dumps(doc))
+    assert m.plugin.version == "2025.09.24"  # The raw string is preserved in metadata
+
+    # Test that the normalized version is used when parsing
+    v = parse_plugin_version("2025.09.24")
+    assert str(v) == "2025.9.24"  # Leading zeros are normalized
 
     doc["plugin"]["version"] = "2025.9.24"
     _ = IDAMetadataDescriptor.model_validate_json(json.dumps(doc))
