@@ -140,9 +140,17 @@ def parse_plugin_version(version: str) -> semantic_version.Version:
     if re.match(r"\.0\d", version):
         # 2025.09.24 -> 2025.9.24
         version = re.sub(r"\.0(\d+)", ".\1", version)
-    #
-    # we want to use Version, instead of SimpleSpec, because it is sortable
-    return semantic_version.Version(version, partial=True)
+
+    # Parse as partial first
+    parsed = semantic_version.Version(version, partial=True)
+    
+    # Normalize to full version to ensure sortability
+    # None components become 0
+    major = parsed.major if parsed.major is not None else 0
+    minor = parsed.minor if parsed.minor is not None else 0
+    patch = parsed.patch if parsed.patch is not None else 0
+    
+    return semantic_version.Version(f"{major}.{minor}.{patch}")
 
 
 def parse_ida_version(version: str) -> semantic_version.Version:
