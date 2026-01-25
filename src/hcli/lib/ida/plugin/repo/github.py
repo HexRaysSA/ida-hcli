@@ -474,7 +474,7 @@ class GitHubGraphQLClient:
         for i, (owner, repo) in enumerate(repos):
             repo_data = data.get(f"repo{i}")
 
-            if not repo_data:
+            if not repo_data or not repo_data.get("defaultBranchRef"):
                 logger.warning(f"Repository {owner}/{repo} not found")
                 continue
 
