@@ -731,7 +731,7 @@ def set_current_ida_platform_cache(ida_path: Path, platform: str) -> None:
         doc = json.loads(cache_path.read_text(encoding="utf-8"))
     else:
         doc = {}
-    doc[str(ida_path.absolute())] = platform
+    doc[str(ida_path.resolve())] = platform
     cache_path.write_text(json.dumps(doc), encoding="utf-8")
 
 
@@ -741,7 +741,7 @@ def get_current_ida_platform_cache(ida_path: Path) -> str:
         raise KeyError(f"No platform cache found for {ida_path}")
 
     doc = json.loads(cache_path.read_text(encoding="utf-8"))
-    return doc[str(ida_path.absolute())]
+    return doc[str(ida_path.resolve())]
 
 
 FIND_PLATFORM_PY = """
@@ -814,7 +814,7 @@ def set_current_ida_version_cache(ida_path: Path, version: str) -> None:
         doc = json.loads(cache_path.read_text(encoding="utf-8"))
     else:
         doc = {}
-    doc[str(ida_path.absolute())] = version
+    doc[str(ida_path.resolve())] = version
     cache_path.write_text(json.dumps(doc), encoding="utf-8")
 
 
@@ -824,7 +824,7 @@ def get_current_ida_version_cache(ida_path: Path) -> str:
         raise KeyError(f"No version cache found for {ida_path}")
 
     doc = json.loads(cache_path.read_text(encoding="utf-8"))
-    return doc[str(ida_path.absolute())]
+    return doc[str(ida_path.resolve())]
 
 
 FIND_VERSION_PY = """
@@ -897,8 +897,8 @@ def add_instance_to_config(name: str, path: Path) -> bool:
     if name in instances:
         return False  # Already exists
 
-    # Store the absolute path as string
-    instances[name] = str(path.absolute())
+    # Store the resolved path as string for consistent normalization
+    instances[name] = str(path.resolve())
 
     # Save back to config
     config_store.set_object("ke.ida.instances", instances)

@@ -32,10 +32,10 @@ def add(name: str, path: Path) -> None:
         console.print(f"[yellow]Source '{name}' already exists. Use remove first to replace it.[/yellow]")
         raise click.Abort()
 
-    # Store the absolute path as string
-    sources[name] = str(path.absolute())
+    # Store the resolved path as string (path is already resolved at line 23)
+    sources[name] = str(path)
 
     # Save back to config
     config_store.set_object("ke.sources", sources)
 
-    console.print(f"[green]Added source '{name}' pointing to '{path.absolute()}'[/green]")
+    console.print(f"[green]Added source '{name}' pointing to '{path}'[/green]")
