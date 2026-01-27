@@ -179,7 +179,7 @@ def get_current_plugin() -> str:
             module_relative_path = Path(module_filename).resolve().relative_to(plugins_path)
         except ValueError:
             module_relative_path = None
-            
+
         if module_relative_path is not None:
             # check file path first, because it handles normalization better
             plugin_directory_name = module_relative_path.parts[0]

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import platform
+import tempfile
 
 import rich_click as click
 from rich.logging import RichHandler
@@ -56,9 +58,11 @@ class MainGroup(click.RichGroup):
                         f"  [dim]Required: {e.required_bytes} bytes, Available: {e.available_bytes} bytes[/dim]"
                     )
 
-                if "/tmp" in str(e.path) or "temp" in str(e.path).lower():
-                    import platform
+                temp_dir = tempfile.gettempdir().lower()
+                path_str = str(e.path).lower()
+                is_temp_path = path_str.startswith(temp_dir) or "temp" in path_str
 
+                if is_temp_path:
                     env_var = "TMPDIR" if platform.system() != "Windows" else "TEMP/TMP"
                     console.print(
                         f"\n[yellow]Suggestion:[/yellow] If your temporary directory is full, you can use a different one by setting the [bold]{env_var}[/bold] environment variable."
