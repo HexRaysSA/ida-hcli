@@ -150,19 +150,14 @@ def get_current_plugin() -> str:
 
     Returns:
         The plugin name extracted from the first plugin module found in the call stack.
+
+    Raises:
+        RuntimeError: If called from outside a plugin module (i.e., no frame on the
+            call stack has a file path within $IDAUSR/plugins/).
     """
-
-    # to determine the current plugin, we'll walk the call stack
-    # searching for modules that seem to be an IDA plugin.
-    #
-    # while we'd prefer to use the module name, which is set to `__plugins__<name>`,
-    # this doesn't work when we're not in the entrypoint of a module
-    # (such as a registered plugmod_t thats not found in the entrypoint python file).
-    #
-    # so, we fall back to also checking the file system path to see if it
-    # falls within the plugins directory ($IDAUSR/plugins/).
-    # this also helps when the plugin name has been normalized from "my-foo" to "__plugins__my_foo".
-
+    # To determine the current plugin, we walk the call stack searching for
+    # modules with file paths within the plugins directory ($IDAUSR/plugins/).
+    # When found, we read the plugin's ida-plugin.json to get the canonical name.
     frame = inspect.currentframe()
     if frame is None:
         raise RuntimeError("failed to get current frame")
@@ -172,28 +167,20 @@ def get_current_plugin() -> str:
     current_frame = frame.f_back
     while current_frame is not None:
         logger.debug("inspecting frame: %s", current_frame)
-        module_name = current_frame.f_globals.get("__name__")
         module_filename = current_frame.f_code.co_filename
 
         try:
             module_relative_path = Path(module_filename).resolve().relative_to(plugins_path)
         except ValueError:
-            module_relative_path = None
+            current_frame = current_frame.f_back
+            continue
 
-        if module_relative_path is not None:
-            # check file path first, because it handles normalization better
-            plugin_directory_name = module_relative_path.parts[0]
-            plugin_directory = plugins_path / plugin_directory_name
-            metadata = get_metadata_from_plugin_directory(plugin_directory)
-            plugin_name = metadata.plugin.name
-            logger.debug("found plugin by path: %s %s", module_filename, plugin_name)
-            return plugin_name
-        elif module_name and module_name.startswith("__plugins__"):
-            plugin_name = module_name[len("__plugins__") :]
-            logger.debug("found plugin by module name: %s %s", module_name, plugin_name)
-            return plugin_name
-
-        current_frame = current_frame.f_back
+        plugin_directory_name = module_relative_path.parts[0]
+        plugin_directory = plugins_path / plugin_directory_name
+        metadata = get_metadata_from_plugin_directory(plugin_directory)
+        plugin_name = metadata.plugin.name
+        logger.debug("found plugin by path: %s %s", module_filename, plugin_name)
+        return plugin_name
 
     raise RuntimeError("get_current_plugin() must be called from within a plugin module")
 
