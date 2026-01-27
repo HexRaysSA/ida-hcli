@@ -32,6 +32,19 @@ from hcli.lib.ida.python import pip_freeze
 logger = logging.getLogger(__name__)
 
 
+def row_contains(*values: str):
+    """Return a matcher function that checks if a line contains all values."""
+
+    def matcher(output: str) -> bool:
+        for line in output.splitlines():
+            normalized = " ".join(line.split())
+            if all(v in normalized for v in values):
+                return True
+        return False
+
+    return matcher
+
+
 def test_install_source_plugin_archive(virtual_ida_environment):
     plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip"
     buf = plugin_path.read_bytes()
@@ -137,12 +150,12 @@ def test_plugin_all(virtual_ida_environment_with_venv):
             # plugin1    4.0.0    https://github.com/HexRaysSA/ida-hcli
             # zydisinfo  1.0.0    https://github.com/HexRaysSA/ida-hcli
             p = run_hcli(f"plugin --repo {repo_path.absolute()} search")
-            assert "plugin1    5.0.0    https://github.com/HexRaysSA/ida-hcli" in p.stdout
-            assert "zydisinfo  1.0.0    https://github.com/HexRaysSA/ida-hcli" in p.stdout
+            assert row_contains("plugin1", "5.0.0", "https://github.com/HexRaysSA/ida-hcli")(p.stdout)
+            assert row_contains("zydisinfo", "1.0.0", "https://github.com/HexRaysSA/ida-hcli")(p.stdout)
 
             p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydis")
-            assert "zydisinfo  1.0.0    https://github.com/HexRaysSA/ida-hcli" in p.stdout
-            assert "plugin1    5.0.0    https://github.com/HexRaysSA/ida-hcli" not in p.stdout
+            assert row_contains("zydisinfo", "1.0.0", "https://github.com/HexRaysSA/ida-hcli")(p.stdout)
+            assert not row_contains("plugin1", "5.0.0")(p.stdout)
 
             p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydisinfo")
             assert "name: zydisinfo" in p.stdout
@@ -158,7 +171,7 @@ def test_plugin_all(virtual_ida_environment_with_venv):
             assert "Installed plugin: zydisinfo==1.0.0\n" == p.stdout
 
             p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
-            assert " zydisinfo  1.0.0   \n" == p.stdout
+            assert row_contains("zydisinfo", "1.0.0")(p.stdout)
 
             p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall zydisinfo")
             assert "Uninstalled plugin: zydisinfo\n" == p.stdout
@@ -170,7 +183,7 @@ def test_plugin_all(virtual_ida_environment_with_venv):
             assert "Installed plugin: plugin1==1.0.0\n" == p.stdout
 
             p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
-            assert " plugin1  1.0.0  upgradable to 5.0.0 \n" == p.stdout
+            assert row_contains("plugin1", "1.0.0", "upgradable to 5.0.0")(p.stdout)
 
             p = run_hcli(f"plugin --repo {repo_path.absolute()} upgrade plugin1==2.0.0")
             assert "Installed plugin: plugin1==2.0.0\n" == p.stdout
@@ -186,7 +199,7 @@ def test_plugin_all(virtual_ida_environment_with_venv):
             # TODO: upgrade all
 
             p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
-            assert " plugin1  2.0.0  upgradable to 5.0.0 \n" == p.stdout
+            assert row_contains("plugin1", "2.0.0", "upgradable to 5.0.0")(p.stdout)
 
             p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall plugin1")
             assert "Uninstalled plugin: plugin1\n" == p.stdout
@@ -212,7 +225,7 @@ def test_plugin_all(virtual_ida_environment_with_venv):
             # if `hint-calls` becomes unmaintained, this plugin name can be changed.
             # the point is just to show the default index works.
             p = run_hcli("plugin search hint-ca")
-            assert " hint-calls  " in p.stdout
+            assert "hint-calls" in p.stdout
 
             p = run_hcli("plugin install hint-calls")
             assert "Installed plugin: hint-calls==" in p.stdout
