@@ -2,7 +2,7 @@ name: Test
 
 on:
   push:
-    branches: [main, "plugin-manager"]
+    branches: [main, "plugin-manager", "test-plugin-settings"]
     paths-ignore:
       - "**.md"
   pull_request:
@@ -283,6 +283,22 @@ jobs:
             Write-Error "ERROR: Log file does not exist"
             exit 1
           }
+
+      - name: Download test binary for plugin settings test
+        if: ${{ matrix.os_ida.idat_path != '' }}
+        run: |
+          curl -L -o "${{ runner.temp }}/test_binary.exe_" "https://raw.githubusercontent.com/mandiant/capa-testfiles/master/Practical%20Malware%20Analysis%20Lab%2001-01.exe_"
+
+      - name: Run plugin settings test (unix)
+        if: ${{ matrix.os_ida.idat_path != '' && matrix.os_ida.os != 'windows-latest' }}
+        run: |
+          python "${{ github.workspace }}/tests/scripts/plugin_settings_idat_test.py" "${{ runner.temp }}/app/ida${{ matrix.os_ida.idat_path }}" "${{ runner.temp }}/test_binary.exe_"
+
+      - name: Run plugin settings test (windows)
+        if: ${{ matrix.os_ida.idat_path != '' && matrix.os_ida.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          python "${{ github.workspace }}/tests/scripts/plugin_settings_idat_test.py" "${{ runner.temp }}/app/ida${{ matrix.os_ida.idat_path }}" "${{ runner.temp }}/test_binary.exe_"
 
       - name: Run tests
         run: uv run pytest -v --log-cli-level=DEBUG tests/

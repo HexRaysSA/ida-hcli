@@ -1,0 +1,34 @@
+{
+  "IDAMetadataDescriptorVersion": 1,
+  "plugin": {
+    "name": "settings-test",
+    "version": "1.0.0",
+    "entryPoint": "settings_test.py",
+    "description": "Test plugin for verifying settings API path handling",
+    "urls": {
+      "repository": "https://github.com/HexRaysSA/ida-hcli"
+    },
+    "authors": [{
+      "name": "Test",
+      "email": "test@example.com"
+    }],
+    "settings": [
+      {
+        "key": "test_value",
+        "type": "string",
+        "required": false,
+        "default": "default_value",
+        "name": "Test Value",
+        "documentation": "A test setting to verify settings API works"
+      },
+      {
+        "key": "test_bool",
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "name": "Test Boolean",
+        "documentation": "A boolean test setting"
+      }
+    ]
+  }
+}
