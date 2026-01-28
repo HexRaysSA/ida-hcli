@@ -345,6 +345,33 @@ def validate_archive_entry(file_info: zipfile.ZipInfo, relative_path: pathlib.Pu
         raise ValueError(f"Path traversal in archive: {file_info.filename}")
 
 
+def should_extract_plugin_archive_path(plugin_dir_prefix: str, file_info: zipfile.ZipInfo) -> bool:
+    """Should the given file entry be extracted for the given plugin directory in a zip archive?
+
+    Args:
+      plugin_dir_prefix: the path within the ZIP archive to the plugin to extract
+      file_info: the entry to consider
+    """
+    if not file_info.filename.startswith(plugin_dir_prefix):
+        # only consider entries within the plugin directory
+        return False
+
+    if file_info.filename == plugin_dir_prefix:
+        # don't extract the plugin directory entry itself
+        return False
+
+    if file_info.filename.startswith(plugin_dir_prefix + ".git/"):
+        # don't extract git repo junk, which comes from manually archiving a plugin source repo
+        return False
+
+    relative_path = pathlib.PurePosixPath(file_info.filename).relative_to(plugin_dir_prefix.rstrip("/"))
+    if str(relative_path) == ".":
+        # don't extract the plugin directory entry itself (again)
+        return False
+
+    return True
+
+
 def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination: Path):
     """Extract a subdirectory from a zip archive to a destination path."""
     if destination.exists():
@@ -361,23 +388,19 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
             temp_path = Path(temp_dir) / destination.name
             temp_path.mkdir()
 
+            # do validation pass before extracting any content to prevent any half-extracted content
             for file_info in zip_file.infolist():
-                if not file_info.filename.startswith(plugin_dir_prefix):
-                    continue
-
-                if file_info.filename == plugin_dir_prefix:
-                    continue
-
-                if file_info.filename.startswith(plugin_dir_prefix + ".git/"):
+                if not should_extract_plugin_archive_path(plugin_dir_prefix, file_info):
                     continue
 
                 relative_path = pathlib.PurePosixPath(file_info.filename).relative_to(plugin_dir_prefix.rstrip("/"))
-                if str(relative_path) == ".":
-                    continue
-
-                # Validate entry before extraction to prevent path traversal attacks
                 validate_archive_entry(file_info, relative_path)
 
+            for file_info in zip_file.infolist():
+                if not should_extract_plugin_archive_path(plugin_dir_prefix, file_info):
+                    continue
+
+                relative_path = pathlib.PurePosixPath(file_info.filename).relative_to(plugin_dir_prefix.rstrip("/"))
                 target_path = temp_path / relative_path
 
                 if file_info.is_dir():
