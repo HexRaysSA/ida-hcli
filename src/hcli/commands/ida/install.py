@@ -34,7 +34,7 @@ from hcli.lib.util.io import get_os, get_temp_dir
 @click.option("-l", "--license-id", "license_id", required=False, help="License ID (e.g., 96-0000-0000-01)")
 @click.option("-i", "--install-dir", "install_dir", required=False, help="Install dir")
 @click.option("-a", "--accept-eula", "eula", is_flag=True, help="Accept EULA", default=True)
-@click.option("--set-default", is_flag=True, help="Mark this IDA installation as the default", default=False)
+@click.option("--set-default/--no-set-default", help="Mark this IDA installation as the default", default=True)
 @click.option("--dry-run", is_flag=True, help="Show what would be done without actually installing")
 @click.option("--yes", "-y", "auto_confirm", is_flag=True, help="Auto-accept confirmation prompts", default=False)
 @click.argument("installer", required=False)
