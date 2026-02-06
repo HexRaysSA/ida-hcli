@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import stat
+import struct
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -18,7 +19,6 @@ import rich.console
 from pydantic import BaseModel, ConfigDict, Field
 
 from hcli.env import ENV
-from hcli.lib.util.cache import get_cache_directory
 from hcli.lib.util.io import NoSpaceError, check_free_space, get_os
 
 logger = logging.getLogger(__name__)
@@ -173,9 +173,8 @@ def get_default_ida_install_directory(ver: IdaProduct) -> Path:
         # so we avoid using the path component "IDA Professional 9.2" and instead use "IDA-Professional-9.2"
         # which is ugly but works.
         #
-        # typically idat isn't widely used; however, HCLI does use it to discover the path to IDA's Python interpreter,
-        # as well as the installed arch (ARM or Intel on macOS). The latter could probably be discovered by inspecting
-        # the installed files; however, figuring out the Python configuration is messy, and much easier to leave to idat.
+        # idat is only used to discover the path to IDA's Python interpreter (when pip
+        # dependencies need to be installed). Version and platform are detected statically.
         #
         # see also the warnings in commands/ida/install.py.
         if ver.major == 9 and ver.minor == 2 and " " in app_directory_name:
@@ -721,56 +720,33 @@ def run_py_in_current_idapython(src: str) -> str:
         raise RuntimeError("failed to invoke idat: could not find expected lines in log output")
 
 
-def get_current_ida_platform_cache_path() -> Path:
-    return get_cache_directory("current-ida") / "platform.json"
+def detect_binary_arch(path: Path) -> str | None:
+    """Detect the CPU architecture of a native binary by reading its header.
 
+    Supports ELF (Linux) and Mach-O (macOS) formats.
+    Returns "x86_64" or "aarch64", or None if unrecognized.
+    """
+    with open(path, "rb") as f:
+        header = f.read(20)
 
-def set_current_ida_platform_cache(ida_path: Path, platform: str) -> None:
-    cache_path = get_current_ida_platform_cache_path()
-    if cache_path.exists():
-        doc = json.loads(cache_path.read_text(encoding="utf-8"))
-    else:
-        doc = {}
-    doc[str(ida_path.resolve())] = platform
-    cache_path.write_text(json.dumps(doc), encoding="utf-8")
+    if len(header) < 20:
+        return None
 
+    # ELF: magic = 0x7f 'E' 'L' 'F'
+    if header[:4] == b"\x7fELF":
+        e_machine = struct.unpack_from("<H", header, 18)[0]
+        return {0x3E: "x86_64", 0xB7: "aarch64"}.get(e_machine)
 
-def get_current_ida_platform_cache(ida_path: Path) -> str:
-    cache_path = get_current_ida_platform_cache_path()
-    if not cache_path.exists():
-        raise KeyError(f"No platform cache found for {ida_path}")
+    # Mach-O 64-bit
+    magic = struct.unpack_from("<I", header, 0)[0]
+    if magic == 0xFEEDFACF:  # little-endian
+        cpu_type = struct.unpack_from("<I", header, 4)[0]
+        return {0x01000007: "x86_64", 0x0100000C: "aarch64"}.get(cpu_type)
+    elif magic == 0xCFFAEDFE:  # big-endian
+        cpu_type = struct.unpack_from(">I", header, 4)[0]
+        return {0x01000007: "x86_64", 0x0100000C: "aarch64"}.get(cpu_type)
 
-    doc = json.loads(cache_path.read_text(encoding="utf-8"))
-    return doc[str(ida_path.resolve())]
-
-
-FIND_PLATFORM_PY = """
-# output like:
-#
-#     __hcli__:"windows-x86_64"
-import sys
-import json
-import platform
-
-system = platform.system()
-if system == "Windows":
-    plat = "windows-x86_64"
-elif system == "Linux":
-    plat = "linux-x86_64"
-elif system == "Darwin":
-    # via: https://stackoverflow.com/questions/7491391/
-    version = platform.uname().version
-    if "RELEASE_ARM64" in version:
-        plat = "macos-aarch64"
-    elif "RELEASE_X86_64" in version:
-        plat = "macos-x86_64"
-    else:
-        raise ValueError(f"Unsupported macOS version: {version}")
-else:
-    raise ValueError(f"Unsupported OS: {system}")
-print("__hcli__:" + json.dumps(plat))
-sys.exit()
-"""
+    return None
 
 
 def find_current_ida_platform() -> str:
@@ -789,54 +765,59 @@ def find_current_ida_platform() -> str:
     elif os_ == "linux":
         return "linux-x86_64"
     elif os_ == "mac":
-        ida_dir = find_current_ida_install_directory()
-        try:
-            return get_current_ida_platform_cache(ida_dir)
-        except KeyError:
-            pass
-        try:
-            platform = run_py_in_current_idapython(FIND_PLATFORM_PY)
-        except RuntimeError as e:
-            raise RuntimeError("failed to determine current IDA platform") from e
-        set_current_ida_platform_cache(ida_dir, platform)
-        return platform
+        idat_path = find_current_idat_executable()
+        if not idat_path.exists():
+            raise RuntimeError(f"failed to determine current IDA platform: can't find idat: {idat_path}")
+
+        arch = detect_binary_arch(idat_path)
+        if arch == "x86_64":
+            return "macos-x86_64"
+        elif arch == "aarch64":
+            return "macos-aarch64"
+        else:
+            raise RuntimeError(f"failed to determine current IDA platform: unrecognized architecture in {idat_path}")
     else:
         raise ValueError(f"Unsupported OS: {os_}")
 
 
-def get_current_ida_version_cache_path() -> Path:
-    return get_cache_directory("current-ida") / "version.json"
+def parse_version_from_ida_pro_py(ida_dir: Path) -> str | None:
+    """Parse the IDA version from the python/ida_pro.py SDK version docstring.
+
+    The SWIG-generated ida_pro.py always contains a docstring like:
+        IDA SDK v9.2.
+    This is present in all IDA editions that include IDAPython
+    (Pro, Essential, Home, Classroom).
+    """
+    ida_pro_path = get_ida_path(ida_dir) / "python" / "ida_pro.py"
+    if not ida_pro_path.exists():
+        return None
+
+    try:
+        content = ida_pro_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    m = re.search(r"IDA SDK v(\d+\.\d+)", content)
+    if m:
+        return m.group(1)
+    return None
 
 
-def set_current_ida_version_cache(ida_path: Path, version: str) -> None:
-    cache_path = get_current_ida_version_cache_path()
-    if cache_path.exists():
-        doc = json.loads(cache_path.read_text(encoding="utf-8"))
-    else:
-        doc = {}
-    doc[str(ida_path.resolve())] = version
-    cache_path.write_text(json.dumps(doc), encoding="utf-8")
+def parse_version_from_dir_name(ida_dir: Path) -> str | None:
+    """Parse the IDA version from the installation directory name.
 
-
-def get_current_ida_version_cache(ida_path: Path) -> str:
-    cache_path = get_current_ida_version_cache_path()
-    if not cache_path.exists():
-        raise KeyError(f"No version cache found for {ida_path}")
-
-    doc = json.loads(cache_path.read_text(encoding="utf-8"))
-    return doc[str(ida_path.resolve())]
-
-
-FIND_VERSION_PY = """
-# output like:
-#
-#     __hcli__:"9.1"
-import sys
-import json
-import ida_kernwin
-print("__hcli__:" + json.dumps(ida_kernwin.get_kernel_version()))
-sys.exit()
-"""
+    Handles standard names like:
+        "IDA Professional 9.2"
+        "IDA-Professional-9.2"
+        "IDA Professional 9.2.app"
+    """
+    name = ida_dir.name
+    if name.endswith(".app"):
+        name = name[:-4]
+    m = re.search(r"(\d+\.\d+)", name)
+    if m:
+        return m.group(1)
+    return None
 
 
 def find_current_ida_version() -> str:
@@ -850,16 +831,18 @@ def find_current_ida_version() -> str:
         return ENV.HCLI_CURRENT_IDA_VERSION
 
     ida_dir = find_current_ida_install_directory()
-    try:
-        return get_current_ida_version_cache(ida_dir)
-    except KeyError:
-        pass
-    try:
-        version = run_py_in_current_idapython(FIND_VERSION_PY)
-    except RuntimeError as e:
-        raise FailedToDetectIDAVersion() from e
-    set_current_ida_version_cache(ida_dir, version)
-    return version
+
+    version = parse_version_from_ida_pro_py(ida_dir)
+    if version:
+        return version
+
+    version = parse_version_from_dir_name(ida_dir)
+    if version:
+        return version
+
+    raise FailedToDetectIDAVersion(
+        "could not determine IDA version from python/ida_pro.py or the installation directory name"
+    )
 
 
 def generate_instance_name(path: Path) -> str:
