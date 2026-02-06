@@ -34,7 +34,7 @@ from hcli.lib.util.io import get_os, get_temp_dir
 @click.option("-l", "--license-id", "license_id", required=False, help="License ID (e.g., 96-0000-0000-01)")
 @click.option("-i", "--install-dir", "install_dir", required=False, help="Install dir")
 @click.option("-a", "--accept-eula", "eula", is_flag=True, help="Accept EULA", default=True)
-@click.option("--set-default", is_flag=True, help="Mark this IDA installation as the default", default=False)
+@click.option("--set-default/--no-set-default", help="Mark this IDA installation as the default", default=True)
 @click.option("--dry-run", is_flag=True, help="Show what would be done without actually installing")
 @click.option("--yes", "-y", "auto_confirm", is_flag=True, help="Auto-accept confirmation prompts", default=False)
 @click.argument("installer", required=False)
@@ -177,7 +177,7 @@ async def install(
             if not config_path.exists():
                 console.print("[yellow]Updating configuration (default installation)...[/yellow]")
                 config_path.parent.mkdir(parents=True, exist_ok=True)
-                _ = config_path.write_text(json.dumps({"Paths": {"ida-install-dir": str(install_dir_path.absolute())}}))
+                _ = config_path.write_text(json.dumps({"Paths": {"ida-install-dir": str(install_dir_path.absolute())}}), encoding="utf-8")
                 console.print("[grey69]Wrote default ida-config.json[/grey69]")
             else:
                 # we update this without Pydantic validation to ensure we always can make the changes
