@@ -100,6 +100,7 @@ version_toml = ["pyproject.toml:project.version"]  # or wherever your version is
 version_variables = ["src/hcli/__init__.py:__version__"]  # update your actual path
 build_command = """
     uv lock --upgrade-package "$PACKAGE_NAME"
+    git add uv.lock
     uv run hcli
     uv build
 """
