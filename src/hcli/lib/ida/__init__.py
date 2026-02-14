@@ -652,14 +652,18 @@ def explain_failed_to_detect_ida_version(console: rich.console.Console):
     console.print("")
 
 
-def find_current_idat_executable() -> Path:
+def find_current_ida_executable(suffix: str = "") -> Path:
     install_directory = find_current_ida_install_directory()
     current_os = get_os()
     if current_os == "mac" and install_directory.name == "MacOS":
         # strip off trailing Contents/MacOS
         install_directory = install_directory.parent.parent
 
-    return get_idat_path(install_directory)
+    return get_ida_binary_path(install_directory, suffix)
+
+
+def find_current_idat_executable() -> Path:
+    return find_current_ida_executable("t")
 
 
 def run_py_in_current_idapython(src: str) -> str:
@@ -767,17 +771,17 @@ def find_current_ida_platform() -> str:
     elif os_ == "linux":
         return "linux-x86_64"
     elif os_ == "mac":
-        idat_path = find_current_idat_executable()
-        if not idat_path.exists():
-            raise RuntimeError(f"failed to determine current IDA platform: can't find idat: {idat_path}")
+        ida_path = find_current_ida_executable()
+        if not ida_path.exists():
+            raise RuntimeError(f"failed to determine current IDA platform: can't find ida: {ida_path}")
 
-        arch = detect_binary_arch(idat_path)
+        arch = detect_binary_arch(ida_path)
         if arch == "x86_64":
             return "macos-x86_64"
         elif arch == "aarch64":
             return "macos-aarch64"
         else:
-            raise RuntimeError(f"failed to determine current IDA platform: unrecognized architecture in {idat_path}")
+            raise RuntimeError(f"failed to determine current IDA platform: unrecognized architecture in {ida_path}")
     else:
         raise ValueError(f"Unsupported OS: {os_}")
 
