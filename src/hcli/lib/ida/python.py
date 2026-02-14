@@ -1,6 +1,7 @@
 # see also hcli.lib.util.python
 import logging
 import os
+import platform
 import subprocess
 from pathlib import Path
 
@@ -10,23 +11,77 @@ from hcli.lib.ida import run_py_in_current_idapython
 logger = logging.getLogger(__name__)
 
 
-FIND_PYTHON_PY = """
-# output like:
-#
-#     __hcli__:"/Users/user/.idapro/venv/bin/python"
-import shutil
-import os.path
+# Script run inside IDA's embedded Python via idat.
+# Returns sys.prefix, sys.base_prefix, and version info
+# so we can detect the Python executable on the hcli side.
+GET_PYTHON_INFO_PY = """
 import sys
+import io
 import json
-def find_python_executable():
-    exe = sys.executable
-    if "python" in os.path.basename(exe).lower():
-      return exe
 
-    return shutil.which("python3") or shutil.which("python")
-print("__hcli__:" + json.dumps(find_python_executable()))
+# ensure UTF-8 output for unicode install paths
+if hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
+print("__hcli__:" + json.dumps({
+    "frozen": getattr(sys, "frozen", False),
+    "prefix": sys.prefix,
+    "base_prefix": sys.base_prefix,
+    "version_major": sys.version_info.major,
+    "version_minor": sys.version_info.minor,
+}))
 sys.exit()
 """
+
+
+class PythonNotFoundError(RuntimeError):
+    """Could not detect IDA's Python executable."""
+
+    pass
+
+
+def _derive_python_exe(info: dict) -> Path:
+    """Derive the Python executable path from IDA's embedded Python sys info.
+
+    Uses sys.prefix/sys.base_prefix to locate the Python executable.
+    Checks versioned binaries first on Linux/Mac for precision.
+    """
+    if info.get("frozen", False):
+        raise PythonNotFoundError("IDA is running as a frozen application, cannot detect Python executable")
+
+    is_windows = platform.system() == "Windows"
+    version = f"{info['version_major']}.{info['version_minor']}"
+
+    # deduplicate while preserving order: prefix first, then base_prefix
+    prefixes = list(dict.fromkeys([info["prefix"], info["base_prefix"]]))
+
+    candidates = []
+    for prefix in prefixes:
+        if is_windows:
+            candidates.append(os.path.join(prefix, "Scripts", "python.exe"))
+            candidates.append(os.path.join(prefix, "python.exe"))
+        else:
+            bindir = os.path.join(prefix, "bin")
+            candidates.append(os.path.join(bindir, f"python{version}"))
+            candidates.append(os.path.join(bindir, "python3"))
+            candidates.append(os.path.join(bindir, "python"))
+
+    candidates = [os.path.abspath(c) for c in candidates]
+
+    for candidate in candidates:
+        logger.debug("candidate: %s (exists: %s)", candidate, os.path.exists(candidate))
+
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return Path(candidate)
+
+    raise PythonNotFoundError(
+        "Could not detect IDA's Python executable.\n"
+        "Please run idapyswitch to select a Python installation, then try again.\n"
+        f"sys.prefix: {info['prefix']}\n"
+        f"sys.base_prefix: {info['base_prefix']}\n"
+        f"Tried: {candidates}"
+    )
 
 
 def find_current_python_executable() -> Path:
@@ -40,15 +95,12 @@ def find_current_python_executable() -> Path:
         return Path(ENV.HCLI_CURRENT_IDA_PYTHON_EXE)
 
     try:
-        exe = run_py_in_current_idapython(FIND_PYTHON_PY)
+        info = run_py_in_current_idapython(GET_PYTHON_INFO_PY)
     except RuntimeError as e:
-        raise RuntimeError("failed to determine current IDA Python interpreter") from e
+        raise PythonNotFoundError("failed to run idat to detect IDA's Python interpreter") from e
 
-    if "python" not in exe:
-        logger.warning("'python' not found in discovered IDA Python interpreter path: %s", exe)
-
-    logger.debug("found IDA Python interpreter path: %s", exe)
-    return Path(exe)
+    logger.debug("IDA Python info: %s", info)
+    return _derive_python_exe(info)
 
 
 def does_current_ida_have_pip(python_exe: Path) -> bool:
