@@ -311,3 +311,6 @@ jobs:
         run: |
           curl -L -o "${{ runner.temp }}/Practical Malware Analysis Lab 01-01.exe_" "https://raw.githubusercontent.com/mandiant/capa-testfiles/master/Practical%20Malware%20Analysis%20Lab%2001-01.exe_"
           uv run "${{ github.workspace }}/tests/scripts/basic_idalib.py" "${{ runner.temp }}/Practical Malware Analysis Lab 01-01.exe_"
+        env:
+          IDALOG: "ida.log"
+          IDA_DEBUG: "4"
