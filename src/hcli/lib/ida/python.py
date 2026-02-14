@@ -117,73 +117,53 @@ def does_current_ida_have_pip(python_exe: Path, timeout=10.0) -> bool:
 class CantInstallPackagesError(ValueError): ...
 
 
-def verify_pip_can_install_packages(python_exe: Path, packages: list[str]):
+def _format_pip_error(stdout: bytes, stderr: bytes) -> str:
+    """Format pip error output for display."""
+    stdout_text = stdout.decode("utf-8", errors="replace").strip()
+    stderr_text = stderr.decode("utf-8", errors="replace").strip()
+
+    parts = []
+    if stdout_text:
+        parts.append(stdout_text)
+    if stderr_text:
+        parts.append(stderr_text)
+
+    return "\n".join(parts) if parts else stdout_text
+
+
+def verify_pip_can_install_packages(python_exe: Path, packages: list[str], no_build_isolation: bool = False):
     """Check if the given Python packages (e.g., "foo>=v1.0,<3") can be installed.
 
     This allows pip to determine if there are any version conflicts
     """
+    extra_args = ["--no-build-isolation"] if no_build_isolation else []
     process = subprocess.run(
-        [str(python_exe), "-m", "pip", "install", "--dry-run"] + packages,
+        [str(python_exe), "-m", "pip", "install", "--dry-run"] + extra_args + packages,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
     stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
-        # error output might look like:
-        #
-        #     ❯ pip install --dry-run flare-capa==v1.0.0 flare-capa==v1.0.1
-        #    Collecting flare-capa==v1.0.0
-        #      Using cached flare-capa-1.0.0.tar.gz (62 kB)
-        #      Installing build dependencies ... done
-        #      Getting requirements to build wheel ... done
-        #      Preparing metadata (pyproject.toml) ... done
-        #    ERROR: Cannot install flare-capa==v1.0.0 and flare-capa==v1.0.1 because these package versions have conflicting dependencies.
-        #
-        #    The conflict is caused by:
-        #        The user requested flare-capa==v1.0.0
-        #        The user requested flare-capa==v1.0.1
-        #
-        #    To fix this you could try to:
-        #    1. loosen the range of package versions you've specified
-        #    2. remove package versions to allow pip to attempt to solve the dependency conflict
-        #
-        #    ERROR: ResolutionImpossible: for help visit https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts
         logger.debug("can't install packages")
         logger.debug(stdout.decode("utf-8", errors="replace"))
         logger.debug(stderr.decode("utf-8", errors="replace"))
-        raise CantInstallPackagesError(stdout.decode("utf-8", errors="replace"))
+        raise CantInstallPackagesError(_format_pip_error(stdout, stderr))
 
 
-def pip_install_packages(python_exe: Path, packages: list[str]):
+def pip_install_packages(python_exe: Path, packages: list[str], no_build_isolation: bool = False):
     """Install the given Python packages (e.g., "foo>=v1.0,<3")."""
+    extra_args = ["--no-build-isolation"] if no_build_isolation else []
     process = subprocess.run(
-        [str(python_exe), "-m", "pip", "install"] + packages, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        [str(python_exe), "-m", "pip", "install"] + extra_args + packages,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
     stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
-        # error output might look like:
-        #
-        #     ❯ pip install --dry-run flare-capa==v1.0.0 flare-capa==v1.0.1
-        #    Collecting flare-capa==v1.0.0
-        #      Using cached flare-capa-1.0.0.tar.gz (62 kB)
-        #      Installing build dependencies ... done
-        #      Getting requirements to build wheel ... done
-        #      Preparing metadata (pyproject.toml) ... done
-        #    ERROR: Cannot install flare-capa==v1.0.0 and flare-capa==v1.0.1 because these package versions have conflicting dependencies.
-        #
-        #    The conflict is caused by:
-        #        The user requested flare-capa==v1.0.0
-        #        The user requested flare-capa==v1.0.1
-        #
-        #    To fix this you could try to:
-        #    1. loosen the range of package versions you've specified
-        #    2. remove package versions to allow pip to attempt to solve the dependency conflict
-        #
-        #    ERROR: ResolutionImpossible: for help visit https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts
         logger.debug("can't install packages")
         logger.debug(stdout.decode("utf-8", errors="replace"))
         logger.debug(stderr.decode("utf-8", errors="replace"))
-        raise CantInstallPackagesError(stdout.decode("utf-8", errors="replace"))
+        raise CantInstallPackagesError(_format_pip_error(stdout, stderr))
 
 
 def pip_freeze(python_exe: Path):

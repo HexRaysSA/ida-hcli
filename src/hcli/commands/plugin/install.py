@@ -35,7 +35,13 @@ logger = logging.getLogger(__name__)
 @click.pass_context
 @click.argument("plugin")
 @click.option("--config", multiple=True, help="Configuration setting in key=value format (use true/false for booleans)")
-def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
+@click.option(
+    "--no-build-isolation",
+    is_flag=True,
+    default=False,
+    help="Disable pip build isolation when installing Python dependencies",
+)
+def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation: bool) -> None:
     """Install a plugin from repository, local .zip file, or URL."""
     plugin_spec = plugin
     try:
@@ -112,7 +118,7 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...]) -> None:
                 descr.validate_value(parsed_value)
 
         with rich.status.Status("installing plugin", console=stderr_console):
-            install_plugin_archive(buf, plugin_name)
+            install_plugin_archive(buf, plugin_name, no_build_isolation=no_build_isolation)
 
         try:
             if metadata.plugin.settings:

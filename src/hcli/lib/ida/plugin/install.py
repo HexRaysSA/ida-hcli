@@ -251,6 +251,7 @@ def validate_can_install_python_dependencies(
     metadata: IDAMetadataDescriptor,
     excluded_plugins: list[str] | None = None,
     python_exe: Path | None = None,
+    no_build_isolation: bool = False,
 ) -> Path | None:
     """Verify Python dependencies can be installed.
 
@@ -283,7 +284,7 @@ def validate_can_install_python_dependencies(
             raise PipNotAvailableError(python_exe)
 
         try:
-            verify_pip_can_install_packages(python_exe, all_python_dependencies)
+            verify_pip_can_install_packages(python_exe, all_python_dependencies, no_build_isolation=no_build_isolation)
         except CantInstallPackagesError as e:
             logger.debug("can't install dependencies: %s", e)
             raise DependencyInstallationError(python_dependencies, str(e)) from e
@@ -294,7 +295,11 @@ def validate_can_install_python_dependencies(
 
 
 def validate_can_install_plugin(
-    zip_data: bytes, metadata: IDAMetadataDescriptor, current_platform: str, current_version: str
+    zip_data: bytes,
+    metadata: IDAMetadataDescriptor,
+    current_platform: str,
+    current_version: str,
+    no_build_isolation: bool = False,
 ) -> Path | None:
     """Verify plugin can be installed.
 
@@ -329,7 +334,7 @@ def validate_can_install_plugin(
         logger.warning(f"Current IDA version not supported: {current_version}")
         raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
 
-    return validate_can_install_python_dependencies(zip_data, metadata)
+    return validate_can_install_python_dependencies(zip_data, metadata, no_build_isolation=no_build_isolation)
 
 
 def validate_archive_entry(file_info: zipfile.ZipInfo, relative_path: pathlib.PurePosixPath) -> None:
@@ -444,7 +449,7 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
                 raise
 
 
-def _install_plugin_archive(zip_data: bytes, name: str):
+def _install_plugin_archive(zip_data: bytes, name: str, no_build_isolation: bool = False):
     path, metadata = get_metadata_from_plugin_archive(zip_data, name)
     validate_metadata_in_plugin_archive(zip_data, path, metadata)
 
@@ -457,7 +462,9 @@ def _install_plugin_archive(zip_data: bytes, name: str):
     # This will raise specific exceptions if installation is not possible.
     # If the plugin has pip dependencies, validation discovers the python exe
     # via idat so we can reuse it below without a second idat invocation.
-    python_exe = validate_can_install_plugin(zip_data, metadata, current_platform, current_version)
+    python_exe = validate_can_install_plugin(
+        zip_data, metadata, current_platform, current_version, no_build_isolation=no_build_isolation
+    )
 
     # path within IDAUSR/plugins to the new plugin
     #
@@ -489,7 +496,7 @@ def _install_plugin_archive(zip_data: bytes, name: str):
         ):
             assert python_exe is not None
             try:
-                pip_install_packages(python_exe, all_python_dependencies)
+                pip_install_packages(python_exe, all_python_dependencies, no_build_isolation=no_build_isolation)
             except CantInstallPackagesError:
                 logger.debug("can't install dependencies")
                 raise
@@ -497,19 +504,19 @@ def _install_plugin_archive(zip_data: bytes, name: str):
     extract_zip_subdirectory_to(zip_data, plugin_subdirectory, destination_path)
 
 
-def install_source_plugin_archive(zip_data: bytes, name: str):
-    return _install_plugin_archive(zip_data, name)
+def install_source_plugin_archive(zip_data: bytes, name: str, no_build_isolation: bool = False):
+    return _install_plugin_archive(zip_data, name, no_build_isolation=no_build_isolation)
 
 
-def install_binary_plugin_archive(zip_data: bytes, name: str):
-    return _install_plugin_archive(zip_data, name)
+def install_binary_plugin_archive(zip_data: bytes, name: str, no_build_isolation: bool = False):
+    return _install_plugin_archive(zip_data, name, no_build_isolation=no_build_isolation)
 
 
-def install_plugin_archive(zip_data: bytes, name: str):
+def install_plugin_archive(zip_data: bytes, name: str, no_build_isolation: bool = False):
     if is_source_plugin_archive(zip_data, name):
-        install_source_plugin_archive(zip_data, name)
+        install_source_plugin_archive(zip_data, name, no_build_isolation=no_build_isolation)
     elif is_binary_plugin_archive(zip_data, name):
-        install_binary_plugin_archive(zip_data, name)
+        install_binary_plugin_archive(zip_data, name, no_build_isolation=no_build_isolation)
     else:
         raise ValueError("Invalid plugin archive")
 
@@ -549,7 +556,11 @@ def is_plugin_installed(name: str) -> bool:
 
 
 def validate_can_upgrade_plugin(
-    zip_data: bytes, metadata: IDAMetadataDescriptor, current_platform: str, current_version: str
+    zip_data: bytes,
+    metadata: IDAMetadataDescriptor,
+    current_platform: str,
+    current_version: str,
+    no_build_isolation: bool = False,
 ) -> None:
     """Verify plugin can be upgraded.
 
@@ -581,10 +592,12 @@ def validate_can_upgrade_plugin(
         logger.warning(f"Current IDA version not supported: {current_version}")
         raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
 
-    validate_can_install_python_dependencies(zip_data, metadata, excluded_plugins=[name])
+    validate_can_install_python_dependencies(
+        zip_data, metadata, excluded_plugins=[name], no_build_isolation=no_build_isolation
+    )
 
 
-def upgrade_plugin_archive(zip_data: bytes, name: str):
+def upgrade_plugin_archive(zip_data: bytes, name: str, no_build_isolation: bool = False):
     path, metadata = get_metadata_from_plugin_archive(zip_data, name)
     validate_metadata_in_plugin_archive(zip_data, path, metadata)
 
@@ -595,7 +608,9 @@ def upgrade_plugin_archive(zip_data: bytes, name: str):
     current_version = find_current_ida_version()
 
     # This will raise specific exceptions if upgrade is not possible
-    validate_can_upgrade_plugin(zip_data, metadata, current_platform, current_version)
+    validate_can_upgrade_plugin(
+        zip_data, metadata, current_platform, current_version, no_build_isolation=no_build_isolation
+    )
 
     plugin_path = get_plugin_directory(metadata.plugin.name)
     existing_metadata = get_metadata_from_plugin_directory(plugin_path)
@@ -623,7 +638,7 @@ def upgrade_plugin_archive(zip_data: bytes, name: str):
     shutil.move(plugin_path, rollback_path)
 
     try:
-        install_plugin_archive(zip_data, name)
+        install_plugin_archive(zip_data, name, no_build_isolation=no_build_isolation)
     except Exception as e:
         logger.debug("error during upgrade: install: %s", e)
         logger.debug("rolling back to prior version")

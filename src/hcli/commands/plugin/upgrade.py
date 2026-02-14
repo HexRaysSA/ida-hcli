@@ -25,7 +25,13 @@ logger = logging.getLogger(__name__)
 @click.command()
 @click.pass_context
 @click.argument("plugin")
-def upgrade_plugin(ctx, plugin: str) -> None:
+@click.option(
+    "--no-build-isolation",
+    is_flag=True,
+    default=False,
+    help="Disable pip build isolation when installing Python dependencies",
+)
+def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
     """Upgrade an installed plugin to the latest compatible version."""
     plugin_spec = plugin
     try:
@@ -52,7 +58,7 @@ def upgrade_plugin(ctx, plugin: str) -> None:
             console.print("Please check your internet connection.")
             raise click.Abort()
 
-        upgrade_plugin_archive(buf, plugin_name)
+        upgrade_plugin_archive(buf, plugin_name, no_build_isolation=no_build_isolation)
 
         _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 
