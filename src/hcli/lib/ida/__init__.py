@@ -571,7 +571,7 @@ def set_ida_config(config: IDAConfigJson):
         logger.debug("creating $IDAUSR directory")
         ida_config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    _ = ida_config_path.write_text(config.model_dump_json())
+    _ = ida_config_path.write_text(config.model_dump_json(), encoding="utf-8")
 
 
 class MissingCurrentInstallationDirectory(ValueError):

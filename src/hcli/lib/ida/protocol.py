@@ -33,7 +33,7 @@ end run
             app_path = Path.home() / "Applications" / "HCLIHandler.app"
 
             # Write AppleScript
-            script_path.write_text(applescript_content)
+            script_path.write_text(applescript_content, encoding="utf-8")
 
             # Compile AppleScript to application
             subprocess.run(["osacompile", "-o", str(app_path), str(script_path)], check=True)
@@ -70,7 +70,9 @@ end run
                 plist_content = plist_content.replace("</dict>\n</plist>", f"{url_scheme_xml}\n</dict>\n</plist>")
 
                 # Write back the modified plist
-                with tempfile.NamedTemporaryFile(mode="w", suffix=".plist", delete=False) as temp_plist:
+                with tempfile.NamedTemporaryFile(
+                    encoding="utf-8", mode="w", suffix=".plist", delete=False
+                ) as temp_plist:
                     temp_plist.write(plist_content)
                     temp_plist_path = temp_plist.name
 
@@ -155,7 +157,7 @@ MimeType=x-scheme-handler/ida;
         applications_dir.mkdir(parents=True, exist_ok=True)
 
         desktop_file_path = applications_dir / "hcli-url-handler.desktop"
-        desktop_file_path.write_text(desktop_entry_content)
+        desktop_file_path.write_text(desktop_entry_content, encoding="utf-8")
 
         # Make executable
         desktop_file_path.chmod(0o755)

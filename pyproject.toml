@@ -88,6 +88,10 @@ line-length = 120
 target-version = "py310"
 fix = true
 
+[tool.ruff.lint]
+preview = true
+extend-select = ["PLW1514"]
+
 [tool.mypy]
 check_untyped_defs = true
 

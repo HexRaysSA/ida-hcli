@@ -139,7 +139,7 @@ def test_plugin_all(virtual_ida_environment_with_venv):
             _ = json.loads(p.stdout)
 
             repo_path = idausr / "repo.json"
-            repo_path.write_text(p.stdout)
+            repo_path.write_text(p.stdout, encoding="utf-8")
 
             p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
             assert "No plugins found\n" == p.stdout
@@ -240,7 +240,7 @@ def test_case_insensitive_plugin_install(virtual_ida_environment_with_venv):
         with temp_env_var("COLUMNS", "80"):
             p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} repo snapshot")
             repo_path = idausr / "repo.json"
-            repo_path.write_text(p.stdout)
+            repo_path.write_text(p.stdout, encoding="utf-8")
 
             # Install using uppercase name "PLUGIN1" but expect it to resolve to "plugin1"
             p = run_hcli(f"plugin --repo {repo_path.absolute()} install PLUGIN1==1.0.0")

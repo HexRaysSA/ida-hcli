@@ -177,7 +177,9 @@ async def install(
             if not config_path.exists():
                 console.print("[yellow]Updating configuration (default installation)...[/yellow]")
                 config_path.parent.mkdir(parents=True, exist_ok=True)
-                _ = config_path.write_text(json.dumps({"Paths": {"ida-install-dir": str(install_dir_path.absolute())}}))
+                _ = config_path.write_text(
+                    json.dumps({"Paths": {"ida-install-dir": str(install_dir_path.absolute())}}), encoding="utf-8"
+                )
                 console.print("[grey69]Wrote default ida-config.json[/grey69]")
             else:
                 # we update this without Pydantic validation to ensure we always can make the changes

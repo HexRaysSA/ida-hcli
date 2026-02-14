@@ -104,7 +104,7 @@ class BackgroundUpdateChecker:
             return True
 
         try:
-            with open(self.cache_file) as f:
+            with open(self.cache_file, encoding="utf-8") as f:
                 cache_data = json.load(f)
 
             last_check = datetime.fromisoformat(cache_data.get("last_check", ""))
@@ -123,7 +123,7 @@ class BackgroundUpdateChecker:
                 "last_check": datetime.now().isoformat(),
                 "latest_version": str(latest_version) if latest_version else None,
             }
-            with open(self.cache_file, "w") as f:
+            with open(self.cache_file, "w", encoding="utf-8") as f:
                 json.dump(cache_data, f)
         except Exception:
             pass  # Silently ignore cache write errors
@@ -134,7 +134,7 @@ class BackgroundUpdateChecker:
             return None
 
         try:
-            with open(self.cache_file) as f:
+            with open(self.cache_file, encoding="utf-8") as f:
                 cache_data = json.load(f)
 
             # Check if cache is recent enough

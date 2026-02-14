@@ -520,7 +520,7 @@ def get_releases_metadata_cache_path(owner: str, repo: str) -> Path:
 def set_releases_metadata_cache(owner: str, repo: str, releases: GitHubReleases) -> None:
     cache_path = get_releases_metadata_cache_path(owner, repo)
     releases_data = releases.model_dump()
-    cache_path.write_text(json.dumps(releases_data, indent=2, sort_keys=True))
+    cache_path.write_text(json.dumps(releases_data, indent=2, sort_keys=True), encoding="utf-8")
     logger.debug(f"saved releases cache to: {cache_path}")
 
 
@@ -670,7 +670,7 @@ def get_candidate_github_repos_cache_path() -> Path:
 
 def set_candidate_github_repos_cache(repos: list[str]) -> None:
     cache_path = get_candidate_github_repos_cache_path()
-    cache_path.write_text(json.dumps(repos, indent=2, sort_keys=True))
+    cache_path.write_text(json.dumps(repos, indent=2, sort_keys=True), encoding="utf-8")
     logger.debug(f"Saved candidate repos cache to: {cache_path}")
 
 

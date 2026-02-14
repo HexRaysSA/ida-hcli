@@ -337,7 +337,7 @@ async def create_temp_file(suffix: str = "", content: str = "") -> str:
     """Create a temporary file and return its path."""
     import tempfile
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False) as tmp_file:
+    with tempfile.NamedTemporaryFile(encoding="utf-8", mode="w", suffix=suffix, delete=False) as tmp_file:
         if content:
             tmp_file.write(content)
         return tmp_file.name

@@ -23,7 +23,7 @@ class ConfigStore:
         """Load configuration from disk."""
         if self._config_file.exists():
             try:
-                with open(self._config_file, "r") as f:
+                with open(self._config_file, "r", encoding="utf-8") as f:
                     self._data = json.load(f)
             except (json.JSONDecodeError, OSError):
                 self._data = {}
@@ -33,7 +33,7 @@ class ConfigStore:
     def _save_config(self):
         """Save configuration to disk."""
         self._config_dir.mkdir(parents=True, exist_ok=True)
-        with open(self._config_file, "w") as f:
+        with open(self._config_file, "w", encoding="utf-8") as f:
             json.dump(self._data, f, indent=2)
 
     def _migrate_config(self):

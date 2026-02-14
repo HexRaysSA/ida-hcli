@@ -53,7 +53,9 @@ def set_default_ida(path: Path | None) -> None:
     if not config_path.exists():
         console.print("[yellow]Creating configuration...[/yellow]")
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        _ = config_path.write_text(json.dumps({"Paths": {"ida-install-dir": str(install_dir.absolute())}}))
+        _ = config_path.write_text(
+            json.dumps({"Paths": {"ida-install-dir": str(install_dir.absolute())}}), encoding="utf-8"
+        )
         console.print("[grey69]Wrote default ida-config.json[/grey69]")
         console.print(f"[green]Set default IDA installation: {install_dir.absolute()}[/green]")
     else:

@@ -78,7 +78,7 @@ def test_get_python_dependencies_from_plugin_directory_inline():
               "urls": {"repository": "https://github.com/HexRaysSA/ida-hcli"}
             }
         }""")
-        (plugin_dir / "ida-plugin.json").write_text(metadata_content)
+        (plugin_dir / "ida-plugin.json").write_text(metadata_content, encoding="utf-8")
 
         python_content = textwrap.dedent("""
             # /// script
@@ -93,7 +93,7 @@ def test_get_python_dependencies_from_plugin_directory_inline():
             def PLUGIN_ENTRY():
                 return None
         """).strip()
-        (plugin_dir / "plugin1.py").write_text(python_content)
+        (plugin_dir / "plugin1.py").write_text(python_content, encoding="utf-8")
 
         metadata = get_metadata_from_plugin_directory(plugin_dir)
         assert metadata.plugin.python_dependencies == "inline"
