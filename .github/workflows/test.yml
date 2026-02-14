@@ -260,10 +260,10 @@ jobs:
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
 
       - name: Run idat
+        # idat may exit with a non-zero exit code even on success when running a Python script
         if: ${{ matrix.os_ida.idat_path != '' }}
-        continue-on-error: true
         run: |
-          ${{ runner.temp }}/app/ida/${{ matrix.os_ida.idat_path }} -a -A -c -t -L"${{ runner.temp }}/ida.log" -S"${{ github.workspace }}/tests/scripts/hi.py" | echo "ok"
+          ${{ runner.temp }}/app/ida-${{ matrix.os_ida.ida_version }}/${{ matrix.os_ida.idat_path }} -a -A -c -t -L"${{ runner.temp }}/ida.log" -S"${{ github.workspace }}/tests/scripts/hi.py" || true
 
       - name: Check idat output (unix)
         if: ${{ matrix.os_ida.idat_path != '' && matrix.os_ida.os != 'windows-latest' }}
