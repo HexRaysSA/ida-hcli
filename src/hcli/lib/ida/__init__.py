@@ -666,7 +666,7 @@ def find_current_idat_executable() -> Path:
     return find_current_ida_executable("t")
 
 
-def run_py_in_current_idapython(src: str) -> str:
+def run_py_in_current_idapython(src: str) -> dict:
     idat_path = find_current_idat_executable()
     if not idat_path.exists():
         raise ValueError(f"can't find idat: {idat_path}")

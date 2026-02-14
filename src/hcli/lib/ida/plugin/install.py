@@ -486,6 +486,7 @@ def _install_plugin_archive(zip_data: bytes, name: str):
         with rich.status.Status(
             f"installing Python dependencies: {', '.join(python_dependencies)}", console=stderr_console
         ):
+            assert python_exe is not None
             try:
                 pip_install_packages(python_exe, all_python_dependencies)
             except CantInstallPackagesError:
