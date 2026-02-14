@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import logging
+import os
 import platform
 import tempfile
+
+# Ensure all Python subprocesses (pip, idat scripts, etc.) use UTF-8 on Windows,
+# where the default encoding is typically a legacy codepage.
+os.environ["PYTHONUTF8"] = "1"
 
 import rich_click as click
 from rich.logging import RichHandler

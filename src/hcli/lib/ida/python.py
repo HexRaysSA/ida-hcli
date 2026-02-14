@@ -97,9 +97,9 @@ def verify_pip_can_install_packages(python_exe: Path, packages: list[str]):
         #
         #    ERROR: ResolutionImpossible: for help visit https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts
         logger.debug("can't install packages")
-        logger.debug(stdout.decode())
-        logger.debug(stderr.decode())
-        raise CantInstallPackagesError(stdout.decode())
+        logger.debug(stdout.decode("utf-8", errors="replace"))
+        logger.debug(stderr.decode("utf-8", errors="replace"))
+        raise CantInstallPackagesError(stdout.decode("utf-8", errors="replace"))
 
 
 def pip_install_packages(python_exe: Path, packages: list[str]):
@@ -129,9 +129,9 @@ def pip_install_packages(python_exe: Path, packages: list[str]):
         #
         #    ERROR: ResolutionImpossible: for help visit https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts
         logger.debug("can't install packages")
-        logger.debug(stdout.decode())
-        logger.debug(stderr.decode())
-        raise CantInstallPackagesError(stdout.decode())
+        logger.debug(stdout.decode("utf-8", errors="replace"))
+        logger.debug(stderr.decode("utf-8", errors="replace"))
+        raise CantInstallPackagesError(stdout.decode("utf-8", errors="replace"))
 
 
 def pip_freeze(python_exe: Path):
@@ -139,4 +139,4 @@ def pip_freeze(python_exe: Path):
     stdout, _ = process.stdout, process.stderr
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, [str(python_exe), "-m", "pip", "freeze"])
-    return stdout.decode()
+    return stdout.decode("utf-8", errors="replace")

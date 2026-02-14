@@ -678,7 +678,7 @@ def run_py_in_current_idapython(src: str) -> str:
         script_path = temp_path / "idat-script.py"
         log_path = temp_path / "ida.log"
 
-        script_path.write_text(src)
+        script_path.write_text(src, encoding="utf-8")
 
         # invoke like:
         #
@@ -700,7 +700,9 @@ def run_py_in_current_idapython(src: str) -> str:
             f"-S{str(script_path.absolute())}",
         ]
 
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace"
+        )
         logger.debug(f"idat command: {' '.join(cmd)}")
         logger.debug(f"idat exit code: {result.returncode}")
         if result.stdout:
@@ -711,7 +713,7 @@ def run_py_in_current_idapython(src: str) -> str:
         if not log_path.exists():
             raise RuntimeError(f"failed to invoke idat: log file was not created: {log_path}")
 
-        for line in log_path.read_text().splitlines():
+        for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
             if not line.startswith("__hcli__:"):
                 continue
 
