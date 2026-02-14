@@ -254,7 +254,7 @@ jobs:
 
       - name: Install IDA ${{ matrix.os_ida.ida_version }}
         run: |
-          uv run hcli --disable-updates ida install --download-id ${{ matrix.os_ida.slug }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default --yes
+          uv run hcli --disable-updates ida install --download-id ${{ matrix.os_ida.slug }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida-${{ matrix.os_ida.ida_version }}/" --set-default --yes
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
@@ -288,7 +288,7 @@ jobs:
         run: uv run pytest -v --log-cli-level=DEBUG tests/
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
-          HCLI_INSTALL_DIR: ${{ runner.temp }}/app/ida/
+          HCLI_INSTALL_DIR: ${{ runner.temp }}/app/ida-${{ matrix.os_ida.ida_version }}/
           HCLI_HAS_IDAT: ${{ matrix.os_ida.idat_path != '' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PYTHONUTF8: "1"
