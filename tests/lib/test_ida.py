@@ -94,8 +94,9 @@ def test_parse_version_from_ida_pro_py():
     """Test parsing IDA version from python/ida_pro.py."""
     ida_dir = find_current_ida_install_directory()
     result = parse_version_from_ida_pro_py(ida_dir)
-    assert result is not None
-    assert result in ["9.0", "9.1", "9.2"]
+    if has_idat():
+        # editions with IDAPython should have python/ida_pro.py
+        assert result in ["9.0", "9.1", "9.2"]
 
 
 def test_parse_version_from_ida_pro_py_missing():
