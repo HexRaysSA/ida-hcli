@@ -53,11 +53,12 @@ class IDAVersionIncompatibleError(PluginInstallationError):
 class PipNotAvailableError(PluginInstallationError):
     """pip is not available in IDA's Python environment."""
 
-    def __init__(self):
+    def __init__(self, python_exe: Path):
         super().__init__(
             "Cannot install plugin: pip is not available in IDA's Python environment. "
             "The plugin requires Python dependencies but pip cannot be found. "
             "Please ensure your IDA installation includes pip support."
+            f"You can try installing pip manually by running: {python_exe} -m ensurepip"
         )
 
 

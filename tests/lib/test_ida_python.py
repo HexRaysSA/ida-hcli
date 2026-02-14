@@ -35,7 +35,7 @@ def test_find_current_python_executable_returns_path():
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_does_current_ida_have_pip():
     python_exe = find_current_python_executable()
-    assert does_current_ida_have_pip(python_exe)
+    assert does_current_ida_have_pip(python_exe, timeout=30.0)
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")

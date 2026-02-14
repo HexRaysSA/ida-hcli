@@ -103,11 +103,11 @@ def find_current_python_executable() -> Path:
     return _derive_python_exe(info)
 
 
-def does_current_ida_have_pip(python_exe: Path) -> bool:
+def does_current_ida_have_pip(python_exe: Path, timeout=10.0) -> bool:
     """Check if pip is available in the given Python executable."""
     try:
         process = subprocess.run(
-            [str(python_exe), "-m", "pip", "help"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10.0
+            [str(python_exe), "-c", "import pip"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
         )
         return process.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):

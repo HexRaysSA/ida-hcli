@@ -276,10 +276,11 @@ def validate_can_install_python_dependencies(
 
         if python_exe is None:
             python_exe = find_current_python_executable()
+        logger.debug(f"python: {python_exe}")
 
         if not does_current_ida_have_pip(python_exe):
             logger.debug("pip not available")
-            raise PipNotAvailableError()
+            raise PipNotAvailableError(python_exe)
 
         try:
             verify_pip_can_install_packages(python_exe, all_python_dependencies)
