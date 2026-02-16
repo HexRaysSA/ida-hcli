@@ -8,6 +8,7 @@ def ida() -> None:
     """Manage IDA installations."""
 
 
+from .accept_eula import accept_eula_command  # noqa: E402
 from .add import add  # noqa: E402
 from .install import install  # noqa: E402
 from .list import list_instances  # noqa: E402
@@ -17,6 +18,7 @@ from .remove import remove  # noqa: E402
 from .source import source  # noqa: E402
 from .switch import switch  # noqa: E402
 
+ida.add_command(accept_eula_command)
 ida.add_command(add)
 ida.add_command(install)
 ida.add_command(list_instances, name="list")

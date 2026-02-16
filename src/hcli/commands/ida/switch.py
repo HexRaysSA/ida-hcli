@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import questionary
 import rich_click as click
 from rich.console import Console
 
 from hcli.lib.config import config_store
+from hcli.lib.ida import get_ida_config, set_ida_config
 
 console = Console()
 
@@ -68,5 +71,14 @@ def switch(name: str | None) -> None:
 
 def _set_default_instance(name: str) -> None:
     """Set the default IDA instance."""
+    instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
     config_store.set_string("ida.default", name)
+
+    # Also update ida-config.json so idalib/install commands pick up the path
+    path = instances.get(name)
+    if path:
+        config = get_ida_config()
+        config.paths.installation_directory = Path(path)
+        set_ida_config(config)
+
     console.print(f"[green]Set '{name}' as the default IDA Pro instance[/green]")
