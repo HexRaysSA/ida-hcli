@@ -9,18 +9,19 @@ from hcli.lib.config import config_store
 from hcli.lib.console import console
 from hcli.lib.ida import add_instance_to_config, find_standard_installations, generate_instance_name, is_ida_dir
 from hcli.lib.ida.protocol import register_protocol_handler, unregister_protocol_handler
+from hcli.lib.util.io import get_hcli_executable_path
 
 
-@click.command(name="setup")
+@click.command(name="register")
 @click.option("--force", is_flag=True, help="Force reinstall even if already configured")
 @click.option("--unregister", is_flag=True, help="Remove URL handlers instead of installing them")
 @async_command
-async def setup(force: bool = False, unregister: bool = False) -> None:
+async def register(force: bool = False, unregister: bool = False) -> None:
     """Set up or remove hcli protocol handlers for ida:// URLs.
 
     This command registers hcli as the handler for ida:// URLs on your system,
-    allowing web browsers and other applications to automatically open IDA-related
-    URLs with hcli. Use --unregister to remove the protocol handlers.
+    allowing web browsers and other applications to automatically open IDB links
+    with hcli. Use --unregister to remove the protocol handlers.
 
     \b
     The setup/removal process varies by platform:
@@ -46,6 +47,9 @@ async def setup(force: bool = False, unregister: bool = False) -> None:
         console.print(f"[blue]Setting up hcli protocol handlers for {current_platform}...[/blue]")
 
         try:
+            hcli_path = get_hcli_executable_path()
+            console.print(f"[dim]Using hcli executable: {hcli_path}[/dim]")
+
             register_protocol_handler()
 
             console.print("[green]✓ Protocol handler setup complete![/green]")
@@ -62,15 +66,15 @@ async def setup(force: bool = False, unregister: bool = False) -> None:
 async def _check_and_setup_ida_instances() -> None:
     """Check for registered IDA instances and auto-discover if none exist."""
     # Check if any IDA instances are already registered
-    instances: dict[str, str] = config_store.get_object("ke.ida.instances", {}) or {}
+    instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
 
     if instances:
         console.print(f"[green]✓ Found {len(instances)} registered IDA instance(s)[/green]")
-        default_instance = config_store.get_string("ke.ida.default", "")
+        default_instance = config_store.get_string("ida.default", "")
         if default_instance:
             console.print(f"[green]✓ Default IDA instance: {default_instance}[/green]")
         else:
-            console.print("[yellow]! No default IDA instance set. Use 'hcli ke ida switch' to set one.[/yellow]")
+            console.print("[yellow]! No default IDA instance set. Use 'hcli ida switch' to set one.[/yellow]")
         return
 
     console.print("\n[blue]Checking for IDA Pro installations...[/blue]")
@@ -100,7 +104,7 @@ async def _check_and_setup_ida_instances() -> None:
             # Set the last one alphabetically as default if no default exists
             sorted_installations = sorted(valid_installations, key=lambda p: generate_instance_name(p))
             last_instance = generate_instance_name(sorted_installations[-1])
-            config_store.set_string("ke.ida.default", last_instance)
+            config_store.set_string("ida.default", last_instance)
             console.print(f"[green]✓ Set '{last_instance}' as default IDA instance[/green]")
         else:
             console.print("[yellow]! All discovered IDA instances were already registered[/yellow]")
@@ -110,17 +114,10 @@ async def _check_and_setup_ida_instances() -> None:
         _print_ida_setup_instructions()
 
 
-@click.command(name="install")
-@async_command
-async def install() -> None:
-    """Install the KE plugin."""
-    console.print("Coming soon...")
-
-
 def _print_ida_setup_instructions() -> None:
     """Print instructions for manually setting up IDA instances."""
     console.print("\n[yellow]To use ida:// links, you need to register IDA Pro instances:[/yellow]")
-    console.print("  • Auto-discover: [cyan]hcli ke ida add --auto[/cyan]")
-    console.print("  • Manual: [cyan]hcli ke ida add <name> <path>[/cyan]")
-    console.print("  • Example: [cyan]hcli ke ida add ida-pro '/Applications/IDA Professional 9.2.app'[/cyan]")
-    console.print("  • Set default: [cyan]hcli ke ida switch <name>[/cyan]")
+    console.print("  • Auto-discover: [cyan]hcli ida add --auto[/cyan]")
+    console.print("  • Manual: [cyan]hcli ida add <name> <path>[/cyan]")
+    console.print("  • Example: [cyan]hcli ida add ida-pro '/Applications/IDA Professional 9.2.app'[/cyan]")
+    console.print("  • Set default: [cyan]hcli ida switch <name>[/cyan]")

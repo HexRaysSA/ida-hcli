@@ -64,7 +64,7 @@ def _add_auto_discovered_instances() -> None:
     console.print(f"[green]Found {len(valid_installations)} IDA installation(s)[/green]")
 
     # Get existing instances
-    instances: dict[str, str] = config_store.get_object("ke.ida.instances", {}) or {}
+    instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
 
     # Show table of found installations
     table = Table(show_header=True, header_style="bold magenta")
@@ -119,12 +119,12 @@ def _add_auto_discovered_instances() -> None:
 
         # Set default if no default exists and instances were added
         if added_count > 0:
-            default_instance = config_store.get_string("ke.ida.default", "")
+            default_instance = config_store.get_string("ida.default", "")
             if not default_instance:
                 # Sort added instances alphabetically and pick the last one
                 sorted_instances = sorted(added_instances, key=lambda x: x[0])
                 last_instance_name = sorted_instances[-1][0]
-                config_store.set_string("ke.ida.default", last_instance_name)
+                config_store.set_string("ida.default", last_instance_name)
                 console.print(f"[green]Set '{last_instance_name}' as default IDA instance[/green]")
 
     except KeyboardInterrupt:

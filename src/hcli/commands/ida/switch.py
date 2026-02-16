@@ -18,11 +18,11 @@ def switch(name: str | None) -> None:
     NAME: Name of the IDA instance to set as default (optional - will prompt if not provided)
     """
     # Get existing instances
-    instances: dict[str, str] = config_store.get_object("ke.ida.instances", {}) or {}
+    instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
 
     if not instances:
         console.print("[yellow]No IDA Pro instances registered.[/yellow]")
-        console.print("[yellow]Use 'hcli ke ida add --auto' to discover and add IDA installations.[/yellow]")
+        console.print("[yellow]Use 'hcli ida add --auto' to discover and add IDA installations.[/yellow]")
         raise click.Abort()
 
     # If name is provided, validate and set it
@@ -38,7 +38,7 @@ def switch(name: str | None) -> None:
         return
 
     # Interactive selection
-    current_default = config_store.get_string("ke.ida.default", "")
+    current_default = config_store.get_string("ida.default", "")
 
     # Create choices with current default marked
     choices = []
@@ -68,5 +68,5 @@ def switch(name: str | None) -> None:
 
 def _set_default_instance(name: str) -> None:
     """Set the default IDA instance."""
-    config_store.set_string("ke.ida.default", name)
+    config_store.set_string("ida.default", name)
     console.print(f"[green]Set '{name}' as the default IDA Pro instance[/green]")

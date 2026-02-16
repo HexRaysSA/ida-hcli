@@ -882,7 +882,7 @@ def add_instance_to_config(name: str, path: Path) -> bool:
     from hcli.lib.config import config_store
 
     # Get existing instances
-    instances: dict[str, str] = config_store.get_object("ke.ida.instances", {}) or {}
+    instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
 
     if name in instances:
         return False  # Already exists
@@ -891,6 +891,6 @@ def add_instance_to_config(name: str, path: Path) -> bool:
     instances[name] = str(path.resolve())
 
     # Save back to config
-    config_store.set_object("ke.ida.instances", instances)
+    config_store.set_object("ida.instances", instances)
 
     return True
