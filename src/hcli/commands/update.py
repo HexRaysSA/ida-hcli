@@ -80,7 +80,7 @@ async def update(
             assets = get_assets(repo, latest_tag, re.compile(mask))
 
             if latest_tag and len(assets) == 1:
-                console.print(f"[yellow]Update available: {current_version} → {latest_version}[/yellow]")
+                console.print(f"[yellow]Update available: {current_version} -> {latest_version}[/yellow]")
 
                 # Skip confirmation if auto_install is enabled
                 if not auto_install:
