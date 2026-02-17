@@ -71,6 +71,7 @@ jobs:
             slug: "release/9.2/ida-essential/ida-essential_92_x64linux.run"
             idat_path: "/idat"
             default_path: "/home/runner/.local/share/applications/IDA-Essential-9.2"
+            supports_idalib: true
 
           - name: IDA 9.2 on Windows
             arch: intel
@@ -79,6 +80,7 @@ jobs:
             slug: "release/9.2/ida-essential/ida-essential_92_x64win.exe"
             idat_path: "/idat.exe"
             default_path: "C:\\Program Files\\IDA Essential 9.2"
+            supports_idalib: true
 
           - name: IDA 9.2 on macOS (Intel)
             arch: intel
@@ -87,6 +89,7 @@ jobs:
             slug: "release/9.2/ida-essential/ida-essential_92_x64mac.app.zip"
             idat_path: "/Contents/MacOS/idat"
             default_path: "/Applications/IDA Essential 9.2.app"
+            supports_idalib: false  # GHA macos-latest is ARM; x86_64 Python bindings won't load
 
           - name: IDA 9.2 on macOS (ARM)
             arch: arm
@@ -95,6 +98,7 @@ jobs:
             slug: "release/9.2/ida-essential/ida-essential_92_armmac.app.zip"
             idat_path: "/Contents/MacOS/idat"
             default_path: "/Applications/IDA Essential 9.2.app"
+            supports_idalib: true
 
           - name: IDA 9.1 on Linux
             arch: intel
@@ -103,6 +107,7 @@ jobs:
             slug: "release/9.1/ida-essential/ida-essential_91_x64linux.run"
             idat_path: "/idat"
             default_path: "/home/runner/.local/share/applications/IDA Essential 9.1"
+            supports_idalib: true
 
           - name: IDA 9.1 on Windows
             arch: intel
@@ -111,6 +116,7 @@ jobs:
             slug: "release/9.1/ida-essential/ida-essential_91_x64win.exe"
             idat_path: "/idat.exe"
             default_path: "C:\\Program Files\\IDA Essential 9.1"
+            supports_idalib: false  # idalib crashes on IDA 9.1 Windows
 
           - name: IDA 9.1 on macOS (Intel)
             arch: intel
@@ -119,6 +125,7 @@ jobs:
             slug: "release/9.1/ida-essential/ida-essential_91_x64mac.app.zip"
             idat_path: "/Contents/MacOS/idat"
             default_path: "/Applications/IDA Essential 9.1.app"
+            supports_idalib: false  # GHA macos-latest is ARM; x86_64 Python bindings won't load
 
           - name: IDA 9.1 on macOS (ARM)
             arch: arm
@@ -127,6 +134,7 @@ jobs:
             slug: "release/9.1/ida-essential/ida-essential_91_armmac.app.zip"
             idat_path: "/Contents/MacOS/idat"
             default_path: "/Applications/IDA Essential 9.1.app"
+            supports_idalib: true
 
           - name: IDA 9.0 on Linux
             arch: intel
@@ -135,6 +143,7 @@ jobs:
             slug: "release/9.0/ida-essential/ida-essential_90_x64linux.run"
             idat_path: "/idat"
             default_path: "/home/runner/.local/share/applications/IDA Essential 9.0"
+            supports_idalib: false  # idalib requires IDA 9.1+
 
           - name: IDA 9.0 on Windows
             arch: intel
@@ -143,6 +152,7 @@ jobs:
             slug: "release/9.0/ida-essential/ida-essential_90_x64win.exe"
             idat_path: "/idat.exe"
             default_path: "C:\\Program Files\\IDA Essential 9.0"
+            supports_idalib: false  # idalib requires IDA 9.1+
 
           - name: IDA 9.0 on macOS (Intel)
             arch: intel
@@ -151,6 +161,7 @@ jobs:
             slug: "release/9.0/ida-essential/ida-essential_90_x64mac.app.zip"
             idat_path: "/Contents/MacOS/idat"
             default_path: "/Applications/IDA Essential 9.0.app"
+            supports_idalib: false  # idalib requires IDA 9.1+
 
           - name: IDA 9.0 on macOS (ARM)
             arch: arm
@@ -159,6 +170,7 @@ jobs:
             slug: "release/9.0/ida-essential/ida-essential_90_armmac.app.zip"
             idat_path: "/Contents/MacOS/idat"
             default_path: "/Applications/IDA Essential 9.0.app"
+            supports_idalib: false  # idalib requires IDA 9.1+
 
           # #################################################################
           # SP releases
@@ -169,6 +181,7 @@ jobs:
             slug: "release/9.0sp1/ida-pro/ida-pro_90sp1_armmac.app.zip"
             idat_path: "/Contents/MacOS/idat"
             default_path: "/Applications/IDA Professional 9.0sp1.app"
+            supports_idalib: false  # idalib requires IDA 9.1+
 
           # #################################################################
           # other product versions
@@ -179,6 +192,7 @@ jobs:
             slug: "release/9.1/ida-home/ida-home-pc_91_armmac.app.zip"
             idat_path: ""
             default_path: "/Applications/IDA Home 9.1.app"
+            supports_idalib: false  # IDA Home doesn't include idalib
 
           - name: IDA Free 9.1 on macOS (ARM)
             arch: arm
@@ -187,6 +201,7 @@ jobs:
             slug: "release/9.1/ida-free/ida-free-pc_91_armmac.app.zip"
             idat_path: ""
             default_path: "/Applications/IDA Free 9.1.app"
+            supports_idalib: false  # IDA Free doesn't include idalib
 
           - name: IDA Essential 9.1 on macOS (ARM)
             arch: arm
@@ -195,6 +210,7 @@ jobs:
             slug: "release/9.1/ida-essential/ida-essential_91_armmac.app.zip"
             idat_path: "/Contents/MacOS/idat"
             default_path: "/Applications/IDA Essential 9.1.app"
+            supports_idalib: true
 
           - name: IDA Pro 9.1 on macOS (ARM)
             arch: arm
@@ -203,6 +219,7 @@ jobs:
             slug: "release/9.1/ida-pro/ida-pro_91_armmac.app.zip"
             idat_path: "/Contents/MacOS/idat"
             default_path: "/Applications/IDA Professional 9.1.app"
+            supports_idalib: true
 
           # Classroom doesn't work with the Essentials license we're using in CI
           # - name: IDA Classroom 9.1 on macOS (ARM)
@@ -297,17 +314,11 @@ jobs:
           HCLI_DEBUG: "1"
 
       - name: Install idalib
-        # ida-domain requires IDA 9.1+
-        # skip Intel macOS: GHA macos-latest is ARM, so x86_64 IDA's Python bindings won't load (works in real life)
-        # IDA Home and IDA Free don't have idalib
-        if: ${{ matrix.os_ida.ida_version != '9.0' && matrix.os_ida.ida_version != '9.0sp1' && !(matrix.os_ida.os == 'macos-latest' && matrix.os_ida.arch == 'intel') && matrix.os_ida.idat_path != '' }}
+        if: ${{ matrix.os_ida.supports_idalib }}
         run: uv pip install idapro ida-domain
 
       - name: Run idalib
-        # ida-domain requires IDA 9.1+
-        # skip Intel macOS: GHA macos-latest is ARM, so x86_64 IDA's Python bindings won't load (works in real life)
-        # IDA Home and IDA Free don't have idalib
-        if: ${{ matrix.os_ida.ida_version != '9.0' && matrix.os_ida.ida_version != '9.0sp1' && !(matrix.os_ida.os == 'macos-latest' && matrix.os_ida.arch == 'intel') && matrix.os_ida.idat_path != '' }}
+        if: ${{ matrix.os_ida.supports_idalib }}
         run: |
           curl -L -o "${{ runner.temp }}/Practical Malware Analysis Lab 01-01.exe_" "https://raw.githubusercontent.com/mandiant/capa-testfiles/master/Practical%20Malware%20Analysis%20Lab%2001-01.exe_"
           uv run "${{ github.workspace }}/tests/scripts/basic_idalib.py" "${{ runner.temp }}/Practical Malware Analysis Lab 01-01.exe_"
