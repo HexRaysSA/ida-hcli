@@ -352,7 +352,8 @@ def update_asset(repo: GitHubRepo, asset: ReleaseAsset, binary_path: Path) -> bo
                     pass
             else:
                 # On Unix systems, atomic replacement using rename
-                tmp_path.replace(binary_path)
+                # `move` rather than `rename` to support cross-filesystem operations
+                shutil.move(tmp_path, binary_path)
 
         logging.info(f"Successfully updated binary: {binary_path}")
         return True
