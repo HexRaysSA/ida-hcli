@@ -87,7 +87,7 @@ def test_find_current_ida_version():
     """Test find_current_ida_version() returns expected version."""
     result = find_current_ida_version()
     assert isinstance(result, str)
-    assert result in ["9.0", "9.1", "9.2"]
+    assert result in ["9.0", "9.1", "9.2", "9.3"]
 
 
 def test_parse_version_from_ida_pro_py():
@@ -96,7 +96,7 @@ def test_parse_version_from_ida_pro_py():
     result = parse_version_from_ida_pro_py(ida_dir)
     if has_idat():
         # editions with IDAPython should have python/ida_pro.py
-        assert result in ["9.0", "9.1", "9.2"]
+        assert result in ["9.0", "9.1", "9.2", "9.3"]
 
 
 def test_parse_version_from_ida_pro_py_missing():
