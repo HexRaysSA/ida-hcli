@@ -100,6 +100,15 @@ jobs:
             default_path: "/Applications/IDA Essential 9.3.app"
             supports_idalib: true
 
+          - name: IDA 9.3 on Linux (ARM)
+            arch: arm
+            os: ubuntu-24.04-arm
+            ida_version: "9.3"
+            slug: "release/9.3/ida-essential/ida-essential_93_armlinux.run"
+            idat_path: "/idat"
+            default_path: "/home/runner/.local/share/applications/IDA Essential 9.3"
+            supports_idalib: true
+
           - name: IDA 9.2 on Linux
             arch: intel
             os: ubuntu-latest
