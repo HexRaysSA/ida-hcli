@@ -138,7 +138,7 @@ def validate_pattern_for_direct_mode(ctx, param, value):
 
 
 async def resolve_tag(tag_spec: str) -> str | None:
-    """Resolve a tag specification (e.g., 'ida:latest' or 'ida:9.2') to an asset key.
+    """Resolve a tag specification (e.g., 'ida-pro:latest' or 'ida-pro:9.2') to an asset key.
 
     Args:
         tag_spec: Tag specification in format 'name' or 'name:version'
@@ -175,10 +175,10 @@ def normalize_tag_with_os(tag_spec: str) -> str:
     """Normalize a tag by adding the current OS if not present.
 
     Args:
-        tag_spec: Tag specification like 'ida:latest' or 'ida:9.2' or 'ida:latest:armmac'
+        tag_spec: Tag specification like 'ida-pro:latest' or 'ida-pro:9.2' or 'ida-pro:latest:armmac'
 
     Returns:
-        Tag with OS appended if needed, e.g., 'ida:latest:armmac'
+        Tag with OS appended if needed, e.g., 'ida-pro:latest:armmac'
     """
     parts = tag_spec.split(":")
 
@@ -218,8 +218,8 @@ async def download(
 
     \b
     Can also be a tag in one of these formats:
-    - 'category:version' (e.g., 'ida:latest' or 'ida-pro:9.2') - OS is auto-detected
-    - 'category:version:os' (e.g., 'ida:latest:armmac') - explicit OS specification
+    - 'category:version' (e.g., 'ida-pro:latest' or 'ida-pro:9.2') - OS is auto-detected
+    - 'category:version:os' (e.g., 'ida-pro:latest:armmac') - explicit OS specification
 
     \b
     When using direct mode, a pattern is required.
