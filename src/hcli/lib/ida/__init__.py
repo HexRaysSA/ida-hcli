@@ -326,6 +326,7 @@ def accept_eula(install_dir: Path) -> None:
     ida_registry.reg_write_int("EULA 90", 1)
     ida_registry.reg_write_int("EULA 91", 1)
     ida_registry.reg_write_int("EULA 92", 1)
+    ida_registry.reg_write_int("EULA 93", 1)
     logger.info("EULA accepted")
 
 
