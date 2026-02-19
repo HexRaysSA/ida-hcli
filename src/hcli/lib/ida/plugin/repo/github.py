@@ -365,10 +365,12 @@ class GitHubGraphQLClient:
         try:
             with _urlopen_with_retry(req) as response:
                 result = json.loads(response.read().decode("utf-8"))
-
-                if "errors" in result:
-                    raise Exception(f"GraphQL errors: {result['errors']}")
-
+                errors = result.get("errors", [])
+                if any(e.get("type") != "NOT_FOUND" for e in errors):
+                    raise Exception(f"GraphQL errors: {[e for e in errors if e.get('type') != 'NOT_FOUND']}")
+                # GitHub returns partial data alongside NOT_FOUND errors for deleted/renamed repos, skip them.
+                for e in errors:
+                    logger.warning("GitHub GraphQL NOT_FOUND (repo deleted/renamed): %s", e.get("message"))
                 return result["data"]
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8")
@@ -490,7 +492,10 @@ class GitHubGraphQLClient:
 
     def get_releases(self, owner: str, repo: str, count: int = 10) -> GitHubReleases:
         key = (owner, repo)
-        return self.get_many_releases([key])[key]
+        data = self.get_many_releases([key], count=count)
+        if key not in data:
+            raise KeyError(f"Repository {owner}/{repo} not found")
+        return data[key]
 
 
 def parse_repository(repo_string: str) -> tuple[str, str]:
@@ -801,7 +806,11 @@ class GithubPluginRepo(BasePluginRepo):
         for owner, repo in sorted(self._repos):
             logger.debug("finding plugins in repo: %s/%s", owner, repo)
 
-            md = get_releases_metadata(self.client, owner, repo)
+            try:
+                md = get_releases_metadata(self.client, owner, repo)
+            except KeyError as e:
+                logger.warning("Skipping repository %s/%s: %s", owner, repo, e)
+                continue
             seen_zipball_urls = set()
             for release in md.releases:
                 context = {
