@@ -6,7 +6,6 @@ import rich_click as click
 @click.group()
 def source() -> None:
     """Manage named sources for IDB file lookup."""
-    pass
 
 
 from .add import add

@@ -8,15 +8,16 @@ def ida() -> None:
     """Manage IDA installations."""
 
 
-from .accept_eula import accept_eula_command  # noqa: E402
-from .add import add  # noqa: E402
-from .install import install  # noqa: E402
-from .list import list_instances  # noqa: E402
-from .open import open_link  # noqa: E402
-from .protocol import protocol  # noqa: E402
-from .remove import remove  # noqa: E402
-from .source import source  # noqa: E402
-from .switch import switch  # noqa: E402
+from .accept_eula import accept_eula_command
+from .add import add
+from .install import install
+from .list import list_instances
+from .open import open_link
+from .protocol import protocol
+from .remove import remove
+from .set_default import set_default_ida
+from .source import source
+from .switch import switch
 
 ida.add_command(accept_eula_command)
 ida.add_command(add)
@@ -25,5 +26,6 @@ ida.add_command(list_instances, name="list")
 ida.add_command(open_link)
 ida.add_command(protocol)
 ida.add_command(remove)
+ida.add_command(set_default_ida)
 ida.add_command(source)
 ida.add_command(switch)

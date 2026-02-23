@@ -12,17 +12,17 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from hcli.lib.config import config_store
 from hcli.lib.ida import (
+    MissingCurrentInstallationDirectory,
     find_current_ida_install_directory,
     get_ida_binary_path,
-    MissingCurrentInstallationDirectory,
 )
-from hcli.lib.ida.ipc import IDAIPCClient, IDAInstance
+from hcli.lib.ida.ipc import IDAInstance, IDAIPCClient
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +55,6 @@ class IDBNotFoundError(Exception):
 
 class NoIDAInstallationError(Exception):
     """No IDA installation configured or found."""
-
-    pass
 
 
 @dataclass
@@ -303,8 +301,9 @@ class IDALauncher:
             if handle != -1:
                 kernel32.CloseHandle(handle)
                 return True
+        except OSError:
             return False
-        except Exception:
+        else:
             return False
 
     def _wait_for_socket_responsive(self, process: subprocess.Popen, socket_path: str, timeout: float) -> None:
@@ -389,7 +388,7 @@ class IDALauncher:
     def _strip_idb_extension(name: str) -> str:
         """Strip .i64 or .idb extension from filename."""
         lower = name.lower()
-        if lower.endswith(".i64") or lower.endswith(".idb"):
+        if lower.endswith((".i64", ".idb")):
             return name[:-4]
         return name
 
@@ -416,9 +415,8 @@ class IDALauncher:
             instances = IDAIPCClient.discover_instances()
             for instance in instances:
                 info = IDAIPCClient.query_instance(instance.socket_path)
-                if info and info.has_idb and info.idb_name:
-                    if self._idb_names_match(info.idb_name, idb_name):
-                        return info
+                if info and info.has_idb and info.idb_name and self._idb_names_match(info.idb_name, idb_name):
+                    return info
 
             time.sleep(interval)
             interval = min(interval * self.config.backoff_multiplier, self.config.max_poll_interval)

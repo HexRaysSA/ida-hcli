@@ -8,59 +8,45 @@ from hcli.lib.commands import async_command
 from hcli.lib.config import config_store
 from hcli.lib.console import console
 from hcli.lib.ida import add_instance_to_config, find_standard_installations, generate_instance_name, is_ida_dir
-from hcli.lib.ida.protocol import register_protocol_handler, unregister_protocol_handler
+from hcli.lib.ida.protocol import register_protocol_handler
 from hcli.lib.util.io import get_hcli_executable_path
 
 
 @click.command(name="register")
 @click.option("--force", is_flag=True, help="Force reinstall even if already configured")
-@click.option("--unregister", is_flag=True, help="Remove URL handlers instead of installing them")
 @async_command
-async def register(force: bool = False, unregister: bool = False) -> None:
-    """Set up or remove hcli protocol handlers for ida:// URLs.
+async def register(force: bool = False) -> None:
+    """Set up hcli protocol handlers for ida:// URLs.
 
     This command registers hcli as the handler for ida:// URLs on your system,
     allowing web browsers and other applications to automatically open IDB links
-    with hcli. Use --unregister to remove the protocol handlers.
+    with hcli.
 
     \b
-    The setup/removal process varies by platform:
-    - macOS: Creates/removes an AppleScript application and registers/unregisters with Launch Services
-    - Windows: Adds/removes registry entries for the ida:// protocol
-    - Linux: Creates/removes a desktop entry and registers/unregisters with xdg-mime
+    The setup process varies by platform:
+    - macOS: Creates an AppleScript application and registers with Launch Services
+    - Windows: Adds registry entries for the ida:// protocol
+    - Linux: Creates a desktop entry and registers with xdg-mime
     """
     current_platform = platform.system().lower()
 
-    if unregister:
-        console.print(f"[blue]Removing hcli protocol handlers for {current_platform}...[/blue]")
+    console.print(f"[blue]Setting up hcli protocol handlers for {current_platform}...[/blue]")
 
-        try:
-            unregister_protocol_handler()
+    try:
+        hcli_path = get_hcli_executable_path()
+        console.print(f"[dim]Using hcli executable: {hcli_path}[/dim]")
 
-            console.print("[green]✓ Protocol handler removal complete![/green]")
-            console.print("[yellow]ida:// links will no longer open with hcli.[/yellow]")
+        register_protocol_handler()
 
-        except Exception as e:
-            console.print(f"[red]Unregistration failed: {e}[/red]")
-            raise
-    else:
-        console.print(f"[blue]Setting up hcli protocol handlers for {current_platform}...[/blue]")
+        console.print("[green]✓ Protocol handler setup complete![/green]")
+        console.print("[yellow]You can now click ida:// links and they will open with hcli.[/yellow]")
 
-        try:
-            hcli_path = get_hcli_executable_path()
-            console.print(f"[dim]Using hcli executable: {hcli_path}[/dim]")
+        # Check if IDA instances are registered
+        await _check_and_setup_ida_instances()
 
-            register_protocol_handler()
-
-            console.print("[green]✓ Protocol handler setup complete![/green]")
-            console.print("[yellow]You can now click ida:// links and they will open with hcli.[/yellow]")
-
-            # Check if IDA instances are registered (only during setup, not unregistration)
-            await _check_and_setup_ida_instances()
-
-        except Exception as e:
-            console.print(f"[red]Setup failed: {e}[/red]")
-            raise
+    except Exception as e:
+        console.print(f"[red]Setup failed: {e}[/red]")
+        raise
 
 
 async def _check_and_setup_ida_instances() -> None:
@@ -109,7 +95,7 @@ async def _check_and_setup_ida_instances() -> None:
         else:
             console.print("[yellow]! All discovered IDA instances were already registered[/yellow]")
 
-    except Exception as e:
+    except OSError as e:
         console.print(f"[yellow]! Could not auto-discover IDA installations: {e}[/yellow]")
         _print_ida_setup_instructions()
 

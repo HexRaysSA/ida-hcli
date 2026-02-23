@@ -6,9 +6,10 @@ import rich_click as click
 @click.group()
 def protocol() -> None:
     """Manage ida:// protocol handlers."""
-    pass
 
 
-from .register import register  # noqa: E402
+from .register import register
+from .unregister import unregister
 
 protocol.add_command(register)
+protocol.add_command(unregister)

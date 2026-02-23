@@ -46,7 +46,7 @@ def _add_auto_discovered_instances() -> None:
 
     try:
         installations = find_standard_installations()
-    except Exception as e:
+    except OSError as e:
         console.print(f"[red]Error discovering installations: {e}[/red]")
         raise click.Abort()
 

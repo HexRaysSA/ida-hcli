@@ -47,25 +47,17 @@ class AnalysisResult:
 class IDAIPCError(Exception):
     """Base exception for IDA IPC errors."""
 
-    pass
-
 
 class IPCConnectionError(IDAIPCError):
     """Failed to connect to IDA instance."""
-
-    pass
 
 
 class IPCTimeoutError(IDAIPCError):
     """Connection or operation timed out."""
 
-    pass
-
 
 class IPCProtocolError(IDAIPCError):
     """Invalid response from IDA instance."""
-
-    pass
 
 
 class IDAIPCClient:
@@ -159,10 +151,10 @@ class IDAIPCClient:
                         if handle != -1:
                             kernel32.CloseHandle(handle)
                             instances.append(IDAInstance(pid=pid, socket_path=pipe_name))
-                    except Exception:
+                    except OSError:
                         pass
 
-        except Exception as e:
+        except OSError as e:
             logger.debug(f"Windows pipe enumeration failed: {e}")
 
         return instances
@@ -210,7 +202,7 @@ class IDAIPCClient:
                     idb_name=response.get("idb_name"),
                     has_idb=response.get("has_idb", False),
                 )
-        except Exception as e:
+        except (OSError, IDAIPCError, ValueError) as e:
             logger.debug(f"Failed to query instance at {socket_path}: {e}")
 
         return None
@@ -221,7 +213,7 @@ class IDAIPCClient:
         try:
             response = IDAIPCClient._send_command(socket_path, {"cmd": "ping"})
             return response.get("status") == "ok"
-        except Exception:
+        except (OSError, IDAIPCError):
             return False
 
     @staticmethod
@@ -243,7 +235,7 @@ class IDAIPCClient:
                 return False, response.get("message", "Unknown error")
         except IDAIPCError as e:
             return False, str(e)
-        except Exception as e:
+        except OSError as e:
             return False, f"Unexpected error: {e}"
 
     @staticmethod
@@ -293,9 +285,9 @@ class IDAIPCClient:
 
         try:
             sock.connect(socket_path)
-        except socket.timeout:
+        except TimeoutError:
             raise IPCTimeoutError(f"Connection to {socket_path} timed out")
-        except socket.error as e:
+        except OSError as e:
             raise IPCConnectionError(f"Failed to connect to {socket_path}: {e}")
 
         try:
@@ -314,7 +306,7 @@ class IDAIPCClient:
                         return json.loads(response_data.decode("utf-8"))
                     except json.JSONDecodeError:
                         continue
-                except socket.timeout:
+                except TimeoutError:
                     break
 
             if not response_data:
@@ -392,9 +384,8 @@ def find_instance_for_idb(idb_name: str) -> IDAInstance | None:
 
     for instance in instances:
         info = IDAIPCClient.query_instance(instance.socket_path)
-        if info and info.has_idb:
-            if info.idb_name and info.idb_name.lower() == idb_name.lower():
-                return info
+        if info and info.has_idb and info.idb_name and info.idb_name.lower() == idb_name.lower():
+            return info
 
     return None
 

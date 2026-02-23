@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from urllib.parse import urlparse
-
 import sys
+from urllib.parse import urlparse
 
 import rich_click as click
 from rich.console import Console
@@ -19,7 +18,7 @@ from hcli.lib.ida.launcher import IDALauncher, LaunchConfig
 def _strip_idb_extension(name: str) -> str:
     """Strip .i64 or .idb extension from filename."""
     lower = name.lower()
-    if lower.endswith(".i64") or lower.endswith(".idb"):
+    if lower.endswith((".i64", ".idb")):
         return name[:-4]
     return name
 
@@ -61,7 +60,7 @@ def _list_running_instances() -> None:
             console.print(f"  PID {instance.pid}: [dim]no IDB loaded[/dim]")
 
 
-@click.command(name="open")
+@click.command(name="open", hidden=True)
 @click.argument("uri", required=False)
 @click.option(
     "--list",
