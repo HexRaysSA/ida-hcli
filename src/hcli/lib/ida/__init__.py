@@ -391,52 +391,56 @@ def _install_ida_mac(installer: Path, prefix: Path) -> None:
     if not shutil.which("unzip"):
         raise RuntimeError("unzip is required to install IDA on macOS")
 
-    with tempfile.TemporaryDirectory(prefix="hcli_") as temp_unpack_dir:
-        with tempfile.TemporaryDirectory(prefix="hcli_") as temp_install_dir:
-            logger.info(f"Unpacking installer to {temp_unpack_dir}...")
+    with (
+        tempfile.TemporaryDirectory(prefix="hcli_") as temp_unpack_dir,
+        tempfile.TemporaryDirectory(prefix="hcli_") as temp_install_dir,
+    ):
+        logger.info(f"Unpacking installer to {temp_unpack_dir}...")
 
-            # Unpack the installer
-            process = subprocess.run(["unzip", "-qq", str(installer), "-d", temp_unpack_dir], capture_output=True)
+        # Unpack the installer
+        process = subprocess.run(
+            ["unzip", "-qq", str(installer), "-d", temp_unpack_dir], capture_output=True, check=False
+        )
 
-            if process.returncode != 0:
-                raise RuntimeError("Failed to unpack installer")
+        if process.returncode != 0:
+            raise RuntimeError("Failed to unpack installer")
 
-            entries = list(Path(temp_unpack_dir).iterdir())
-            if len(entries) != 1:
-                raise ValueError(f"unexpected contents of zip archive: {len(entries)} root directories")
+        entries = list(Path(temp_unpack_dir).iterdir())
+        if len(entries) != 1:
+            raise ValueError(f"unexpected contents of zip archive: {len(entries)} root directories")
 
-            # typically this is the app name, like `ida-pro_90_armmac.app`
-            # however the directory name might not be precisely the same as the zip archive filename
-            # such as in SP releases.
-            app_name = entries[0]
+        # typically this is the app name, like `ida-pro_90_armmac.app`
+        # however the directory name might not be precisely the same as the zip archive filename
+        # such as in SP releases.
+        app_name = entries[0]
 
-            installer_path = None
-            for platform in ("osx-arm64", "osx-x86_64"):
-                candidate_path = Path(temp_unpack_dir) / app_name / "Contents" / "MacOS" / platform
-                if candidate_path.exists():
-                    installer_path = candidate_path
-                    break
+        installer_path = None
+        for platform in ("osx-arm64", "osx-x86_64"):
+            candidate_path = Path(temp_unpack_dir) / app_name / "Contents" / "MacOS" / platform
+            if candidate_path.exists():
+                installer_path = candidate_path
+                break
 
-            if not installer_path:
-                raise RuntimeError("Installer executable not found")
+        if not installer_path:
+            raise RuntimeError("Installer executable not found")
 
-            logger.info(f"Running installer {app_name}...")
-            temp_install_path = Path(temp_install_dir)
-            args = _get_installer_args(temp_install_path)
+        logger.info(f"Running installer {app_name}...")
+        temp_install_path = Path(temp_install_dir)
+        args = _get_installer_args(temp_install_path)
 
-            process = subprocess.run([str(installer_path)] + args, capture_output=True)
+        process = subprocess.run([str(installer_path)] + args, capture_output=True, check=False)
 
-            if process.returncode != 0:
-                raise RuntimeError("Installer execution failed")
+        if process.returncode != 0:
+            raise RuntimeError("Installer execution failed")
 
-            # Find installed folder and copy to prefix
-            installed_folders = list(temp_install_path.iterdir())
+        # Find installed folder and copy to prefix
+        installed_folders = list(temp_install_path.iterdir())
 
-            if not installed_folders:
-                raise RuntimeError("No installation found after running installer")
+        if not installed_folders:
+            raise RuntimeError("No installation found after running installer")
 
-            install_folder = installed_folders[0]
-            _copy_dir(install_folder, prefix)
+        install_folder = installed_folders[0]
+        _copy_dir(install_folder, prefix)
 
 
 def _install_ida_unix(installer: Path, prefix: Path) -> None:
@@ -458,7 +462,7 @@ def _install_ida_unix(installer: Path, prefix: Path) -> None:
     share_dir = Path(home_dir) / ".local" / "share" / "applications"
     share_dir.mkdir(parents=True, exist_ok=True)
 
-    process = subprocess.run([str(installer_path)] + args, capture_output=True)
+    process = subprocess.run([str(installer_path)] + args, capture_output=True, check=False)
 
     if process.returncode != 0:
         raise RuntimeError("Installer execution failed")
@@ -468,7 +472,7 @@ def _install_ida_windows(installer: Path, prefix: Path) -> None:
     """Install IDA on Windows."""
     args = _get_installer_args(prefix)
 
-    process = subprocess.run(["cmd", "/c", str(installer)] + args, capture_output=True)
+    process = subprocess.run(["cmd", "/c", str(installer)] + args, capture_output=True, check=False)
 
     if process.returncode != 0:
         raise RuntimeError("Installer execution failed")
@@ -703,13 +707,11 @@ def run_py_in_current_idapython(src: str) -> dict:
             "-A",  # autonomous, no dialogs
             "-c",  # delete old database
             "-t",  # create an empty database
-            f"-L{str(log_path.absolute())}",
-            f"-S{str(script_path.absolute())}",
+            f"-L{log_path.absolute()!s}",
+            f"-S{script_path.absolute()!s}",
         ]
 
-        result = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace"
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
         logger.debug(f"idat command: {' '.join(cmd)}")
         logger.debug(f"idat exit code: {result.returncode}")
         if result.stdout:
@@ -821,8 +823,7 @@ def parse_version_from_dir_name(ida_dir: Path) -> str | None:
         "IDA Professional 9.2.app"
     """
     name = ida_dir.name
-    if name.endswith(".app"):
-        name = name[:-4]
+    name = name.removesuffix(".app")
     m = re.search(r"(\d+\.\d+)", name)
     if m:
         return m.group(1)
@@ -861,8 +862,7 @@ def generate_instance_name(path: Path) -> str:
     name = path.name
 
     # Remove .app extension for macOS
-    if name.endswith(".app"):
-        name = name[:-4]
+    name = name.removesuffix(".app")
 
     # Convert to lowercase and replace spaces with dashes
     name = name.lower().replace(" ", "-")
@@ -870,9 +870,7 @@ def generate_instance_name(path: Path) -> str:
     # Shorten common patterns
     name = name.replace("ida-professional", "ida-pro")
     name = name.replace("ida-home", "ida-home")
-    name = name.replace("ida-free", "ida-free")
-
-    return name
+    return name.replace("ida-free", "ida-free")
 
 
 def add_instance_to_config(name: str, path: Path) -> bool:

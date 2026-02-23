@@ -102,10 +102,7 @@ def is_plugin_spec_query(plugins: list[Plugin], query: str):
     except ValueError:
         return False
 
-    if plugin_name != query and is_plugin_name_query(plugins, plugin_name):
-        return True
-
-    return False
+    return bool(plugin_name != query and is_plugin_name_query(plugins, plugin_name))
 
 
 def handle_plugin_name_query(plugins: list[Plugin], query: str, current_version: str, current_platform: str):
@@ -142,9 +139,8 @@ def handle_plugin_name_query(plugins: list[Plugin], query: str, current_version:
             if is_installed and parse_plugin_version(metadata.plugin.version) == existing_version:
                 status = "[green]currently installed[/green]"
 
-            if is_installed and parse_plugin_version(metadata.plugin.version) > existing_version:
-                if is_compatible:
-                    status = f"[yellow]upgradable[/yellow] from {existing_version}"
+            if is_installed and parse_plugin_version(metadata.plugin.version) > existing_version and is_compatible:
+                status = f"[yellow]upgradable[/yellow] from {existing_version}"
 
         else:
             if not is_compatible:

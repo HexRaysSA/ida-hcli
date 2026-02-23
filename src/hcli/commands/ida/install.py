@@ -114,20 +114,24 @@ async def install(
         # the installed files; however, figuring out the Python configuration is messy, and much easier to leave to idat.
         #
         # see also the special handling in hcli.lib.ida
-        if get_os() == "linux" and version.major == 9 and version.minor == 2 and install_dir:
-            if " " in str(install_dir_path.absolute()):
-                console.print(
-                    "[yellow]Warning[/yellow]: Avoid installation paths with a space for this release (IDA 9.2 on Linux).\n",
-                    "This specific release of IDA has a bug in idat, preventing it from working\n",
-                    "when the path contains a space.\n\n",
-                    "You can find alternative workarounds in #99.\n\n",
-                    f"[grey69]Current directory name:[/grey69] '{install_dir_path}'",
-                )
+        if (
+            get_os() == "linux"
+            and version.major == 9
+            and version.minor == 2
+            and install_dir
+            and " " in str(install_dir_path.absolute())
+        ):
+            console.print(
+                "[yellow]Warning[/yellow]: Avoid installation paths with a space for this release (IDA 9.2 on Linux).\n",
+                "This specific release of IDA has a bug in idat, preventing it from working\n",
+                "when the path contains a space.\n\n",
+                "You can find alternative workarounds in #99.\n\n",
+                f"[grey69]Current directory name:[/grey69] '{install_dir_path}'",
+            )
 
-                if not auto_confirm:
-                    if not Confirm.ask("[bold yellow]Continue anyway?[/bold yellow]", default=False):
-                        console.print("[yellow]Installation cancelled.[/yellow]")
-                        return
+            if not auto_confirm and not Confirm.ask("[bold yellow]Continue anyway?[/bold yellow]", default=False):
+                console.print("[yellow]Installation cancelled.[/yellow]")
+                return
 
         console.print("\n[bold]Installation details:[/bold]")
         console.print(f"  Installer: {installer_path}")

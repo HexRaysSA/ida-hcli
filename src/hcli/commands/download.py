@@ -19,8 +19,6 @@ from hcli.lib.util.io import get_tag_os
 class BackNavigationResult:
     """Special result class to indicate backspace navigation."""
 
-    pass
-
 
 BACK_NAVIGATION = BackNavigationResult()
 
@@ -43,8 +41,7 @@ async def select_asset(nodes: list[TreeNode], current_path: str = "") -> Asset |
             choices.append(Choice("← Go back", value=back_node))
 
         # Add folders
-        for folder in folders:
-            choices.append(Choice(f"📁 {folder.name}", value=folder))
+        choices.extend(Choice(f"📁 {folder.name}", value=folder) for folder in folders)
 
         # Add files
         for file in files:

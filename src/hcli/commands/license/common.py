@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
 
 import questionary
 
@@ -50,14 +50,12 @@ async def select_licenses(customer_id: str, predicate: Callable[[License], bool]
         # Add legacy licenses
         if legacy:
             choices.append(questionary.Separator("Perpetual licenses:"))
-            for lic in legacy:
-                choices.append(questionary.Choice(license_to_string(lic), lic))
+            choices.extend(questionary.Choice(license_to_string(lic), lic) for lic in legacy)
 
         # Add subscription licenses
         if subscription:
             choices.append(questionary.Separator("Subscription licenses:"))
-            for lic in subscription:
-                choices.append(questionary.Choice(license_to_string(lic), lic))
+            choices.extend(questionary.Choice(license_to_string(lic), lic) for lic in subscription)
 
         # Use questionary for selection
         selected = await safe_ask_async(

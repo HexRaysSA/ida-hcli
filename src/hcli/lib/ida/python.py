@@ -37,8 +37,6 @@ sys.exit()
 class PythonNotFoundError(RuntimeError):
     """Could not detect IDA's Python executable."""
 
-    pass
-
 
 def _derive_python_exe(info: dict) -> Path:
     """Derive the Python executable path from IDA's embedded Python sys info.
@@ -107,7 +105,7 @@ def does_current_ida_have_pip(python_exe: Path, timeout=10.0) -> bool:
     """Check if pip is available in the given Python executable."""
     try:
         process = subprocess.run(
-            [str(python_exe), "-c", "import pip"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
+            [str(python_exe), "-c", "import pip"], capture_output=True, timeout=timeout, check=False
         )
         return process.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
@@ -139,8 +137,8 @@ def verify_pip_can_install_packages(python_exe: Path, packages: list[str], no_bu
     extra_args = ["--no-build-isolation"] if no_build_isolation else []
     process = subprocess.run(
         [str(python_exe), "-m", "pip", "install", "--dry-run"] + extra_args + packages,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
+        check=False,
     )
     stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
@@ -155,8 +153,8 @@ def pip_install_packages(python_exe: Path, packages: list[str], no_build_isolati
     extra_args = ["--no-build-isolation"] if no_build_isolation else []
     process = subprocess.run(
         [str(python_exe), "-m", "pip", "install"] + extra_args + packages,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
+        check=False,
     )
     stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
@@ -167,7 +165,7 @@ def pip_install_packages(python_exe: Path, packages: list[str], no_build_isolati
 
 
 def pip_freeze(python_exe: Path):
-    process = subprocess.run([str(python_exe), "-m", "pip", "freeze"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = subprocess.run([str(python_exe), "-m", "pip", "freeze"], capture_output=True, check=False)
     stdout, _ = process.stdout, process.stderr
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, [str(python_exe), "-m", "pip", "freeze"])

@@ -24,7 +24,7 @@ TreeNodeType = ForwardRef("TreeNode")
 class TreeNode(BaseModel):
     name: str
     type: str = "file"
-    children: "list[TreeNode] | None" = None
+    children: list[TreeNode] | None = None
     asset: Asset
 
 
@@ -116,7 +116,7 @@ class AssetAPI:
 
         # Calculate SHA-256 checksum by streaming the file
         checksum_obj = hashlib.sha256()
-        with open(file_path_obj, "rb") as f:
+        with open(file_path_obj, "rb") as f:  # noqa: ASYNC230
             while chunk := f.read(8192):
                 checksum_obj.update(chunk)
         checksum = checksum_obj.hexdigest()

@@ -11,7 +11,6 @@ from hcli.commands.auth.key.revoke import revoke
 @click.group()
 def key() -> None:
     """API key management."""
-    pass
 
 
 key.add_command(create)

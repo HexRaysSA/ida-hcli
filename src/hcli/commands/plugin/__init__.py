@@ -80,7 +80,7 @@ def plugin(ctx, repo: str | None, with_repos_list: str | None, with_ignored_repo
                 try:
                     extra_repos = read_repos_file(repos_list_path)
                 except ValueError as e:
-                    console.print(f"[red]failed to read repos list file[/red]: {str(e)}.")
+                    console.print(f"[red]failed to read repos list file[/red]: {e!s}.")
                     raise click.Abort()
 
             ignored_repos = []
@@ -89,7 +89,7 @@ def plugin(ctx, repo: str | None, with_repos_list: str | None, with_ignored_repo
                 try:
                     ignored_repos = read_repos_file(ignored_repos_list_path)
                 except ValueError as e:
-                    console.print(f"[red]failed to read ignored repos list file[/red]: {str(e)}.")
+                    console.print(f"[red]failed to read ignored repos list file[/red]: {e!s}.")
                     raise click.Abort()
 
             plugin_repo = hcli.lib.ida.plugin.repo.github.GithubPluginRepo(

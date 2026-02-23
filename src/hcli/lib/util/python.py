@@ -28,7 +28,7 @@ async def get_python_lib() -> str | None:
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            stdout, stderr = await process.communicate()
+            stdout, _stderr = await process.communicate()
 
             if process.returncode == 0:
                 return stdout.decode("utf-8").strip()
@@ -204,7 +204,7 @@ async def get_python_lib_for_binary(binary: str) -> str | None:
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            stdout, stderr = await process.communicate()
+            stdout, _stderr = await process.communicate()
 
             if process.returncode == 0:
                 return stdout.decode("utf-8").strip()

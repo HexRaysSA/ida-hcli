@@ -183,7 +183,7 @@ def format_size(bytes_count: int) -> str:
 
     import math
 
-    i = int(math.floor(math.log(bytes_count) / math.log(1024)))
+    i = math.floor(math.log(bytes_count) / math.log(1024))
     return f"{bytes_count / math.pow(1024, i):.1f} {sizes[i]}"
 
 

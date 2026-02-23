@@ -37,9 +37,7 @@ def set_plugin_setting(plugin_name: str, key: str, value: str | bool):
     metadata = get_metadata_from_plugin_directory(plugin_path)
     descr = metadata.plugin.get_setting(key)
 
-    if descr.type == "string" and not isinstance(value, str):
-        raise ValueError(f"mismatching settings types: {plugin_name}: {key}: {descr.type} vs {type(value).__name__}")
-    elif descr.type == "boolean" and not isinstance(value, bool):
+    if descr.type == "string" and not isinstance(value, str) or descr.type == "boolean" and not isinstance(value, bool):
         raise ValueError(f"mismatching settings types: {plugin_name}: {key}: {descr.type} vs {type(value).__name__}")
 
     try:

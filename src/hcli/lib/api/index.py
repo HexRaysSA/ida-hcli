@@ -29,8 +29,8 @@ api = API()
 __all__ = [
     "api",
     "auth",
-    "license",
     "customer",
-    "keys",
     "get_api_client",
+    "keys",
+    "license",
 ]

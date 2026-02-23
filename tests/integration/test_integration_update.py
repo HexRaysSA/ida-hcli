@@ -18,12 +18,12 @@ class TestUpdateCommands:
 
     def test_update_check(self, cli_tester):
         """Test update check command."""
-        success, output = cli_tester.run_command("uv run hcli update check")
+        success, _output = cli_tester.run_command("uv run hcli update check")
         # Command should run without crashing
         assert success is not None, "Update check command should run"
 
     def test_update_status(self, cli_tester):
         """Test update status command."""
-        success, output = cli_tester.run_command("uv run hcli update status")
+        success, _output = cli_tester.run_command("uv run hcli update status")
         # Command should run without crashing
         assert success is not None, "Update status command should run"

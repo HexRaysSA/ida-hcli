@@ -35,10 +35,9 @@ async def delete(code: str, force: bool) -> None:
         console.print(f"  Size: {format_size(file.size)}")
 
         # Confirmation
-        if not force:
-            if not Confirm.ask(f"\n[bold red]Delete file {file.filename} [{file.code}]?[/bold red]"):
-                console.print("[yellow]Deletion cancelled.[/yellow]")
-                return
+        if not force and not Confirm.ask(f"\n[bold red]Delete file {file.filename} [{file.code}]?[/bold red]"):
+            console.print("[yellow]Deletion cancelled.[/yellow]")
+            return
 
         console.status(f"[bold red]Deleting {file.filename} [{file.code}]...[/bold red]")
         await asset.delete_file_by_key(SHARED, file.key)
@@ -57,7 +56,7 @@ def format_size(bytes_count: int) -> str:
 
     import math
 
-    i = int(math.floor(math.log(bytes_count) / math.log(1024)))
+    i = math.floor(math.log(bytes_count) / math.log(1024))
     return f"{bytes_count / math.pow(1024, i):.1f} {sizes[i]}"
 
 

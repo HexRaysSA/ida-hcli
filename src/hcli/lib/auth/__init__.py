@@ -29,7 +29,7 @@ class AuthService:
 
     def __init__(self):
         if AuthService._instance is not None:
-            raise Exception("AuthService is a singleton. Use AuthService.instance")
+            raise RuntimeError("AuthService is a singleton. Use AuthService.instance")
 
         # Create custom storage class for Supabase
         class ConfigSyncSupportedStorage(SyncSupportedStorage):

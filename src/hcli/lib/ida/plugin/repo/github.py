@@ -70,8 +70,7 @@ def parse_github_url(url: str) -> tuple[str, str, str | None]:
         # https://github.com/owner/repo(.git)
         parsed = urllib.parse.urlparse(url)
         path = parsed.path.lstrip("/")
-        if path.endswith(".git"):
-            path = path[:-4]
+        path = path.removesuffix(".git")
         parts = path.split("/")
         if len(parts) < 2:
             raise ValueError(f"Invalid GitHub URL: {url}")
@@ -367,14 +366,14 @@ class GitHubGraphQLClient:
                 result = json.loads(response.read().decode("utf-8"))
                 errors = result.get("errors", [])
                 if any(e.get("type") != "NOT_FOUND" for e in errors):
-                    raise Exception(f"GraphQL errors: {[e for e in errors if e.get('type') != 'NOT_FOUND']}")
+                    raise RuntimeError(f"GraphQL errors: {[e for e in errors if e.get('type') != 'NOT_FOUND']}")
                 # GitHub returns partial data alongside NOT_FOUND errors for deleted/renamed repos, skip them.
                 for e in errors:
                     logger.warning("GitHub GraphQL NOT_FOUND (repo deleted/renamed): %s", e.get("message"))
                 return result["data"]
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8")
-            raise Exception(f"HTTP {e.code}: {error_body}")
+            raise RuntimeError(f"HTTP {e.code}: {error_body}")
 
     def get_many_releases(self, repos: list[tuple[str, str]], count: int = 10) -> dict[tuple[str, str], GitHubReleases]:
         """Fetch releases for multiple repositories in a single query
@@ -751,7 +750,7 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
 
                 page += 1
 
-    return sorted(list(repos))
+    return sorted(repos)
 
 
 class GithubPluginRepo(BasePluginRepo):
@@ -794,7 +793,7 @@ class GithubPluginRepo(BasePluginRepo):
 
         return [parse_repository(repo) for repo in sorted(repos)]
 
-    @functools.cache
+    @functools.cache  # noqa: B019 - instance method caching is intentional; repo is long-lived
     def get_plugins(self) -> list[Plugin]:
         assets = []
         source_archives = []
@@ -922,9 +921,14 @@ class GithubPluginRepo(BasePluginRepo):
                 buf,
                 asset.download_url,
                 expected_host=host_url,
-                context=dict(
-                    owner=owner, repo=repo, type="release asset", tag=tag_name, url=asset.download_url, date=date
-                ),
+                context={
+                    "owner": owner,
+                    "repo": repo,
+                    "type": "release asset",
+                    "tag": tag_name,
+                    "url": asset.download_url,
+                    "date": date,
+                },
             )
 
         for owner, repo, commit_hash, url, date in rich.progress.track(
@@ -941,7 +945,14 @@ class GithubPluginRepo(BasePluginRepo):
                 buf,
                 url,
                 expected_host=host_url,
-                context=dict(owner=owner, repo=repo, type="source archive", commit=commit_hash, url=url, date=date),
+                context={
+                    "owner": owner,
+                    "repo": repo,
+                    "type": "source archive",
+                    "commit": commit_hash,
+                    "url": url,
+                    "date": date,
+                },
             )
 
         return index.get_plugins()

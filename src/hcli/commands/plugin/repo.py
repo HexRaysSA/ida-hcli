@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 @click.pass_context
 def repo(ctx) -> None:
     """Manage plugin repositories."""
-    pass
 
 
 @repo.command()
