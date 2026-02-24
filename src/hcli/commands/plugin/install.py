@@ -208,11 +208,11 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
 
                         set_plugin_setting(metadata.plugin.name, descr.key, answer)
 
-        except Exception as e:
+        except Exception:
             logger.warning("failed to configure settings, removing installation...")
             with rich.status.Status("rolling back installation", console=stderr_console):
                 uninstall_plugin(plugin_name)
-            raise e
+            raise
 
         console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}")
     except MissingCurrentInstallationDirectory:

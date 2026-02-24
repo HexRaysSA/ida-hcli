@@ -6,12 +6,11 @@ import rich_click as click
 @click.group()
 def ida() -> None:
     """Manage IDA installations."""
-    pass
 
 
-from .accept_eula import accept_eula_command  # noqa: E402
-from .install import install  # noqa: E402
-from .set_default import set_default_ida  # noqa: E402
+from .accept_eula import accept_eula_command
+from .install import install
+from .set_default import set_default_ida
 
 ida.add_command(accept_eula_command)
 ida.add_command(install)

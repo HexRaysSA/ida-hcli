@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -108,7 +108,7 @@ class BackgroundUpdateChecker:
                 cache_data = json.load(f)
 
             last_check = datetime.fromisoformat(cache_data.get("last_check", ""))
-            return datetime.now() - last_check > self.check_interval
+            return datetime.now(tz=timezone.utc) - last_check > self.check_interval
         except Exception:
             return True
 
@@ -120,7 +120,7 @@ class BackgroundUpdateChecker:
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             cache_data = {
-                "last_check": datetime.now().isoformat(),
+                "last_check": datetime.now(tz=timezone.utc).isoformat(),
                 "latest_version": str(latest_version) if latest_version else None,
             }
             with open(self.cache_file, "w", encoding="utf-8") as f:
@@ -139,7 +139,7 @@ class BackgroundUpdateChecker:
 
             # Check if cache is recent enough
             last_check = datetime.fromisoformat(cache_data.get("last_check", ""))
-            if datetime.now() - last_check > self.check_interval:
+            if datetime.now(tz=timezone.utc) - last_check > self.check_interval:
                 return None
 
             update_available = compare_versions(__version__, latest=cache_data.get("latest_version", __version__))

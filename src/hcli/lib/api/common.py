@@ -25,8 +25,6 @@ from hcli.lib.util.io import NoSpaceError, check_free_space
 class NotLoggedInError(Exception):
     """Raised when authentication is required but user is not logged in."""
 
-    pass
-
 
 class APIError(Exception):
     """Base API exception with HTTP context."""
@@ -40,19 +38,13 @@ class APIError(Exception):
 class AuthenticationError(APIError):
     """401/403 authentication failures."""
 
-    pass
-
 
 class NotFoundError(APIError):
     """404 resource not found."""
 
-    pass
-
 
 class RateLimitError(APIError):
     """429 rate limit exceeded."""
-
-    pass
 
 
 class APIClient:
@@ -149,36 +141,38 @@ class APIClient:
 
         file_size = os.path.getsize(file_path)
 
-        with open(file_path, "rb") as f:
-            with Progress(
+        with (
+            open(file_path, "rb") as f,  # noqa: ASYNC230
+            Progress(
                 "[progress.description]{task.description}",
                 "[progress.percentage]{task.percentage:>3.0f}%",
                 DownloadColumn(),
                 TransferSpeedColumn(),
                 TimeRemainingColumn(),
                 console=console,
-            ) as progress:
-                task = progress.add_task(f"Uploading {file_path}", total=file_size)
+            ) as progress,
+        ):
+            task = progress.add_task(f"Uploading {file_path}", total=file_size)
 
-                async def file_stream():
-                    while chunk := f.read(8192):
-                        yield chunk
-                        progress.update(task, advance=len(chunk))
+            async def file_stream():
+                while chunk := f.read(8192):
+                    yield chunk
+                    progress.update(task, advance=len(chunk))
 
-                headers = {
-                    "Content-Type": content_type,
-                    "Content-Length": str(file_size),
-                }
+            headers = {
+                "Content-Type": content_type,
+                "Content-Length": str(file_size),
+            }
 
-                response = await self.client.put(
-                    url,
-                    content=file_stream(),
-                    headers=headers,
-                    follow_redirects=True,
-                )
+            response = await self.client.put(
+                url,
+                content=file_stream(),
+                headers=headers,
+                follow_redirects=True,
+            )
 
-                await self._handle_response(response)
-                progress.update(task, description="[green]Upload Complete[/green]")
+            await self._handle_response(response)
+            progress.update(task, description="[green]Upload Complete[/green]")
 
     async def download_file(
         self,
@@ -275,7 +269,7 @@ class APIClient:
                 )
 
                 try:
-                    with open(cache_path, "wb") as f:
+                    with open(cache_path, "wb") as f:  # noqa: ASYNC230
                         async for chunk in response.aiter_bytes(chunk_size=8192):
                             f.write(chunk)
                             if total_size > 0:

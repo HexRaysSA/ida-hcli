@@ -9,8 +9,6 @@ from pathlib import Path
 class PluginInstallationError(Exception):
     """Base exception for plugin installation failures."""
 
-    pass
-
 
 class PluginAlreadyInstalledError(PluginInstallationError):
     """Plugin is already installed."""
@@ -94,8 +92,6 @@ class PluginNotInstalledError(Exception):
 
 class PluginUpgradeError(Exception):
     """Base exception for plugin upgrade failures."""
-
-    pass
 
 
 class PluginVersionDowngradeError(PluginUpgradeError):

@@ -66,10 +66,7 @@ def is_compatible_plugin_version_location(
     if not is_ida_version_compatible(current_version, location.metadata.plugin.ida_versions):
         return False
 
-    if current_platform not in location.metadata.plugin.platforms:
-        return False
-
-    return True
+    return current_platform in location.metadata.plugin.platforms
 
 
 def is_compatible_plugin_version(
@@ -143,7 +140,7 @@ class BasePluginRepo(ABC):
 
         plugin = self.get_plugin_by_name(plugin_name, host=host)
 
-        versions = reversed(sorted(plugin.versions.keys(), key=parse_plugin_version))
+        versions = sorted(plugin.versions.keys(), key=parse_plugin_version, reverse=True)
         for version in versions:
             version_spec = parse_plugin_version(version)
             if version_spec not in wanted_spec:
@@ -222,12 +219,14 @@ class PluginArchiveIndex:
         ] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
     def index_plugin_archive(
-        self, buf: bytes, url: str, expected_host: str | None = None, context: dict[str, str] = {}
+        self, buf: bytes, url: str, expected_host: str | None = None, context: dict[str, str] | None = None
     ):
         """Parse the given plugin archive and index the encountered plugins.
 
         Optionally filter out plugins whose host does not match the expected host.
         """
+        if context is None:
+            context = {}
         logging.debug(m("indexing plugin archive: %s", url, **context))
         for path, metadata in get_metadatas_with_paths_from_plugin_archive(buf, context=context):
             try:

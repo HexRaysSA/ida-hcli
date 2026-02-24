@@ -43,10 +43,7 @@ def has_idat():
     if "HCLI_HAS_IDAT" not in os.environ:
         return True
 
-    if os.environ["HCLI_HAS_IDAT"].lower() in ("", "0", "false", "f"):
-        return False
-
-    return True
+    return os.environ["HCLI_HAS_IDAT"].lower() not in ("", "0", "false", "f")
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")

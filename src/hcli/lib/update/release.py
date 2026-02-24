@@ -8,8 +8,9 @@ import shutil
 import sys
 import tempfile
 import typing
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
+from typing import ClassVar
 from urllib.parse import urlparse
 
 import requests
@@ -41,8 +42,7 @@ class GitHubRepo:
             path = parsed.path.lstrip("/")
 
         # Remove optional `.git` suffix
-        if path.endswith(".git"):
-            path = path[:-4]
+        path = path.removesuffix(".git")
 
         # Split into user/repo
         try:
@@ -72,13 +72,13 @@ class ReleaseAsset:
 
 
 class AuthSession:
-    header: dict[str, str] = dict()
+    header: ClassVar[dict[str, str]] = {}
 
     @classmethod
     def init(cls, repo: GitHubRepo):
         if cls.header or not repo.token:
             return
-        cls.header = dict(Authorization=f"Bearer {repo.token}")
+        cls.header = {"Authorization": f"Bearer {repo.token}"}
 
 
 def check_and_download_updates(
@@ -152,7 +152,11 @@ def download_assets(
 ):
     logging.info(f"Start downloading assets: {tuple(asset.name for asset in assets)}")
     for asset in assets:
-        download_asset(repo, asset, out_dir, block_size, lambda downloaded, _: callback(asset, downloaded))
+
+        def _make_cb(a: ReleaseAsset) -> Callable[[int, int], None]:
+            return lambda downloaded, _: callback(a, downloaded)
+
+        download_asset(repo, asset, out_dir, block_size, _make_cb(asset))
 
 
 def download_asset(
@@ -208,7 +212,9 @@ def get_available_versions(repo: GitHubRepo, process_tag: Callable[[str], Versio
     request_url = f"{ENV.HCLI_GITHUB_API_URL}/repos/{repo.user}/{repo.repo}/releases"
     page_size = 100
     for i in itertools.count(1):
-        data = json.loads(requests.get(request_url, dict(page=i, per_page=page_size), headers=AuthSession.header).text)
+        data = json.loads(
+            requests.get(request_url, {"page": i, "per_page": page_size}, headers=AuthSession.header).text
+        )
         if "message" in data or not isinstance(data, list):
             break
         for release in data:
@@ -218,7 +224,7 @@ def get_available_versions(repo: GitHubRepo, process_tag: Callable[[str], Versio
             version = process_tag(tag_name)
             if version is None:
                 continue
-            setattr(version, "_origin_tag_name", tag_name)
+            version._origin_tag_name = tag_name
             yield version
         logging.info(f"Version's page#{i} loaded")
         if len(data) < page_size:

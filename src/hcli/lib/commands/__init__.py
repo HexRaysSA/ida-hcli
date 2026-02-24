@@ -1,7 +1,7 @@
 import asyncio
 import sys
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable
 
 import rich_click as click
 

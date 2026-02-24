@@ -30,7 +30,7 @@ def switch(name: str | None) -> None:
         if name not in instances:
             console.print(f"[red]IDA instance '{name}' not found[/red]")
             console.print("[yellow]Available instances:[/yellow]")
-            for instance_name in instances.keys():
+            for instance_name in instances:
                 console.print(f"  - {instance_name}")
             raise click.Abort()
 

@@ -134,9 +134,11 @@ def virtual_ida_environment_with_venv(virtual_ida_environment):
         ["uv", "pip", "install", "--python=" + str(python_exe.absolute()), "--upgrade", "pip"], check=True
     )
 
-    with temp_env_var("HCLI_CURRENT_IDA_PYTHON_EXE", str(python_exe.absolute())):
-        with temp_env_var("VIRTUAL_ENV", str(venv_path.absolute())):
-            yield
+    with (
+        temp_env_var("HCLI_CURRENT_IDA_PYTHON_EXE", str(python_exe.absolute())),
+        temp_env_var("VIRTUAL_ENV", str(venv_path.absolute())),
+    ):
+        yield
 
 
 def install_this_package_in_venv(venv_path: Path):

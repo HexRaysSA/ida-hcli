@@ -65,7 +65,7 @@ def get_plugins_directory() -> Path:
 
 
 def validate_path_component(name: str):
-    if not name or name == "." or name == "..":
+    if not name or name in {".", ".."}:
         raise ValueError(f"Invalid path component: '{name}'.")
 
     try:
@@ -318,7 +318,7 @@ def validate_can_install_plugin(
     try:
         destination_path = get_plugin_directory(name)
     except ValueError as e:
-        logger.error(f"Can't install plugin: {str(e)}")
+        logger.error(f"Can't install plugin: {e!s}")
         raise InvalidPluginNameError(name, str(e)) from e
 
     if destination_path.exists():
@@ -385,11 +385,8 @@ def should_extract_plugin_archive_path(plugin_dir_prefix: str, file_info: zipfil
         return False
 
     relative_path = pathlib.PurePosixPath(file_info.filename).relative_to(plugin_dir_prefix.rstrip("/"))
-    if str(relative_path) == ".":
-        # don't extract the plugin directory entry itself (again)
-        return False
-
-    return True
+    # don't extract the plugin directory entry itself (again)
+    return str(relative_path) != "."
 
 
 def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination: Path):
@@ -429,10 +426,9 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
                 else:
                     target_path.parent.mkdir(parents=True, exist_ok=True)
                     try:
-                        with zip_file.open(file_info.filename) as source_file:
-                            with target_path.open("wb") as target_file:
-                                logger.debug("creating file:      %s", relative_path)
-                                shutil.copyfileobj(source_file, target_file)
+                        with zip_file.open(file_info.filename) as source_file, target_path.open("wb") as target_file:
+                            logger.debug("creating file:      %s", relative_path)
+                            shutil.copyfileobj(source_file, target_file)
                     except OSError as e:
                         if e.errno == errno.ENOSPC:
                             shutil.rmtree(temp_path, ignore_errors=True)
@@ -576,7 +572,7 @@ def validate_can_upgrade_plugin(
     try:
         destination_path = get_plugin_directory(name)
     except ValueError as e:
-        logger.error(f"Can't upgrade plugin: {str(e)}")
+        logger.error(f"Can't upgrade plugin: {e!s}")
         raise InvalidPluginNameError(name, str(e)) from e
 
     if not destination_path.exists():
@@ -644,6 +640,6 @@ def upgrade_plugin_archive(zip_data: bytes, name: str, no_build_isolation: bool 
         logger.debug("rolling back to prior version")
         shutil.rmtree(plugin_path, ignore_errors=True)
         shutil.move(rollback_path, plugin_path)
-        raise e
+        raise
     else:
         shutil.rmtree(rollback_path)

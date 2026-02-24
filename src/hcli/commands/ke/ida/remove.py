@@ -66,7 +66,7 @@ def _remove_single_instance(name: str, instances: dict[str, str]) -> None:
         # Show available instances
         if instances:
             console.print("[yellow]Available instances:[/yellow]")
-            for instance_name in instances.keys():
+            for instance_name in instances:
                 console.print(f"  - {instance_name}")
         else:
             console.print("[yellow]No IDA instances registered. Use 'hcli ke ida add' to add instances.[/yellow]")

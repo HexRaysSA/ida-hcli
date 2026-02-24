@@ -3,7 +3,6 @@ Shared fixtures and utilities for integration tests.
 """
 
 import re
-from typing import Tuple
 
 import pexpect
 import pytest
@@ -35,7 +34,7 @@ class CLITester:
 
     def run_command(
         self, command: str, expected_output: str | None = None, timeout: int | None = None
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Run a CLI command and optionally check for expected output."""
         if timeout is None:
             timeout = self.timeout
@@ -135,7 +134,6 @@ def check_uv_available():
 @pytest.fixture(autouse=True)
 def require_uv(check_uv_available):
     """Auto-use fixture to ensure uv is available."""
-    pass
 
 
 @pytest.fixture(scope="session", autouse=True)

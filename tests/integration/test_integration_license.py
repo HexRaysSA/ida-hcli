@@ -18,12 +18,12 @@ class TestLicenseCommands:
 
     def test_license_status(self, cli_tester):
         """Test license status command."""
-        success, output = cli_tester.run_command("uv run hcli license status")
+        success, _output = cli_tester.run_command("uv run hcli license status")
         # Command may require auth, but should run without crashing
         assert success is not None, "License status command should run"
 
     def test_license_list(self, cli_tester):
         """Test license list command."""
-        success, output = cli_tester.run_command("uv run hcli license list")
+        success, _output = cli_tester.run_command("uv run hcli license list")
         # Command may require auth, but should run without crashing
         assert success is not None, "License list command should run"

@@ -91,6 +91,12 @@ fix = true
 [tool.ruff.lint]
 preview = true
 extend-select = ["PLW1514"]
+ignore = [
+    "BLE001",   # blind-except — intentional broad catches at CLI command boundaries
+    "TRY300",   # try-consider-else — stylistic preference, not a bug
+    "S110",     # try-except-pass — intentional best-effort patterns in CLI
+    "LOG015",   # root-logger-call — acceptable in CLI application context
+]
 
 [tool.mypy]
 check_untyped_defs = true

@@ -6,13 +6,12 @@ import rich_click as click
 @click.group()
 def ida() -> None:
     """Manage IDA Pro instances."""
-    pass
 
 
-from .add import add  # noqa: E402
-from .list import list_instances  # noqa: E402
-from .remove import remove  # noqa: E402
-from .switch import switch  # noqa: E402
+from .add import add
+from .list import list_instances
+from .remove import remove
+from .switch import switch
 
 ida.add_command(add)
 ida.add_command(remove)

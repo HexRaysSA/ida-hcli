@@ -12,5 +12,5 @@ class TestIdaCommands:
 
     def test_ida_info(self, cli_tester):
         """Test IDA info command."""
-        success, output = cli_tester.run_command("uv run hcli ida info")
+        success, _output = cli_tester.run_command("uv run hcli ida info")
         assert success is not None, "IDA info command should run"

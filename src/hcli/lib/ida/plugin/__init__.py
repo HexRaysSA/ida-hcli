@@ -340,18 +340,20 @@ class PluginMetadata(BaseModel):
 
     # Used to improve discoverability in the plugin repository by providing major categories.
     categories: list[
-        Literal["disassembly-and-processor-modules"]
-        | Literal["file-parsers-and-loaders"]
-        | Literal["decompilation"]
-        | Literal["debugging-and-tracing"]
-        | Literal["deobfuscation"]
-        | Literal["collaboration-and-productivity"]
-        | Literal["integration-with-third-parties-interoperability"]
-        | Literal["api-scripting-and-automation"]
-        | Literal["ui-ux-and-visualization"]
-        | Literal["malware-analysis"]
-        | Literal["vulnerability-research-and-exploit-development"]
-        | Literal["other"]
+        Literal[
+            "disassembly-and-processor-modules",
+            "file-parsers-and-loaders",
+            "decompilation",
+            "debugging-and-tracing",
+            "deobfuscation",
+            "collaboration-and-productivity",
+            "integration-with-third-parties-interoperability",
+            "api-scripting-and-automation",
+            "ui-ux-and-visualization",
+            "malware-analysis",
+            "vulnerability-research-and-exploit-development",
+            "other",
+        ]
     ] = Field(default_factory=list)
 
     # Used to improve discoverability in the plugin repository by providing search terms.
@@ -372,12 +374,12 @@ class PluginMetadata(BaseModel):
     # Declare which versions of IDA your plugin supports.
     # You must declare each version separately, because IDA's APIs don't clearly follow semantic versioning.
     # The default is all versions, but this is almost certainly incorrect!
-    ida_versions: list[IdaVersion] = Field(alias="idaVersions", default_factory=lambda: list(sorted(ALL_IDA_VERSIONS)))
+    ida_versions: list[IdaVersion] = Field(alias="idaVersions", default_factory=lambda: sorted(ALL_IDA_VERSIONS))
 
     # Declare which platforms your plugin supports.
     # The default is all versions, which is likely for cross-platform Python plugins.
     # Native plugins should declare the platform consistent with the .dll/.so/.dylib file in the archive.
-    platforms: list[Platform] = Field(default_factory=lambda: list(sorted(ALL_PLATFORMS)))
+    platforms: list[Platform] = Field(default_factory=lambda: sorted(ALL_PLATFORMS))
 
     # Include an image to visually represent your plugin on its page at plugins.hex-rays.com.
     # This should be a relative path to an image file within your plugin’s repository.
@@ -421,10 +423,7 @@ class PluginMetadata(BaseModel):
         if isinstance(raw, str):
             spec = parse_ida_version_spec(raw)
 
-            versions: list[IdaVersion] = []
-            for version in ALL_IDA_VERSIONS:
-                if parse_ida_version(version) in spec:
-                    versions.append(version)
+            versions: list[IdaVersion] = [version for version in ALL_IDA_VERSIONS if parse_ida_version(version) in spec]
             return versions
         else:
             return raw
@@ -563,7 +562,7 @@ def parse_pep723_metadata(python_file_content: str) -> list[str]:
         if isinstance(dependencies, list):
             return dependencies
         else:
-            raise ValueError(f"PEP 723 dependencies must be a list, got {type(dependencies).__name__}")
+            raise ValueError(f"PEP 723 dependencies must be a list, got {type(dependencies).__name__}")  # noqa: TRY004
     except tomllib.TOMLDecodeError as e:
         raise ValueError(f"Failed to parse PEP 723 TOML metadata: {e}") from e
 
@@ -647,8 +646,10 @@ def get_python_dependencies_from_plugin_directory(plugin_path: Path, metadata: I
 
 def get_metadatas_with_paths_from_plugin_archive(
     zip_data: bytes,
-    context: dict[str, str] = {},
+    context: dict[str, str] | None = None,
 ) -> Iterator[tuple[Path, IDAMetadataDescriptor]]:
+    if context is None:
+        context = {}
     logger.debug(m("finding plugin metadata", **context))
     with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
         for file_path in zip_file.namelist():
@@ -767,17 +768,17 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata_path: Path, me
                 (".dylib", PLATFORM_MACOS_INTEL),
             ]
             for ext, platform in extensions:
-                if platform in metadata.plugin.platforms:
+                if platform in metadata.plugin.platforms:  # noqa: SIM102
                     if not does_plugin_path_exist_in_plugin_archive(
                         zip_data, plugin_root, metadata.plugin.entry_point + ext
                     ):
                         raise ValueError("missing native entry point: %s", metadata.plugin.entry_point + ext)
 
         else:
-            if set(metadata.plugin.platforms) == {PLATFORM_MACOS_ARM, PLATFORM_MACOS_INTEL}:
-                if not does_plugin_path_exist_in_plugin_archive(zip_data, plugin_root, metadata.plugin.entry_point):
-                    raise ValueError("missing native entry point: %s", metadata.plugin.entry_point)
-            elif len(set(metadata.plugin.platforms)) == 1:
+            if (
+                set(metadata.plugin.platforms) == {PLATFORM_MACOS_ARM, PLATFORM_MACOS_INTEL}
+                or len(set(metadata.plugin.platforms)) == 1
+            ):
                 if not does_plugin_path_exist_in_plugin_archive(zip_data, plugin_root, metadata.plugin.entry_point):
                     raise ValueError("missing native entry point: %s", metadata.plugin.entry_point)
             else:
@@ -787,7 +788,7 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata_path: Path, me
             logger.debug("Missing native entry point file: %s", metadata.plugin.entry_point)
             raise ValueError(f"Binary plugin file not found in archive: '{metadata.plugin.entry_point}'")
 
-    if metadata.plugin.logo_path:
+    if metadata.plugin.logo_path:  # noqa: SIM102
         if not does_plugin_path_exist_in_plugin_archive(zip_data, plugin_root, metadata.plugin.logo_path):
             logger.debug("Missing logo file: %s", metadata.plugin.logo_path)
             raise ValueError(f"Logo file not found in archive: '{metadata.plugin.logo_path}'")

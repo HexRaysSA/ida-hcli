@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from fixtures import *  # noqa
+from fixtures import *
 from fixtures import (
     PLUGINS_DIR,
     install_this_package_in_venv,
@@ -122,113 +122,112 @@ def test_plugin_all(virtual_ida_environment_with_venv):
     idausr = Path(os.environ["HCLI_IDAUSR"])
     install_this_package_in_venv(idausr / "venv")
 
-    with temp_env_var("TERM", "dumb"):
-        with temp_env_var("COLUMNS", "80"):
-            p = run_hcli("--help")
-            assert "Usage: python -m hcli.main [OPTIONS] COMMAND [ARGS]..." in p.stdout
+    with temp_env_var("TERM", "dumb"), temp_env_var("COLUMNS", "80"):
+        p = run_hcli("--help")
+        assert "Usage: python -m hcli.main [OPTIONS] COMMAND [ARGS]..." in p.stdout
 
-            p = run_hcli("plugin --help")
-            assert "Usage: python -m hcli.main plugin [OPTIONS] COMMAND [ARGS]..." in p.stdout
+        p = run_hcli("plugin --help")
+        assert "Usage: python -m hcli.main plugin [OPTIONS] COMMAND [ARGS]..." in p.stdout
 
-            p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} repo snapshot")
-            assert "plugin1" in p.stdout
-            assert "zydisinfo" in p.stdout
-            assert "1.0.0" in p.stdout
-            assert "4.0.0" in p.stdout
-            # ensure it looks like json
-            _ = json.loads(p.stdout)
+        p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} repo snapshot")
+        assert "plugin1" in p.stdout
+        assert "zydisinfo" in p.stdout
+        assert "1.0.0" in p.stdout
+        assert "4.0.0" in p.stdout
+        # ensure it looks like json
+        _ = json.loads(p.stdout)
 
-            repo_path = idausr / "repo.json"
-            repo_path.write_text(p.stdout, encoding="utf-8")
+        repo_path = idausr / "repo.json"
+        repo_path.write_text(p.stdout, encoding="utf-8")
 
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
-            assert "No plugins found\n" == p.stdout
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
+        assert "No plugins found\n" == p.stdout
 
-            # current platform: macos-aarch64
-            # current version: 9.1
-            #
-            # plugin1    4.0.0    https://github.com/HexRaysSA/ida-hcli
-            # zydisinfo  1.0.0    https://github.com/HexRaysSA/ida-hcli
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} search")
-            assert row_contains("plugin1", "5.0.0", "https://github.com/HexRaysSA/ida-hcli")(p.stdout)
-            assert row_contains("zydisinfo", "1.0.0", "https://github.com/HexRaysSA/ida-hcli")(p.stdout)
+        # current platform: macos-aarch64
+        # current version: 9.1
+        #
+        # plugin1    4.0.0    https://github.com/HexRaysSA/ida-hcli
+        # zydisinfo  1.0.0    https://github.com/HexRaysSA/ida-hcli
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} search")
+        assert row_contains("plugin1", "5.0.0", "https://github.com/HexRaysSA/ida-hcli")(p.stdout)
+        assert row_contains("zydisinfo", "1.0.0", "https://github.com/HexRaysSA/ida-hcli")(p.stdout)
 
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydis")
-            assert row_contains("zydisinfo", "1.0.0", "https://github.com/HexRaysSA/ida-hcli")(p.stdout)
-            assert not row_contains("plugin1", "5.0.0")(p.stdout)
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydis")
+        assert row_contains("zydisinfo", "1.0.0", "https://github.com/HexRaysSA/ida-hcli")(p.stdout)
+        assert not row_contains("plugin1", "5.0.0")(p.stdout)
 
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydisinfo")
-            assert "name: zydisinfo" in p.stdout
-            assert "available versions:\n 1.0.0" in p.stdout
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydisinfo")
+        assert "name: zydisinfo" in p.stdout
+        assert "available versions:\n 1.0.0" in p.stdout
 
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydisinfo==1.0.0")
-            assert "name: zydisinfo" in p.stdout
-            assert "download locations:\n" in p.stdout
-            assert "IDA: 9.0-9.2  platforms: all" in p.stdout
-            assert "file://" in p.stdout
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydisinfo==1.0.0")
+        assert "name: zydisinfo" in p.stdout
+        assert "download locations:\n" in p.stdout
+        assert "IDA: 9.0-9.2  platforms: all" in p.stdout
+        assert "file://" in p.stdout
 
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} install zydisinfo")
-            assert "Installed plugin: zydisinfo==1.0.0\n" == p.stdout
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} install zydisinfo")
+        assert "Installed plugin: zydisinfo==1.0.0\n" == p.stdout
 
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
-            assert row_contains("zydisinfo", "1.0.0")(p.stdout)
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
+        assert row_contains("zydisinfo", "1.0.0")(p.stdout)
 
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall zydisinfo")
-            assert "Uninstalled plugin: zydisinfo\n" == p.stdout
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall zydisinfo")
+        assert "Uninstalled plugin: zydisinfo\n" == p.stdout
 
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
-            assert "No plugins found\n" == p.stdout
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
+        assert "No plugins found\n" == p.stdout
 
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} install plugin1==1.0.0")
-            assert "Installed plugin: plugin1==1.0.0\n" == p.stdout
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} install plugin1==1.0.0")
+        assert "Installed plugin: plugin1==1.0.0\n" == p.stdout
 
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
-            assert row_contains("plugin1", "1.0.0", "upgradable to 5.0.0")(p.stdout)
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
+        assert row_contains("plugin1", "1.0.0", "upgradable to 5.0.0")(p.stdout)
 
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} upgrade plugin1==2.0.0")
-            assert "Installed plugin: plugin1==2.0.0\n" == p.stdout
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} upgrade plugin1==2.0.0")
+        assert "Installed plugin: plugin1==2.0.0\n" == p.stdout
 
-            # downgrade not supported
-            with pytest.raises(subprocess.CalledProcessError) as e:
-                p = run_hcli(f"plugin --repo {repo_path.absolute()} upgrade plugin1==1.0.0")
-                assert (
-                    e.value.stdout
-                    == "Error: Cannot upgrade plugin plugin1: new version 1.0.0 is not greater than existing version 2.0.0\n"
-                )
-
-            # TODO: upgrade all
-
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
-            assert row_contains("plugin1", "2.0.0", "upgradable to 5.0.0")(p.stdout)
-
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall plugin1")
-            assert "Uninstalled plugin: plugin1\n" == p.stdout
-
-            p = run_hcli(
-                f"plugin --repo {repo_path.absolute()} install {(PLUGINS_DIR / 'plugin1' / 'plugin1-v3.0.0.zip').absolute()}"
+        # downgrade not supported
+        with pytest.raises(subprocess.CalledProcessError) as e:
+            p = run_hcli(f"plugin --repo {repo_path.absolute()} upgrade plugin1==1.0.0")
+            assert (
+                e.value.stdout
+                == "Error: Cannot upgrade plugin plugin1: new version 1.0.0 is not greater than existing version 2.0.0\n"
             )
-            assert "Installed plugin: plugin1==3.0.0\n" == p.stdout
 
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall plugin1")
-            assert "Uninstalled plugin: plugin1\n" == p.stdout
+        # TODO: upgrade all
 
-            # install from file:// path URI
-            p = run_hcli(
-                f"plugin --repo {repo_path.absolute()} install {(PLUGINS_DIR / 'plugin1' / 'plugin1-v4.0.0.zip').absolute().as_uri()}"
-            )
-            assert "Installed plugin: plugin1==4.0.0\n" == p.stdout
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
+        assert row_contains("plugin1", "2.0.0", "upgradable to 5.0.0")(p.stdout)
 
-            # TODO: install by URL
-            # which will require a plugin archive with a single plugin
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall plugin1")
+        assert "Uninstalled plugin: plugin1\n" == p.stdout
 
-            # work with the default index
-            # if `hint-calls` becomes unmaintained, this plugin name can be changed.
-            # the point is just to show the default index works.
-            p = run_hcli("plugin search hint-ca")
-            assert "hint-calls" in p.stdout
+        p = run_hcli(
+            f"plugin --repo {repo_path.absolute()} install {(PLUGINS_DIR / 'plugin1' / 'plugin1-v3.0.0.zip').absolute()}"
+        )
+        assert "Installed plugin: plugin1==3.0.0\n" == p.stdout
 
-            p = run_hcli("plugin install hint-calls")
-            assert "Installed plugin: hint-calls==" in p.stdout
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall plugin1")
+        assert "Uninstalled plugin: plugin1\n" == p.stdout
+
+        # install from file:// path URI
+        p = run_hcli(
+            f"plugin --repo {repo_path.absolute()} install {(PLUGINS_DIR / 'plugin1' / 'plugin1-v4.0.0.zip').absolute().as_uri()}"
+        )
+        assert "Installed plugin: plugin1==4.0.0\n" == p.stdout
+
+        # TODO: install by URL
+        # which will require a plugin archive with a single plugin
+
+        # work with the default index
+        # if `hint-calls` becomes unmaintained, this plugin name can be changed.
+        # the point is just to show the default index works.
+        p = run_hcli("plugin search hint-ca")
+        assert "hint-calls" in p.stdout
+
+        p = run_hcli("plugin install hint-calls")
+        assert "Installed plugin: hint-calls==" in p.stdout
 
 
 def test_case_insensitive_plugin_install(virtual_ida_environment_with_venv):
@@ -236,23 +235,22 @@ def test_case_insensitive_plugin_install(virtual_ida_environment_with_venv):
     idausr = Path(os.environ["HCLI_IDAUSR"])
     install_this_package_in_venv(idausr / "venv")
 
-    with temp_env_var("TERM", "dumb"):
-        with temp_env_var("COLUMNS", "80"):
-            p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} repo snapshot")
-            repo_path = idausr / "repo.json"
-            repo_path.write_text(p.stdout, encoding="utf-8")
+    with temp_env_var("TERM", "dumb"), temp_env_var("COLUMNS", "80"):
+        p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} repo snapshot")
+        repo_path = idausr / "repo.json"
+        repo_path.write_text(p.stdout, encoding="utf-8")
 
-            # Install using uppercase name "PLUGIN1" but expect it to resolve to "plugin1"
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} install PLUGIN1==1.0.0")
-            assert "Installed plugin: plugin1==1.0.0\n" == p.stdout
+        # Install using uppercase name "PLUGIN1" but expect it to resolve to "plugin1"
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} install PLUGIN1==1.0.0")
+        assert "Installed plugin: plugin1==1.0.0\n" == p.stdout
 
-            # Verify the plugin is installed with the correct case
-            assert is_plugin_installed("plugin1")
-            assert ("plugin1", "1.0.0") in get_installed_plugins()
+        # Verify the plugin is installed with the correct case
+        assert is_plugin_installed("plugin1")
+        assert ("plugin1", "1.0.0") in get_installed_plugins()
 
-            # Clean up
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall plugin1")
-            assert "Uninstalled plugin: plugin1\n" == p.stdout
+        # Clean up
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall plugin1")
+        assert "Uninstalled plugin: plugin1\n" == p.stdout
 
 
 def test_extract_zip_subdirectory_to_posix_paths():

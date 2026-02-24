@@ -55,10 +55,7 @@ def _add_auto_discovered_instances() -> None:
         return
 
     # Filter to valid IDA directories
-    valid_installations = []
-    for installation in installations:
-        if is_ida_dir(installation):
-            valid_installations.append(installation)
+    valid_installations = [installation for installation in installations if is_ida_dir(installation)]
 
     if not valid_installations:
         console.print("[yellow]No valid IDA installations found[/yellow]")

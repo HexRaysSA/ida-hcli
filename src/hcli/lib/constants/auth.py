@@ -1,6 +1,7 @@
 """Authentication-related constants."""
 
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import ClassVar
 
 from pydantic import BaseModel
 
@@ -12,7 +13,7 @@ class CredentialType:
     KEY = "key"
 
     # List of all valid auth types for validation
-    VALID_TYPES = [INTERACTIVE, KEY]
+    VALID_TYPES: ClassVar[list[str]] = [INTERACTIVE, KEY]
 
 
 class Credentials(BaseModel):
@@ -30,7 +31,7 @@ class Credentials(BaseModel):
     @classmethod
     def create_credentials(cls, name: str, credential_type: str, token: str, email: str | None = None) -> "Credentials":
         """Create a new API key credentials."""
-        now = datetime.utcnow().isoformat() + "Z"
+        now = datetime.now(tz=timezone.utc).isoformat() + "Z"
 
         return cls(name=name, type=credential_type, email=email or "", token=token, created_at=now, last_used=now)
 
@@ -46,7 +47,7 @@ class Credentials(BaseModel):
 
     def update_last_used(self) -> None:
         """Update the last used timestamp."""
-        self.last_used = datetime.utcnow().isoformat() + "Z"
+        self.last_used = datetime.now(tz=timezone.utc).isoformat() + "Z"
 
 
 class CredentialsConfig(BaseModel):

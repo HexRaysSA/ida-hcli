@@ -169,8 +169,7 @@ def slugify(text: str, separator: str = "-") -> str:
     text = text.lower()
     text = re.sub(r"[^a-z0-9]+", separator, text)
     # Remove leading/trailing separators
-    text = text.strip(separator)
-    return text
+    return text.strip(separator)
 
 
 def truncate_middle(text: str, max_length: int, separator: str = "...") -> str:

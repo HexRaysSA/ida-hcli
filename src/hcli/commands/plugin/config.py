@@ -164,7 +164,7 @@ def import_(ctx, json_input: str | None) -> None:
             data = json.load(sys.stdin)
 
         if not isinstance(data, dict):
-            raise ValueError("JSON input must be an object/dict")
+            raise ValueError("JSON input must be an object/dict")  # noqa: TRY004
 
         for key, value in data.items():
             set_plugin_setting(plugin_name, key, value)

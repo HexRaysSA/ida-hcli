@@ -16,13 +16,13 @@ class TestAuthCommands:
 
     def test_whoami_unauthenticated(self, cli_tester):
         """Test whoami when not authenticated."""
-        success, output = cli_tester.run_command("uv run hcli whoami")
+        success, _output = cli_tester.run_command("uv run hcli whoami")
         # Command may fail due to auth, but should run without crashing
         assert success is not None, "Whoami command should run"
 
     def test_auth_status(self, cli_tester):
         """Test auth status command."""
-        success, output = cli_tester.run_command("uv run hcli auth status")
+        success, _output = cli_tester.run_command("uv run hcli auth status")
         assert success is not None, "Auth status command should run"
 
 

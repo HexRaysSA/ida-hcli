@@ -50,7 +50,7 @@ async def get(shortcode: str, output_dir: Path | None, output_file: Path | None,
             download_dir = output_file.parent
             filename = output_file.name
         else:
-            download_dir = output_dir.expanduser().resolve() if output_dir else Path(".").resolve()
+            download_dir = output_dir.expanduser().resolve() if output_dir else Path.cwd()
             filename = file_info.filename
 
         # Check if file already exists
@@ -93,5 +93,5 @@ def format_size(bytes_count: int) -> str:
 
     import math
 
-    i = int(math.floor(math.log(bytes_count) / math.log(1024)))
+    i = math.floor(math.log(bytes_count) / math.log(1024))
     return f"{bytes_count / math.pow(1024, i):.1f} {sizes[i]}"

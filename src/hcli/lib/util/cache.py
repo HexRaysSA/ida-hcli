@@ -30,7 +30,7 @@ def get_default_cache_directory() -> Path:
 
 
 def validate_path_component(name: str):
-    if not name or name == "." or name == "..":
+    if not name or name in {".", ".."}:
         raise ValueError(f"Invalid path component: '{name}'.")
 
     try:

@@ -6,13 +6,12 @@ import rich_click as click
 @click.group()
 def ke() -> None:
     """Knowledge Engine commands."""
-    pass
 
 
-from .ida import ida  # noqa: E402
-from .open import open_url  # noqa: E402
-from .setup import install, setup  # noqa: E402
-from .source import source  # noqa: E402
+from .ida import ida
+from .open import open_url
+from .setup import install, setup
+from .source import source
 
 ke.add_command(ida)
 ke.add_command(install)

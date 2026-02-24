@@ -48,12 +48,12 @@ def commands(ctx: click.Context):
                 if isinstance(current_group, click.Group):
                     current_group = current_group.commands[part]
                 else:
-                    raise AttributeError("Not a group")
+                    raise AttributeError("Not a group")  # noqa: TRY004
 
             if isinstance(current_group, click.Group):
                 command = current_group.commands[parts[-1]]
             else:
-                raise AttributeError("Not a group")
+                raise AttributeError("Not a group")  # noqa: TRY004
             help_text = command.help or "No description available"
             # Get only the first line of the help text
             help_text = help_text.split("\n")[0].strip()

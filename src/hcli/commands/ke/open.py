@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import datetime
 import subprocess
-from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -50,7 +50,7 @@ async def open_url(url: str | None) -> None:
     if source_name not in sources:
         console.print(f"[red]Source '{source_name}' not found. Available sources:[/red]")
         if sources:
-            for name in sources.keys():
+            for name in sources:
                 console.print(f"  - {name}")
         else:
             console.print("  No sources configured. Use 'hcli ke source add' to add sources.")
@@ -93,12 +93,12 @@ async def open_url(url: str | None) -> None:
 
     # Log the URL to a temp file
     log_file = "/tmp/hcli_urls.log"
-    timestamp = datetime.now().isoformat()
+    timestamp = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
 
-    with open(str(log_file), "a", encoding="utf-8") as f:
+    with open(str(log_file), "a", encoding="utf-8") as f:  # noqa: ASYNC230
         f.write(f"{timestamp}: {url} -> {full_path} : {ida_bin}\n")
 
     console.print(f"[green]Opening {full_path} with IDA Pro[/green]")
 
     # Launch IDA with the resolved file path
-    subprocess.Popen([ida_bin, str(full_path)])
+    subprocess.Popen([ida_bin, str(full_path)])  # noqa: ASYNC220
