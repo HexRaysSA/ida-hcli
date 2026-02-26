@@ -275,7 +275,7 @@ class PluginArchiveIndex:
                 )
             )
 
-            versions = self.index[(name, host)]
+            versions = self.index[(name.lower(), host.lower())]
             specs = versions[version]
             specs[spec].append((url, sha256, metadata))
 
@@ -288,7 +288,7 @@ class PluginArchiveIndex:
 
         # sort alphabetically by name
         for id_, versions in sorted(self.index.items(), key=lambda p: p[0]):
-            name, host = id_
+            display_name, display_host = id_
             locations_by_version = defaultdict(list)
 
             # sort by version
@@ -303,8 +303,10 @@ class PluginArchiveIndex:
                             metadata=metadata,
                         )
                         locations_by_version[version].append(location)
+                        display_name = metadata.plugin.name
+                        display_host = metadata.plugin.host
 
-            plugin = Plugin(name=name, host=host, versions=locations_by_version)
+            plugin = Plugin(name=display_name, host=display_host, versions=locations_by_version)
             ret.append(plugin)
 
         return ret
