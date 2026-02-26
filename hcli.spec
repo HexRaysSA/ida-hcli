@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import copy_metadata
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 import os
 
 artifact_name = os.environ.get("ARTIFACT_NAME", "hcli")
@@ -13,7 +13,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=datas,
-    hiddenimports=['rich._unicode_data'],
+    hiddenimports=collect_submodules('rich._unicode_data'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
