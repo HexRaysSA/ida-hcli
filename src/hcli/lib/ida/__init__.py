@@ -630,7 +630,7 @@ def explain_missing_current_installation_directory(console: rich.console.Console
     console.print("")
     console.print("     [grey69]export HCLI_CURRENT_IDA_INSTALL_DIR=/path/to/IDA/installation/[/grey69] # Linux, or")
     console.print(
-        '     [grey69]export HCLI_CURRENT_IDA_INSTALL_DIR="/Applications/IDA Professional 9.2.app/Contents/MacOS/"[/grey69] # macOS, or'
+        '     [grey69]export HCLI_CURRENT_IDA_INSTALL_DIR="/Applications/IDA Professional 9.2.app/"[/grey69] # macOS, or'
     )
     console.print(
         '     [grey69]set HCLI_CURRENT_IDA_INSTALL_DIR="C:\\Program Files\\IDA Professional 9.2"[/grey69]  # Windows'
