@@ -84,11 +84,11 @@ def _list_running_instances() -> None:
     is_flag=True,
     help="Don't wait for auto-analysis to complete after launching IDA",
 )
-def open_link(uri: str | None, list_instances: bool, no_launch: bool, timeout: float, skip_analysis: bool) -> None:
+def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeout: float, skip_analysis: bool) -> None:
     """Open an ida:// link in the appropriate IDA instance.
 
     This command finds a running IDA instance that has the specified IDB open
-    and sends it an open_link command to navigate to the specified location.
+    and sends it an open_ida_link command to navigate to the specified location.
 
     If no matching instance is found and --no-launch is not set, IDA will be
     launched with the IDB file (searched in configured sources).
@@ -212,10 +212,10 @@ def open_link(uri: str | None, list_instances: bool, no_launch: bool, timeout: f
 
             matching_instance = result.instance
 
-    # Send open_link command
+    # Send open_ida_link command
     assert matching_instance is not None  # Should never be None at this point
     _print(f"[dim]Sending command to IDA (PID {matching_instance.pid})...[/dim]")
-    success, message = IDAIPCClient.send_open_link(matching_instance.socket_path, uri)
+    success, message = IDAIPCClient.send_open_ida_link(matching_instance.socket_path, uri)
 
     if success:
         _print(f"[green]Navigated to: {uri}[/green]")

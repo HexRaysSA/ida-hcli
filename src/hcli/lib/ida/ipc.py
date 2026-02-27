@@ -5,7 +5,7 @@ send commands to them via local sockets (Unix domain sockets on Linux/macOS,
 named pipes on Windows).
 
 Protocol: JSON-based request/response
-  Request:  {"cmd": "ping|get_info|open_link|is_analysis_complete", ...}
+  Request:  {"cmd": "ping|get_info|open_ida_link|is_analysis_complete", ...}
   Response: {"status": "ok|error", ...}
 
 Socket naming: ida_ipc_<pid> (e.g., ida_ipc_12345)
@@ -217,8 +217,8 @@ class IDAIPCClient:
             return False
 
     @staticmethod
-    def send_open_link(socket_path: str, uri: str) -> tuple[bool, str]:
-        """Send open_link command to an IDA instance.
+    def send_open_ida_link(socket_path: str, uri: str) -> tuple[bool, str]:
+        """Send open_ida_link command to an IDA instance.
 
         Args:
             socket_path: Path to the socket file or named pipe.
@@ -228,7 +228,7 @@ class IDAIPCClient:
             Tuple of (success: bool, message: str).
         """
         try:
-            response = IDAIPCClient._send_command(socket_path, {"cmd": "open_link", "uri": uri})
+            response = IDAIPCClient._send_command(socket_path, {"cmd": "open_ida_link", "uri": uri})
             if response.get("status") == "ok":
                 return True, "OK"
             else:
