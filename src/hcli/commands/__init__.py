@@ -12,7 +12,6 @@ def register_commands(cli: click.Group) -> None:
     from .plugin import plugin
     from .update import update
     from .whoami import whoami
-    # placeholder for more commands
 
     cli.add_command(login)
     cli.add_command(logout)
@@ -26,7 +25,6 @@ def register_commands(cli: click.Group) -> None:
     from .auth import auth
     from .extension import extension
     from .ida import ida
-    from .ke import ke
     from .license import license
     from .share import share
 
@@ -35,4 +33,3 @@ def register_commands(cli: click.Group) -> None:
     cli.add_command(share)
     cli.add_command(license)
     cli.add_command(extension)
-    cli.add_command(ke)

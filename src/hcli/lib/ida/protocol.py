@@ -10,22 +10,27 @@ from pathlib import Path
 from hcli.lib.console import console
 from hcli.lib.util.io import get_hcli_executable_path
 
+PROTOCOL = "ida"
+
 
 def setup_macos_protocol_handler() -> None:
     """Set up protocol handler for macOS using AppleScript and plist modification."""
     try:
         hcli_path = get_hcli_executable_path()
 
-        # Create AppleScript application
-        applescript_content = f"""
+        # Create AppleScript application that handles ida:// URLs
+        # Use login shell (-l) to get full user environment, avoiding sandbox restrictions
+        log_file = "/tmp/idb_handler.log"
+        applescript_content = f'''
 on open location this_URL
-    do shell script "{hcli_path} ke open " & quoted form of this_URL
+    set logFile to "{log_file}"
+    do shell script "/bin/zsh -l -c " & quoted form of ("{hcli_path} ida open " & quoted form of this_URL) & " >> " & quoted form of logFile & " 2>&1"
 end open location
 
 on run
     -- This handler is called when the app is launched directly
 end run
-"""
+'''
 
         # Create temporary directory for the AppleScript
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -33,7 +38,7 @@ end run
             app_path = Path.home() / "Applications" / "HCLIHandler.app"
 
             # Write AppleScript
-            script_path.write_text(applescript_content, encoding="utf-8")
+            script_path.write_text(applescript_content)
 
             # Compile AppleScript to application
             subprocess.run(["osacompile", "-o", str(app_path), str(script_path)], check=True)
@@ -51,19 +56,21 @@ end run
 
             plist_content = result.stdout
 
-            # Add URL scheme handler to plist
-            url_scheme_xml = """
+            # Add URL scheme handler and LSUIElement (to hide from Dock) to plist
+            url_scheme_xml = f"""
         <key>CFBundleURLTypes</key>
         <array>
             <dict>
                 <key>CFBundleURLName</key>
-                <string>IDA URL Handler</string>
+                <string>IDB URL Handler</string>
                 <key>CFBundleURLSchemes</key>
                 <array>
-                    <string>ida</string>
+                    <string>{PROTOCOL}</string>
                 </array>
             </dict>
-        </array>"""
+        </array>
+        <key>LSUIElement</key>
+        <true/>"""
 
             # Insert before closing </dict></plist>
             if "<key>CFBundleURLTypes</key>" not in plist_content:
@@ -109,26 +116,28 @@ def setup_windows_protocol_handler() -> None:
         from winreg import HKEY_CURRENT_USER, REG_SZ  # type: ignore[import-untyped,attr-defined]
 
         hcli_path = get_hcli_executable_path()
-        command = f'"{hcli_path}" ke open "%1"'
 
-        # Create registry entries for ida:// protocol
-        with winreg.CreateKey(HKEY_CURRENT_USER, r"SOFTWARE\Classes\ida") as key:  # type: ignore[attr-defined]
-            winreg.SetValueEx(key, "", 0, REG_SZ, "URL:IDA Protocol")  # type: ignore[attr-defined]
+        # Register ida:// protocol
+        command = f'"{hcli_path}" ida open "%1"'
+        reg_key = rf"SOFTWARE\Classes\{PROTOCOL}"
+
+        with winreg.CreateKey(HKEY_CURRENT_USER, reg_key) as key:  # type: ignore[attr-defined]
+            winreg.SetValueEx(key, "", 0, REG_SZ, f"URL:{PROTOCOL.upper()} Protocol")  # type: ignore[attr-defined]
             winreg.SetValueEx(key, "URL Protocol", 0, REG_SZ, "")  # type: ignore[attr-defined]
 
-        with winreg.CreateKey(HKEY_CURRENT_USER, r"SOFTWARE\Classes\ida\DefaultIcon") as key:  # type: ignore[attr-defined]
+        with winreg.CreateKey(HKEY_CURRENT_USER, rf"{reg_key}\DefaultIcon") as key:  # type: ignore[attr-defined]
             winreg.SetValueEx(key, "", 0, REG_SZ, f"{hcli_path},1")  # type: ignore[attr-defined]
 
-        with winreg.CreateKey(HKEY_CURRENT_USER, r"SOFTWARE\Classes\ida\shell") as key:  # type: ignore[attr-defined]
+        with winreg.CreateKey(HKEY_CURRENT_USER, rf"{reg_key}\shell") as key:  # type: ignore[attr-defined]
             pass
 
-        with winreg.CreateKey(HKEY_CURRENT_USER, r"SOFTWARE\Classes\ida\shell\open") as key:  # type: ignore[attr-defined]
+        with winreg.CreateKey(HKEY_CURRENT_USER, rf"{reg_key}\shell\open") as key:  # type: ignore[attr-defined]
             pass
 
-        with winreg.CreateKey(HKEY_CURRENT_USER, r"SOFTWARE\Classes\ida\shell\open\command") as key:  # type: ignore[attr-defined]
+        with winreg.CreateKey(HKEY_CURRENT_USER, rf"{reg_key}\shell\open\command") as key:  # type: ignore[attr-defined]
             winreg.SetValueEx(key, "", 0, REG_SZ, command)  # type: ignore[attr-defined]
 
-        console.print("[green]✓[/green] Windows protocol handler registered in registry")
+        console.print(f"[green]✓[/green] Windows protocol handler ({PROTOCOL}://) registered in registry")
 
     except ImportError:
         console.print("[red]winreg module not available (not on Windows?)[/red]")
@@ -143,34 +152,33 @@ def setup_linux_protocol_handler() -> None:
     try:
         hcli_path = get_hcli_executable_path()
 
-        # Create desktop entry
-        desktop_entry_content = f"""[Desktop Entry]
-Name=HCLI URL Handler
-Exec={hcli_path} ke open %u
-Type=Application
-NoDisplay=true
-MimeType=x-scheme-handler/ida;
-"""
-
         # Write to applications directory
         applications_dir = Path.home() / ".local" / "share" / "applications"
         applications_dir.mkdir(parents=True, exist_ok=True)
 
-        desktop_file_path = applications_dir / "hcli-url-handler.desktop"
-        desktop_file_path.write_text(desktop_entry_content, encoding="utf-8")
+        # Create desktop entry for ida:// protocol
+        desktop_content = f"""[Desktop Entry]
+Name=HCLI IDB Link Handler
+Exec={hcli_path} ida open %u
+Type=Application
+NoDisplay=true
+MimeType=x-scheme-handler/{PROTOCOL};
+"""
 
-        # Make executable
-        desktop_file_path.chmod(0o755)
+        desktop_path = applications_dir / "hcli-idb-handler.desktop"
+        desktop_path.write_text(desktop_content)
+        desktop_path.chmod(0o755)
 
         # Register with xdg-mime
-        subprocess.run(["xdg-mime", "default", "hcli-url-handler.desktop", "x-scheme-handler/ida"], check=True)
+        subprocess.run(["xdg-mime", "default", "hcli-idb-handler.desktop", f"x-scheme-handler/{PROTOCOL}"], check=True)
 
         # Update desktop database
         subprocess.run(
             ["update-desktop-database", str(applications_dir)], check=False
         )  # May fail on some systems but not critical
 
-        console.print(f"[green]✓[/green] Linux protocol handler installed at {desktop_file_path}")
+        console.print("[green]✓[/green] Linux protocol handler installed:")
+        console.print(f"    {PROTOCOL}:// -> {desktop_path}")
 
     except subprocess.CalledProcessError as e:
         console.print(f"[red]Failed to set up Linux protocol handler: {e}[/red]")
@@ -215,17 +223,22 @@ def unregister_windows_protocol_handler() -> None:
         import winreg  # type: ignore[import-untyped]
         from winreg import HKEY_CURRENT_USER  # type: ignore[import-untyped,attr-defined]
 
+        reg_key = rf"SOFTWARE\Classes\{PROTOCOL}"
+        removed = False
+
         try:
-            # Delete the registry key
-            winreg.DeleteKeyEx(HKEY_CURRENT_USER, r"SOFTWARE\Classes\ida\shell\open\command")  # type: ignore[attr-defined]
-            winreg.DeleteKeyEx(HKEY_CURRENT_USER, r"SOFTWARE\Classes\ida\shell\open")  # type: ignore[attr-defined]
-            winreg.DeleteKeyEx(HKEY_CURRENT_USER, r"SOFTWARE\Classes\ida\shell")  # type: ignore[attr-defined]
-            winreg.DeleteKeyEx(HKEY_CURRENT_USER, r"SOFTWARE\Classes\ida\DefaultIcon")  # type: ignore[attr-defined]
-            winreg.DeleteKeyEx(HKEY_CURRENT_USER, r"SOFTWARE\Classes\ida")  # type: ignore[attr-defined]
-
-            console.print("[green]✓[/green] Windows protocol handler removed from registry")
-
+            winreg.DeleteKeyEx(HKEY_CURRENT_USER, rf"{reg_key}\shell\open\command")  # type: ignore[attr-defined]
+            winreg.DeleteKeyEx(HKEY_CURRENT_USER, rf"{reg_key}\shell\open")  # type: ignore[attr-defined]
+            winreg.DeleteKeyEx(HKEY_CURRENT_USER, rf"{reg_key}\shell")  # type: ignore[attr-defined]
+            winreg.DeleteKeyEx(HKEY_CURRENT_USER, rf"{reg_key}\DefaultIcon")  # type: ignore[attr-defined]
+            winreg.DeleteKeyEx(HKEY_CURRENT_USER, reg_key)  # type: ignore[attr-defined]
+            removed = True
         except FileNotFoundError:
+            pass
+
+        if removed:
+            console.print(f"[green]✓[/green] Windows protocol handler ({PROTOCOL}://) removed from registry")
+        else:
             console.print("[yellow]Windows protocol handler not found (already removed)[/yellow]")
 
     except ImportError:
@@ -240,28 +253,27 @@ def unregister_linux_protocol_handler() -> None:
     """Remove protocol handler for Linux by deleting desktop entry and mime associations."""
     try:
         applications_dir = Path.home() / ".local" / "share" / "applications"
-        desktop_file_path = applications_dir / "hcli-url-handler.desktop"
+        desktop_path = applications_dir / "hcli-idb-handler.desktop"
 
-        if not desktop_file_path.exists():
+        if not desktop_path.exists():
             console.print("[yellow]Linux protocol handler not found (already removed)[/yellow]")
             return
 
-        # Remove the desktop file
-        desktop_file_path.unlink()
+        desktop_path.unlink()
 
         # Remove mime association
         subprocess.run(
-            ["xdg-mime", "default", "", "x-scheme-handler/ida"],
-            check=False,  # Don't fail if mime association doesn't exist
+            ["xdg-mime", "default", "", f"x-scheme-handler/{PROTOCOL}"],
+            check=False,
         )
 
         # Update desktop database
         subprocess.run(
             ["update-desktop-database", str(applications_dir)],
-            check=False,  # May fail on some systems but not critical
+            check=False,
         )
 
-        console.print(f"[green]✓[/green] Linux protocol handler removed from {desktop_file_path}")
+        console.print(f"[green]✓[/green] Linux protocol handler ({PROTOCOL}://) removed")
 
     except Exception as e:
         console.print(f"[red]Error removing Linux protocol handler: {e}[/red]")
