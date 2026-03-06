@@ -21,6 +21,8 @@ from hcli.lib.ida import (
     MissingCurrentInstallationDirectory,
     find_current_ida_install_directory,
     get_ida_binary_path,
+    parse_version_from_dir_name,
+    parse_version_from_ida_pro_py,
 )
 from hcli.lib.ida.ipc import IDAInstance, IDAIPCClient
 
@@ -78,6 +80,14 @@ class LaunchResult:
     instance: IDAInstance | None = None
     process: subprocess.Popen | None = None
     error_message: str | None = None
+
+
+MIN_IPC_VERSION = (9, 4)
+
+
+def _parse_version_tuple(version: str) -> tuple[int, ...]:
+    """Parse a version string like '9.4' into a tuple of ints."""
+    return tuple(int(x) for x in version.split("."))
 
 
 class IDALauncher:
@@ -178,6 +188,92 @@ class IDALauncher:
             pass
 
         raise NoIDAInstallationError("No IDA installation configured. Use: hcli ida instance add --auto")
+
+    def _get_ida_dir_from_binary(self, ida_bin: Path) -> Path:
+        """Derive the IDA installation directory from the binary path."""
+        if sys.platform == "darwin":
+            # e.g., /Applications/IDA.app/Contents/MacOS/ida -> /Applications/IDA.app
+            ida_bin_str = str(ida_bin)
+            if "/Contents/MacOS/" in ida_bin_str:
+                return Path(ida_bin_str.split("/Contents/MacOS/")[0])
+        # Linux/Windows: binary is directly in the install dir
+        return ida_bin.parent
+
+    def get_ida_version(self) -> str | None:
+        """Get the version string of the configured IDA installation.
+
+        Returns:
+            Version string (e.g., "9.2") or None if detection fails.
+        """
+        try:
+            ida_bin = self.get_ida_binary()
+        except NoIDAInstallationError:
+            return None
+
+        ida_dir = self._get_ida_dir_from_binary(ida_bin)
+
+        version = parse_version_from_ida_pro_py(ida_dir)
+        if version:
+            return version
+
+        version = parse_version_from_dir_name(ida_dir)
+        if version:
+            return version
+
+        return None
+
+    def launch_only(
+        self,
+        idb_path: Path,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> LaunchResult:
+        """Launch IDA with the IDB file without waiting for IPC.
+
+        Used for IDA versions that don't support IPC (< 9.4).
+
+        Returns:
+            LaunchResult with success status (no instance info).
+        """
+
+        def report(msg: str) -> None:
+            if progress_callback:
+                progress_callback(msg)
+            logger.info(msg)
+
+        if not idb_path.exists():
+            return LaunchResult(success=False, error_message=f"IDB file not found: {idb_path}")
+
+        if not idb_path.is_file():
+            return LaunchResult(success=False, error_message=f"IDB path is not a file: {idb_path}")
+
+        try:
+            ida_bin = self.get_ida_binary()
+        except NoIDAInstallationError as e:
+            return LaunchResult(success=False, error_message=str(e))
+
+        if sys.platform == "darwin":
+            ida_bin_str = str(ida_bin)
+            if "/Contents/MacOS/" in ida_bin_str:
+                app_bundle = ida_bin_str.split("/Contents/MacOS/")[0]
+                cmd = ["open", "-a", app_bundle, "--args", str(idb_path)]
+            else:
+                cmd = [ida_bin_str, str(idb_path)]
+        else:
+            cmd = [str(ida_bin), str(idb_path)]
+
+        report(f"Command: {' '.join(cmd)}")
+
+        try:
+            subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except OSError as e:
+            return LaunchResult(success=False, error_message=f"Failed to start IDA: {e}")
+
+        return LaunchResult(success=True)
 
     def launch_and_wait(
         self,

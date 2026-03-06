@@ -12,7 +12,7 @@ from hcli.lib.ida.ipc import (
     IDAIPCClient,
     find_all_instances_with_info,
 )
-from hcli.lib.ida.launcher import IDALauncher, LaunchConfig
+from hcli.lib.ida.launcher import MIN_IPC_VERSION, IDALauncher, LaunchConfig, _parse_version_tuple
 
 
 def _strip_idb_extension(name: str) -> str:
@@ -66,7 +66,7 @@ def _list_running_instances() -> None:
     "--list",
     "list_instances",
     is_flag=True,
-    help="List all running IDA instances with IPC sockets",
+    help="List running IDA instances with IPC support (IDA 9.4+)",
 )
 @click.option(
     "--no-launch",
@@ -87,13 +87,14 @@ def _list_running_instances() -> None:
 def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeout: float, skip_analysis: bool) -> None:
     """Open an ida:// link in the appropriate IDA instance.
 
-    This command finds a running IDA instance that has the specified IDB open
-    and sends it an open_ida_link command to navigate to the specified location.
+    For IDA 9.4+, this command finds a running IDA instance with the specified
+    IDB and navigates to the location in the URI. If no matching instance is
+    found, IDA is launched and the link is opened after startup.
 
-    If no matching instance is found and --no-launch is not set, IDA will be
-    launched with the IDB file (searched in configured sources).
+    For older IDA versions, this command launches IDA with the IDB file.
+    Navigation to specific locations requires IDA 9.4+ with IPC support.
 
-    Use --list to show all running IDA instances.
+    Use --list to show running IDA instances (requires IDA 9.4+ IPC).
 
     Example URIs:
         ida://malwares/trojan1.i64/functions?rva=0x1000  (named source)
@@ -167,18 +168,6 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
                     break
 
         if not matching_instance:
-            if no_launch:
-                console.print(f"[yellow]No IDA instance has '{target_idb_name}' open.[/yellow]")
-                if all_idbs:
-                    console.print("[dim]Currently open IDBs:[/dim]")
-                    for idb in all_idbs:
-                        console.print(f"  - {idb}")
-                console.print("[dim]Use without --no-launch to auto-launch IDA[/dim]")
-                raise click.Abort()
-
-            # Auto-launch IDA
-            console.print(f"[yellow]No IDA instance has '{target_idb_name}' open.[/yellow]")
-
             launcher = IDALauncher(
                 LaunchConfig(
                     socket_timeout=min(30.0, timeout * 0.25),
@@ -186,6 +175,25 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
                     skip_analysis_wait=skip_analysis,
                 )
             )
+
+            if no_launch:
+                console.print(f"[yellow]No IDA instance has '{target_idb_name}' open.[/yellow]")
+                if all_idbs:
+                    console.print("[dim]Currently open IDBs:[/dim]")
+                    for idb in all_idbs:
+                        console.print(f"  - {idb}")
+                ida_version = launcher.get_ida_version()
+                if ida_version and _parse_version_tuple(ida_version) < MIN_IPC_VERSION:
+                    console.print(
+                        f"[dim]Your configured IDA ({ida_version}) does not support IPC. "
+                        "Use without --no-launch to launch IDA with the IDB file.[/dim]"
+                    )
+                else:
+                    console.print("[dim]Use without --no-launch to auto-launch IDA[/dim]")
+                raise click.Abort()
+
+            # Auto-launch IDA
+            console.print(f"[yellow]No IDA instance has '{target_idb_name}' open.[/yellow]")
 
             # Find IDB file in sources
             idb_path = launcher.find_idb_file(target_idb_name, source_name)
@@ -199,7 +207,27 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
 
             console.print(f"[dim]Found IDB: {idb_path}[/dim]")
 
-            # Launch IDA and wait for it to be ready
+            # Check IDA version to decide between IPC and launch-only
+            ida_version = launcher.get_ida_version()
+            use_ipc = ida_version is None or _parse_version_tuple(ida_version) >= MIN_IPC_VERSION
+
+            if not use_ipc:
+                # Pre-IPC IDA: launch with IDB but no navigation
+                result = launcher.launch_only(
+                    idb_path,
+                    progress_callback=lambda msg: console.print(f"[dim]{msg}[/dim]"),
+                )
+                if not result.success:
+                    console.print(f"[red]Failed to launch IDA: {result.error_message}[/red]")
+                    raise click.Abort()
+                console.print(
+                    f"[yellow]IDA {ida_version} does not support IPC. "
+                    f"Launching IDA with {idb_path.name} "
+                    "(navigation to specific location not available).[/yellow]"
+                )
+                return
+
+            # IDA 9.4+: launch and wait for IPC
             result = launcher.launch_and_wait(
                 idb_path,
                 timeout=timeout,
