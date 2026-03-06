@@ -195,12 +195,16 @@ class IDAIPCClient:
                 pid_str = basename.replace(IDAIPCClient.SOCKET_PREFIX, "")
                 pid = int(pid_str)
 
+                idb_path = response.get("idb_path", "")
+                has_idb = bool(idb_path)
+                idb_name = os.path.basename(idb_path) if has_idb else None
+
                 return IDAInstance(
                     pid=pid,
                     socket_path=socket_path,
-                    idb_path=response.get("idb_path"),
-                    idb_name=response.get("idb_name"),
-                    has_idb=response.get("has_idb", False),
+                    idb_path=idb_path or None,
+                    idb_name=idb_name,
+                    has_idb=has_idb,
                 )
         except (OSError, IDAIPCError, ValueError) as e:
             logger.debug(f"Failed to query instance at {socket_path}: {e}")
