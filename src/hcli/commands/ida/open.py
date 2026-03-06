@@ -185,7 +185,8 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
                 ida_version = launcher.get_ida_version()
                 if ida_version and _parse_version_tuple(ida_version) < MIN_IPC_VERSION:
                     console.print(
-                        f"[dim]Your configured IDA ({ida_version}) does not support IPC. "
+                        f"[dim]Your configured IDA ({ida_version}) does not support IPC, "
+                        "which is available starting with 9.4. "
                         "Use without --no-launch to launch IDA with the IDB file.[/dim]"
                     )
                 else:
@@ -221,7 +222,8 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
                     console.print(f"[red]Failed to launch IDA: {result.error_message}[/red]")
                     raise click.Abort()
                 console.print(
-                    f"[yellow]IDA {ida_version} does not support IPC. "
+                    f"[yellow]IDA {ida_version} does not support IPC, "
+                    "which is available starting with 9.4. "
                     f"Launching IDA with {idb_path.name} "
                     "(navigation to specific location not available).[/yellow]"
                 )
