@@ -60,7 +60,7 @@ def _list_running_instances() -> None:
             console.print(f"  PID {instance.pid}: [dim]no IDB loaded[/dim]")
 
 
-@click.command(name="open", hidden=True)
+@click.command(name="open")
 @click.argument("uri", required=False)
 @click.option(
     "--list",
