@@ -106,23 +106,23 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
         _list_running_instances()
         return
 
-    if not uri:
-        console.print("[red]Error: No URI provided[/red]")
-        raise click.Abort()
-
     # Parse URL to extract IDB name
-    parsed = urlparse(uri)
-
-    if parsed.scheme != "ida":
-        console.print(f"[red]Error: Expected ida:// URL, got {parsed.scheme}://[/red]")
-        raise click.Abort()
+    parsed = urlparse(uri) if uri else None
 
     # URL format: ida://<source>/<idb-name>/<resource>?<params>
     # e.g., ida://malwares/trojan1.i64/functions?rva=0x1000
     # Relative: ida:///myfile.i64/functions?rva=0x1000 (no source)
     # Relative: ida:///functions?rva=0x1000 (no source, no idb name)
-    source_name = parsed.hostname or ""  # "malwares", "localhost", or ""
-    path_segments = [s for s in parsed.path.split("/") if s]
+    source_name = (parsed.hostname or "") if parsed else ""  # "malwares", "localhost", or ""
+    path_segments = [s for s in parsed.path.split("/") if s] if parsed else []
+
+    if not parsed or parsed.scheme != "ida" or (len(path_segments) <= 1 and not parsed.query):
+        console.print(f"[red]Error: Unsupported ida:// URL: {uri}[/red]")
+        console.print(
+            "[yellow]Example: ida:///{idb-name}/{resource}?rva=0x0,"
+            " e.g. ida:///example.i64/functions?rva=0x0[/yellow]"
+        )
+        raise click.Abort()
 
     if len(path_segments) >= 2:
         target_idb_name = path_segments[0]  # e.g., "myfile.i64"
