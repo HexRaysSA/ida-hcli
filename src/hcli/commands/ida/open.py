@@ -119,8 +119,7 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
     if not parsed or parsed.scheme != "ida" or (len(path_segments) <= 1 and not parsed.query):
         console.print(f"[red]Error: Unsupported ida:// URL: {uri}[/red]")
         console.print(
-            "[yellow]Example: ida:///{idb-name}/{resource}?rva=0x0,"
-            " e.g. ida:///example.i64/functions?rva=0x0[/yellow]"
+            "[yellow]Example: ida:///{idb-name}/{resource}?rva=0x0, e.g. ida:///example.i64/functions?rva=0x0[/yellow]"
         )
         raise click.Abort()
 
