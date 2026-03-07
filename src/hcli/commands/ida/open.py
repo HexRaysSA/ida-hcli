@@ -243,6 +243,7 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
 
     # Send open_ida_link command
     assert matching_instance is not None  # Should never be None at this point
+    assert uri is not None  # Validated above: None uri triggers click.Abort()
     _print(f"[dim]Sending command to IDA (PID {matching_instance.pid})...[/dim]")
     success, message = IDAIPCClient.send_open_ida_link(matching_instance.socket_path, uri)
 
