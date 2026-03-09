@@ -179,7 +179,7 @@ class BackgroundUpdateChecker:
         """Format the update notification message."""
         return (
             f"\n[yellow]Update available![/yellow] "
-            f"[dim]{current}[/dim] → [green]{latest}[/green]\n"
+            f"[dim]{current}[/dim] -> [green]{latest}[/green]\n"
             f"[dim]Run[/dim] [bold cyan]hcli update[/bold cyan] [dim]to update[/dim]\n"
         )
 

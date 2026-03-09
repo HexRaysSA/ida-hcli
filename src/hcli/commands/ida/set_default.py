@@ -13,10 +13,13 @@ from hcli.lib.ida import (
 )
 
 
-@click.command(name="set-default")
+@click.command(name="set-default", deprecated=True)
 @click.argument("path", type=click.Path(path_type=Path), required=False)
 def set_default_ida(path: Path | None) -> None:
-    """Set or show the default IDA installation directory."""
+    """Set or show the default IDA installation directory.
+
+    Deprecated: use 'hcli ida switch' instead.
+    """
     config_path = get_ida_config_path()
 
     if path is None:

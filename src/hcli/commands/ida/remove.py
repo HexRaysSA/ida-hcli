@@ -27,7 +27,7 @@ def remove(all: bool, name: str | None) -> None:
         raise click.Abort()
 
     # Get existing instances
-    instances: dict[str, str] = config_store.get_object("ke.ida.instances", {}) or {}
+    instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
 
     if not instances:
         console.print("[yellow]No IDA instances registered.[/yellow]")
@@ -48,10 +48,10 @@ def _remove_all_instances(instances: dict[str, str]) -> None:
     instance_names = list(instances.keys())
 
     # Clear all instances
-    config_store.set_object("ke.ida.instances", {})
+    config_store.set_object("ida.instances", {})
 
     # Clear default setting
-    config_store.remove_string("ke.ida.default")
+    config_store.remove_string("ida.default")
 
     console.print(f"[green]Removed {instance_count} IDA instance(s):[/green]")
     for instance_name in instance_names:
@@ -69,16 +69,16 @@ def _remove_single_instance(name: str, instances: dict[str, str]) -> None:
             for instance_name in instances:
                 console.print(f"  - {instance_name}")
         else:
-            console.print("[yellow]No IDA instances registered. Use 'hcli ke ida add' to add instances.[/yellow]")
+            console.print("[yellow]No IDA instances registered. Use 'hcli ida add' to add instances.[/yellow]")
         raise click.Abort()
 
     # Check if this is the default instance
-    default_instance = config_store.get_string("ke.ida.default", "")
+    default_instance = config_store.get_string("ida.default", "")
     is_default = default_instance == name
 
     # Remove the instance
     del instances[name]
-    config_store.set_object("ke.ida.instances", instances)
+    config_store.set_object("ida.instances", instances)
 
     # Handle default instance removal
     if is_default:
@@ -86,11 +86,11 @@ def _remove_single_instance(name: str, instances: dict[str, str]) -> None:
             # Select the last alphabetical instance as the new default
             sorted_instance_names = sorted(instances.keys())
             new_default = sorted_instance_names[-1]
-            config_store.set_string("ke.ida.default", new_default)
+            config_store.set_string("ida.default", new_default)
             console.print(f"[green]Set '{new_default}' as new default IDA instance[/green]")
         else:
             # No instances left, clear default
-            config_store.remove_string("ke.ida.default")
+            config_store.remove_string("ida.default")
             console.print("[yellow]No IDA instances remaining, cleared default setting[/yellow]")
 
     console.print(f"[green]Removed IDA instance '{name}'[/green]")
