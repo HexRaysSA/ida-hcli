@@ -161,3 +161,13 @@ class KEURLHandler(URLHandler):
         from hcli.lib.ida.ke import _ke_download_and_launch
 
         _ke_download_and_launch(uri, parsed, no_launch, timeout, skip_analysis)
+
+
+# ---------------------------------------------------------------------------
+# Handler registry — order matters: first match wins
+# ---------------------------------------------------------------------------
+
+HANDLERS: list[URLHandler] = [
+    KEURLHandler(),
+    DefaultURLHandler(),
+]

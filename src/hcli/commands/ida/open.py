@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 import rich_click as click
 from rich.console import Console
 
-from hcli.lib.ida.handler import DefaultURLHandler, KEURLHandler, URLHandler
+from hcli.lib.ida.handler import HANDLERS
 from hcli.lib.ida.ipc import find_all_instances_with_info
 
 console = Console()
@@ -27,16 +27,6 @@ def _list_running_instances() -> None:
             console.print(f"  PID {instance.pid}: {instance.idb_name} ({instance.idb_path})")
         else:
             console.print(f"  PID {instance.pid}: [dim]no IDB loaded[/dim]")
-
-
-# ---------------------------------------------------------------------------
-# Handler registry
-# ---------------------------------------------------------------------------
-
-_HANDLERS: list[URLHandler] = [
-    KEURLHandler(),
-    DefaultURLHandler(),
-]
 
 
 @click.command(name="open")
@@ -94,7 +84,7 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
 
     parsed = urlparse(uri)
 
-    for handler in _HANDLERS:
+    for handler in HANDLERS:
         if handler.matches(parsed):
             handler.handle(uri, parsed, no_launch, timeout, skip_analysis)
             return
