@@ -117,7 +117,9 @@ async def install_tool(download_id: str, install_dir: str | None, force: bool) -
             console.print(f"[red]Failed to get download URL for {asset_key}[/red]")
             return
 
-        downloaded_path = await client.download_file(asset.url, target_dir=tmp_dir, force=True, auth=True, asset_key=asset_key)
+        downloaded_path = await client.download_file(
+            asset.url, target_dir=tmp_dir, force=True, auth=True, asset_key=asset_key
+        )
 
         # Determine target filename
         binary_name = tool_name
