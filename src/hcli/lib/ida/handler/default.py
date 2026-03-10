@@ -1,13 +1,7 @@
-"""ida:// URL handler base class and concrete implementations.
-
-Each handler implements ``matches`` (predicate) and ``handle`` (action).
-The dispatcher in ``open.py`` iterates over registered handlers and calls
-the first one whose ``matches`` returns *True*.
-"""
+"""Default ida:// URL handler for standard IDB navigation."""
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from urllib.parse import ParseResult
 
 import rich_click as click
@@ -20,20 +14,13 @@ from hcli.lib.ida.resolve import _idb_names_match, _print, resolve_and_navigate
 console = Console()
 
 
-class URLHandler(ABC):
-    """Base class for ida:// URL handlers."""
+class DefaultURLHandler:
+    """Handler for standard ida:// URLs (non-KE).
 
-    @abstractmethod
-    def matches(self, parsed: ParseResult) -> bool:
-        """Return *True* if this handler should process the URL."""
-
-    @abstractmethod
-    def handle(self, uri: str, parsed: ParseResult, no_launch: bool, timeout: float, skip_analysis: bool) -> None:
-        """Process the ida:// URL."""
-
-
-class DefaultURLHandler(URLHandler):
-    """Handler for standard ida:// URLs (non-KE)."""
+    Covers named-source URLs (``ida://source/file.i64/...``) and
+    relative URLs (``ida:///functions?rva=...``).  Acts as the catch-all
+    — must be last in the handler registry.
+    """
 
     def matches(self, parsed: ParseResult) -> bool:
         return True  # catch-all — must be last in the registry
@@ -141,33 +128,3 @@ class DefaultURLHandler(URLHandler):
             timeout=timeout,
             skip_analysis=skip_analysis,
         )
-
-
-class KEURLHandler(URLHandler):
-    """Handler for KE URLs: ``ida://host/api/v1/buckets/{bucket}/resources/{key}``."""
-
-    def matches(self, parsed: ParseResult) -> bool:
-        return "/api/v1/buckets/" in parsed.path
-
-    def handle(
-        self,
-        uri: str,
-        parsed: ParseResult,
-        no_launch: bool,
-        timeout: float,
-        skip_analysis: bool,
-    ) -> None:
-        """Download a resource from KE and launch IDA with it."""
-        from hcli.lib.ida.ke import _ke_download_and_launch
-
-        _ke_download_and_launch(uri, parsed, no_launch, timeout, skip_analysis)
-
-
-# ---------------------------------------------------------------------------
-# Handler registry — order matters: first match wins
-# ---------------------------------------------------------------------------
-
-HANDLERS: list[URLHandler] = [
-    KEURLHandler(),
-    DefaultURLHandler(),
-]
