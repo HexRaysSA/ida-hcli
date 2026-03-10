@@ -8,8 +8,8 @@ from urllib.parse import urlparse
 import click
 import pytest
 
+from hcli.lib.ida.handler import KEURLHandler
 from hcli.lib.ida.ke import (
-    KEURLHandler,
     _cleanup_old_downloads,
     _default_downloads_dir,
     _parse_resource_path,
