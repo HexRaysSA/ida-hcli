@@ -42,6 +42,10 @@ class ENV:
     HCLI_CURRENT_IDA_VERSION: str | None = os.getenv("HCLI_CURRENT_IDA_VERSION")
     HCLI_CURRENT_IDA_PYTHON_EXE: str | None = os.getenv("HCLI_CURRENT_IDA_PYTHON_EXE")
 
+    # KE download settings
+    HCLI_KE_DOWNLOADS_DIR: str | None = os.getenv("HCLI_KE_DOWNLOADS_DIR")
+    HCLI_KE_DOWNLOADS_RETENTION_DAYS: int = int(os.getenv("HCLI_KE_DOWNLOADS_RETENTION_DAYS", "3"))
+
 
 # Constants
 CONFIG_API_KEY = "apiKey"
