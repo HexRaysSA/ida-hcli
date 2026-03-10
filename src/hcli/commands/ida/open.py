@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from urllib.parse import ParseResult, urlparse
 
 import rich_click as click
@@ -12,9 +11,9 @@ from hcli.lib.ida.ipc import (
     IDAIPCClient,
     find_all_instances_with_info,
 )
-from hcli.lib.ida.ke import handle_ke_url, is_ke_url
+from hcli.lib.ida.ke import KEURLHandler
 from hcli.lib.ida.launcher import IDALauncher, LaunchConfig
-from hcli.lib.ida.resolve import _idb_names_match, resolve_and_navigate
+from hcli.lib.ida.resolve import URLHandler, _idb_names_match, _print, resolve_and_navigate
 
 console = Console()
 
@@ -35,32 +34,45 @@ def _list_running_instances() -> None:
             console.print(f"  PID {instance.pid}: [dim]no IDB loaded[/dim]")
 
 
-def _handle_default_ipc(
-    uri: str,
-    parsed: ParseResult | None,
-    no_launch: bool,
-    timeout: float,
-    skip_analysis: bool,
-) -> None:
-    """Handle standard ida:// URLs (non-KE)."""
-    # URL format: ida://<source>/<idb-name>/<resource>?<params>
-    source_name = (parsed.hostname or "") if parsed else ""
-    path_segments = [s for s in parsed.path.split("/") if s] if parsed else []
+class DefaultURLHandler(URLHandler):
+    """Handler for standard ida:// URLs (non-KE)."""
 
-    if not parsed or parsed.scheme != "ida" or (len(path_segments) <= 1 and not parsed.query):
-        console.print(f"[red]Error: Unsupported ida:// URL: {uri}[/red]")
-        console.print(
-            "[yellow]Example: ida:///{idb-name}/{resource}?rva=0x0, e.g. ida:///example.i64/functions?rva=0x0[/yellow]"
-        )
-        raise click.Abort()
+    def matches(self, parsed: ParseResult) -> bool:
+        return True  # catch-all — must be last in the registry
 
-    if len(path_segments) >= 2:
-        target_idb_name = path_segments[0]
-    else:
-        target_idb_name = ""  # relative URL, no IDB name
+    def handle(
+        self,
+        uri: str,
+        parsed: ParseResult,
+        no_launch: bool,
+        timeout: float,
+        skip_analysis: bool,
+    ) -> None:
+        # URL format: ida://<source>/<idb-name>/<resource>?<params>
+        source_name = parsed.hostname or ""
+        path_segments = [s for s in parsed.path.split("/") if s]
 
-    if not target_idb_name:
-        # Relative URL — resolve to the single running instance
+        if parsed.scheme != "ida" or (len(path_segments) <= 1 and not parsed.query):
+            console.print(f"[red]Error: Unsupported ida:// URL: {uri}[/red]")
+            console.print(
+                "[yellow]Example: ida:///{idb-name}/{resource}?rva=0x0,"
+                " e.g. ida:///example.i64/functions?rva=0x0[/yellow]"
+            )
+            raise click.Abort()
+
+        if len(path_segments) >= 2:
+            target_idb_name = path_segments[0]
+        else:
+            target_idb_name = ""  # relative URL, no IDB name
+
+        if not target_idb_name:
+            self._handle_relative_url(uri)
+            return
+
+        self._handle_named_idb(uri, target_idb_name, source_name, no_launch, timeout, skip_analysis)
+
+    def _handle_relative_url(self, uri: str) -> None:
+        """Relative URL — resolve to the single running instance."""
         instances = IDAIPCClient.discover_instances()
         instances_with_idb = []
         for instance in instances:
@@ -80,9 +92,6 @@ def _handle_default_ipc(
             raise click.Abort()
 
         matching_instance = instances_with_idb[0]
-        assert uri is not None
-        from hcli.lib.ida.resolve import _print
-
         _print(f"[dim]Sending command to IDA (PID {matching_instance.pid})...[/dim]")
         success, message = IDAIPCClient.send_open_ida_link(matching_instance.socket_path, uri)
         if success:
@@ -90,52 +99,59 @@ def _handle_default_ipc(
         else:
             console.print(f"[red]Error: {message}[/red]")
             raise click.Abort()
-        return
 
-    # Named IDB — find IDB file and delegate to resolve_and_navigate
-    launcher = IDALauncher(
-        LaunchConfig(
-            socket_timeout=min(30.0, timeout * 0.25),
-            idb_loaded_timeout=min(90.0, timeout * 0.75),
-            skip_analysis_wait=skip_analysis,
+    def _handle_named_idb(
+        self,
+        uri: str,
+        target_idb_name: str,
+        source_name: str,
+        no_launch: bool,
+        timeout: float,
+        skip_analysis: bool,
+    ) -> None:
+        """Named IDB — find the file and delegate to resolve_and_navigate."""
+        launcher = IDALauncher(
+            LaunchConfig(
+                socket_timeout=min(30.0, timeout * 0.25),
+                idb_loaded_timeout=min(90.0, timeout * 0.75),
+                skip_analysis_wait=skip_analysis,
+            )
         )
-    )
-    idb_path = launcher.find_idb_file(target_idb_name, source_name)
+        idb_path = launcher.find_idb_file(target_idb_name, source_name)
 
-    if not idb_path:
-        # Check if a running instance already has it open before failing
-        instances = IDAIPCClient.discover_instances()
-        for instance in instances:
-            info = IDAIPCClient.query_instance(instance.socket_path)
-            if info and info.has_idb and info.idb_name and _idb_names_match(info.idb_name, target_idb_name):
-                idb_path = None  # no local path, but instance is running
-                break
-        else:
-            # Not running either — print source-specific error
-            if not no_launch:
-                if source_name and source_name != "localhost":
-                    console.print(f"[red]IDB '{target_idb_name}' not found in source '{source_name}'.[/red]")
-                else:
-                    console.print(f"[red]IDB '{target_idb_name}' not found in any source.[/red]")
-                console.print("[dim]Configure sources with: hcli ida source add <name> <path>[/dim]")
+        if not idb_path:
+            # Check if a running instance already has it open before failing
+            instances = IDAIPCClient.discover_instances()
+            for instance in instances:
+                info = IDAIPCClient.query_instance(instance.socket_path)
+                if info and info.has_idb and info.idb_name and _idb_names_match(info.idb_name, target_idb_name):
+                    break
+            else:
+                # Not running either — print source-specific error
+                if not no_launch:
+                    if source_name and source_name != "localhost":
+                        console.print(f"[red]IDB '{target_idb_name}' not found in source '{source_name}'.[/red]")
+                    else:
+                        console.print(f"[red]IDB '{target_idb_name}' not found in any source.[/red]")
+                    console.print("[dim]Configure sources with: hcli ida source add <name> <path>[/dim]")
 
-    resolve_and_navigate(
-        uri=uri,
-        target_idb_name=target_idb_name,
-        idb_path=idb_path,
-        no_launch=no_launch,
-        timeout=timeout,
-        skip_analysis=skip_analysis,
-    )
+        resolve_and_navigate(
+            uri=uri,
+            target_idb_name=target_idb_name,
+            idb_path=idb_path,
+            no_launch=no_launch,
+            timeout=timeout,
+            skip_analysis=skip_analysis,
+        )
 
 
 # ---------------------------------------------------------------------------
 # Handler registry
 # ---------------------------------------------------------------------------
 
-_HANDLERS: list[tuple[str, Callable[[ParseResult], bool], Callable[..., None]]] = [
-    ("ke", is_ke_url, handle_ke_url),
-    ("default", lambda _: True, _handle_default_ipc),
+_HANDLERS: list[URLHandler] = [
+    KEURLHandler(),
+    DefaultURLHandler(),
 ]
 
 
@@ -188,12 +204,13 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
         _list_running_instances()
         return
 
-    parsed = urlparse(uri) if uri else None
+    if not uri:
+        console.print("[red]Error: No URI provided[/red]")
+        raise click.Abort()
 
-    for name, matches, handler in _HANDLERS:
-        if parsed and matches(parsed):
-            handler(uri, parsed, no_launch, timeout, skip_analysis)
+    parsed = urlparse(uri)
+
+    for handler in _HANDLERS:
+        if handler.matches(parsed):
+            handler.handle(uri, parsed, no_launch, timeout, skip_analysis)
             return
-
-    # Fallback (no parsed URL / no match — should only happen with None uri)
-    _handle_default_ipc(uri, parsed, no_launch, timeout, skip_analysis)

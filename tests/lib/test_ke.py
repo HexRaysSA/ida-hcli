@@ -9,35 +9,34 @@ import click
 import pytest
 
 from hcli.lib.ida.ke import (
+    KEURLHandler,
     _cleanup_old_downloads,
     _default_downloads_dir,
     _parse_resource_path,
     _resolve_base_url,
-    handle_ke_url,
-    is_ke_url,
 )
 
 
 class TestIsKeUrl:
     def test_ke_url_detected(self):
         parsed = urlparse("ida://host:8080/api/v1/buckets/mybucket/resources/mykey")
-        assert is_ke_url(parsed) is True
+        assert KEURLHandler().matches(parsed) is True
 
     def test_regular_ida_url_not_detected(self):
         parsed = urlparse("ida://malwares/trojan.i64/functions?rva=0x1000")
-        assert is_ke_url(parsed) is False
+        assert KEURLHandler().matches(parsed) is False
 
     def test_relative_ida_url_not_detected(self):
         parsed = urlparse("ida:///myfile.i64/functions?rva=0x1000")
-        assert is_ke_url(parsed) is False
+        assert KEURLHandler().matches(parsed) is False
 
     def test_ke_url_with_nested_key(self):
         parsed = urlparse("ida://host/api/v1/buckets/b/resources/path/to/file.idb")
-        assert is_ke_url(parsed) is True
+        assert KEURLHandler().matches(parsed) is True
 
     def test_empty_path(self):
         parsed = urlparse("ida://host")
-        assert is_ke_url(parsed) is False
+        assert KEURLHandler().matches(parsed) is False
 
 
 class TestParseResourcePath:
@@ -156,7 +155,7 @@ class TestHandleKeUrl:
         with patch("hcli.lib.ida.ke.ENV") as mock_env, patch("hcli.lib.ida.ke.time.sleep"):
             mock_env.HCLI_KE_DOWNLOADS_DIR = str(tmp_path)
             mock_env.HCLI_KE_DOWNLOADS_RETENTION_DAYS = 3
-            handle_ke_url(uri, parsed, no_launch=True, timeout=120.0, skip_analysis=False)
+            KEURLHandler().handle(uri, parsed, no_launch=True, timeout=120.0, skip_analysis=False)
 
         # File should be downloaded
         downloaded = tmp_path / "mybucket" / "test.idb"
@@ -200,7 +199,7 @@ class TestHandleKeUrl:
         ):
             mock_env.HCLI_KE_DOWNLOADS_DIR = str(tmp_path)
             mock_env.HCLI_KE_DOWNLOADS_RETENTION_DAYS = 3
-            handle_ke_url(uri, parsed, no_launch=False, timeout=120.0, skip_analysis=False)
+            KEURLHandler().handle(uri, parsed, no_launch=False, timeout=120.0, skip_analysis=False)
 
         # Should navigate to the running instance, NOT launch a new one
         mock_ipc.send_open_ida_link.assert_called_once_with("/tmp/ida_ipc_1234", uri)
@@ -209,4 +208,4 @@ class TestHandleKeUrl:
         parsed = urlparse("ida:///api/v1/buckets/b/resources/k")
         # parsed.netloc is empty for triple-slash
         with pytest.raises(click.Abort):
-            handle_ke_url("ida:///api/v1/buckets/b/resources/k", parsed, False, 120.0, False)
+            KEURLHandler().handle("ida:///api/v1/buckets/b/resources/k", parsed, False, 120.0, False)

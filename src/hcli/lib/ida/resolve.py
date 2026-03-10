@@ -1,14 +1,16 @@
 """Shared helpers for resolving IDA instances and navigating to ida:// URIs.
 
-Centralises IDB name matching and the find-or-launch + navigate flow used
-by both the default and KE URL handlers.
+Centralises IDB name matching, the find-or-launch + navigate flow, and
+the ``URLHandler`` base class used by all ida:// URL handlers.
 """
 
 from __future__ import annotations
 
 import sys
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from pathlib import Path
+from urllib.parse import ParseResult
 
 import rich_click as click
 from rich.console import Console
@@ -16,6 +18,23 @@ from rich.console import Console
 from hcli.lib.ida.ipc import IDAIPCClient
 
 console = Console()
+
+
+class URLHandler(ABC):
+    """Base class for ida:// URL handlers.
+
+    Subclasses implement ``matches`` (predicate) and ``handle`` (action).
+    The dispatcher in ``open.py`` iterates over registered handlers and
+    calls the first one whose ``matches`` returns *True*.
+    """
+
+    @abstractmethod
+    def matches(self, parsed: ParseResult) -> bool:
+        """Return *True* if this handler should process the URL."""
+
+    @abstractmethod
+    def handle(self, uri: str, parsed: ParseResult, no_launch: bool, timeout: float, skip_analysis: bool) -> None:
+        """Process the ida:// URL."""
 
 
 def _print(msg: str) -> None:
