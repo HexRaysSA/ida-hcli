@@ -163,6 +163,48 @@ class TestHandleKeUrl:
         assert downloaded.exists()
         assert downloaded.read_bytes() == b"file content"
 
+    @patch("hcli.lib.ida.ke._show_download_dialog", return_value=None)
+    @patch("hcli.lib.ida.ke._dismiss_dialog")
+    @patch("hcli.lib.ida.ke._cleanup_old_downloads")
+    @patch("hcli.lib.ida.ke._resolve_base_url", return_value="https://host:8080")
+    @patch("hcli.lib.ida.ke.httpx.Client")
+    @patch("hcli.lib.ida.resolve.IDAIPCClient")
+    def test_reuses_running_instance(
+        self, mock_ipc, mock_client_cls, mock_resolve, mock_cleanup, mock_dismiss, mock_dialog, tmp_path
+    ):
+        """KE should reuse an already-open IDA instance instead of launching a new one."""
+        from hcli.lib.ida.ipc import IDAInstance
+
+        # Setup: a running IDA instance already has test.idb open
+        running_instance = IDAInstance(pid=1234, socket_path="/tmp/ida_ipc_1234", idb_name="test.idb", has_idb=True)
+        mock_ipc.discover_instances.return_value = [running_instance]
+        mock_ipc.query_instance.return_value = running_instance
+        mock_ipc.send_open_ida_link.return_value = (True, "OK")
+
+        # Setup: HTTP download mock
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"file content"
+        mock_client.get.return_value = mock_response
+        mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        uri = "ida://host:8080/api/v1/buckets/mybucket/resources/test.idb?rva=0x1000"
+        parsed = urlparse(uri)
+
+        with (
+            patch("hcli.lib.ida.ke.ENV") as mock_env,
+            patch("hcli.lib.ida.ke.time.sleep"),
+            patch("hcli.lib.ida.resolve._print"),
+        ):
+            mock_env.HCLI_KE_DOWNLOADS_DIR = str(tmp_path)
+            mock_env.HCLI_KE_DOWNLOADS_RETENTION_DAYS = 3
+            handle_ke_url(uri, parsed, no_launch=False, timeout=120.0, skip_analysis=False)
+
+        # Should navigate to the running instance, NOT launch a new one
+        mock_ipc.send_open_ida_link.assert_called_once_with("/tmp/ida_ipc_1234", uri)
+
     def test_no_host_aborts(self):
         parsed = urlparse("ida:///api/v1/buckets/b/resources/k")
         # parsed.netloc is empty for triple-slash

@@ -19,8 +19,7 @@ import rich_click as click
 from rich.console import Console
 
 from hcli.env import ENV
-from hcli.lib.ida.ipc import IDAIPCClient
-from hcli.lib.ida.launcher import MIN_IPC_VERSION, IDALauncher, LaunchConfig, _parse_version_tuple
+from hcli.lib.ida.resolve import resolve_and_navigate
 
 logger = logging.getLogger(__name__)
 
@@ -100,54 +99,17 @@ def handle_ke_url(
         console.print(f"[green]Downloaded file: {resource_path}[/green]")
         return
 
-    # Launch IDA with the downloaded file
-    launcher = IDALauncher(
-        LaunchConfig(
-            socket_timeout=min(30.0, timeout * 0.25),
-            idb_loaded_timeout=min(90.0, timeout * 0.75),
-            skip_analysis_wait=skip_analysis,
-        )
-    )
-
-    ida_version = launcher.get_ida_version()
-    use_ipc = ida_version is None or _parse_version_tuple(ida_version) >= MIN_IPC_VERSION
-
-    if not use_ipc:
-        # Pre-IPC IDA: just launch with the file
-        result = launcher.launch_only(
-            resource_path,
-            progress_callback=lambda msg: _print(f"[dim]{msg}[/dim]"),
-        )
-        if not result.success:
-            _show_error_dialog(f"Failed to launch IDA: {result.error_message}")
-            console.print(f"[red]Failed to launch IDA: {result.error_message}[/red]")
-            raise click.Abort()
-        console.print(f"[green]Opening {resource_path} with IDA[/green]")
-        return
-
-    # IDA 9.4+: launch and wait for IPC, then optionally navigate
-    result = launcher.launch_and_wait(
-        resource_path,
+    # Launch IDA (or reuse a running instance) and navigate
+    resolve_and_navigate(
+        uri=uri,
+        target_idb_name=resource_path.name,
+        idb_path=resource_path,
+        no_launch=False,
         timeout=timeout,
-        progress_callback=lambda msg: _print(f"[dim]{msg}[/dim]"),
+        skip_analysis=skip_analysis,
+        navigate=bool(parsed.query),
+        on_error=_show_error_dialog,
     )
-
-    if not result.success or result.instance is None:
-        error_msg = result.error_message or "Unknown error"
-        _show_error_dialog(f"Failed to launch IDA: {error_msg}")
-        console.print(f"[red]Failed to launch IDA: {error_msg}[/red]")
-        raise click.Abort()
-
-    console.print(f"[green]Opening {resource_path} with IDA[/green]")
-
-    # If the original URI contains query params (e.g. ?rva=0x1000), send navigation
-    if parsed.query:
-        _print(f"[dim]Sending navigation command to IDA (PID {result.instance.pid})...[/dim]")
-        success, message = IDAIPCClient.send_open_ida_link(result.instance.socket_path, uri)
-        if success:
-            _print(f"[green]Navigated to: {uri}[/green]")
-        else:
-            console.print(f"[yellow]Warning: Navigation failed: {message}[/yellow]")
 
 
 # ---------------------------------------------------------------------------
