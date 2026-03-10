@@ -1,4 +1,4 @@
-"""Default ida:// URL handler for standard IDB navigation."""
+"""Handler for standard ida:// URLs — IDB lookup, instance discovery, and navigation."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from urllib.parse import ParseResult
 import rich_click as click
 from rich.console import Console
 
+from hcli.lib.ida.handler.url_handler import URLHandler
 from hcli.lib.ida.ipc import IDAIPCClient
 from hcli.lib.ida.launcher import IDALauncher, LaunchConfig
 from hcli.lib.ida.resolve import _idb_names_match, _print, resolve_and_navigate
@@ -14,16 +15,16 @@ from hcli.lib.ida.resolve import _idb_names_match, _print, resolve_and_navigate
 console = Console()
 
 
-class DefaultURLHandler:
-    """Handler for standard ida:// URLs (non-KE).
+class DefaultURLHandler(URLHandler):
+    """Handler for standard ida:// URLs.
 
     Covers named-source URLs (``ida://source/file.i64/...``) and
-    relative URLs (``ida:///functions?rva=...``).  Acts as the catch-all
-    — must be last in the handler registry.
+    relative URLs (``ida:///functions?rva=...``).  Matches any ``ida://``
+    URL, so it acts as a catch-all when placed last in the registry.
     """
 
     def matches(self, parsed: ParseResult) -> bool:
-        return True  # catch-all — must be last in the registry
+        return True
 
     def handle(
         self,

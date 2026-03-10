@@ -1,7 +1,7 @@
-"""KE resource download and IDA launch for ida:// URLs targeting a KE server.
+"""Handler for KE URLs — download resources from KE servers, cache locally, and launch IDA.
 
-KE URLs are detected by the presence of ``/api/v1/buckets/`` in the path.
-Example: ida://ke.example.com:8080/api/v1/buckets/mybucket/resources/mykey
+Matches URLs containing ``/api/v1/buckets/`` in the path.
+Example: ``ida://ke.example.com:8080/api/v1/buckets/mybucket/resources/mykey``
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ import rich_click as click
 from rich.console import Console
 
 from hcli.env import ENV
+from hcli.lib.ida.handler.url_handler import URLHandler
 from hcli.lib.ida.resolve import resolve_and_navigate
 
 logger = logging.getLogger(__name__)
@@ -32,73 +33,80 @@ def _print(msg: str) -> None:
         console.print(msg)
 
 
-def _ke_download_and_launch(
-    uri: str,
-    parsed: ParseResult,
-    no_launch: bool,
-    timeout: float,
-    skip_analysis: bool,
-) -> None:
-    """Download a resource from KE and launch IDA with it.
+class KEURLHandler(URLHandler):
+    """Handler for KE URLs: ``ida://host/api/v1/buckets/{bucket}/resources/{key}``.
 
-    Called by ``KEURLHandler.handle`` in ``handler.py``.
+    Downloads the resource from a KE server (with HTTPS/HTTP fallback),
+    caches it locally, then finds or launches an IDA instance.
     """
-    if not parsed.netloc:
-        console.print("[red]Error: No host in KE URL[/red]")
-        raise click.Abort()
 
-    bucket, key = _parse_resource_path(parsed.path)
-    base_url = _resolve_base_url(parsed.netloc)
+    def matches(self, parsed: ParseResult) -> bool:
+        return "/api/v1/buckets/" in parsed.path
 
-    asset_url = f"{base_url}{parsed.path}".replace("/resources/", "/assets/")
-    download_url = f"{base_url}{parsed.path}".replace("/resources/", "/downloads/")
+    def handle(
+        self,
+        uri: str,
+        parsed: ParseResult,
+        no_launch: bool,
+        timeout: float,
+        skip_analysis: bool,
+    ) -> None:
+        if not parsed.netloc:
+            console.print("[red]Error: No host in KE URL[/red]")
+            raise click.Abort()
 
-    # Cleanup old downloads (best-effort)
-    _cleanup_old_downloads()
+        bucket, key = _parse_resource_path(parsed.path)
+        base_url = _resolve_base_url(parsed.netloc)
 
-    # Setup cache path
-    downloads_dir = Path(ENV.HCLI_KE_DOWNLOADS_DIR or _default_downloads_dir())
-    resource_path = downloads_dir / bucket / key
-    sidecar_path = resource_path.parent / f"{resource_path.name}.ke.json"
-    resource_path.parent.mkdir(parents=True, exist_ok=True)
+        asset_url = f"{base_url}{parsed.path}".replace("/resources/", "/assets/")
+        download_url = f"{base_url}{parsed.path}".replace("/resources/", "/downloads/")
 
-    console.print(f"[blue]Downloading {key} from KE...[/blue]")
+        # Cleanup old downloads (best-effort)
+        _cleanup_old_downloads()
 
-    filename = Path(key).name
-    dialog = _show_download_dialog(filename)
+        # Setup cache path
+        downloads_dir = Path(ENV.HCLI_KE_DOWNLOADS_DIR or _default_downloads_dir())
+        resource_path = downloads_dir / bucket / key
+        sidecar_path = resource_path.parent / f"{resource_path.name}.ke.json"
+        resource_path.parent.mkdir(parents=True, exist_ok=True)
 
-    try:
-        with httpx.Client(timeout=300.0) as client:
-            _download_metadata(client, asset_url, sidecar_path)
-            _download_file(client, download_url, resource_path)
-    except click.ClickException:
+        console.print(f"[blue]Downloading {key} from KE...[/blue]")
+
+        filename = Path(key).name
+        dialog = _show_download_dialog(filename)
+
+        try:
+            with httpx.Client(timeout=300.0) as client:
+                _download_metadata(client, asset_url, sidecar_path)
+                _download_file(client, download_url, resource_path)
+        except click.ClickException:
+            _dismiss_dialog(dialog)
+            _show_error_dialog("Download failed")
+            raise
+        except Exception as e:
+            _dismiss_dialog(dialog)
+            _show_error_dialog(str(e) or "Download failed")
+            raise click.ClickException(str(e) or "Download failed")
+
+        console.print("[green]Download complete[/green]")
+        time.sleep(1)
         _dismiss_dialog(dialog)
-        _show_error_dialog("Download failed")
-        raise
-    except Exception as e:
-        _dismiss_dialog(dialog)
-        _show_error_dialog(str(e) or "Download failed")
-        raise click.ClickException(str(e) or "Download failed")
 
-    console.print("[green]Download complete[/green]")
-    time.sleep(1)
-    _dismiss_dialog(dialog)
+        if no_launch:
+            console.print(f"[green]Downloaded file: {resource_path}[/green]")
+            return
 
-    if no_launch:
-        console.print(f"[green]Downloaded file: {resource_path}[/green]")
-        return
-
-    # Launch IDA (or reuse a running instance) and navigate
-    resolve_and_navigate(
-        uri=uri,
-        target_idb_name=resource_path.name,
-        idb_path=resource_path,
-        no_launch=False,
-        timeout=timeout,
-        skip_analysis=skip_analysis,
-        navigate=bool(parsed.query),
-        on_error=_show_error_dialog,
-    )
+        # Launch IDA (or reuse a running instance) and navigate
+        resolve_and_navigate(
+            uri=uri,
+            target_idb_name=resource_path.name,
+            idb_path=resource_path,
+            no_launch=False,
+            timeout=timeout,
+            skip_analysis=skip_analysis,
+            navigate=bool(parsed.query),
+            on_error=_show_error_dialog,
+        )
 
 
 # ---------------------------------------------------------------------------

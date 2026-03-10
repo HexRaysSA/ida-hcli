@@ -8,8 +8,8 @@ from urllib.parse import urlparse
 import click
 import pytest
 
-from hcli.lib.ida.handler import KEURLHandler
-from hcli.lib.ida.ke import (
+from hcli.lib.ida.handler.ke_url_handler import (
+    KEURLHandler,
     _cleanup_old_downloads,
     _default_downloads_dir,
     _parse_resource_path,
@@ -73,7 +73,7 @@ class TestParseResourcePath:
 
 
 class TestResolveBaseUrl:
-    @patch("hcli.lib.ida.ke.httpx.Client")
+    @patch("hcli.lib.ida.handler.ke_url_handler.httpx.Client")
     def test_https_available(self, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
@@ -82,7 +82,7 @@ class TestResolveBaseUrl:
         result = _resolve_base_url("example.com:8080")
         assert result == "https://example.com:8080"
 
-    @patch("hcli.lib.ida.ke.httpx.Client")
+    @patch("hcli.lib.ida.handler.ke_url_handler.httpx.Client")
     def test_https_unavailable_falls_back_to_http(self, mock_client_cls):
         import httpx
 
@@ -118,7 +118,7 @@ class TestCleanupOldDownloads:
         new_file = tmp_path / "bucket" / "new.idb"
         new_file.write_text("new")
 
-        with patch("hcli.lib.ida.ke.ENV") as mock_env:
+        with patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env:
             mock_env.HCLI_KE_DOWNLOADS_DIR = str(tmp_path)
             mock_env.HCLI_KE_DOWNLOADS_RETENTION_DAYS = 3
             _cleanup_old_downloads()
@@ -127,17 +127,17 @@ class TestCleanupOldDownloads:
         assert new_file.exists()
 
     def test_cleanup_nonexistent_dir(self, tmp_path):
-        with patch("hcli.lib.ida.ke.ENV") as mock_env:
+        with patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env:
             mock_env.HCLI_KE_DOWNLOADS_DIR = str(tmp_path / "nonexistent")
             _cleanup_old_downloads()  # should not raise
 
 
 class TestHandleKeUrl:
-    @patch("hcli.lib.ida.ke._show_download_dialog", return_value=None)
-    @patch("hcli.lib.ida.ke._dismiss_dialog")
-    @patch("hcli.lib.ida.ke._cleanup_old_downloads")
-    @patch("hcli.lib.ida.ke._resolve_base_url", return_value="https://host:8080")
-    @patch("hcli.lib.ida.ke.httpx.Client")
+    @patch("hcli.lib.ida.handler.ke_url_handler._show_download_dialog", return_value=None)
+    @patch("hcli.lib.ida.handler.ke_url_handler._dismiss_dialog")
+    @patch("hcli.lib.ida.handler.ke_url_handler._cleanup_old_downloads")
+    @patch("hcli.lib.ida.handler.ke_url_handler._resolve_base_url", return_value="https://host:8080")
+    @patch("hcli.lib.ida.handler.ke_url_handler.httpx.Client")
     def test_no_launch_downloads_only(
         self, mock_client_cls, mock_resolve, mock_cleanup, mock_dismiss, mock_dialog, tmp_path
     ):
@@ -152,7 +152,10 @@ class TestHandleKeUrl:
         uri = "ida://host:8080/api/v1/buckets/mybucket/resources/test.idb"
         parsed = urlparse(uri)
 
-        with patch("hcli.lib.ida.ke.ENV") as mock_env, patch("hcli.lib.ida.ke.time.sleep"):
+        with (
+            patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env,
+            patch("hcli.lib.ida.handler.ke_url_handler.time.sleep"),
+        ):
             mock_env.HCLI_KE_DOWNLOADS_DIR = str(tmp_path)
             mock_env.HCLI_KE_DOWNLOADS_RETENTION_DAYS = 3
             KEURLHandler().handle(uri, parsed, no_launch=True, timeout=120.0, skip_analysis=False)
@@ -162,11 +165,11 @@ class TestHandleKeUrl:
         assert downloaded.exists()
         assert downloaded.read_bytes() == b"file content"
 
-    @patch("hcli.lib.ida.ke._show_download_dialog", return_value=None)
-    @patch("hcli.lib.ida.ke._dismiss_dialog")
-    @patch("hcli.lib.ida.ke._cleanup_old_downloads")
-    @patch("hcli.lib.ida.ke._resolve_base_url", return_value="https://host:8080")
-    @patch("hcli.lib.ida.ke.httpx.Client")
+    @patch("hcli.lib.ida.handler.ke_url_handler._show_download_dialog", return_value=None)
+    @patch("hcli.lib.ida.handler.ke_url_handler._dismiss_dialog")
+    @patch("hcli.lib.ida.handler.ke_url_handler._cleanup_old_downloads")
+    @patch("hcli.lib.ida.handler.ke_url_handler._resolve_base_url", return_value="https://host:8080")
+    @patch("hcli.lib.ida.handler.ke_url_handler.httpx.Client")
     @patch("hcli.lib.ida.resolve.IDAIPCClient")
     def test_reuses_running_instance(
         self, mock_ipc, mock_client_cls, mock_resolve, mock_cleanup, mock_dismiss, mock_dialog, tmp_path
@@ -193,8 +196,8 @@ class TestHandleKeUrl:
         parsed = urlparse(uri)
 
         with (
-            patch("hcli.lib.ida.ke.ENV") as mock_env,
-            patch("hcli.lib.ida.ke.time.sleep"),
+            patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env,
+            patch("hcli.lib.ida.handler.ke_url_handler.time.sleep"),
             patch("hcli.lib.ida.resolve._print"),
         ):
             mock_env.HCLI_KE_DOWNLOADS_DIR = str(tmp_path)
