@@ -82,12 +82,12 @@ async def install_tool(download_id: str, install_dir: str | None, force: bool) -
     """
     # Parse name[:version]
     if ":" in download_id:
-        name, version = download_id.split(":", 1)
-        version = None if version == "latest" else version
+        name, ver = download_id.split(":", 1)
+        requested_version: str | None = None if ver == "latest" else ver
     else:
-        name, version = download_id, None
+        name, requested_version = download_id, None
 
-    result = await _resolve_tool(name, version)
+    result = await _resolve_tool(name, requested_version)
     if not result:
         return
     asset_key, tool_name, version = result
