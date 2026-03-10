@@ -12,6 +12,7 @@ from hcli.lib.ida.ipc import (
     IDAIPCClient,
     find_all_instances_with_info,
 )
+from hcli.lib.ida.ke import handle_ke_url, is_ke_url
 from hcli.lib.ida.launcher import MIN_IPC_VERSION, IDALauncher, LaunchConfig, _parse_version_tuple
 
 
@@ -101,6 +102,9 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
         ida:///myfile.i64/functions?rva=0x1000  (relative: searches all sources)
         ida:///myfile.i64/addresses?rva=0x0  (open IDB and position at beginning)
         ida:///functions?rva=0x1000  (relative: sent to the only running instance)
+
+    KE URLs (download from KE server and launch IDA):
+        ida://host:port/api/v1/buckets/{bucket}/resources/{key}
     """
     if list_instances:
         _list_running_instances()
@@ -108,6 +112,11 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
 
     # Parse URL to extract IDB name
     parsed = urlparse(uri) if uri else None
+
+    # KE URL dispatch: ida://host/api/v1/buckets/{bucket}/resources/{key}
+    if parsed and is_ke_url(parsed):
+        handle_ke_url(uri, parsed, no_launch, timeout, skip_analysis)
+        return
 
     # URL format: ida://<source>/<idb-name>/<resource>?<params>
     # e.g., ida://malwares/trojan1.i64/functions?rva=0x1000
