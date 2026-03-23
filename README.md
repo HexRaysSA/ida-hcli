@@ -15,7 +15,7 @@ See [https://hcli.docs.hex-rays.com/](https://hcli.docs.hex-rays.com/)
 
 ## Installation Profiles
 
-`ida-hcli` now keeps its reusable library surface in the base install and exposes application-oriented
+`ida-hcli` keeps its reusable library surface in the base install and exposes application-oriented
 dependencies through optional profiles:
 
 - `pip install ida-hcli` installs the lean library/core profile
