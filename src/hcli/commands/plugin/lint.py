@@ -7,7 +7,7 @@ import logging
 import zipfile
 from pathlib import Path
 
-import requests
+import httpx
 import rich_click as click
 from pydantic import ValidationError
 
@@ -313,7 +313,7 @@ def lint_plugin_directory(path: str) -> None:
         logger.info("linting from HTTP URL")
         try:
             buf = fetch_plugin_archive(path)
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        except (httpx.ConnectError, httpx.TimeoutException):
             console.print(f"[red]Cannot connect to {path} - network unavailable.[/red]")
             console.print("Please check your internet connection.")
             raise click.Abort()

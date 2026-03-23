@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import requests
+import httpx
 import rich_click as click
 
 from hcli.lib.console import console
@@ -53,7 +53,7 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             plugin_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
                 plugin_spec, current_ida_platform, current_ida_version
             )
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        except (httpx.ConnectError, httpx.TimeoutException):
             console.print("[red]Cannot connect to plugin repository - network unavailable.[/red]")
             console.print("Please check your internet connection.")
             raise click.Abort()

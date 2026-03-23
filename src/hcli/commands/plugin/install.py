@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import httpx
 import questionary
-import requests
 import rich.status
 import rich_click as click
 
@@ -75,7 +75,7 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
                     f"fetching plugin from GitHub: {owner}/{repo}{tag_info}", console=stderr_console
                 ):
                     buf = fetch_github_release_zip_asset(owner, repo, tag)
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            except (httpx.ConnectError, httpx.TimeoutException):
                 console.print("[red]Cannot connect to GitHub - network unavailable.[/red]")
                 console.print("Please check your internet connection.")
                 raise click.Abort()
@@ -89,7 +89,7 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
             try:
                 with rich.status.Status("fetching plugin", console=stderr_console):
                     buf = fetch_plugin_archive(plugin_spec)
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            except (httpx.ConnectError, httpx.TimeoutException):
                 console.print(f"[red]Cannot connect to {plugin_spec} - network unavailable.[/red]")
                 console.print("Please check your internet connection.")
                 raise click.Abort()

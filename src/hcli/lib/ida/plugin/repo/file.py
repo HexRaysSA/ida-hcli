@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-import requests
+import httpx
 from pydantic import BaseModel
 
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin
@@ -56,7 +56,7 @@ class JSONFilePluginRepo(BasePluginRepo):
             return cls.from_bytes(file_path.read_bytes())
 
         elif parsed_url.scheme == "https":
-            response = requests.get(url, timeout=30.0)
+            response = httpx.get(url, timeout=30.0)
             response.raise_for_status()
             return cls.from_bytes(response.content)
 
