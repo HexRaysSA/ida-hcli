@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-import requests
+import httpx
 import rich.progress
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import RetryCallState, retry, retry_if_exception, stop_after_attempt
@@ -92,7 +92,7 @@ def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None
 
     Raises:
         ValueError: If no .zip asset or multiple .zip assets found.
-        requests.RequestException: If API request fails.
+        httpx.HTTPError: If API request fails.
     """
     headers = {"Accept": "application/vnd.github.v3+json"}
 
@@ -103,7 +103,7 @@ def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None
         release_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/latest"
 
     logger.info(f"fetching release from {release_url}")
-    response = requests.get(release_url, headers=headers, timeout=30.0)
+    response = httpx.get(release_url, headers=headers, timeout=30.0)
     response.raise_for_status()
     release_data = response.json()
 
@@ -132,7 +132,7 @@ def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None
         )
 
     logger.info(f"downloading asset: {asset_name} ({asset_size} bytes) from {download_url}")
-    response = requests.get(download_url, timeout=60.0)
+    response = httpx.get(download_url, timeout=60.0)
     response.raise_for_status()
 
     return response.content

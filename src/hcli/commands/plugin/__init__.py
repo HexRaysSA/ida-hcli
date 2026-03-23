@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import requests
+import httpx
 import rich_click as click
 
 import hcli.lib.ida.plugin.repo
@@ -109,7 +109,7 @@ def plugin(ctx, repo: str | None, with_repos_list: str | None, with_ignored_repo
             else:
                 plugin_repo = hcli.lib.ida.plugin.repo.file.JSONFilePluginRepo.from_file(path)
 
-    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+    except (httpx.ConnectError, httpx.TimeoutException):
         if repo == "github":
             console.print("[red]Cannot connect to GitHub - network unavailable.[/red]")
         elif repo is None:

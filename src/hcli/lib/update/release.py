@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import ClassVar
 from urllib.parse import urlparse
 
-import requests
+import httpx
 from semantic_version import SimpleSpec, Version
 
 from hcli.env import ENV
@@ -178,13 +178,14 @@ def download_asset(
     headers = AuthSession.header.copy()
     headers["Accept"] = "application/octet-stream"
 
-    response = requests.get(asset_url, stream=True, headers=headers)
-
     check_free_space(out_dir, asset.size)
 
     try:
-        with open(out_dir.joinpath(asset.name), "wb") as file:
-            for i, data in enumerate(response.iter_content(block_size)):
+        with (
+            httpx.stream("GET", asset_url, headers=headers) as response,
+            open(out_dir.joinpath(asset.name), "wb") as file,
+        ):
+            for i, data in enumerate(response.iter_bytes(block_size)):
                 file.write(data)
                 callback(i * block_size, asset.size)
             callback(asset.size, asset.size)
@@ -213,7 +214,7 @@ def get_available_versions(repo: GitHubRepo, process_tag: Callable[[str], Versio
     page_size = 100
     for i in itertools.count(1):
         data = json.loads(
-            requests.get(request_url, {"page": i, "per_page": page_size}, headers=AuthSession.header).text
+            httpx.get(request_url, params={"page": i, "per_page": page_size}, headers=AuthSession.header).text
         )
         if "message" in data or not isinstance(data, list):
             break
@@ -242,7 +243,7 @@ def get_latest_version(
         # Use the existing logic for latest release (which might be dev)
         logging.info(f"Searching for latest release in 'https://github.com/{repo.user}/{repo.repo}/'...")
         request_url = f"{ENV.HCLI_GITHUB_API_URL}/repos/{repo.user}/{repo.repo}/releases/latest"
-        data = json.loads(requests.get(request_url, headers=AuthSession.header).text)
+        data = json.loads(httpx.get(request_url, headers=AuthSession.header).text)
         if "message" in data:
             return
         tag_name = data.get("tag_name")
@@ -272,7 +273,7 @@ def parse_tag(tag_name: str) -> Version | None:
 def get_assets(repo: GitHubRepo, tag_name: str, assets_mask=re.compile(".*")):
     logging.info(f"Searching for assets by tag '{tag_name}' and mask: '{assets_mask.pattern}'")
     request_url = f"{ENV.HCLI_GITHUB_API_URL}/repos/{repo.user}/{repo.repo}/releases/tags/{tag_name}"
-    data = json.loads(requests.get(request_url, headers=AuthSession.header).text)
+    data = json.loads(httpx.get(request_url, headers=AuthSession.header).text)
     if "message" in data:
         return []
     assets = data.get("assets")

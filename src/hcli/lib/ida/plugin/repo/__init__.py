@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 from urllib.parse import urlparse
 
-import requests
+import httpx
 import semantic_version
 from pydantic import BaseModel, ConfigDict
 
@@ -35,7 +35,7 @@ def fetch_plugin_archive(url: str) -> bytes:
         return file_path.read_bytes()
 
     elif parsed_url.scheme in ("http", "https"):
-        response = requests.get(url, timeout=30.0)
+        response = httpx.get(url, timeout=30.0)
         response.raise_for_status()
         return response.content
 

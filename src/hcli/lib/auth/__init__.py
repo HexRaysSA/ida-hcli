@@ -6,9 +6,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 from typing import Any
 
-from gotrue import SyncSupportedStorage
-from supabase import Client, create_client
-from supabase.lib.client_options import SyncClientOptions
+from supabase_auth import SyncGoTrueClient, SyncSupportedStorage
 
 from hcli.env import ENV, OAUTH_REDIRECT_URL, OAUTH_SERVER_PORT
 from hcli.lib.config import config_store
@@ -42,12 +40,18 @@ class AuthService:
             def remove_item(self, key: str) -> None:
                 config_store.remove_string(key)
 
-        # Create Supabase client with custom storage
-        options = SyncClientOptions(
-            auto_refresh_token=False, persist_session=True, storage=ConfigSyncSupportedStorage(), flow_type="implicit"
+        # Create GoTrue auth client directly (no need for full Supabase SDK)
+        self.supabase_auth = SyncGoTrueClient(
+            url=f"{ENV.HCLI_SUPABASE_URL}/auth/v1",
+            headers={
+                "apikey": ENV.HCLI_SUPABASE_ANON_KEY,
+                "Authorization": f"Bearer {ENV.HCLI_SUPABASE_ANON_KEY}",
+            },
+            auto_refresh_token=False,
+            persist_session=True,
+            storage=ConfigSyncSupportedStorage(),
+            flow_type="implicit",
         )
-
-        self.supabase: Client = create_client(ENV.HCLI_SUPABASE_URL, ENV.HCLI_SUPABASE_ANON_KEY, options)
 
         # Current session state (for active interactive auth)
         self.session: Any | None = None
@@ -111,10 +115,10 @@ class AuthService:
             try:
                 if self._current_source.token:
                     # Set the token in Supabase client
-                    user_response = self.supabase.auth.get_user()
+                    user_response = self.supabase_auth.get_user()
                     if user_response and user_response.user:
                         self.user = user_response.user
-                        self.session = self.supabase.auth.get_session()
+                        self.session = self.supabase_auth.get_session()
             except Exception:
                 pass
 
@@ -203,10 +207,10 @@ class AuthService:
             # If we have credentials but no valid session, try to refresh
             if self._current_source.token:
                 try:
-                    user_response = self.supabase.auth.get_user()
+                    user_response = self.supabase_auth.get_user()
                     if user_response and user_response.user:
                         self.user = user_response.user
-                        self.session = self.supabase.auth.get_session()
+                        self.session = self.supabase_auth.get_session()
                         return True
                 except Exception:
                     # Token exists but is expired/invalid
@@ -233,7 +237,7 @@ class AuthService:
         if self._current_source.token and (self.session is None or self.session.user is None):
             try:
                 # Try to verify if token is actually expired
-                user_response = self.supabase.auth.get_user()
+                user_response = self.supabase_auth.get_user()
                 return user_response is None or user_response.user is None
             except Exception:
                 return True
@@ -343,19 +347,19 @@ class AuthService:
         if force:
             self.logout_current()
 
-        self.supabase.auth.sign_in_with_otp({"email": email})
+        self.supabase_auth.sign_in_with_otp({"email": email})
         return True
 
     def verify_otp(self, email: str, otp: str, name: str | None = None) -> Credentials | None:
         """Verify OTP and create credentials."""
         try:
-            self.supabase.auth.verify_otp({"email": email, "token": otp, "type": "email"})
+            self.supabase_auth.verify_otp({"email": email, "token": otp, "type": "email"})
 
             # Refresh session after OTP verification
-            user_response = self.supabase.auth.get_user()
+            user_response = self.supabase_auth.get_user()
             if user_response and user_response.user:
                 self.user = user_response.user
-                self.session = self.supabase.auth.get_session()
+                self.session = self.supabase_auth.get_session()
 
                 token = self.session.access_token if self.session else ""
                 return self._create_or_update_interactive_credentials(email, token, name)
@@ -394,7 +398,7 @@ class AuthService:
         """Logout from current session (for interactive auth)."""
         if self._current_source and self._current_source.type == CredentialType.INTERACTIVE:
             try:
-                self.supabase.auth.sign_out()
+                self.supabase_auth.sign_out()
             except Exception:
                 pass
 
@@ -455,7 +459,7 @@ class AuthService:
             query_params["prompt"] = "login"
 
         # Start OAuth flow
-        auth_response = self.supabase.auth.sign_in_with_oauth(
+        auth_response = self.supabase_auth.sign_in_with_oauth(
             {
                 "provider": "google",
                 "options": {
@@ -547,13 +551,13 @@ class AuthService:
             from hcli.lib.console import console
 
             # Set session with received tokens
-            self.supabase.auth.set_session(self._oauth_result["access_token"], self._oauth_result["refresh_token"])
+            self.supabase_auth.set_session(self._oauth_result["access_token"], self._oauth_result["refresh_token"])
 
             # Refresh user and session info
-            user_response = self.supabase.auth.get_user()
+            user_response = self.supabase_auth.get_user()
             if user_response and user_response.user:
                 self.user = user_response.user
-                self.session = self.supabase.auth.get_session()
+                self.session = self.supabase_auth.get_session()
                 console.print(f"{self.user.email} logged in successfully!")
         else:
             from hcli.lib.console import console
