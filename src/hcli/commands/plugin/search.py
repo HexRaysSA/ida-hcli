@@ -7,7 +7,6 @@ from collections.abc import Sequence
 
 import rich.table
 import rich_click as click
-import yaml
 
 from hcli.lib.console import console
 from hcli.lib.ida import (
@@ -113,8 +112,9 @@ def handle_plugin_name_query(plugins: list[Plugin], query: str, current_version:
     del metadata_dict["platforms"]
     metadata_dict["idaVersions"] = render_ida_versions(metadata_dict["idaVersions"])
 
-    yaml_str = yaml.dump(metadata_dict, default_flow_style=False, sort_keys=True)
-    console.print(yaml_str)
+    for key, value in sorted(metadata_dict.items()):
+        console.print(f"{key}: {value}")
+    console.print()
 
     # i had hoped to use markdown/syntax, but it always has a background color, and we dont know light/dark theme state.
 
@@ -189,8 +189,9 @@ def handle_plugin_spec_query(plugins: list[Plugin], query: str, current_version:
     del metadata_dict["platforms"]
     metadata_dict["idaVersions"] = render_ida_versions(metadata_dict["idaVersions"])
 
-    yaml_str = yaml.dump(metadata_dict, default_flow_style=False, sort_keys=True)
-    console.print(yaml_str)
+    for key, value in sorted(metadata_dict.items()):
+        console.print(f"{key}: {value}")
+    console.print()
 
     table = rich.table.Table(show_header=False, box=None)
     table.add_column("IDA version spec", style="default")
