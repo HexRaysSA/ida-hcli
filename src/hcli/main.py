@@ -36,7 +36,6 @@ else:
         """Generate help text with extensions information."""
         base_help = f"[bold blue]{ENV.HCLI_BINARY_NAME.upper()}[/bold blue] [dim](v{ENV.HCLI_VERSION}{ENV.HCLI_VERSION_EXTRA})[/dim]\n\n[yellow]!!!!! Hex-Rays Command-line interface for managing IDA installation, licenses and more.[/yellow]"
 
-        # Check for available extensions
         extensions = get_extensions()
 
         if extensions:
@@ -90,7 +89,6 @@ else:
                     console.print("\n[yellow]Operation cancelled by user[/yellow]")
                 else:
                     console.print(f"[red]Unexpected error: {e}[/red]")
-                    # Optionally include debug info in debug mode
                     if ENV.HCLI_DEBUG:
                         import traceback
 
@@ -101,7 +99,7 @@ else:
     @click.pass_context
     def handle_command_completion(_ctx, _result, **_kwargs):
         """Handle command completion and show update notifications."""
-        # Show update message if available (result callback only runs on success)
+        # Result callback only runs on success.
         update_msg = update_checker.get_result(timeout=2.0) if update_checker else None
         if update_msg:
             console.print(update_msg, markup=True)
@@ -118,10 +116,7 @@ else:
         if is_binary() and not (disable_updates or ENV.HCLI_DISABLE_UPDATES):
             global update_checker
 
-            # Initialize update checker
             update_checker = BackgroundUpdateChecker()
-
-            # Start background check (non-blocking)
             update_checker.start_check()
 
         _ctx.ensure_object(dict)
