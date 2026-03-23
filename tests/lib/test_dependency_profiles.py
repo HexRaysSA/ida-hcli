@@ -23,20 +23,17 @@ def test_core_dependencies_exclude_app_only_packages():
     assert "supabase" not in dependencies
     assert "questionary" not in dependencies
     assert "rich-click" not in dependencies
+    assert "requests>=2.32.4" in dependencies
+    assert "pip>=25.2" in dependencies
+    assert "pyyaml>=6.0.2" in dependencies
 
 
-def test_app_profile_contains_cli_and_auth_dependencies():
+def test_app_profile_contains_app_only_dependencies():
     _, optional_dependencies = get_dependency_profiles()
 
-    interactive = set(optional_dependencies["interactive"])
-    auth = set(optional_dependencies["auth"])
-    plugin = set(optional_dependencies["plugin"])
     app = set(optional_dependencies["app"])
 
-    assert {"click", "rich", "rich-click", "questionary"} <= interactive
-    assert {"supabase", "gotrue>=2.12.0"} <= auth
-    assert {"requests>=2.32.4", "pip>=25.2", "pyyaml>=6.0.2"} <= plugin
-
-    assert interactive <= app
-    assert auth <= app
-    assert plugin <= app
+    assert {"click", "rich-click", "questionary", "supabase", "gotrue>=2.12.0"} <= app
+    assert "interactive" not in optional_dependencies
+    assert "auth" not in optional_dependencies
+    assert "plugin" not in optional_dependencies

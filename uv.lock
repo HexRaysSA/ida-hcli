@@ -565,8 +565,12 @@ dependencies = [
     { name = "httpx" },
     { name = "idapro" },
     { name = "packaging" },
+    { name = "pip" },
     { name = "platformdirs" },
     { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "rich" },
     { name = "semantic-version" },
     { name = "tenacity" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
@@ -580,12 +584,7 @@ app = [
     { name = "pyyaml" },
     { name = "questionary" },
     { name = "requests" },
-    { name = "rich" },
     { name = "rich-click" },
-    { name = "supabase" },
-]
-auth = [
-    { name = "gotrue" },
     { name = "supabase" },
 ]
 dev = [
@@ -600,17 +599,6 @@ docs = [
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extra = ["python"] },
     { name = "pymdown-extensions" },
-]
-interactive = [
-    { name = "click" },
-    { name = "questionary" },
-    { name = "rich" },
-    { name = "rich-click" },
-]
-plugin = [
-    { name = "pip" },
-    { name = "pyyaml" },
-    { name = "requests" },
 ]
 test = [
     { name = "pexpect" },
@@ -630,9 +618,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", marker = "extra == 'app'" },
-    { name = "click", marker = "extra == 'interactive'" },
     { name = "gotrue", marker = "extra == 'app'", specifier = ">=2.12.0" },
-    { name = "gotrue", marker = "extra == 'auth'", specifier = ">=2.12.0" },
     { name = "httpx" },
     { name = "idapro", specifier = ">=0.0.5" },
     { name = "mkdocs-click", marker = "extra == 'docs'", specifier = ">=0.9.0" },
@@ -643,8 +629,8 @@ requires-dist = [
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.20.0" },
     { name = "packaging" },
     { name = "pexpect", marker = "extra == 'test'", specifier = ">=4.9.0" },
+    { name = "pip", specifier = ">=25.2" },
     { name = "pip", marker = "extra == 'app'", specifier = ">=25.2" },
-    { name = "pip", marker = "extra == 'plugin'", specifier = ">=25.2" },
     { name = "platformdirs" },
     { name = "pydantic", specifier = ">=2.11.0" },
     { name = "pymdown-extensions", marker = "extra == 'docs'", specifier = ">=10.15" },
@@ -653,24 +639,20 @@ requires-dist = [
     { name = "pytest-httpx", marker = "extra == 'test'", specifier = ">=0.21.0" },
     { name = "pytest-mock", marker = "extra == 'test'", specifier = ">=3.10.0" },
     { name = "python-semantic-release", marker = "extra == 'dev'", specifier = ">=10.3.1" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "pyyaml", marker = "extra == 'app'", specifier = ">=6.0.2" },
-    { name = "pyyaml", marker = "extra == 'plugin'", specifier = ">=6.0.2" },
     { name = "questionary", marker = "extra == 'app'" },
-    { name = "questionary", marker = "extra == 'interactive'" },
+    { name = "requests", specifier = ">=2.32.4" },
     { name = "requests", marker = "extra == 'app'", specifier = ">=2.32.4" },
-    { name = "requests", marker = "extra == 'plugin'", specifier = ">=2.32.4" },
-    { name = "rich", marker = "extra == 'app'" },
-    { name = "rich", marker = "extra == 'interactive'" },
+    { name = "rich" },
     { name = "rich-click", marker = "extra == 'app'" },
-    { name = "rich-click", marker = "extra == 'interactive'" },
     { name = "semantic-version", specifier = ">=2.10.0" },
     { name = "supabase", marker = "extra == 'app'" },
-    { name = "supabase", marker = "extra == 'auth'" },
     { name = "taskipy", marker = "extra == 'dev'", specifier = ">=1.14.1" },
     { name = "tenacity", specifier = ">=8.0.0" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=1.2.0" },
 ]
-provides-extras = ["interactive", "auth", "plugin", "app", "dev", "test", "docs"]
+provides-extras = ["app", "dev", "test", "docs"]
 
 [package.metadata.requires-dev]
 dev = [

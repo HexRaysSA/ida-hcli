@@ -10,8 +10,9 @@ import tempfile
 # where the default encoding is typically a legacy codepage.
 os.environ["PYTHONUTF8"] = "1"
 
+app_import_error: ModuleNotFoundError | None = None
 
-def _build_cli():
+try:
     import rich_click as click
     from rich.logging import RichHandler
 
@@ -20,7 +21,11 @@ def _build_cli():
     from hcli.lib.console import console, stderr_console
     from hcli.lib.extensions import get_extensions
     from hcli.lib.update.version import BackgroundUpdateChecker, is_binary
-
+except ModuleNotFoundError as error:
+    if error.name is None or error.name.startswith("hcli."):
+        raise
+    app_import_error = error
+else:
     # Configure rich-click styling
     click.rich_click.USE_RICH_MARKUP = True
 
@@ -31,7 +36,9 @@ def _build_cli():
         """Generate help text with extensions information."""
         base_help = f"[bold blue]{ENV.HCLI_BINARY_NAME.upper()}[/bold blue] [dim](v{ENV.HCLI_VERSION}{ENV.HCLI_VERSION_EXTRA})[/dim]\n\n[yellow]!!!!! Hex-Rays Command-line interface for managing IDA installation, licenses and more.[/yellow]"
 
+        # Check for available extensions
         extensions = get_extensions()
+
         if extensions:
             extensions_list = ", ".join([f"{ext['name']} [dim]\\[v{ext['version']}][/dim]" for ext in extensions])
             base_help += f"\n\n[bold green]Extensions:[/bold green] [cyan]{extensions_list}[/cyan]"
@@ -72,9 +79,7 @@ def _build_cli():
                             f"\n[yellow]Suggestion:[/yellow] If your temporary directory is full, you can use a different one by setting the [bold]{env_var}[/bold] environment variable."
                         )
                 elif isinstance(e, AuthenticationError):
-                    console.print(
-                        "[red]Authentication failed. Please check your credentials or use 'hcli login'.[/red]"
-                    )
+                    console.print("[red]Authentication failed. Please check your credentials or use 'hcli login'.[/red]")
                 elif isinstance(e, NotFoundError):
                     console.print(f"[red]Resource not found: {e}[/red]")
                 elif isinstance(e, RateLimitError):
@@ -85,6 +90,7 @@ def _build_cli():
                     console.print("\n[yellow]Operation cancelled by user[/yellow]")
                 else:
                     console.print(f"[red]Unexpected error: {e}[/red]")
+                    # Optionally include debug info in debug mode
                     if ENV.HCLI_DEBUG:
                         import traceback
 
@@ -95,6 +101,7 @@ def _build_cli():
     @click.pass_context
     def handle_command_completion(_ctx, _result, **_kwargs):
         """Handle command completion and show update notifications."""
+        # Show update message if available (result callback only runs on success)
         update_msg = update_checker.get_result(timeout=2.0) if update_checker else None
         if update_msg:
             console.print(update_msg, markup=True)
@@ -109,9 +116,12 @@ def _build_cli():
     def cli(_ctx, quiet, auth, auth_credentials, disable_updates: bool):
         """Main CLI entry point with background update checking."""
         if is_binary() and not (disable_updates or ENV.HCLI_DISABLE_UPDATES):
-            nonlocal update_checker
+            global update_checker
 
+            # Initialize update checker
             update_checker = BackgroundUpdateChecker()
+
+            # Start background check (non-blocking)
             update_checker.start_check()
 
         _ctx.ensure_object(dict)
@@ -123,15 +133,14 @@ def _build_cli():
             handler = RichHandler(show_time=False, show_path=False, rich_tracebacks=True, console=stderr_console)
             logging.basicConfig(level=logging.DEBUG, format="%(message)s", datefmt="[%X]", handlers=[handler])
 
+    # register subcommands
     register_commands(cli)
+    # Register extensions dynamically
     for extension in get_extensions():
         extension["function"](cli)
 
-    return cli
-
-
-def _missing_app_profile_cli(module_error: ModuleNotFoundError):
-    missing_dependency = module_error.name or "an unknown optional dependency"
+if app_import_error is not None:
+    missing_dependency = app_import_error.name or "an optional dependency"
 
     def cli():
         binary_name = os.getenv("HCLI_BINARY_NAME", "hcli")
@@ -142,17 +151,6 @@ def _missing_app_profile_cli(module_error: ModuleNotFoundError):
             file=sys.stderr,
         )
         raise SystemExit(1)
-
-    return cli
-
-
-try:
-    cli = _build_cli()
-except ModuleNotFoundError as module_error:
-    if module_error.name is None or module_error.name.startswith("hcli."):
-        raise
-
-    cli = _missing_app_profile_cli(module_error)
 
 if __name__ == "__main__":
     cli()

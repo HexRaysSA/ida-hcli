@@ -20,9 +20,6 @@ dependencies through optional profiles:
 
 - `pip install ida-hcli` installs the lean library/core profile
 - `pip install "ida-hcli[app]"` installs the full CLI application profile
-- `pip install "ida-hcli[interactive]"` installs the interactive CLI stack (`click`, `rich`, `questionary`)
-- `pip install "ida-hcli[auth]"` installs the Supabase authentication stack
-- `pip install "ida-hcli[plugin]"` installs plugin-management dependencies such as `requests` and `pyyaml`
 
 If you invoke `hcli` without the `app` profile installed, it will exit with guidance to install
 `ida-hcli[app]`.

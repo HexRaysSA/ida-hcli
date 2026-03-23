@@ -47,9 +47,6 @@ uv run pytest
 ### Dependency Profiles
 
 - `ida-hcli`: reusable library/core modules
-- `ida-hcli[interactive]`: Click/Rich/Questionary CLI dependencies
-- `ida-hcli[auth]`: Supabase authentication dependencies
-- `ida-hcli[plugin]`: plugin-management dependencies such as `requests` and `pyyaml`
 - `ida-hcli[app]`: full end-user CLI profile
 
 ## Project Structure
