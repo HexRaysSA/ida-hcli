@@ -11,6 +11,7 @@ import tempfile
 os.environ["PYTHONUTF8"] = "1"
 
 app_import_error: ModuleNotFoundError | None = None
+update_checker = None
 
 try:
     import rich_click as click
@@ -28,9 +29,6 @@ except ModuleNotFoundError as error:
 else:
     # Configure rich-click styling
     click.rich_click.USE_RICH_MARKUP = True
-
-    # Global update checker instance
-    update_checker: BackgroundUpdateChecker | None = None
 
     def get_help_text():
         """Generate help text with extensions information."""
