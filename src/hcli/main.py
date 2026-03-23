@@ -10,18 +10,6 @@ import tempfile
 # where the default encoding is typically a legacy codepage.
 os.environ["PYTHONUTF8"] = "1"
 
-APP_PROFILE_IMPORT_NAMES = {
-    "click",
-    "gotrue",
-    "pip",
-    "questionary",
-    "requests",
-    "rich",
-    "rich_click",
-    "supabase",
-    "yaml",
-}
-
 
 def _build_cli():
     import rich_click as click
@@ -142,8 +130,8 @@ def _build_cli():
     return cli
 
 
-def _missing_app_profile_cli(error: ModuleNotFoundError):
-    missing_dependency = error.name or "an optional dependency"
+def _missing_app_profile_cli(module_error: ModuleNotFoundError):
+    missing_dependency = module_error.name or "an unknown optional dependency"
 
     def cli():
         binary_name = os.getenv("HCLI_BINARY_NAME", "hcli")
@@ -160,11 +148,11 @@ def _missing_app_profile_cli(error: ModuleNotFoundError):
 
 try:
     cli = _build_cli()
-except ModuleNotFoundError as error:
-    if error.name not in APP_PROFILE_IMPORT_NAMES:
+except ModuleNotFoundError as module_error:
+    if module_error.name is None or module_error.name.startswith("hcli."):
         raise
 
-    cli = _missing_app_profile_cli(error)
+    cli = _missing_app_profile_cli(module_error)
 
 if __name__ == "__main__":
     cli()
