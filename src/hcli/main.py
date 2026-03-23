@@ -147,5 +147,6 @@ if app_import_error is not None:
         )
         raise SystemExit(1)
 
+
 if __name__ == "__main__":
     cli()
