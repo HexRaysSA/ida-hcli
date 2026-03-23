@@ -13,6 +13,20 @@ A modern command-line interface for managing IDA Pro licenses, downloads, ...
 
 See [https://hcli.docs.hex-rays.com/](https://hcli.docs.hex-rays.com/)
 
+## Installation Profiles
+
+`ida-hcli` now keeps its reusable library surface in the base install and exposes application-oriented
+dependencies through optional profiles:
+
+- `pip install ida-hcli` installs the lean library/core profile
+- `pip install "ida-hcli[app]"` installs the full CLI application profile
+- `pip install "ida-hcli[interactive]"` installs the interactive CLI stack (`click`, `rich`, `questionary`)
+- `pip install "ida-hcli[auth]"` installs the Supabase authentication stack
+- `pip install "ida-hcli[plugin]"` installs plugin-management dependencies such as `requests` and `pyyaml`
+
+If you invoke `hcli` without the `app` profile installed, it will exit with guidance to install
+`ida-hcli[app]`.
+
 ## Contributing
 
 HCLI is under heavy active development by our team. We are not accepting external contributions at this time due to:
@@ -52,7 +66,7 @@ git clone https://github.com/HexRaysSA/ida-hcli.git
 cd ida-hcli
 
 # Install dependencies
-uv sync
+uv sync --extra app
 
 # Run in development mode
 uv run hcli --help
@@ -62,7 +76,7 @@ uv run hcli --help
 
 ```bash
 # Install with development dependencies
-uv sync --extra dev 
+uv sync --extra app --extra dev
 
 # Build package
 uv build 
@@ -95,6 +109,7 @@ uv run mkdocs serve
 
 ```bash
 # Run tests
+uv sync --extra app --extra test
 uv run pytest
 
 # Test CLI commands

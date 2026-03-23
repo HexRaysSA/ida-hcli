@@ -37,7 +37,7 @@ Feature requests are welcome! Please provide:
 
 2. **Install dependencies:**
    ```bash
-   uv sync
+   uv sync --extra app
    ```
 
 3. **Run the CLI in development mode:**
@@ -47,6 +47,7 @@ Feature requests are welcome! Please provide:
 
 4. **Run tests:**
    ```bash
+   uv sync --extra app --extra test
    uv run pytest
    ```
 
@@ -61,10 +62,11 @@ Feature requests are welcome! Please provide:
 
 3. **Test your changes** thoroughly:
    ```bash
-   # Run existing tests
-   uv run pytest
-   
-   # Test CLI commands manually
+    # Run existing tests
+    uv sync --extra app --extra test
+    uv run pytest
+    
+    # Test CLI commands manually
    uv run hcli whoami
    uv run hcli plugin list
    ```
@@ -157,7 +159,7 @@ Set these for development:
 ### Common Issues
 
 - **Authentication errors**: Make sure you're logged in with `hcli login`
-- **Import errors**: Ensure all dependencies are installed with `uv sync`
+- **Import errors**: Ensure the required profiles are installed (for CLI work, use `uv sync --extra app`)
 - **Path issues**: Use absolute paths in tests and be mindful of cross-platform compatibility
 
 ## Getting Help

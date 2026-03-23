@@ -13,15 +13,17 @@ import tempfile
 from dataclasses import dataclass
 from functools import total_ordering
 from pathlib import Path
-from typing import Literal, NamedTuple
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
-import rich.console
 from pydantic import BaseModel, ConfigDict, Field
 
 from hcli.env import ENV
 from hcli.lib.util.io import NoSpaceError, check_free_space, get_os
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from rich.console import Console
 
 
 class DownloadResource(NamedTuple):
@@ -617,7 +619,7 @@ def find_current_ida_install_directory() -> Path:
     return config.paths.installation_directory
 
 
-def explain_missing_current_installation_directory(console: rich.console.Console):
+def explain_missing_current_installation_directory(console: "Console"):
     console.print("[red]Error[/red]: failed to find the current IDA Pro installation directory.")
     console.print("")
     console.print("You can configure this in two ways:")
@@ -638,7 +640,7 @@ def explain_missing_current_installation_directory(console: rich.console.Console
     console.print("")
 
 
-def explain_failed_to_detect_ida_version(console: rich.console.Console):
+def explain_failed_to_detect_ida_version(console: "Console"):
     console.print("[red]Error[/red]: failed to determine current IDA version.")
     console.print("")
     console.print("hcli needs to run IDA to detect its version, but this failed.")

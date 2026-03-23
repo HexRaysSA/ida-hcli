@@ -34,9 +34,9 @@ jobs:
           cache-dependency-glob: "uv.lock"
           python-version: "3.13"
 
-      - name: Install dependencies
-        run: |
-          uv sync --no-sources --extra dev --extra test
+        - name: Install dependencies
+          run: |
+            uv sync --no-sources --extra app --extra dev --extra test
 
       - name: Install IDA Pro (latest)
         run: |
@@ -323,9 +323,9 @@ jobs:
           cache-dependency-glob: "uv.lock"
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
-        run: |
-          uv sync --no-sources --extra dev --extra test
+        - name: Install dependencies
+          run: |
+            uv sync --no-sources --extra app --extra dev --extra test
 
       - name: Install IDA ${{ matrix.os_ida.ida_version }} (default location)
         run: |

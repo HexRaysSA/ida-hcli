@@ -32,10 +32,10 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install Python and dependencies
-        run: |
-          uv python install "${{ env.UV_PYTHON }}"
-          uv sync --no-sources --extra docs
+        - name: Install Python and dependencies
+          run: |
+            uv python install "${{ env.UV_PYTHON }}"
+            uv sync --no-sources --extra app --extra docs
 
       - name: Build documentation
         run: uv run mkdocs build

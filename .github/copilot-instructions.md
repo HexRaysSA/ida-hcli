@@ -16,13 +16,13 @@ Always reference these instructions first and fallback to search or bash command
 # Install uv package manager (if not available)
 pip install uv
 
-# Install dependencies - NEVER CANCEL: Takes 30 seconds. Set timeout to 180+ seconds.
-uv sync
+# Install the full CLI profile - NEVER CANCEL: Takes 30 seconds. Set timeout to 180+ seconds.
+uv sync --extra app
 
 # Install additional dependency groups as needed
-uv sync --extra test        # Takes additional 10 seconds - NEVER CANCEL. Set timeout to 60+ seconds.
-uv sync --extra dev         # Takes additional 45 seconds - NEVER CANCEL. Set timeout to 180+ seconds.
-uv sync --extra docs        # Takes additional 30 seconds - NEVER CANCEL. Set timeout to 120+ seconds.
+uv sync --extra app --extra test        # Takes additional 10 seconds - NEVER CANCEL. Set timeout to 60+ seconds.
+uv sync --extra app --extra dev         # Takes additional 45 seconds - NEVER CANCEL. Set timeout to 180+ seconds.
+uv sync --extra app --extra docs        # Takes additional 30 seconds - NEVER CANCEL. Set timeout to 120+ seconds.
 ```
 
 ### Run Tests
@@ -42,7 +42,7 @@ uv run pytest tests/lib/ -v             # Unit tests
 ### Run the CLI Application
 ```bash
 # Always run dependency installation first
-uv sync
+uv sync --extra app
 
 # Basic CLI usage
 uv run hcli --help                      # Show main help
@@ -209,8 +209,8 @@ dev = [
 
 **NEVER CANCEL** these operations - they may take longer than expected:
 
-- `uv sync` - **Takes 30 seconds** - Set timeout to 180+ seconds  
-- `uv sync --extra dev` - **Takes 45 seconds additional** - Set timeout to 180+ seconds
+- `uv sync --extra app` - **Takes 30 seconds** - Set timeout to 180+ seconds  
+- `uv sync --extra app --extra dev` - **Takes 45 seconds additional** - Set timeout to 180+ seconds
 - `uv run pytest tests/` - **Takes 20 seconds** - Set timeout to 120+ seconds
 - `uv build` - **Takes 1-2 seconds** - Set timeout to 60+ seconds
 

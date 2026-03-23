@@ -20,14 +20,14 @@ cd ida-hcli
 
 Using uv (recommended):
 ```bash
-uv sync --extra dev
+uv sync --extra app --extra dev
 ```
 
 Using pip:
 ```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -e ".[dev]"
+pip install -e ".[app,dev]"
 ```
 
 ### Verify Installation
@@ -40,9 +40,17 @@ uv run hcli --version
 
 Run tests:
 ```bash
-uv sync --extra test 
+uv sync --extra app --extra test
 uv run pytest
 ```
+
+### Dependency Profiles
+
+- `ida-hcli`: reusable library/core modules
+- `ida-hcli[interactive]`: Click/Rich/Questionary CLI dependencies
+- `ida-hcli[auth]`: Supabase authentication dependencies
+- `ida-hcli[plugin]`: plugin-management dependencies such as `requests` and `pyyaml`
+- `ida-hcli[app]`: full end-user CLI profile
 
 ## Project Structure
 
@@ -111,12 +119,11 @@ uv build
 ### Install Local Build
 
 ```bash
-pip install dist/ida_hcli-*.whl
+pip install "dist/ida_hcli-*.whl[app]"
 ```
 
 ### Create Development Build
 
 ```bash
-uv pip install -e .
+uv pip install -e ".[app]"
 ```
-

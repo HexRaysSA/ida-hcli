@@ -50,10 +50,10 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install Python and dependencies
-        run: |
-          uv python install "${{ env.UV_PYTHON }}"
-          uv sync --extra dev
+        - name: Install Python and dependencies
+          run: |
+            uv python install "${{ env.UV_PYTHON }}"
+            uv sync --extra app --extra dev
 
       - name: Bump version
         id: version
@@ -114,10 +114,10 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install Python and dependencies
-        run: |
-          uv python install "${{ env.UV_PYTHON }}"
-          uv sync --no-sources
+        - name: Install Python and dependencies
+          run: |
+            uv python install "${{ env.UV_PYTHON }}"
+            uv sync --no-sources --extra app
 
       - name: Set ARTIFACT_NAME
         shell: bash
@@ -185,10 +185,10 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install Python and dependencies
-        run: |
-          uv python install "${{ env.UV_PYTHON }}"
-          uv sync --no-sources --extra docs
+        - name: Install Python and dependencies
+          run: |
+            uv python install "${{ env.UV_PYTHON }}"
+            uv sync --no-sources --extra app --extra docs
 
       - name: Build documentation
         run: uv run mkdocs build
