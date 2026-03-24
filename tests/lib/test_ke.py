@@ -97,9 +97,8 @@ class TestResolveBaseUrl:
 
 class TestDefaultDownloadsDir:
     def test_default_path(self):
-        result = _default_downloads_dir()
-        assert result.endswith(".ke/downloads")
-        assert Path.home().name in result
+        result = Path(_default_downloads_dir())
+        assert result == Path.home() / ".ke" / "downloads"
 
 
 class TestCleanupOldDownloads:

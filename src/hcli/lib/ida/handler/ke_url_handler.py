@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import platform
 import subprocess
-import sys
 import time
 from pathlib import Path
 from urllib.parse import ParseResult, unquote
@@ -20,17 +19,11 @@ from rich.console import Console
 
 from hcli.env import ENV
 from hcli.lib.ida.handler.url_handler import URLHandler
-from hcli.lib.ida.resolve import resolve_and_navigate
+from hcli.lib.ida.resolve import _print, resolve_and_navigate
 
 logger = logging.getLogger(__name__)
 
 console = Console()
-
-
-def _print(msg: str) -> None:
-    """Print only when running interactively."""
-    if sys.stdin.isatty():
-        console.print(msg)
 
 
 class KEURLHandler(URLHandler):
