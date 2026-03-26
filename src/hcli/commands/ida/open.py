@@ -72,7 +72,7 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
         ida:///functions?rva=0x1000  (relative: sent to the only running instance)
 
     KE URLs (download from KE server and launch IDA):
-        ida://host:port/api/v1/buckets/{bucket}/resources/{key}
+        ida://host:port/api/v1/buckets/{bucket}/assets/{key}
     """
     if list_instances:
         _list_running_instances()

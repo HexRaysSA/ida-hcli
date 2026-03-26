@@ -1,7 +1,7 @@
-"""Handler for KE URLs — download resources from KE servers, cache locally, and launch IDA.
+"""Handler for KE URLs — download assets from KE servers, cache locally, and launch IDA.
 
 Matches URLs containing ``/api/v1/buckets/`` in the path.
-Example: ``ida://ke.example.com:8080/api/v1/buckets/mybucket/resources/mykey``
+Example: ``ida://ke.example.com:8080/api/v1/buckets/mybucket/assets/mykey``
 """
 
 from __future__ import annotations
@@ -27,9 +27,9 @@ console = Console()
 
 
 class KEURLHandler(URLHandler):
-    """Handler for KE URLs: ``ida://host/api/v1/buckets/{bucket}/resources/{key}``.
+    """Handler for KE URLs: ``ida://host/api/v1/buckets/{bucket}/assets/{key}``.
 
-    Downloads the resource from a KE server (with HTTPS/HTTP fallback),
+    Downloads the asset from a KE server (with HTTPS/HTTP fallback),
     caches it locally, then finds or launches an IDA instance.
     """
 
@@ -48,11 +48,11 @@ class KEURLHandler(URLHandler):
             console.print("[red]Error: No host in KE URL[/red]")
             raise click.Abort()
 
-        bucket, key = _parse_resource_path(parsed.path)
+        bucket, key = _parse_asset_path(parsed.path)
         base_url = _resolve_base_url(parsed.netloc)
 
-        asset_url = f"{base_url}{parsed.path}".replace("/resources/", "/assets/")
-        download_url = f"{base_url}{parsed.path}".replace("/resources/", "/downloads/")
+        asset_url = f"{base_url}{parsed.path}"
+        download_url = f"{asset_url}/download"
 
         # Cleanup old downloads (best-effort)
         _cleanup_old_downloads()
@@ -111,19 +111,19 @@ def _default_downloads_dir() -> str:
     return str(Path.home() / ".ke" / "downloads")
 
 
-def _parse_resource_path(path: str) -> tuple[str, str]:
-    """Extract bucket and key from ``/api/v1/buckets/{bucket}/resources/{key}``."""
+def _parse_asset_path(path: str) -> tuple[str, str]:
+    """Extract bucket and key from ``/api/v1/buckets/{bucket}/assets/{key}``."""
     parts = path.split("/")
 
     try:
         buckets_idx = parts.index("buckets")
-        resources_idx = parts.index("resources")
+        assets_idx = parts.index("assets")
     except ValueError:
-        console.print("[red]Error: URL path must contain /buckets/{bucket}/resources/{key}[/red]")
+        console.print("[red]Error: URL path must contain /buckets/{bucket}/assets/{key}[/red]")
         raise click.Abort()
 
     bucket = parts[buckets_idx + 1] if buckets_idx + 1 < len(parts) else ""
-    key = "/".join(parts[resources_idx + 1 :]) if resources_idx + 1 < len(parts) else ""
+    key = "/".join(parts[assets_idx + 1 :]) if assets_idx + 1 < len(parts) else ""
     key = unquote(key)
 
     if not bucket or not key:

@@ -12,14 +12,14 @@ from hcli.lib.ida.handler.ke_url_handler import (
     KEURLHandler,
     _cleanup_old_downloads,
     _default_downloads_dir,
-    _parse_resource_path,
+    _parse_asset_path,
     _resolve_base_url,
 )
 
 
 class TestIsKeUrl:
     def test_ke_url_detected(self):
-        parsed = urlparse("ida://host:8080/api/v1/buckets/mybucket/resources/mykey")
+        parsed = urlparse("ida://host:8080/api/v1/buckets/mybucket/assets/mykey")
         assert KEURLHandler().matches(parsed) is True
 
     def test_regular_ida_url_not_detected(self):
@@ -31,7 +31,7 @@ class TestIsKeUrl:
         assert KEURLHandler().matches(parsed) is False
 
     def test_ke_url_with_nested_key(self):
-        parsed = urlparse("ida://host/api/v1/buckets/b/resources/path/to/file.idb")
+        parsed = urlparse("ida://host/api/v1/buckets/b/assets/path/to/file.idb")
         assert KEURLHandler().matches(parsed) is True
 
     def test_empty_path(self):
@@ -39,37 +39,37 @@ class TestIsKeUrl:
         assert KEURLHandler().matches(parsed) is False
 
 
-class TestParseResourcePath:
+class TestParseAssetPath:
     def test_basic_path(self):
-        bucket, key = _parse_resource_path("/api/v1/buckets/mybucket/resources/mykey")
+        bucket, key = _parse_asset_path("/api/v1/buckets/mybucket/assets/mykey")
         assert bucket == "mybucket"
         assert key == "mykey"
 
     def test_nested_key(self):
-        bucket, key = _parse_resource_path("/api/v1/buckets/mybucket/resources/path/to/file.idb")
+        bucket, key = _parse_asset_path("/api/v1/buckets/mybucket/assets/path/to/file.idb")
         assert bucket == "mybucket"
         assert key == "path/to/file.idb"
 
     def test_url_encoded_key(self):
-        bucket, key = _parse_resource_path("/api/v1/buckets/mybucket/resources/my%20file.idb")
+        bucket, key = _parse_asset_path("/api/v1/buckets/mybucket/assets/my%20file.idb")
         assert bucket == "mybucket"
         assert key == "my file.idb"
 
     def test_missing_buckets_raises(self):
         with pytest.raises(click.Abort):
-            _parse_resource_path("/api/v1/something/mybucket/resources/mykey")
+            _parse_asset_path("/api/v1/something/mybucket/assets/mykey")
 
-    def test_missing_resources_raises(self):
+    def test_missing_assets_raises(self):
         with pytest.raises(click.Abort):
-            _parse_resource_path("/api/v1/buckets/mybucket/something/mykey")
+            _parse_asset_path("/api/v1/buckets/mybucket/something/mykey")
 
     def test_empty_bucket_raises(self):
         with pytest.raises(click.Abort):
-            _parse_resource_path("/api/v1/buckets//resources/mykey")
+            _parse_asset_path("/api/v1/buckets//assets/mykey")
 
     def test_empty_key_raises(self):
         with pytest.raises(click.Abort):
-            _parse_resource_path("/api/v1/buckets/mybucket/resources/")
+            _parse_asset_path("/api/v1/buckets/mybucket/assets/")
 
 
 class TestResolveBaseUrl:
@@ -148,7 +148,7 @@ class TestHandleKeUrl:
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        uri = "ida://host:8080/api/v1/buckets/mybucket/resources/test.idb"
+        uri = "ida://host:8080/api/v1/buckets/mybucket/assets/test.idb"
         parsed = urlparse(uri)
 
         with (
@@ -191,7 +191,7 @@ class TestHandleKeUrl:
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        uri = "ida://host:8080/api/v1/buckets/mybucket/resources/test.idb?rva=0x1000"
+        uri = "ida://host:8080/api/v1/buckets/mybucket/assets/test.idb?rva=0x1000"
         parsed = urlparse(uri)
 
         with (
@@ -207,7 +207,7 @@ class TestHandleKeUrl:
         mock_ipc.send_open_ida_link.assert_called_once_with("/tmp/ida_ipc_1234", uri)
 
     def test_no_host_aborts(self):
-        parsed = urlparse("ida:///api/v1/buckets/b/resources/k")
+        parsed = urlparse("ida:///api/v1/buckets/b/assets/k")
         # parsed.netloc is empty for triple-slash
         with pytest.raises(click.Abort):
-            KEURLHandler().handle("ida:///api/v1/buckets/b/resources/k", parsed, False, 120.0, False)
+            KEURLHandler().handle("ida:///api/v1/buckets/b/assets/k", parsed, False, 120.0, False)
