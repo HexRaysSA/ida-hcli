@@ -31,10 +31,11 @@ def fetch_http_content_with_redirects(url: str, timeout: float, headers: dict[st
     Preserves HTTPS by rejecting any redirect chain that resolves to a final
     non-HTTPS URL when the original request URL used HTTPS.
     """
+    original_scheme = urlparse(url).scheme
     response = httpx.get(url, headers=headers, timeout=timeout, follow_redirects=True)
     response.raise_for_status()
 
-    if urlparse(url).scheme == "https" and response.url.scheme != "https":
+    if original_scheme == "https" and response.url.scheme != "https":
         raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {response.url}")
 
     return response.content

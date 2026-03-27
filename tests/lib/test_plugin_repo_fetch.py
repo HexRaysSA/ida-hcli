@@ -73,3 +73,26 @@ def test_fetch_github_release_zip_asset_follows_asset_redirects(httpx_mock):
     httpx_mock.add_response(url=redirected_asset_url, status_code=200, content=b"plugin archive")
 
     assert fetch_github_release_zip_asset("owner", "repo") == b"plugin archive"
+
+
+def test_fetch_github_release_zip_asset_rejects_http_downgrade(httpx_mock):
+    """GitHub release asset downloads should reject HTTPS redirects that downgrade to HTTP."""
+    release_url = "https://api.github.com/repos/owner/repo/releases/latest"
+    asset_url = "https://github.com/owner/repo/releases/download/v1.0.0/plugin.zip"
+    redirected_asset_url = "http://objects.githubusercontent.com/plugin.zip"
+    release_doc = {
+        "assets": [
+            {
+                "name": "plugin.zip",
+                "size": 13,
+                "browser_download_url": asset_url,
+            }
+        ]
+    }
+
+    httpx_mock.add_response(url=release_url, status_code=200, json=release_doc)
+    httpx_mock.add_response(url=asset_url, status_code=302, headers={"Location": redirected_asset_url})
+    httpx_mock.add_response(url=redirected_asset_url, status_code=200, content=b"plugin archive")
+
+    with pytest.raises(ValueError, match="HTTPS request was redirected to insecure HTTP URL"):
+        fetch_github_release_zip_asset("owner", "repo")
