@@ -29,6 +29,10 @@ concurrency:
 
 env:
   UV_PYTHON: '3.13'
+  # Pin uv to avoid python-build-standalone 20260320 executable-stack regression
+  # See: https://github.com/astral-sh/python-build-standalone/issues/1061
+  # TODO: unpin once upstream fix lands
+  UV_VERSION: '0.10.6'
 
 jobs:
   publish:
@@ -47,6 +51,7 @@ jobs:
       - name: Setup Python with uv
         uses: astral-sh/setup-uv@v6
         with:
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
@@ -111,6 +116,7 @@ jobs:
       - name: Setup Python with uv
         uses: astral-sh/setup-uv@v6
         with:
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
@@ -182,6 +188,7 @@ jobs:
       - name: Setup Python with uv
         uses: astral-sh/setup-uv@v6
         with:
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
