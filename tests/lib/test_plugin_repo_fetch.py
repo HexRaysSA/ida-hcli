@@ -24,7 +24,7 @@ def test_fetch_plugin_archive_rejects_https_redirect_to_http(httpx_mock):
     httpx_mock.add_response(url=url, status_code=302, headers={"Location": redirected_url})
     httpx_mock.add_response(url=redirected_url, status_code=200, content=b"plugin archive")
 
-    with pytest.raises(ValueError, match="redirected URL is not HTTPS"):
+    with pytest.raises(ValueError, match="HTTPS request was redirected to insecure HTTP URL"):
         fetch_plugin_archive(url)
 
 

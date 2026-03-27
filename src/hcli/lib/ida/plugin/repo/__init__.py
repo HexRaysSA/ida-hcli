@@ -25,12 +25,12 @@ from hcli.lib.util.logging import m
 logger = logging.getLogger(__name__)
 
 
-def fetch_http_content(url: str, timeout: float, headers: dict[str, str] | None = None) -> bytes:
+def fetch_http_content_with_redirects(url: str, timeout: float, headers: dict[str, str] | None = None) -> bytes:
     response = httpx.get(url, headers=headers, timeout=timeout, follow_redirects=True)
     response.raise_for_status()
 
     if urlparse(url).scheme == "https" and response.url.scheme != "https":
-        raise ValueError(f"redirected URL is not HTTPS: {response.url}")
+        raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {response.url}")
 
     return response.content
 
@@ -45,7 +45,7 @@ def fetch_plugin_archive(url: str) -> bytes:
         return file_path.read_bytes()
 
     elif parsed_url.scheme in ("http", "https"):
-        return fetch_http_content(url, timeout=30.0)
+        return fetch_http_content_with_redirects(url, timeout=30.0)
 
     else:
         raise ValueError(f"Unsupported URL scheme: {parsed_url.scheme}")

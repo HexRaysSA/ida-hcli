@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel
 
-from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, fetch_http_content
+from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, fetch_http_content_with_redirects
 
 
 class StaticPluginRepo(BaseModel):
@@ -55,7 +55,7 @@ class JSONFilePluginRepo(BasePluginRepo):
             return cls.from_bytes(file_path.read_bytes())
 
         elif parsed_url.scheme == "https":
-            return cls.from_bytes(fetch_http_content(url, timeout=30.0))
+            return cls.from_bytes(fetch_http_content_with_redirects(url, timeout=30.0))
 
         else:
             raise ValueError(f"Unsupported URL scheme: {parsed_url.scheme}")
