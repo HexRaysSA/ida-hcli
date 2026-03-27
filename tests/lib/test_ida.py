@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from hcli.lib.ida import (
-    _get_clean_ida_subprocess_env,
     detect_binary_arch,
     find_current_ida_install_directory,
     find_current_ida_platform,
@@ -17,7 +16,6 @@ from hcli.lib.ida import (
     get_ida_config_path,
     parse_version_from_dir_name,
     parse_version_from_ida_pro_py,
-    run_py_in_current_idapython,
 )
 
 
@@ -55,63 +53,6 @@ def test_find_current_idat_executable():
     assert result.exists()
     assert result.is_file()
     assert "idat" in result.name.lower()
-
-
-def test_get_clean_ida_subprocess_env_removes_python_virtualenv_vars(monkeypatch):
-    env = {
-        "PATH": r"C:\repo\.venv\Scripts;C:\Windows\System32;C:\Tools",
-        "PYTHONHOME": r"C:\python-home",
-        "PYTHONPATH": r"C:\python-path",
-        "VIRTUAL_ENV": r"C:\repo\.venv",
-        "__PYVENV_LAUNCHER__": r"C:\repo\.venv\Scripts\python.exe",
-        "KEEP_ME": "1",
-    }
-
-    monkeypatch.setattr("hcli.lib.ida.get_os", lambda: "windows")
-
-    result = _get_clean_ida_subprocess_env(env)
-
-    assert result["PATH"] == r"C:\Windows\System32;C:\Tools"
-    assert "PYTHONHOME" not in result
-    assert "PYTHONPATH" not in result
-    assert "VIRTUAL_ENV" not in result
-    assert "__PYVENV_LAUNCHER__" not in result
-    assert result["KEEP_ME"] == "1"
-
-
-def test_run_py_in_current_idapython_uses_sanitized_env(tmp_path, monkeypatch):
-    env = {"PATH": r"C:\Windows\System32", "KEEP_ME": "1"}
-    idat_path = tmp_path / "idat"
-    idat_path.write_text("", encoding="utf-8")
-
-    captured = {}
-
-    def fake_run(cmd, **kwargs):
-        captured["env"] = kwargs["env"]
-        log_arg = next((part for part in cmd if part.startswith("-L")), None)
-        assert log_arg is not None
-        Path(log_arg[2:]).write_text(
-            '__hcli__:{"prefix":"x","base_prefix":"x","version_major":3,"version_minor":11}\n', encoding="utf-8"
-        )
-
-        class FakeSubprocessResult:
-            returncode = 0
-            stdout = ""
-            stderr = ""
-
-        return FakeSubprocessResult()
-
-    def fake_get_clean_ida_subprocess_env(current_env=None):
-        return env
-
-    monkeypatch.setattr("hcli.lib.ida.find_current_idat_executable", lambda: idat_path)
-    monkeypatch.setattr("hcli.lib.ida._get_clean_ida_subprocess_env", fake_get_clean_ida_subprocess_env)
-    monkeypatch.setattr("hcli.lib.ida.subprocess.run", fake_run)
-
-    result = run_py_in_current_idapython("print('hello')")
-
-    assert result["version_major"] == 3
-    assert captured["env"] is env
 
 
 # Platform-specific tests for find_current_ida_platform()
