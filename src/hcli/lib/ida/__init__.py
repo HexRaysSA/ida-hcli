@@ -3,6 +3,7 @@
 import errno
 import json
 import logging
+import ntpath
 import os
 import re
 import shutil
@@ -673,6 +674,26 @@ def find_current_idat_executable() -> Path:
     return find_current_ida_executable("t")
 
 
+def _get_clean_ida_subprocess_env(env: dict[str, str] | None = None) -> dict[str, str]:
+    current_os = get_os()
+    clean_env = dict(os.environ if env is None else env)
+    virtual_env = clean_env.pop("VIRTUAL_ENV", None)
+
+    for key in ("PYTHONHOME", "PYTHONPATH", "__PYVENV_LAUNCHER__"):
+        clean_env.pop(key, None)
+
+    if virtual_env and current_os == "windows":
+        path = clean_env.get("PATH")
+        if path:
+            virtual_env_scripts = ntpath.normcase(ntpath.normpath(ntpath.join(virtual_env, "Scripts")))
+            path_parts = [part for part in path.split(";") if ntpath.normcase(ntpath.normpath(part)) != virtual_env_scripts]
+            clean_env["PATH"] = ";".join(path_parts)
+
+        logger.debug("sanitized virtual environment from IDA subprocess environment: %s", virtual_env)
+
+    return clean_env
+
+
 def run_py_in_current_idapython(src: str) -> dict:
     idat_path = find_current_idat_executable()
     if not idat_path.exists():
@@ -711,7 +732,15 @@ def run_py_in_current_idapython(src: str) -> dict:
             f"-S{script_path.absolute()!s}",
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            env=_get_clean_ida_subprocess_env(),
+        )
         logger.debug(f"idat command: {' '.join(cmd)}")
         logger.debug(f"idat exit code: {result.returncode}")
         if result.stdout:
