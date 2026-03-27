@@ -84,6 +84,7 @@ def test_get_cache_directory_invalid_path_keys(temp_hcli_cache_dir):
 
 
 def test_json_file_plugin_repo_from_url_follows_https_redirects(httpx_mock):
+    """Plugin repository JSON fetches should succeed through HTTPS redirects."""
     url = "https://example.com/repo.json"
     redirected_url = "https://cdn.example.com/repo.json"
     doc = {
@@ -106,6 +107,7 @@ def test_json_file_plugin_repo_from_url_follows_https_redirects(httpx_mock):
 
 
 def test_fetch_github_release_zip_asset_follows_asset_redirects(httpx_mock):
+    """GitHub release asset downloads should succeed through HTTPS redirects."""
     release_url = "https://api.github.com/repos/owner/repo/releases/latest"
     asset_url = "https://github.com/owner/repo/releases/download/v1.0.0/plugin.zip"
     redirected_asset_url = "https://objects.githubusercontent.com/plugin.zip"
@@ -128,6 +130,7 @@ def test_fetch_github_release_zip_asset_follows_asset_redirects(httpx_mock):
 
 
 def test_fetch_github_release_zip_asset_rejects_http_downgrade(httpx_mock):
+    """GitHub release asset downloads should reject HTTPS redirects that downgrade to HTTP."""
     release_url = "https://api.github.com/repos/owner/repo/releases/latest"
     asset_url = "https://github.com/owner/repo/releases/download/v1.0.0/plugin.zip"
     redirected_asset_url = "http://objects.githubusercontent.com/plugin.zip"

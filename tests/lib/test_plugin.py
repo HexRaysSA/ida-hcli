@@ -36,6 +36,7 @@ def test_binary_plugin_archive():
 
 
 def test_fetch_plugin_archive_follows_https_redirects(httpx_mock):
+    """Plugin archive fetches should succeed through HTTPS redirects."""
     url = "https://example.com/archive.zip"
     redirected_url = "https://cdn.example.com/archive.zip"
 
@@ -46,6 +47,7 @@ def test_fetch_plugin_archive_follows_https_redirects(httpx_mock):
 
 
 def test_fetch_plugin_archive_rejects_https_redirect_to_http(httpx_mock):
+    """Plugin archive fetches should reject HTTPS redirects that downgrade to HTTP."""
     url = "https://example.com/archive.zip"
     redirected_url = "http://cdn.example.com/archive.zip"
 
