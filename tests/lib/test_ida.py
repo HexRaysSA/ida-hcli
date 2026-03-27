@@ -93,15 +93,19 @@ def test_run_py_in_current_idapython_uses_sanitized_env(tmp_path, monkeypatch):
             '__hcli__:{"prefix":"x","base_prefix":"x","version_major":3,"version_minor":11}\n', encoding="utf-8"
         )
 
-        class Result:
+        class FakeSubprocessResult:
             returncode = 0
             stdout = ""
             stderr = ""
 
-        return Result()
+        return FakeSubprocessResult()
+
+    def fake_get_clean_ida_subprocess_env(current_env=None):
+        assert current_env is None
+        return env
 
     monkeypatch.setattr("hcli.lib.ida.find_current_idat_executable", lambda: idat_path)
-    monkeypatch.setattr("hcli.lib.ida._get_clean_ida_subprocess_env", lambda current_env=None: env)
+    monkeypatch.setattr("hcli.lib.ida._get_clean_ida_subprocess_env", fake_get_clean_ida_subprocess_env)
     monkeypatch.setattr("hcli.lib.ida.subprocess.run", fake_run)
 
     result = run_py_in_current_idapython("print('hello')")

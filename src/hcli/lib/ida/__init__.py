@@ -674,6 +674,10 @@ def find_current_idat_executable() -> Path:
     return find_current_ida_executable("t")
 
 
+def _normalize_windows_path(path_part: str) -> str:
+    return ntpath.normcase(ntpath.normpath(path_part))
+
+
 def _get_clean_ida_subprocess_env(env: dict[str, str] | None = None) -> dict[str, str]:
     current_os = get_os()
     clean_env = dict(os.environ if env is None else env)
@@ -685,12 +689,8 @@ def _get_clean_ida_subprocess_env(env: dict[str, str] | None = None) -> dict[str
     if virtual_env and current_os == "windows":
         path = clean_env.get("PATH")
         if path:
-
-            def normalize_windows_path(path_part: str) -> str:
-                return ntpath.normcase(ntpath.normpath(path_part))
-
-            virtual_env_scripts = normalize_windows_path(ntpath.join(virtual_env, "Scripts"))
-            path_parts = [part for part in path.split(";") if normalize_windows_path(part) != virtual_env_scripts]
+            virtual_env_scripts = _normalize_windows_path(ntpath.join(virtual_env, "Scripts"))
+            path_parts = [part for part in path.split(";") if _normalize_windows_path(part) != virtual_env_scripts]
             clean_env["PATH"] = ";".join(path_parts)
 
         logger.debug("sanitized virtual environment from IDA subprocess environment: %s", virtual_env)
