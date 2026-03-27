@@ -14,6 +14,7 @@ from hcli.lib.ida.plugin import (
     is_source_plugin_archive,
     parse_plugin_version,
 )
+from hcli.lib.ida.plugin.repo import fetch_plugin_archive
 
 
 def test_source_plugin_archive():
@@ -32,6 +33,27 @@ def test_binary_plugin_archive():
     assert is_plugin_archive(buf, "zydisinfo")
     assert not is_source_plugin_archive(buf, "zydisinfo")
     assert is_binary_plugin_archive(buf, "zydisinfo")
+
+
+def test_fetch_plugin_archive_follows_https_redirects(httpx_mock):
+    url = "https://example.com/archive.zip"
+    redirected_url = "https://cdn.example.com/archive.zip"
+
+    httpx_mock.add_response(url=url, status_code=302, headers={"Location": redirected_url})
+    httpx_mock.add_response(url=redirected_url, status_code=200, content=b"plugin archive")
+
+    assert fetch_plugin_archive(url) == b"plugin archive"
+
+
+def test_fetch_plugin_archive_rejects_https_redirect_to_http(httpx_mock):
+    url = "https://example.com/archive.zip"
+    redirected_url = "http://cdn.example.com/archive.zip"
+
+    httpx_mock.add_response(url=url, status_code=302, headers={"Location": redirected_url})
+    httpx_mock.add_response(url=redirected_url, status_code=200, content=b"plugin archive")
+
+    with pytest.raises(ValueError, match="HTTPS request was redirected to insecure HTTP URL"):
+        fetch_plugin_archive(url)
 
 
 def test_is_ida_version_compatible():
