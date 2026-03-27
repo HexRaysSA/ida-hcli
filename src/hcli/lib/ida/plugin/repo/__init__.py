@@ -26,6 +26,11 @@ logger = logging.getLogger(__name__)
 
 
 def fetch_http_content_with_redirects(url: str, timeout: float, headers: dict[str, str] | None = None) -> bytes:
+    """Fetch HTTP(S) content while following redirects.
+
+    Preserves HTTPS by rejecting any redirect chain that resolves to a final
+    non-HTTPS URL when the original request URL used HTTPS.
+    """
     response = httpx.get(url, headers=headers, timeout=timeout, follow_redirects=True)
     response.raise_for_status()
 
