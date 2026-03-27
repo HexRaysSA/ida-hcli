@@ -686,7 +686,9 @@ def _get_clean_ida_subprocess_env(env: dict[str, str] | None = None) -> dict[str
         path = clean_env.get("PATH")
         if path:
             virtual_env_scripts = ntpath.normcase(ntpath.normpath(ntpath.join(virtual_env, "Scripts")))
-            path_parts = [part for part in path.split(";") if ntpath.normcase(ntpath.normpath(part)) != virtual_env_scripts]
+            path_parts = [
+                part for part in path.split(";") if ntpath.normcase(ntpath.normpath(part)) != virtual_env_scripts
+            ]
             clean_env["PATH"] = ";".join(path_parts)
 
         logger.debug("sanitized virtual environment from IDA subprocess environment: %s", virtual_env)
