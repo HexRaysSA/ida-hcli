@@ -101,7 +101,7 @@ def test_run_py_in_current_idapython_uses_sanitized_env(tmp_path, monkeypatch):
         return Result()
 
     monkeypatch.setattr("hcli.lib.ida.find_current_idat_executable", lambda: idat_path)
-    monkeypatch.setattr("hcli.lib.ida._get_clean_ida_subprocess_env", lambda: env)
+    monkeypatch.setattr("hcli.lib.ida._get_clean_ida_subprocess_env", lambda current_env=None: env)
     monkeypatch.setattr("hcli.lib.ida.subprocess.run", fake_run)
 
     result = run_py_in_current_idapython("print('hello')")
