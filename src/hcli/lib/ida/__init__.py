@@ -682,12 +682,9 @@ def _normalize_windows_path(path_part: str) -> str:
 def _get_clean_ida_subprocess_env(env: dict[str, str] | None = None) -> dict[str, str]:
     current_os = get_os()
     clean_env = dict(os.environ if env is None else env)
-    virtual_env = clean_env.pop("VIRTUAL_ENV", None)
+    virtual_env = clean_env.get("VIRTUAL_ENV")
 
-    for key in ("PYTHONHOME", "PYTHONPATH", "__PYVENV_LAUNCHER__"):
-        clean_env.pop(key, None)
-
-    if virtual_env and current_os == "windows":
+    if current_os == "windows" and virtual_env:
         path = clean_env.get("PATH")
         if path:
             virtual_env_scripts = _normalize_windows_path(ntpath.join(virtual_env, "Scripts"))

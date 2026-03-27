@@ -5,7 +5,8 @@ import pytest
 from hcli.lib.ida import _get_clean_ida_subprocess_env
 
 
-def test_get_clean_ida_subprocess_env_removes_python_env_vars():
+@pytest.mark.skipif(platform.system() == "Windows", reason="Non-Windows-specific test")
+def test_get_clean_ida_subprocess_env_preserves_python_env_vars_off_windows():
     env = {
         "PATH": "/usr/bin:/bin",
         "PYTHONHOME": "/python-home",
@@ -17,10 +18,10 @@ def test_get_clean_ida_subprocess_env_removes_python_env_vars():
 
     result = _get_clean_ida_subprocess_env(env)
 
-    assert "PYTHONHOME" not in result
-    assert "PYTHONPATH" not in result
-    assert "VIRTUAL_ENV" not in result
-    assert "__PYVENV_LAUNCHER__" not in result
+    assert result["PYTHONHOME"] == env["PYTHONHOME"]
+    assert result["PYTHONPATH"] == env["PYTHONPATH"]
+    assert result["VIRTUAL_ENV"] == env["VIRTUAL_ENV"]
+    assert result["__PYVENV_LAUNCHER__"] == env["__PYVENV_LAUNCHER__"]
     assert result["KEEP_ME"] == "1"
     assert result["PATH"] == env["PATH"]
 
