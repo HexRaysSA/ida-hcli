@@ -4,10 +4,9 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-import httpx
 from pydantic import BaseModel
 
-from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin
+from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, fetch_http_content
 
 
 class StaticPluginRepo(BaseModel):
@@ -56,9 +55,7 @@ class JSONFilePluginRepo(BasePluginRepo):
             return cls.from_bytes(file_path.read_bytes())
 
         elif parsed_url.scheme == "https":
-            response = httpx.get(url, timeout=30.0)
-            response.raise_for_status()
-            return cls.from_bytes(response.content)
+            return cls.from_bytes(fetch_http_content(url, timeout=30.0))
 
         else:
             raise ValueError(f"Unsupported URL scheme: {parsed_url.scheme}")
