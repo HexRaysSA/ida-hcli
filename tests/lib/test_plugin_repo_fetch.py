@@ -58,11 +58,12 @@ def test_fetch_github_release_zip_asset_follows_asset_redirects(httpx_mock):
     release_url = "https://api.github.com/repos/owner/repo/releases/latest"
     asset_url = "https://github.com/owner/repo/releases/download/v1.0.0/plugin.zip"
     redirected_asset_url = "https://objects.githubusercontent.com/plugin.zip"
+    asset_content = b"plugin archive"
     release_doc = {
         "assets": [
             {
                 "name": "plugin.zip",
-                "size": 13,
+                "size": len(asset_content),
                 "browser_download_url": asset_url,
             }
         ]
@@ -70,9 +71,9 @@ def test_fetch_github_release_zip_asset_follows_asset_redirects(httpx_mock):
 
     httpx_mock.add_response(url=release_url, status_code=200, json=release_doc)
     httpx_mock.add_response(url=asset_url, status_code=302, headers={"Location": redirected_asset_url})
-    httpx_mock.add_response(url=redirected_asset_url, status_code=200, content=b"plugin archive")
+    httpx_mock.add_response(url=redirected_asset_url, status_code=200, content=asset_content)
 
-    assert fetch_github_release_zip_asset("owner", "repo") == b"plugin archive"
+    assert fetch_github_release_zip_asset("owner", "repo") == asset_content
 
 
 def test_fetch_github_release_zip_asset_rejects_http_downgrade(httpx_mock):
@@ -80,11 +81,12 @@ def test_fetch_github_release_zip_asset_rejects_http_downgrade(httpx_mock):
     release_url = "https://api.github.com/repos/owner/repo/releases/latest"
     asset_url = "https://github.com/owner/repo/releases/download/v1.0.0/plugin.zip"
     redirected_asset_url = "http://objects.githubusercontent.com/plugin.zip"
+    asset_content = b"plugin archive"
     release_doc = {
         "assets": [
             {
                 "name": "plugin.zip",
-                "size": 13,
+                "size": len(asset_content),
                 "browser_download_url": asset_url,
             }
         ]
@@ -92,7 +94,7 @@ def test_fetch_github_release_zip_asset_rejects_http_downgrade(httpx_mock):
 
     httpx_mock.add_response(url=release_url, status_code=200, json=release_doc)
     httpx_mock.add_response(url=asset_url, status_code=302, headers={"Location": redirected_asset_url})
-    httpx_mock.add_response(url=redirected_asset_url, status_code=200, content=b"plugin archive")
+    httpx_mock.add_response(url=redirected_asset_url, status_code=200, content=asset_content)
 
     with pytest.raises(ValueError, match="HTTPS request was redirected to insecure HTTP URL"):
         fetch_github_release_zip_asset("owner", "repo")
