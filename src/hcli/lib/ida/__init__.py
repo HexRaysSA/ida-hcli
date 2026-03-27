@@ -675,6 +675,7 @@ def find_current_idat_executable() -> Path:
 
 
 def _normalize_windows_path(path_part: str) -> str:
+    """Normalize a path using Windows comparison rules, even on non-Windows test hosts."""
     return ntpath.normcase(ntpath.normpath(path_part))
 
 

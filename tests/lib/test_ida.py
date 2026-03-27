@@ -88,7 +88,8 @@ def test_run_py_in_current_idapython_uses_sanitized_env(tmp_path, monkeypatch):
 
     def fake_run(cmd, **kwargs):
         captured["env"] = kwargs["env"]
-        log_arg = next(part for part in cmd if part.startswith("-L"))
+        log_arg = next((part for part in cmd if part.startswith("-L")), None)
+        assert log_arg is not None
         Path(log_arg[2:]).write_text(
             '__hcli__:{"prefix":"x","base_prefix":"x","version_major":3,"version_minor":11}\n', encoding="utf-8"
         )
