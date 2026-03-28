@@ -103,8 +103,11 @@ def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None
         release_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/latest"
 
     logger.info(f"fetching release from {release_url}")
+    release_url_scheme = urllib.parse.urlparse(release_url).scheme
     release_response = httpx.get(release_url, timeout=30.0, headers=headers, follow_redirects=True)
     release_response.raise_for_status()
+    if release_url_scheme == "https" and release_response.url.scheme != "https":
+        raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {release_response.url}")
     release_data = json.loads(release_response.content)
 
     # Find .zip assets
@@ -132,8 +135,11 @@ def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None
         )
 
     logger.info(f"downloading asset: {asset_name} ({asset_size} bytes) from {download_url}")
+    download_url_scheme = urllib.parse.urlparse(download_url).scheme
     asset_response = httpx.get(download_url, timeout=60.0, follow_redirects=True)
     asset_response.raise_for_status()
+    if download_url_scheme == "https" and asset_response.url.scheme != "https":
+        raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {asset_response.url}")
     return asset_response.content
 
 

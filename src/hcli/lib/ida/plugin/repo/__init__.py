@@ -37,6 +37,8 @@ def fetch_plugin_archive(url: str) -> bytes:
     elif parsed_url.scheme in ("http", "https"):
         response = httpx.get(url, timeout=30.0, follow_redirects=True)
         response.raise_for_status()
+        if parsed_url.scheme == "https" and response.url.scheme != "https":
+            raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {response.url}")
         return response.content
 
     else:
