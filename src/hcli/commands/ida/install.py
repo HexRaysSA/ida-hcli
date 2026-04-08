@@ -166,15 +166,15 @@ async def install(
         if license_id:
             await get_license.callback(lid=license_id, output_dir=tmp_dir)
 
-            # Find a file *{license_id}.hexlic in tmp_dir
+            # Find all *{license_id}.hexlic files in tmp_dir and install them
             license_files = list(Path(tmp_dir).glob(f"*{license_id}.hexlic"))
             if not license_files:
                 raise FileNotFoundError(f"License file matching *{license_id}.hexlic not found in {tmp_dir}")
-            license_file = license_files[0].name
 
             license_dir_path = get_license_dir(install_dir_path)
 
-            install_license(Path(tmp_dir) / license_file, license_dir_path)
+            for lf in license_files:
+                install_license(lf, license_dir_path)
 
         if set_default:
             config_path = get_ida_config_path()
