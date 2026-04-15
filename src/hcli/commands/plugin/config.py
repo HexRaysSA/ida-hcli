@@ -11,7 +11,7 @@ import rich_click as click
 
 from hcli.lib.console import console
 from hcli.lib.ida import get_ida_config
-from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
+from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, resolve_installed_plugin_directory
 from hcli.lib.ida.plugin.settings import del_plugin_setting, get_plugin_setting, parse_setting_value, set_plugin_setting
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ def set(ctx, key: str, value: str) -> None:
     """Set a plugin configuration setting."""
     plugin_name = ctx.obj["config_plugin_name"]
     try:
-        plugin_path = get_plugin_directory(plugin_name)
+        plugin_path = resolve_installed_plugin_directory(plugin_name)
         metadata = get_metadata_from_plugin_directory(plugin_path)
         descr = metadata.plugin.get_setting(key)
         parsed_value = parse_setting_value(descr, value)
@@ -91,7 +91,7 @@ def list(ctx) -> None:
     """List all configuration settings for a plugin."""
     plugin_name = ctx.obj["config_plugin_name"]
     try:
-        plugin_path = get_plugin_directory(plugin_name)
+        plugin_path = resolve_installed_plugin_directory(plugin_name)
         metadata = get_metadata_from_plugin_directory(plugin_path)
 
         if not metadata.plugin.settings:

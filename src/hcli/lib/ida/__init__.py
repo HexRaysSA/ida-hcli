@@ -554,6 +554,9 @@ class IDAConfigJson(BaseModel):
     paths: PathsConfig = Field(alias="Paths", default_factory=lambda: PathsConfig())
     settings: SettingsConfig = Field(alias="Settings", default_factory=lambda: SettingsConfig())
     # from plugin name to config.
+    # NOTE: keyed by bare plugin name for now. Two plugins with the same bare
+    # name but different repository URLs will share the same settings entry;
+    # revisiting this is out of scope for the initial collision fix.
     plugins: dict[str, PluginConfig] = Field(alias="Plugins", default_factory=dict)
 
 

@@ -321,6 +321,34 @@ def test_upgrade_host_mismatch_fails(tmp_path, virtual_ida_environment):
     assert "Upgrade cannot switch repositories" in result.output
 
 
+def test_uninstall_case_insensitive_cli(tmp_path, virtual_ida_environment):
+    """`plugin uninstall PLUGIN1` finds $IDAUSR/plugins/plugin1."""
+    from hcli.lib.ida.plugin.install import install_plugin_archive, is_plugin_installed
+
+    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
+    install_plugin_archive(buf, "plugin1")
+    assert is_plugin_installed("plugin1")
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["uninstall", "PLUGIN1"])
+    assert result.exit_code == 0, result.output
+    assert not is_plugin_installed("plugin1")
+
+
+def test_config_list_case_insensitive_cli(tmp_path, virtual_ida_environment):
+    """`plugin config PLUGIN1 list` resolves to the installed plugin's directory."""
+    from hcli.lib.ida.plugin.install import install_plugin_archive
+
+    # plugin1 has no settings defined, so `config list` should show the "No settings defined" line
+    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
+    install_plugin_archive(buf, "plugin1")
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["config", "PLUGIN1", "list"])
+    assert result.exit_code == 0, result.output
+    assert "No settings defined" in result.output
+
+
 def test_status_does_not_crash_on_colliding_name(tmp_path, virtual_ida_environment):
     """status must succeed even when the installed plugin's bare name collides in the repository."""
     repo_dir = _build_colliding_repo_dir_with_v2(tmp_path)

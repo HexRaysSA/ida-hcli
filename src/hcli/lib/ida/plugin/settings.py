@@ -4,9 +4,26 @@ from pathlib import Path
 
 from hcli.lib.ida import PluginConfig, get_ida_config, set_ida_config
 from hcli.lib.ida.plugin import ChoiceValueError, PluginSettingDescriptor
-from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory, get_plugins_directory
+from hcli.lib.ida.plugin.install import (
+    find_installed_plugin,
+    get_metadata_from_plugin_directory,
+    get_plugin_directory,
+    get_plugins_directory,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_installed_plugin_name(plugin_name: str) -> str:
+    """Return the canonical name of the installed plugin matching ``plugin_name``.
+
+    Settings are keyed by bare plugin name in ida-config.json, so we standardize
+    on the canonical casing from the installed plugin's metadata.
+
+    Raises:
+        PluginNotInstalledError: when no matching installed plugin exists.
+    """
+    return find_installed_plugin(plugin_name).name
 
 
 def parse_setting_value(descriptor: PluginSettingDescriptor, string_value: str) -> str | bool:
@@ -33,6 +50,7 @@ def parse_setting_value(descriptor: PluginSettingDescriptor, string_value: str) 
 
 
 def set_plugin_setting(plugin_name: str, key: str, value: str | bool):
+    plugin_name = _resolve_installed_plugin_name(plugin_name)
     plugin_path = get_plugin_directory(plugin_name)
     metadata = get_metadata_from_plugin_directory(plugin_path)
     descr = metadata.plugin.get_setting(key)
@@ -66,6 +84,7 @@ def set_plugin_setting(plugin_name: str, key: str, value: str | bool):
 
 
 def get_plugin_setting(plugin_name: str, key: str) -> str | bool:
+    plugin_name = _resolve_installed_plugin_name(plugin_name)
     plugin_path = get_plugin_directory(plugin_name)
     metadata = get_metadata_from_plugin_directory(plugin_path)
     descr = metadata.plugin.get_setting(key)
@@ -99,6 +118,7 @@ def get_plugin_setting(plugin_name: str, key: str) -> str | bool:
 
 
 def del_plugin_setting(plugin_name: str, key: str):
+    plugin_name = _resolve_installed_plugin_name(plugin_name)
     plugin_path = get_plugin_directory(plugin_name)
     metadata = get_metadata_from_plugin_directory(plugin_path)
     descr = metadata.plugin.get_setting(key)
@@ -129,6 +149,7 @@ def has_plugin_setting(plugin_name: str, key: str) -> bool:
 
     Returns: True if the setting is explicitly set, False otherwise
     """
+    plugin_name = _resolve_installed_plugin_name(plugin_name)
     plugin_path = get_plugin_directory(plugin_name)
     metadata = get_metadata_from_plugin_directory(plugin_path)
     metadata.plugin.get_setting(key)
