@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 import rich.table
 import rich_click as click
+import semantic_version
 
 from hcli.lib.console import console
 from hcli.lib.ida import (
@@ -110,11 +111,8 @@ def render_ambiguity_error(err: AmbiguousPluginReferenceError) -> None:
         console.print(f"  {format_qualified_plugin_reference((candidate_name, err.version_spec, candidate_host))}")
 
 
-def handle_plugin_name_query(plugins: list[Plugin], ref: PluginReference, current_version: str, current_platform: str):
-    plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
-    latest_metadata = get_latest_plugin_metadata(plugin)
-
-    metadata_dict = latest_metadata.plugin.model_dump()
+def output_plugin_metadata(metadata) -> None:
+    metadata_dict = metadata.plugin.model_dump()
     del metadata_dict["platforms"]
     metadata_dict["idaVersions"] = render_ida_versions(metadata_dict["idaVersions"])
 
@@ -122,8 +120,14 @@ def handle_plugin_name_query(plugins: list[Plugin], ref: PluginReference, curren
         console.print(f"{key}: {value}")
     console.print()
 
-    # i had hoped to use markdown/syntax, but it always has a background color, and we dont know light/dark theme state.
 
+def output_plugin_versions_table(
+    plugin: Plugin,
+    versions: Sequence[str],
+    current_version: str,
+    current_platform: str,
+    title: str,
+) -> None:
     table = rich.table.Table(show_header=False, box=None)
     table.add_column("version", style="default")
     table.add_column("status")
@@ -133,9 +137,9 @@ def handle_plugin_name_query(plugins: list[Plugin], ref: PluginReference, curren
     if installed_record is not None:
         existing_version = parse_plugin_version(installed_record.version)
 
-    for version, locations in sorted(plugin.versions.items(), key=lambda p: parse_plugin_version(p[0]), reverse=True):
+    for version in versions:
+        locations = plugin.versions[version]
         metadata = locations[0].metadata
-
         is_compatible = is_compatible_plugin_version(plugin, version, locations, current_platform, current_version)
 
         status = ""
@@ -146,17 +150,37 @@ def handle_plugin_name_query(plugins: list[Plugin], ref: PluginReference, curren
             if parse_plugin_version(metadata.plugin.version) > existing_version and is_compatible:
                 status = f"[yellow]upgradable[/yellow] from {existing_version}"
 
-        else:
-            if not is_compatible:
-                status = "[grey69]incompatible[/grey69]"
+        elif not is_compatible:
+            status = "[grey69]incompatible[/grey69]"
 
-        table.add_row(
-            version,
-            status,
-        )
+        table.add_row(version, status)
 
-    console.print("available versions:")
+    console.print(title)
     console.print(table)
+
+
+def get_matching_versions(plugin: Plugin, version_spec: str) -> list[str]:
+    wanted_spec = semantic_version.SimpleSpec(version_spec)
+    return [
+        version
+        for version, _ in sorted(plugin.versions.items(), key=lambda p: parse_plugin_version(p[0]), reverse=True)
+        if parse_plugin_version(version) in wanted_spec
+    ]
+
+
+def handle_plugin_name_query(plugins: list[Plugin], ref: PluginReference, current_version: str, current_platform: str):
+    plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
+    output_plugin_metadata(get_latest_plugin_metadata(plugin))
+    output_plugin_versions_table(
+        plugin,
+        [
+            version
+            for version, _ in sorted(plugin.versions.items(), key=lambda p: parse_plugin_version(p[0]), reverse=True)
+        ],
+        current_version,
+        current_platform,
+        "available versions:",
+    )
 
 
 def render_ida_versions(versions: Sequence[IdaVersion]) -> str:
@@ -179,27 +203,13 @@ def render_platforms(platforms: Sequence[Platform]) -> str:
     return ", ".join(sorted(platforms))
 
 
-def handle_plugin_spec_query(plugins: list[Plugin], ref: PluginReference, current_version: str, current_platform: str):
-    plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
-
-    # version_spec is like "==1.2.3"; strip the leading operator
-    version = ref.version_spec[2:] if ref.version_spec.startswith("==") else ref.version_spec.lstrip("=><!~")
-    if not version:
-        raise ValueError(f"invalid plugin version: {ref.version_spec!r}")
-
+def handle_plugin_exact_version_query(plugin: Plugin, version: str):
     if version not in plugin.versions:
-        raise KeyError(f"version {version} not found for plugin {ref.name}")
+        raise KeyError(f"version {version} not found for plugin {plugin.name}")
 
     locations = plugin.versions[version]
     metadata = locations[0].metadata
-
-    metadata_dict = metadata.plugin.model_dump()
-    del metadata_dict["platforms"]
-    metadata_dict["idaVersions"] = render_ida_versions(metadata_dict["idaVersions"])
-
-    for key, value in sorted(metadata_dict.items()):
-        console.print(f"{key}: {value}")
-    console.print()
+    output_plugin_metadata(metadata)
 
     table = rich.table.Table(show_header=False, box=None)
     table.add_column("IDA version spec", style="default")
@@ -215,6 +225,33 @@ def handle_plugin_spec_query(plugins: list[Plugin], ref: PluginReference, curren
 
     console.print("download locations:")
     console.print(table)
+
+
+def handle_plugin_version_range_query(
+    plugin: Plugin,
+    ref: PluginReference,
+    current_version: str,
+    current_platform: str,
+):
+    matching_versions = get_matching_versions(plugin, ref.version_spec)
+    if not matching_versions:
+        raise KeyError(f"no versions matching {ref.version_spec!r} found for plugin {plugin.name!r}")
+
+    output_plugin_metadata(plugin.versions[matching_versions[0]][0].metadata)
+    output_plugin_versions_table(plugin, matching_versions, current_version, current_platform, "matching versions:")
+
+
+def handle_plugin_spec_query(plugins: list[Plugin], ref: PluginReference, current_version: str, current_platform: str):
+    plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
+
+    if ref.version_spec.startswith("=="):
+        version = ref.version_spec[2:]
+        if not version:
+            raise ValueError(f"invalid plugin version: {ref.version_spec!r}")
+        handle_plugin_exact_version_query(plugin, version)
+        return
+
+    handle_plugin_version_range_query(plugin, ref, current_version, current_platform)
 
 
 def handle_keyword_query(plugins: list[Plugin], query: str, current_version: str, current_platform: str):

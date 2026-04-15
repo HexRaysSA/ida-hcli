@@ -259,6 +259,57 @@ def test_search_keyword_no_matches_reports_empty_result(tmp_path, virtual_ida_en
     assert "No plugins found" in result.output
 
 
+def test_search_exact_version_spec_shows_download_locations(virtual_ida_environment):
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "plugin1==2.0.0"])
+
+    assert result.exit_code == 0, result.output
+    assert "download locations:" in result.output
+    assert "matching versions:" not in result.output
+
+
+def test_search_version_range_filters_matching_versions(virtual_ida_environment):
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "plugin1>=2.0.0"])
+
+    assert result.exit_code == 0, result.output
+    assert "matching versions:" in result.output
+    assert "download locations:" not in result.output
+    assert "5.0.0" in result.output
+    assert "2.0.0" in result.output
+    assert "1.0.0" not in result.output
+
+
+def test_search_exclusion_version_spec_does_not_show_excluded_version(virtual_ida_environment):
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "plugin1!=1.0.0"])
+
+    assert result.exit_code == 0, result.output
+    assert "matching versions:" in result.output
+    assert "1.0.0" not in result.output
+    assert "2.0.0" in result.output
+
+
+def test_search_version_range_without_matches_reports_constraint(virtual_ida_environment):
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "plugin1>=99.0.0"])
+
+    assert result.exit_code != 0
+    assert "no versions matching '>=99.0.0' found for plugin 'plugin1'" in result.output
+
+
+def test_search_ambiguous_non_exact_version_spec_preserves_version(tmp_path, virtual_ida_environment):
+    repo_dir = _build_colliding_repo_dir(tmp_path)
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", "shared>=1.0.0"])
+
+    assert result.exit_code != 0
+    assert "plugin name 'shared' is ambiguous" in result.output
+    assert "shared>=1.0.0@https://github.com/org-a/shared" in result.output
+    assert "shared>=1.0.0@https://github.com/org-b/shared" in result.output
+
+
 def test_install_ambiguous_bare_name_fails(tmp_path, virtual_ida_environment):
     """`plugin install <bare-name>` on an ambiguous name prints candidates and aborts."""
     repo_dir = _build_colliding_repo_dir(tmp_path)
