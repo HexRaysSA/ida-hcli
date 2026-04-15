@@ -219,3 +219,55 @@ def test_search_keyword_matches_colliding_plugins(tmp_path, virtual_ida_environm
     # both repo URLs should show up as separate rows
     assert "org-a" in result.output
     assert "org-b" in result.output
+
+
+def test_install_ambiguous_bare_name_fails(tmp_path, virtual_ida_environment):
+    """`plugin install <bare-name>` on an ambiguous name prints candidates and aborts."""
+    repo_dir = _build_colliding_repo_dir(tmp_path)
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "install", "shared"])
+
+    assert result.exit_code != 0
+    assert "plugin name 'shared' is ambiguous" in result.output
+    assert "shared@https://github.com/org-a/shared" in result.output
+    assert "shared@https://github.com/org-b/shared" in result.output
+
+
+def test_install_qualified_name_succeeds(tmp_path, virtual_ida_environment):
+    """`plugin install name@repo` installs the selected repository plugin."""
+    from hcli.lib.ida.plugin.install import is_plugin_installed
+
+    repo_dir = _build_colliding_repo_dir(tmp_path)
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(
+        plugin_group,
+        ["--repo", str(repo_dir), "install", "shared@https://github.com/org-a/shared"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert is_plugin_installed("shared")
+
+
+def test_install_same_name_conflict(tmp_path, virtual_ida_environment):
+    """Installing a same-name plugin from another repository must fail with a conflict error."""
+    repo_dir = _build_colliding_repo_dir(tmp_path)
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(
+        plugin_group,
+        ["--repo", str(repo_dir), "install", "shared@https://github.com/org-a/shared"],
+    )
+    assert result.exit_code == 0, result.output
+
+    # now try to install the other colliding plugin
+    result = runner.invoke(
+        plugin_group,
+        ["--repo", str(repo_dir), "install", "shared@https://github.com/org-b/shared"],
+    )
+    assert result.exit_code != 0
+    assert "cannot install plugin" in result.output
+    assert "https://github.com/org-a/shared" in result.output
+    assert "https://github.com/org-b/shared" in result.output
+    assert "Only one plugin with the bare name 'shared' can be installed at a time." in result.output
