@@ -16,7 +16,9 @@ from hcli.lib.ida import (
     find_current_ida_version,
 )
 from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
-from hcli.lib.ida.plugin.install import upgrade_plugin_archive
+from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
+from hcli.lib.ida.plugin.install import find_installed_plugin, upgrade_plugin_archive
+from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo
 
 logger = logging.getLogger(__name__)
@@ -47,11 +49,39 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         if plugin_spec.startswith("https://"):
             raise ValueError("cannot upgrade using URL; uninstall/reinstall instead")
 
+        try:
+            ref = parse_plugin_reference(plugin_spec)
+        except ValueError as e:
+            raise click.BadParameter(f"invalid plugin reference: {plugin_spec!r}: {e}")
+
+        # Resolve the installed plugin first so we can anchor the upgrade to
+        # the repository the user currently has installed. This avoids
+        # switching repositories implicitly and also resolves the host for
+        # bare-name upgrades even when the repository has a colliding name.
+        try:
+            installed = find_installed_plugin(ref.name)
+        except PluginNotInstalledError:
+            console.print(f"[red]Error[/red]: plugin '{ref.name}' is not installed")
+            raise click.Abort()
+
+        if ref.host is not None and normalize_plugin_host(installed.host) != normalize_plugin_host(ref.host):
+            console.print(
+                f"[red]Error[/red]: installed plugin '{installed.name}' comes from {installed.host}, not {ref.host}"
+            )
+            console.print(
+                "Upgrade cannot switch repositories. Uninstall first, then install the other qualified plugin."
+            )
+            raise click.Abort()
+
+        # Anchor the lookup to the installed host regardless of whether the
+        # user supplied it. This is what makes bare-name upgrades work even
+        # when the repository has a colliding name.
+        bare_spec = ref.name + ref.version_spec
         logger.info("finding plugin in repository")
         plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
         try:
             plugin_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
-                plugin_spec, current_ida_platform, current_ida_version
+                bare_spec, current_ida_platform, current_ida_version, host=installed.host
             )
         except (httpx.ConnectError, httpx.TimeoutException):
             console.print("[red]Cannot connect to plugin repository - network unavailable.[/red]")
@@ -70,6 +100,9 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
     except FailedToDetectIDAVersion:
         explain_failed_to_detect_ida_version(console)
         raise click.Abort()
+
+    except click.Abort:
+        raise
 
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)

@@ -250,6 +250,87 @@ def test_install_qualified_name_succeeds(tmp_path, virtual_ida_environment):
     assert is_plugin_installed("shared")
 
 
+def _build_colliding_repo_dir_with_v2(tmp_path: Path) -> Path:
+    """Colliding repo where org-a also publishes a newer version available to upgrade to."""
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    src = PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip"
+    # two versions of shared@org-a: v1.0.0 (installable first) and v3.0.0 (upgrade target)
+    make_plugin_zip(
+        src,
+        repo_dir / "shared-a-v1.zip",
+        new_name="shared",
+        new_version="1.0.0",
+        new_repository="https://github.com/org-a/shared",
+    )
+    make_plugin_zip(
+        src,
+        repo_dir / "shared-a-v3.zip",
+        new_name="shared",
+        new_version="3.0.0",
+        new_repository="https://github.com/org-a/shared",
+    )
+    # and one version of shared@org-b to force name-only ambiguity in the repo
+    make_plugin_zip(
+        src,
+        repo_dir / "shared-b-v1.zip",
+        new_name="shared",
+        new_version="2.0.0",
+        new_repository="https://github.com/org-b/shared",
+    )
+    return repo_dir
+
+
+def test_upgrade_bare_name_uses_installed_host(tmp_path, virtual_ida_environment):
+    """`plugin upgrade <bare-name>` anchors on the installed plugin's host."""
+    repo_dir = _build_colliding_repo_dir_with_v2(tmp_path)
+    runner = CliRunner(mix_stderr=False)
+
+    # install v1.0.0 of shared@org-a
+    result = runner.invoke(
+        plugin_group,
+        ["--repo", str(repo_dir), "install", "shared==1.0.0@https://github.com/org-a/shared"],
+    )
+    assert result.exit_code == 0, result.output
+
+    # now upgrade by bare name — should pick v3.0.0 from org-a, not the v2.0.0 from org-b
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "upgrade", "shared"])
+    assert result.exit_code == 0, result.output
+    assert "3.0.0" in result.output
+
+
+def test_upgrade_host_mismatch_fails(tmp_path, virtual_ida_environment):
+    """Upgrade must not switch an installed plugin from one repository to another."""
+    repo_dir = _build_colliding_repo_dir_with_v2(tmp_path)
+    runner = CliRunner(mix_stderr=False)
+
+    # install shared@org-a v1.0.0
+    result = runner.invoke(
+        plugin_group,
+        ["--repo", str(repo_dir), "install", "shared==1.0.0@https://github.com/org-a/shared"],
+    )
+    assert result.exit_code == 0, result.output
+
+    # try to "upgrade" by pointing at org-b — should fail with a repo-switch error
+    result = runner.invoke(
+        plugin_group,
+        ["--repo", str(repo_dir), "upgrade", "shared@https://github.com/org-b/shared"],
+    )
+    assert result.exit_code != 0
+    assert "comes from https://github.com/org-a/shared" in result.output
+    assert "Upgrade cannot switch repositories" in result.output
+
+
+def test_upgrade_not_installed_fails(tmp_path, virtual_ida_environment):
+    """Upgrade must fail cleanly when the plugin is not installed."""
+    repo_dir = _build_colliding_repo_dir_with_v2(tmp_path)
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "upgrade", "shared"])
+    assert result.exit_code != 0
+    assert "not installed" in result.output
+
+
 def test_install_same_name_conflict(tmp_path, virtual_ida_environment):
     """Installing a same-name plugin from another repository must fail with a conflict error."""
     repo_dir = _build_colliding_repo_dir(tmp_path)
