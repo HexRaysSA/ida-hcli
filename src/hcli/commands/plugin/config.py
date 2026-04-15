@@ -11,10 +11,18 @@ import rich_click as click
 
 from hcli.lib.console import console
 from hcli.lib.ida import get_ida_config
-from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, resolve_installed_plugin_directory
+from hcli.lib.ida.plugin.install import (
+    find_installed_plugin,
+    get_metadata_from_plugin_directory,
+    resolve_installed_plugin_directory,
+)
 from hcli.lib.ida.plugin.settings import del_plugin_setting, get_plugin_setting, parse_setting_value, set_plugin_setting
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_config_plugin_name(plugin_name: str) -> str:
+    return find_installed_plugin(plugin_name).name
 
 
 @click.group()
@@ -137,6 +145,7 @@ def export(ctx) -> None:
     """Export plugin configuration settings as JSON."""
     plugin_name = ctx.obj["config_plugin_name"]
     try:
+        plugin_name = resolve_config_plugin_name(plugin_name)
         config = get_ida_config()
         if plugin_name not in config.plugins:
             console.print("{}")
@@ -158,6 +167,7 @@ def import_(ctx, json_input: str | None) -> None:
     """Import plugin configuration settings from JSON."""
     plugin_name = ctx.obj["config_plugin_name"]
     try:
+        plugin_name = resolve_config_plugin_name(plugin_name)
         if json_input:
             data = json.loads(json_input)
         else:

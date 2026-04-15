@@ -271,12 +271,13 @@ class PluginArchiveIndex:
 
             name = metadata.plugin.name
             host = metadata.plugin.host
+            normalized_host = normalize_plugin_host(host)
             version = metadata.plugin.version
             ida_versions = frozenset(metadata.plugin.ida_versions)
             platforms = frozenset(metadata.plugin.platforms)
             spec = (ida_versions, platforms)
 
-            if expected_host and normalize_plugin_host(expected_host) != normalize_plugin_host(host):
+            if expected_host and normalize_plugin_host(expected_host) != normalized_host:
                 logger.debug(m("host mismatch: %s: %s versus expected %s", name, host, expected_host, **context))
                 continue
 
@@ -293,7 +294,7 @@ class PluginArchiveIndex:
                 )
             )
 
-            versions = self.index[(name.lower(), host.lower())]
+            versions = self.index[(name.lower(), normalized_host)]
             specs = versions[version]
             specs[spec].append((url, sha256, metadata))
 
@@ -322,7 +323,6 @@ class PluginArchiveIndex:
                         )
                         locations_by_version[version].append(location)
                         display_name = metadata.plugin.name
-                        display_host = metadata.plugin.host
 
             plugin = Plugin(name=display_name, host=display_host, versions=locations_by_version)
             ret.append(plugin)

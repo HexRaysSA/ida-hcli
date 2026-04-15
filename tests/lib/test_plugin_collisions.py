@@ -123,6 +123,34 @@ def test_get_plugin_by_name_host_normalized(tmp_path):
     assert plugin.host == "https://github.com/org-a/shared"
 
 
+def test_index_normalizes_hosts_during_indexing(tmp_path):
+    src = PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip"
+    repo_a_zip = make_plugin_zip(
+        src,
+        tmp_path / "shared-a.zip",
+        new_name="shared",
+        new_version="1.0.0",
+        new_repository="https://github.com/Org-A/Shared",
+    )
+    repo_b_zip = make_plugin_zip(
+        src,
+        tmp_path / "shared-b.zip",
+        new_name="shared",
+        new_version="2.0.0",
+        new_repository="https://github.com/org-a/shared/",
+    )
+
+    index = PluginArchiveIndex()
+    index.index_plugin_archive(repo_a_zip.read_bytes(), repo_a_zip.absolute().as_uri())
+    index.index_plugin_archive(repo_b_zip.read_bytes(), repo_b_zip.absolute().as_uri())
+
+    plugins = index.get_plugins()
+    assert len(plugins) == 1
+    plugin = get_plugin_by_name(plugins, "shared", host="https://github.com/org-a/shared")
+    assert plugin.host == "https://github.com/org-a/shared"
+    assert set(plugin.versions) == {"1.0.0", "2.0.0"}
+
+
 def test_get_plugin_by_name_not_found(tmp_path):
     index = build_index_with_colliding_plugins(tmp_path)
     with pytest.raises(KeyError):
@@ -219,6 +247,16 @@ def test_search_keyword_matches_colliding_plugins(tmp_path, virtual_ida_environm
     # both repo URLs should show up as separate rows
     assert "org-a" in result.output
     assert "org-b" in result.output
+
+
+def test_search_keyword_no_matches_reports_empty_result(tmp_path, virtual_ida_environment):
+    repo_dir = _build_colliding_repo_dir(tmp_path)
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", "does-not-match-anything"])
+
+    assert result.exit_code == 0, result.output
+    assert "No plugins found" in result.output
 
 
 def test_install_ambiguous_bare_name_fails(tmp_path, virtual_ida_environment):
@@ -347,6 +385,35 @@ def test_config_list_case_insensitive_cli(tmp_path, virtual_ida_environment):
     result = runner.invoke(plugin_group, ["config", "PLUGIN1", "list"])
     assert result.exit_code == 0, result.output
     assert "No settings defined" in result.output
+
+
+def test_config_export_case_insensitive_cli(tmp_path, virtual_ida_environment):
+    from hcli.lib.ida.plugin.install import install_plugin_archive
+    from hcli.lib.ida.plugin.settings import set_plugin_setting
+
+    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v5.0.0.zip").read_bytes()
+    install_plugin_archive(buf, "plugin1")
+    set_plugin_setting("plugin1", "key1", "value")
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["config", "PLUGIN1", "export"])
+    assert result.exit_code == 0, result.output
+    assert '"key1": "value"' in result.output
+
+
+def test_config_export_requires_installed_plugin(tmp_path, virtual_ida_environment):
+    from hcli.lib.ida.plugin.install import install_plugin_archive, uninstall_plugin
+    from hcli.lib.ida.plugin.settings import set_plugin_setting
+
+    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v5.0.0.zip").read_bytes()
+    install_plugin_archive(buf, "plugin1")
+    set_plugin_setting("plugin1", "key1", "value")
+    uninstall_plugin("plugin1")
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["config", "plugin1", "export"])
+    assert result.exit_code != 0
+    assert "not installed" in result.output
 
 
 def test_status_does_not_crash_on_colliding_name(tmp_path, virtual_ida_environment):

@@ -223,11 +223,13 @@ def handle_keyword_query(plugins: list[Plugin], query: str, current_version: str
     table.add_column("version", style="default")
     table.add_column("status")
     table.add_column("repo", style="grey69")
+    has_matches = False
 
     for plugin in sorted(plugins, key=lambda p: p.name.lower()):
         if not does_plugin_match_query(query or "", plugin):
             continue
 
+        has_matches = True
         latest_metadata = get_latest_plugin_metadata(plugin)
 
         if not is_compatible_plugin(plugin, current_platform, current_version):
@@ -266,9 +268,9 @@ def handle_keyword_query(plugins: list[Plugin], query: str, current_version: str
                 latest_metadata.plugin.urls.repository,
             )
 
-    console.print(table)
-
-    if not plugins:
+    if has_matches:
+        console.print(table)
+    else:
         console.print("[grey69]No plugins found[/grey69]")
 
 
