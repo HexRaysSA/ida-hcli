@@ -308,6 +308,8 @@ $ hcli plugin search ipython
  ipyida  2.3  installed
 ```
 
+If two repository plugins share the same bare name, HCLI will ask you to qualify the reference with the plugin's repository URL, for example `hcli plugin install ida-chat@https://github.com/HexRaysSA/ida-chat-plugin` or `hcli plugin install ida-chat==1.0.0@https://github.com/HexRaysSA/ida-chat-plugin`. See [Plugin Manager](../user-guide/plugin-manager.md) for details.
+
 ```bash
 $ hcli plugin install ipyida
 Installed plugin: ipyida==2.3
