@@ -6,8 +6,11 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
+from fixtures import *
 from fixtures import PLUGINS_DIR
 
+from hcli.commands.plugin import plugin as plugin_group
 from hcli.lib.ida.plugin.exceptions import AmbiguousPluginReferenceError
 from hcli.lib.ida.plugin.repo import PluginArchiveIndex, get_plugin_by_name
 
@@ -134,3 +137,85 @@ def test_get_plugin_by_name_is_case_insensitive(tmp_path):
 
     plugin = get_plugin_by_name(index.get_plugins(), "foo")
     assert plugin.name == "Foo"
+
+
+def _build_colliding_repo_dir(tmp_path: Path) -> Path:
+    """Write two colliding-name plugin zips into a repo directory."""
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    src = PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip"
+    make_plugin_zip(
+        src,
+        repo_dir / "shared-a.zip",
+        new_name="shared",
+        new_version="1.0.0",
+        new_repository="https://github.com/org-a/shared",
+    )
+    make_plugin_zip(
+        src,
+        repo_dir / "shared-b.zip",
+        new_name="shared",
+        new_version="2.0.0",
+        new_repository="https://github.com/org-b/shared",
+    )
+    return repo_dir
+
+
+def test_search_ambiguous_exact_name_renders_candidates(tmp_path, virtual_ida_environment):
+    """`plugin search <bare-name>` on an ambiguous name prints candidates and aborts."""
+    repo_dir = _build_colliding_repo_dir(tmp_path)
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", "shared"])
+
+    assert result.exit_code != 0
+    assert "plugin name 'shared' is ambiguous" in result.output
+    assert "Choose one of:" in result.output
+    assert "shared@https://github.com/org-a/shared" in result.output
+    assert "shared@https://github.com/org-b/shared" in result.output
+
+
+def test_search_ambiguous_version_spec_preserves_version(tmp_path, virtual_ida_environment):
+    """Candidate suggestions must keep the requested version spec."""
+    repo_dir = _build_colliding_repo_dir(tmp_path)
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", "shared==1.0.0"])
+
+    assert result.exit_code != 0
+    assert "plugin name 'shared' is ambiguous" in result.output
+    assert "shared==1.0.0@https://github.com/org-a/shared" in result.output
+    assert "shared==1.0.0@https://github.com/org-b/shared" in result.output
+
+
+def test_search_qualified_exact_name_resolves(tmp_path, virtual_ida_environment):
+    """A qualified reference picks the right repository plugin."""
+    repo_dir = _build_colliding_repo_dir(tmp_path)
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(
+        plugin_group,
+        ["--repo", str(repo_dir), "search", "shared@https://github.com/org-a/shared"],
+    )
+
+    assert result.exit_code == 0, result.output
+    # details output should include the plugin name
+    assert "shared" in result.output
+    # the org-a repo should be identified in metadata
+    assert "org-a" in result.output
+    # and the org-b version (2.0.0) should not appear in the listing
+    assert "2.0.0" not in result.output
+
+
+def test_search_keyword_matches_colliding_plugins(tmp_path, virtual_ida_environment):
+    """Keyword search includes both colliding plugins (substring match on name)."""
+    repo_dir = _build_colliding_repo_dir(tmp_path)
+
+    runner = CliRunner(mix_stderr=False)
+    # "shar" is a substring of "shared" but not an exact name, so this is a keyword query
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", "shar"])
+
+    assert result.exit_code == 0, result.output
+    # both repo URLs should show up as separate rows
+    assert "org-a" in result.output
+    assert "org-b" in result.output

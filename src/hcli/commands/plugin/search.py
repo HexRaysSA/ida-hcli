@@ -24,9 +24,17 @@ from hcli.lib.ida.plugin import (
     Platform,
     parse_ida_version,
     parse_plugin_version,
-    split_plugin_version_spec,
 )
-from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory, is_plugin_installed
+from hcli.lib.ida.plugin.exceptions import (
+    AmbiguousPluginReferenceError,
+    PluginNotInstalledError,
+)
+from hcli.lib.ida.plugin.install import find_installed_plugin
+from hcli.lib.ida.plugin.reference import (
+    PluginReference,
+    format_qualified_plugin_reference,
+    parse_plugin_reference,
+)
 from hcli.lib.ida.plugin.repo import (
     BasePluginRepo,
     Plugin,
@@ -80,32 +88,30 @@ def does_plugin_match_query(query: str, plugin: Plugin) -> bool:
     return False
 
 
-def is_plugin_name_query(plugins: list[Plugin], query: str):
-    """like 'plugin1' exact matches a known plugin"""
-    if not query:
-        return False
+def find_installed_matching(plugin: Plugin):
+    """Look up the installed record for this *specific* repository plugin.
 
-    query = query.lower()
+    Matches on both bare name and normalized host so a same-name plugin from a
+    different repository does not register as installed.
 
+    Returns the record or ``None`` when no matching plugin is installed.
+    """
     try:
-        _ = get_plugin_by_name(plugins, query)
-        return True
-    except KeyError:
-        return False
+        return find_installed_plugin(plugin.name, host=plugin.host)
+    except PluginNotInstalledError:
+        return None
 
 
-def is_plugin_spec_query(plugins: list[Plugin], query: str):
-    """like 'plugin1==1.0.0' exact matches a known plugin name, with version"""
-    try:
-        plugin_name, _ = split_plugin_version_spec(query)
-    except ValueError:
-        return False
-
-    return bool(plugin_name != query and is_plugin_name_query(plugins, plugin_name))
+def render_ambiguity_error(err: AmbiguousPluginReferenceError) -> None:
+    """Render the user-facing message for an ambiguous bare-name query."""
+    console.print(f"[red]Error[/red]: plugin name '{err.name}' is ambiguous")
+    console.print("Choose one of:")
+    for candidate_name, candidate_host in err.candidates:
+        console.print(f"  {format_qualified_plugin_reference((candidate_name, err.version_spec, candidate_host))}")
 
 
-def handle_plugin_name_query(plugins: list[Plugin], query: str, current_version: str, current_platform: str):
-    plugin = get_plugin_by_name(plugins, query)
+def handle_plugin_name_query(plugins: list[Plugin], ref: PluginReference, current_version: str, current_platform: str):
+    plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
     latest_metadata = get_latest_plugin_metadata(plugin)
 
     metadata_dict = latest_metadata.plugin.model_dump()
@@ -122,12 +128,10 @@ def handle_plugin_name_query(plugins: list[Plugin], query: str, current_version:
     table.add_column("version", style="default")
     table.add_column("status")
 
-    is_installed = is_plugin_installed(plugin.name)
+    installed_record = find_installed_matching(plugin)
     existing_version = None
-    if is_installed:
-        existing_plugin_path = get_plugin_directory(plugin.name)
-        existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
-        existing_version = parse_plugin_version(existing_metadata.plugin.version)
+    if installed_record is not None:
+        existing_version = parse_plugin_version(installed_record.version)
 
     for version, locations in sorted(plugin.versions.items(), key=lambda p: parse_plugin_version(p[0]), reverse=True):
         metadata = locations[0].metadata
@@ -135,11 +139,11 @@ def handle_plugin_name_query(plugins: list[Plugin], query: str, current_version:
         is_compatible = is_compatible_plugin_version(plugin, version, locations, current_platform, current_version)
 
         status = ""
-        if is_installed:
-            if is_installed and parse_plugin_version(metadata.plugin.version) == existing_version:
+        if installed_record is not None and existing_version is not None:
+            if parse_plugin_version(metadata.plugin.version) == existing_version:
                 status = "[green]currently installed[/green]"
 
-            if is_installed and parse_plugin_version(metadata.plugin.version) > existing_version and is_compatible:
+            if parse_plugin_version(metadata.plugin.version) > existing_version and is_compatible:
                 status = f"[yellow]upgradable[/yellow] from {existing_version}"
 
         else:
@@ -175,12 +179,16 @@ def render_platforms(platforms: Sequence[Platform]) -> str:
     return ", ".join(sorted(platforms))
 
 
-def handle_plugin_spec_query(plugins: list[Plugin], query: str, current_version: str, current_platform: str):
-    name, version = split_plugin_version_spec(query)
-    if not version:
-        raise ValueError(f"invalid plugin version: {query}")
+def handle_plugin_spec_query(plugins: list[Plugin], ref: PluginReference, current_version: str, current_platform: str):
+    plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
 
-    plugin = get_plugin_by_name(plugins, name)
+    # version_spec is like "==1.2.3"; strip the leading operator
+    version = ref.version_spec[2:] if ref.version_spec.startswith("==") else ref.version_spec.lstrip("=><!~")
+    if not version:
+        raise ValueError(f"invalid plugin version: {ref.version_spec!r}")
+
+    if version not in plugin.versions:
+        raise KeyError(f"version {version} not found for plugin {ref.name}")
 
     locations = plugin.versions[version]
     metadata = locations[0].metadata
@@ -235,13 +243,11 @@ def handle_keyword_query(plugins: list[Plugin], query: str, current_version: str
                 plugin, current_platform, current_version
             )
 
-            is_installed = is_plugin_installed(plugin.name)
+            installed_record = find_installed_matching(plugin)
             is_upgradable = False
-            existing_version = None
-            if is_installed:
-                existing_plugin_path = get_plugin_directory(plugin.name)
-                existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
-                existing_version = existing_metadata.plugin.version
+            existing_version: str | None = None
+            if installed_record is not None:
+                existing_version = installed_record.version
                 if parse_plugin_version(latest_compatible_metadata.plugin.version) > parse_plugin_version(
                     existing_version
                 ):
@@ -250,7 +256,7 @@ def handle_keyword_query(plugins: list[Plugin], query: str, current_version: str
             status = ""
             if is_upgradable:
                 status = f"[yellow]upgradable[/yellow] from {existing_version}"
-            elif is_installed:
+            elif installed_record is not None:
                 status = "installed"
 
             table.add_row(
@@ -264,6 +270,11 @@ def handle_keyword_query(plugins: list[Plugin], query: str, current_version: str
 
     if not plugins:
         console.print("[grey69]No plugins found[/grey69]")
+
+
+def _has_exact_name_match(plugins: list[Plugin], name: str) -> bool:
+    wanted = name.lower()
+    return any(p.name.lower() == wanted for p in plugins)
 
 
 @click.command()
@@ -282,13 +293,39 @@ def search_plugins(ctx, query: str | None = None) -> None:
         plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
         plugins: list[Plugin] = plugin_repo.get_plugins()
 
-        if is_plugin_name_query(plugins, query or ""):
-            handle_plugin_name_query(plugins, query or "", current_version, current_platform)
+        if not query:
+            handle_keyword_query(plugins, "", current_version, current_platform)
+            return
 
-        elif is_plugin_spec_query(plugins, query or ""):
-            handle_plugin_spec_query(plugins, query or "", current_version, current_platform)
-        else:
-            handle_keyword_query(plugins, query or "", current_version, current_platform)
+        # Try to parse the query as a qualified reference. If parsing fails
+        # (malformed version spec, etc.) fall back to keyword search so the
+        # substring path continues to work for unusual user input.
+        try:
+            ref = parse_plugin_reference(query)
+        except ValueError:
+            handle_keyword_query(plugins, query, current_version, current_platform)
+            return
+
+        # A qualified query (with a host) is always an exact plugin query.
+        # An unqualified query is only an exact plugin query if it exactly
+        # matches a known bare name case-insensitively; otherwise fall back
+        # to keyword/substring search.
+        if ref.host is None and not _has_exact_name_match(plugins, ref.name):
+            handle_keyword_query(plugins, query, current_version, current_platform)
+            return
+
+        try:
+            if ref.version_spec:
+                handle_plugin_spec_query(plugins, ref, current_version, current_platform)
+            else:
+                handle_plugin_name_query(plugins, ref, current_version, current_platform)
+        except AmbiguousPluginReferenceError as e:
+            # ``get_plugin_by_name`` does not know the user's version spec;
+            # attach it here so candidate suggestions render ``name==1.2.3@repo``.
+            if ref.version_spec and not e.version_spec:
+                e = AmbiguousPluginReferenceError(e.name, e.candidates, ref.version_spec)
+            render_ambiguity_error(e)
+            raise click.Abort()
 
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
@@ -297,6 +334,9 @@ def search_plugins(ctx, query: str | None = None) -> None:
     except FailedToDetectIDAVersion:
         explain_failed_to_detect_ida_version(console)
         raise click.Abort()
+
+    except click.Abort:
+        raise
 
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)
