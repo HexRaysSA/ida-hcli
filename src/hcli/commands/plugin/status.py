@@ -17,10 +17,11 @@ from hcli.lib.ida import (
     find_current_ida_version,
 )
 from hcli.lib.ida.plugin import parse_plugin_version
+from hcli.lib.ida.plugin.exceptions import AmbiguousPluginReferenceError
 from hcli.lib.ida.plugin.install import (
     get_installed_legacy_plugins,
     get_installed_minimal_plugins,
-    get_installed_plugins,
+    get_installed_plugin_records,
     get_plugins_directory,
 )
 from hcli.lib.ida.plugin.repo import BasePluginRepo
@@ -42,16 +43,26 @@ def get_plugin_status(ctx) -> None:
         table.add_column("version", style="default")
         table.add_column("status")
 
-        for name, version in get_installed_plugins():
+        for record in get_installed_plugin_records():
             status = ""
             try:
-                location = plugin_repo.find_compatible_plugin_from_spec(name, current_platform, current_ida_version)
-                if parse_plugin_version(location.metadata.plugin.version) > parse_plugin_version(version):
+                # Anchor the repository lookup on the installed plugin's host so a
+                # colliding plugin name in the repository does not raise ambiguity
+                # or pick the wrong variant.
+                location = plugin_repo.find_compatible_plugin_from_spec(
+                    record.name, current_platform, current_ida_version, host=record.host
+                )
+                if parse_plugin_version(location.metadata.plugin.version) > parse_plugin_version(record.version):
                     status = f"upgradable to [yellow]{location.metadata.plugin.version}[/yellow]"
-            except (ValueError, KeyError):
+            except (ValueError, KeyError, AmbiguousPluginReferenceError):
+                # AmbiguousPluginReferenceError should not escape this command.
+                # The installed plugin's own metadata carries its host, so
+                # anchoring on that host above should normally resolve the
+                # collision; if it does not, treat the plugin as absent from
+                # the repository rather than crashing status.
                 status = "[yellow]not found in repository[/yellow]"
 
-            table.add_row(name, version, status)
+            table.add_row(record.name, record.version, status)
 
         has_incompatible_plugins = False
         plugin_directory = get_plugins_directory()

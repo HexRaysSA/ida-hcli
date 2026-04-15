@@ -321,6 +321,26 @@ def test_upgrade_host_mismatch_fails(tmp_path, virtual_ida_environment):
     assert "Upgrade cannot switch repositories" in result.output
 
 
+def test_status_does_not_crash_on_colliding_name(tmp_path, virtual_ida_environment):
+    """status must succeed even when the installed plugin's bare name collides in the repository."""
+    repo_dir = _build_colliding_repo_dir_with_v2(tmp_path)
+    runner = CliRunner(mix_stderr=False)
+
+    # install shared@org-a v1.0.0
+    result = runner.invoke(
+        plugin_group,
+        ["--repo", str(repo_dir), "install", "shared==1.0.0@https://github.com/org-a/shared"],
+    )
+    assert result.exit_code == 0, result.output
+
+    # status should not fail because of the repo-side name collision
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "status"])
+    assert result.exit_code == 0, result.output
+    assert "shared" in result.output
+    # should detect the v3.0.0 upgrade from org-a, not v2.0.0 from org-b
+    assert "3.0.0" in result.output
+
+
 def test_upgrade_not_installed_fails(tmp_path, virtual_ida_environment):
     """Upgrade must fail cleanly when the plugin is not installed."""
     repo_dir = _build_colliding_repo_dir_with_v2(tmp_path)
