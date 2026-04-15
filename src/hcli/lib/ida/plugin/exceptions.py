@@ -105,3 +105,51 @@ class PluginVersionDowngradeError(PluginUpgradeError):
             f"Cannot upgrade plugin '{name}': new version {new_version} "
             f"is not greater than current version {current_version}"
         )
+
+
+class AmbiguousPluginReferenceError(Exception):
+    """A bare plugin reference matches multiple repository plugins.
+
+    Commands should render this to the user along with the qualified
+    ``name@repo`` form of each candidate so the user can rerun unambiguously.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        candidates: Sequence[tuple[str, str]],
+        version_spec: str = "",
+    ):
+        self.name = name
+        # ``candidates`` holds (name, host) pairs; using plain tuples keeps this
+        # module free of the ``Plugin`` import (which would cause a circular import).
+        self.candidates = list(candidates)
+        self.version_spec = version_spec
+        super().__init__(f"ambiguous plugin reference: {name!r} matches {len(self.candidates)} plugins")
+
+
+class InstalledPluginNameConflictError(PluginInstallationError):
+    """Installing a plugin would collide with another already-installed same-name plugin.
+
+    Raised when the user asks to install ``foo@repo-a`` but ``foo@repo-b`` is
+    already installed. The install layout is ``$IDAUSR/plugins/<name>``, so
+    only one plugin with a given bare name can be installed at a time.
+    """
+
+    def __init__(
+        self,
+        requested_name: str,
+        requested_host: str,
+        installed_name: str,
+        installed_host: str,
+        installed_path: Path,
+    ):
+        self.requested_name = requested_name
+        self.requested_host = requested_host
+        self.installed_name = installed_name
+        self.installed_host = installed_host
+        self.installed_path = installed_path
+        super().__init__(
+            f"cannot install plugin '{requested_name}@{requested_host}' because "
+            f"'{installed_name}@{installed_host}' is already installed at {installed_path}"
+        )
