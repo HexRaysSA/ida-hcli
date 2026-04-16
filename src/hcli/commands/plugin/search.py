@@ -107,8 +107,8 @@ def render_ambiguity_error(err: AmbiguousPluginReferenceError) -> None:
     """Render the user-facing message for an ambiguous bare-name query."""
     console.print(f"[red]Error[/red]: plugin name '{err.name}' is ambiguous")
     console.print("Choose one of:")
-    for candidate_name, candidate_host in err.candidates:
-        console.print(f"  {format_qualified_plugin_reference((candidate_name, err.version_spec, candidate_host))}")
+    for ref in err.candidate_refs:
+        console.print(f"  {format_qualified_plugin_reference(ref)}")
 
 
 def output_plugin_metadata(metadata) -> None:

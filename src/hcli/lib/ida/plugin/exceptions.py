@@ -120,11 +120,15 @@ class AmbiguousPluginReferenceError(Exception):
         candidates: Sequence[tuple[str, str]],
         version_spec: str = "",
     ):
+        from hcli.lib.ida.plugin.reference import PluginReference
+
         self.name = name
-        # ``candidates`` holds (name, host) pairs; using plain tuples keeps this
-        # module free of the ``Plugin`` import (which would cause a circular import).
         self.candidates = list(candidates)
         self.version_spec = version_spec
+        self.candidate_refs: list[PluginReference] = [
+            PluginReference(name=cname, version_spec=version_spec, host=chost)
+            for cname, chost in candidates
+        ]
         super().__init__(f"ambiguous plugin reference: {name!r} matches {len(self.candidates)} plugins")
 
 

@@ -124,12 +124,12 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
                         bare_spec, current_ida_platform, current_ida_version, host=ref.host
                     )
             except AmbiguousPluginReferenceError as e:
+                if ref.version_spec and not e.version_spec:
+                    e = AmbiguousPluginReferenceError(e.name, e.candidates, ref.version_spec)
                 console.print(f"[red]Error[/red]: plugin name '{e.name}' is ambiguous")
                 console.print("Choose one of:")
-                for candidate_name, candidate_host in e.candidates:
-                    console.print(
-                        f"  {format_qualified_plugin_reference((candidate_name, ref.version_spec, candidate_host))}"
-                    )
+                for candidate_ref in e.candidate_refs:
+                    console.print(f"  {format_qualified_plugin_reference(candidate_ref)}")
                 raise click.Abort()
 
         _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)

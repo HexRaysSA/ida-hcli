@@ -119,8 +119,6 @@ def test_format_qualified_plugin_reference_without_host():
     assert format_qualified_plugin_reference(ref) == "plugin1==1.0.0"
 
 
-def test_format_qualified_plugin_reference_tuple_input():
-    assert (
-        format_qualified_plugin_reference(("plugin1", "==1.0.0", "https://github.com/org/repo"))
-        == "plugin1==1.0.0@https://github.com/org/repo"
-    )
+def test_format_qualified_plugin_reference_bare_name():
+    ref = PluginReference(name="plugin1", version_spec="", host=None)
+    assert format_qualified_plugin_reference(ref) == "plugin1"

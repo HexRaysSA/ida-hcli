@@ -149,28 +149,18 @@ def parse_plugin_reference(value: str) -> PluginReference:
     return PluginReference(name=name, version_spec=version_spec, host=host)
 
 
-def format_qualified_plugin_reference(
-    ref: PluginReference | tuple[str, str, str | None],
-) -> str:
+def format_qualified_plugin_reference(ref: PluginReference) -> str:
     """Render a plugin reference in its canonical user-facing string form.
 
     Formats:
         name@repo
         name==1.2.3@repo
-
-    The ``host`` must be provided for the output to be useful; callers that
-    only have a bare name/version don't need this helper.
     """
-    if isinstance(ref, PluginReference):
-        name, version_spec, host = ref.name, ref.version_spec, ref.host
-    else:
-        name, version_spec, host = ref
+    if not ref.host:
+        if ref.version_spec:
+            return f"{ref.name}{ref.version_spec}"
+        return ref.name
 
-    if not host:
-        if version_spec:
-            return f"{name}{version_spec}"
-        return name
-
-    if version_spec:
-        return f"{name}{version_spec}@{host}"
-    return f"{name}@{host}"
+    if ref.version_spec:
+        return f"{ref.name}{ref.version_spec}@{ref.host}"
+    return f"{ref.name}@{ref.host}"
