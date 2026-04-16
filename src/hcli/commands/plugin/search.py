@@ -26,11 +26,8 @@ from hcli.lib.ida.plugin import (
     parse_ida_version,
     parse_plugin_version,
 )
-from hcli.lib.ida.plugin.exceptions import (
-    AmbiguousPluginReferenceError,
-    PluginNotInstalledError,
-)
-from hcli.lib.ida.plugin.install import find_installed_plugin
+from hcli.lib.ida.plugin.exceptions import AmbiguousPluginReferenceError
+from hcli.lib.ida.plugin.install import InstalledPluginRecord, find_installed_plugin_in, get_installed_plugin_records
 from hcli.lib.ida.plugin.reference import (
     PluginReference,
     format_qualified_plugin_reference,
@@ -89,18 +86,16 @@ def does_plugin_match_query(query: str, plugin: Plugin) -> bool:
     return False
 
 
-def find_installed_matching(plugin: Plugin):
+def find_installed_matching(
+    plugin: Plugin,
+    installed_records: list[InstalledPluginRecord],
+) -> InstalledPluginRecord | None:
     """Look up the installed record for this *specific* repository plugin.
 
     Matches on both bare name and normalized host so a same-name plugin from a
     different repository does not register as installed.
-
-    Returns the record or ``None`` when no matching plugin is installed.
     """
-    try:
-        return find_installed_plugin(plugin.name, host=plugin.host)
-    except PluginNotInstalledError:
-        return None
+    return find_installed_plugin_in(installed_records, plugin.name, host=plugin.host)
 
 
 def render_ambiguity_error(err: AmbiguousPluginReferenceError) -> None:
@@ -127,12 +122,13 @@ def output_plugin_versions_table(
     current_version: str,
     current_platform: str,
     title: str,
+    installed_records: list[InstalledPluginRecord],
 ) -> None:
     table = rich.table.Table(show_header=False, box=None)
     table.add_column("version", style="default")
     table.add_column("status")
 
-    installed_record = find_installed_matching(plugin)
+    installed_record = find_installed_matching(plugin, installed_records)
     existing_version = None
     if installed_record is not None:
         existing_version = parse_plugin_version(installed_record.version)
@@ -168,7 +164,13 @@ def get_matching_versions(plugin: Plugin, version_spec: str) -> list[str]:
     ]
 
 
-def handle_plugin_name_query(plugins: list[Plugin], ref: PluginReference, current_version: str, current_platform: str):
+def handle_plugin_name_query(
+    plugins: list[Plugin],
+    ref: PluginReference,
+    current_version: str,
+    current_platform: str,
+    installed_records: list[InstalledPluginRecord],
+):
     plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
     output_plugin_metadata(get_latest_plugin_metadata(plugin))
     output_plugin_versions_table(
@@ -180,6 +182,7 @@ def handle_plugin_name_query(plugins: list[Plugin], ref: PluginReference, curren
         current_version,
         current_platform,
         "available versions:",
+        installed_records,
     )
 
 
@@ -232,16 +235,25 @@ def handle_plugin_version_range_query(
     ref: PluginReference,
     current_version: str,
     current_platform: str,
+    installed_records: list[InstalledPluginRecord],
 ):
     matching_versions = get_matching_versions(plugin, ref.version_spec)
     if not matching_versions:
         raise KeyError(f"no versions matching {ref.version_spec!r} found for plugin {plugin.name!r}")
 
     output_plugin_metadata(plugin.versions[matching_versions[0]][0].metadata)
-    output_plugin_versions_table(plugin, matching_versions, current_version, current_platform, "matching versions:")
+    output_plugin_versions_table(
+        plugin, matching_versions, current_version, current_platform, "matching versions:", installed_records
+    )
 
 
-def handle_plugin_spec_query(plugins: list[Plugin], ref: PluginReference, current_version: str, current_platform: str):
+def handle_plugin_spec_query(
+    plugins: list[Plugin],
+    ref: PluginReference,
+    current_version: str,
+    current_platform: str,
+    installed_records: list[InstalledPluginRecord],
+):
     plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
 
     if ref.version_spec.startswith("=="):
@@ -251,10 +263,16 @@ def handle_plugin_spec_query(plugins: list[Plugin], ref: PluginReference, curren
         handle_plugin_exact_version_query(plugin, version)
         return
 
-    handle_plugin_version_range_query(plugin, ref, current_version, current_platform)
+    handle_plugin_version_range_query(plugin, ref, current_version, current_platform, installed_records)
 
 
-def handle_keyword_query(plugins: list[Plugin], query: str, current_version: str, current_platform: str):
+def handle_keyword_query(
+    plugins: list[Plugin],
+    query: str,
+    current_version: str,
+    current_platform: str,
+    installed_records: list[InstalledPluginRecord],
+):
     table = rich.table.Table(show_header=False, box=None)
     table.add_column("name", style="blue")
     table.add_column("version", style="default")
@@ -282,7 +300,7 @@ def handle_keyword_query(plugins: list[Plugin], query: str, current_version: str
                 plugin, current_platform, current_version
             )
 
-            installed_record = find_installed_matching(plugin)
+            installed_record = find_installed_matching(plugin, installed_records)
             is_upgradable = False
             existing_version: str | None = None
             if installed_record is not None:
@@ -331,9 +349,10 @@ def search_plugins(ctx, query: str | None = None) -> None:
 
         plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
         plugins: list[Plugin] = plugin_repo.get_plugins()
+        installed_records = get_installed_plugin_records()
 
         if not query:
-            handle_keyword_query(plugins, "", current_version, current_platform)
+            handle_keyword_query(plugins, "", current_version, current_platform, installed_records)
             return
 
         # Try to parse the query as a qualified reference. If parsing fails
@@ -342,7 +361,7 @@ def search_plugins(ctx, query: str | None = None) -> None:
         try:
             ref = parse_plugin_reference(query)
         except ValueError:
-            handle_keyword_query(plugins, query, current_version, current_platform)
+            handle_keyword_query(plugins, query, current_version, current_platform, installed_records)
             return
 
         # A qualified query (with a host) is always an exact plugin query.
@@ -350,14 +369,14 @@ def search_plugins(ctx, query: str | None = None) -> None:
         # matches a known bare name case-insensitively; otherwise fall back
         # to keyword/substring search.
         if ref.host is None and not _has_exact_name_match(plugins, ref.name):
-            handle_keyword_query(plugins, query, current_version, current_platform)
+            handle_keyword_query(plugins, query, current_version, current_platform, installed_records)
             return
 
         try:
             if ref.version_spec:
-                handle_plugin_spec_query(plugins, ref, current_version, current_platform)
+                handle_plugin_spec_query(plugins, ref, current_version, current_platform, installed_records)
             else:
-                handle_plugin_name_query(plugins, ref, current_version, current_platform)
+                handle_plugin_name_query(plugins, ref, current_version, current_platform, installed_records)
         except AmbiguousPluginReferenceError as e:
             # ``get_plugin_by_name`` does not know the user's version spec;
             # attach it here so candidate suggestions render ``name==1.2.3@repo``.

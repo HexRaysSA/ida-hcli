@@ -209,6 +209,28 @@ def get_installed_plugin_records() -> list[InstalledPluginRecord]:
     return records
 
 
+def find_installed_plugin_in(
+    records: list[InstalledPluginRecord],
+    name: str,
+    host: str | None = None,
+) -> InstalledPluginRecord | None:
+    """Search *pre-fetched* records for a plugin by name and optional host.
+
+    Returns ``None`` when no match is found (does not raise).
+    """
+    wanted_name = name.lower()
+    wanted_host = normalize_plugin_host(host) if host else None
+
+    for record in records:
+        if record.name.lower() != wanted_name:
+            continue
+        if wanted_host is not None and normalize_plugin_host(record.host) != wanted_host:
+            continue
+        return record
+
+    return None
+
+
 def find_installed_plugin(name: str, host: str | None = None) -> InstalledPluginRecord:
     """Find an installed plugin by name, optionally qualified by host.
 
@@ -219,17 +241,10 @@ def find_installed_plugin(name: str, host: str | None = None) -> InstalledPlugin
     Raises:
         PluginNotInstalledError: when no matching installed plugin exists.
     """
-    wanted_name = name.lower()
-    wanted_host = normalize_plugin_host(host) if host else None
-
-    for record in get_installed_plugin_records():
-        if record.name.lower() != wanted_name:
-            continue
-        if wanted_host is not None and normalize_plugin_host(record.host) != wanted_host:
-            continue
-        return record
-
-    raise PluginNotInstalledError(name)
+    record = find_installed_plugin_in(get_installed_plugin_records(), name, host)
+    if record is None:
+        raise PluginNotInstalledError(name)
+    return record
 
 
 def resolve_installed_plugin_directory(name: str) -> Path:
