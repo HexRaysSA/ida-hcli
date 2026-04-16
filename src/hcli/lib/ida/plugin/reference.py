@@ -50,10 +50,11 @@ class PluginReference:
 def is_github_repository_url(value: str) -> bool:
     """Return True if ``value`` is a whole-string GitHub repository URL.
 
-    This differs from ``repo/github.py:is_github_url`` which only checks
-    whether ``github.com/`` appears somewhere in the string. A qualified
-    plugin reference like ``foo@https://github.com/org/repo`` must parse as
-    a reference, not a raw URL, so we use a strict whole-string match here.
+    This is stricter than ``is_github_direct_install_url``: it only accepts
+    plain repository URLs and rejects direct-install variants such as
+    ``.git`` suffixes or ``@tag`` qualifiers. A qualified plugin reference
+    like ``foo@https://github.com/org/repo`` must parse as a reference, not
+    a raw URL, so we use a strict whole-string match here.
     """
     return bool(_GITHUB_REPO_RE.match(value))
 
