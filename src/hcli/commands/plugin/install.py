@@ -31,7 +31,7 @@ from hcli.lib.ida.plugin.exceptions import (
 from hcli.lib.ida.plugin.install import find_installed_plugin, install_plugin_archive, uninstall_plugin
 from hcli.lib.ida.plugin.reference import (
     format_qualified_plugin_reference,
-    is_github_repository_url,
+    is_github_direct_install_url,
     normalize_plugin_host,
     parse_plugin_reference,
 )
@@ -77,14 +77,15 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
                 raise ValueError("plugin archive must contain a single plugin for local file system installation")
             plugin_name = items[0][1].plugin.name
 
-        elif is_github_repository_url(plugin_spec):
+        elif is_github_direct_install_url(plugin_spec):
             logger.info("installing from GitHub repository")
             try:
-                owner, repo = parse_github_url(plugin_spec)
+                owner, repo, tag = parse_github_url(plugin_spec)
+                tag_info = f"@{tag}" if tag else " (latest release)"
                 with rich.status.Status(
-                    f"fetching plugin from GitHub: {owner}/{repo} (latest release)", console=stderr_console
+                    f"fetching plugin from GitHub: {owner}/{repo}{tag_info}", console=stderr_console
                 ):
-                    buf = fetch_github_release_zip_asset(owner, repo)
+                    buf = fetch_github_release_zip_asset(owner, repo, tag)
             except (httpx.ConnectError, httpx.TimeoutException):
                 console.print("[red]Cannot connect to GitHub - network unavailable.[/red]")
                 console.print("Please check your internet connection.")

@@ -23,6 +23,14 @@ from urllib.parse import urlparse
 # ``src/hcli/lib/ida/plugin/__init__.py``). Trailing slash optional.
 _GITHUB_REPO_RE = re.compile(r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/?$", re.IGNORECASE)
 
+# broader match that also accepts ``.git`` suffix and ``@tag`` for direct
+# installs (e.g. ``https://github.com/org/repo.git@v1.0``).
+_GITHUB_DIRECT_INSTALL_RE = re.compile(
+    r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+"
+    r"(?:\.git)?(?:@[a-zA-Z0-9._/+-]+)?/?$",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class PluginReference:
@@ -48,6 +56,23 @@ def is_github_repository_url(value: str) -> bool:
     a reference, not a raw URL, so we use a strict whole-string match here.
     """
     return bool(_GITHUB_REPO_RE.match(value))
+
+
+def is_github_direct_install_url(value: str) -> bool:
+    """Return True if ``value`` is a GitHub URL suitable for direct installation.
+
+    Accepts the same shapes as ``is_github_repository_url`` plus ``.git``
+    suffix and ``@tag`` for tagged releases::
+
+        https://github.com/org/repo
+        https://github.com/org/repo.git
+        https://github.com/org/repo@v1.0
+        https://github.com/org/repo.git@v1.0
+
+    Does NOT match qualified plugin references (``name@https://...``)
+    because those don't start with ``https://``.
+    """
+    return bool(_GITHUB_DIRECT_INSTALL_RE.match(value))
 
 
 def normalize_plugin_host(host: str) -> str:
@@ -130,9 +155,8 @@ def parse_plugin_reference(value: str) -> PluginReference:
     if not value:
         raise ValueError("plugin reference is empty")
 
-    if is_github_repository_url(value):
-        # the whole string is a raw GitHub URL, not a plugin reference
-        raise ValueError(f"value is a raw GitHub URL, not a plugin reference: {value!r}")
+    if is_github_direct_install_url(value):
+        raise ValueError(f"value is a GitHub URL, not a plugin reference: {value!r}")
 
     host: str | None = None
     remaining = value

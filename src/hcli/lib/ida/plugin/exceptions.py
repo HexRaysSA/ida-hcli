@@ -126,8 +126,7 @@ class AmbiguousPluginReferenceError(Exception):
         self.candidates = list(candidates)
         self.version_spec = version_spec
         self.candidate_refs: list[PluginReference] = [
-            PluginReference(name=cname, version_spec=version_spec, host=chost)
-            for cname, chost in candidates
+            PluginReference(name=cname, version_spec=version_spec, host=chost) for cname, chost in candidates
         ]
         super().__init__(f"ambiguous plugin reference: {name!r} matches {len(self.candidates)} plugins")
 

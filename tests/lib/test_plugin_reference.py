@@ -3,10 +3,12 @@ import pytest
 from hcli.lib.ida.plugin.reference import (
     PluginReference,
     format_qualified_plugin_reference,
+    is_github_direct_install_url,
     is_github_repository_url,
     normalize_plugin_host,
     parse_plugin_reference,
 )
+from hcli.lib.ida.plugin.repo.github import parse_github_url
 
 
 def test_is_github_repository_url_accepts_valid_repos():
@@ -28,6 +30,35 @@ def test_is_github_repository_url_accepts_valid_repos():
 )
 def test_is_github_repository_url_rejects_invalid_shapes(value: str):
     assert not is_github_repository_url(value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://github.com/org/repo",
+        "https://github.com/org/repo/",
+        "https://github.com/org/repo.git",
+        "https://github.com/org/repo@v1.0",
+        "https://github.com/org/repo.git@v1.0",
+        "https://github.com/org/repo@release/2.0",
+    ],
+)
+def test_is_github_direct_install_url_accepts(value: str):
+    assert is_github_direct_install_url(value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "not a url",
+        "github.com/org/repo",
+        "http://github.com/org/repo",
+        "foo@https://github.com/org/repo",
+        "git@github.com:org/repo.git",
+    ],
+)
+def test_is_github_direct_install_url_rejects(value: str):
+    assert not is_github_direct_install_url(value)
 
 
 def test_normalize_plugin_host_lowercases_components():
@@ -93,9 +124,18 @@ def test_parse_plugin_reference_qualified_case_insensitive():
     assert ref.host == "https://github.com/org/repo"
 
 
-def test_parse_plugin_reference_raw_github_url_is_not_a_plugin_reference():
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://github.com/org/repo",
+        "https://github.com/org/repo.git",
+        "https://github.com/org/repo@v1.0",
+        "https://github.com/org/repo.git@v1.0",
+    ],
+)
+def test_parse_plugin_reference_github_urls_are_not_plugin_references(value: str):
     with pytest.raises(ValueError):
-        parse_plugin_reference("https://github.com/org/repo")
+        parse_plugin_reference(value)
 
 
 @pytest.mark.parametrize("value", ["", "plugin1=1.0.0"])
@@ -122,3 +162,33 @@ def test_format_qualified_plugin_reference_without_host():
 def test_format_qualified_plugin_reference_bare_name():
     ref = PluginReference(name="plugin1", version_spec="", host=None)
     assert format_qualified_plugin_reference(ref) == "plugin1"
+
+
+def test_parse_github_url_basic():
+    assert parse_github_url("https://github.com/org/repo") == ("org", "repo", None)
+
+
+def test_parse_github_url_trailing_slash():
+    assert parse_github_url("https://github.com/org/repo/") == ("org", "repo", None)
+
+
+def test_parse_github_url_dot_git():
+    assert parse_github_url("https://github.com/org/repo.git") == ("org", "repo", None)
+
+
+def test_parse_github_url_with_tag():
+    assert parse_github_url("https://github.com/org/repo@v1.0") == ("org", "repo", "v1.0")
+
+
+def test_parse_github_url_dot_git_with_tag():
+    assert parse_github_url("https://github.com/org/repo.git@v1.0") == ("org", "repo", "v1.0")
+
+
+def test_parse_github_url_rejects_non_https():
+    with pytest.raises(ValueError):
+        parse_github_url("http://github.com/org/repo")
+
+
+def test_parse_github_url_rejects_non_github():
+    with pytest.raises(ValueError):
+        parse_github_url("https://gitlab.com/org/repo")

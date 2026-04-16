@@ -27,21 +27,34 @@ MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024
 GITHUB_API_URL = "https://api.github.com"
 
 
-def parse_github_url(url: str) -> tuple[str, str]:
-    """Parse a direct-install GitHub repository URL into ``(owner, repo)``.
+def parse_github_url(url: str) -> tuple[str, str, str | None]:
+    """Parse a direct-install GitHub URL into ``(owner, repo, tag)``.
+
+    Supports::
+
+        https://github.com/owner/repo
+        https://github.com/owner/repo/
+        https://github.com/owner/repo.git
+        https://github.com/owner/repo@tag
+        https://github.com/owner/repo.git@tag
 
     Raises:
-        ValueError: when ``url`` is not an ``https://github.com/owner/repo`` URL.
+        ValueError: when ``url`` is not an HTTPS GitHub repository URL.
     """
+    tag: str | None = None
+    if "@" in url:
+        url, tag = url.rsplit("@", 1)
+
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https" or parsed.netloc.lower() != "github.com":
         raise ValueError(f"Invalid GitHub URL: {url}")
 
-    parts = [part for part in parsed.path.split("/") if part]
+    path = parsed.path.lstrip("/").removesuffix(".git")
+    parts = [part for part in path.split("/") if part]
     if len(parts) != 2:
         raise ValueError(f"Invalid GitHub URL: {url}")
 
-    return parts[0], parts[1]
+    return parts[0], parts[1], tag
 
 
 def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None) -> bytes:
