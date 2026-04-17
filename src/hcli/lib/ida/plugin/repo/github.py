@@ -43,7 +43,11 @@ def parse_github_url(url: str) -> tuple[str, str, str | None]:
     """
     tag: str | None = None
     if "@" in url:
-        url, tag = url.rsplit("@", 1)
+        url, raw_tag = url.rsplit("@", 1)
+        raw_tag = raw_tag.rstrip("/")
+        if not raw_tag:
+            raise ValueError(f"Invalid GitHub URL: empty tag after '@': {url}")
+        tag = raw_tag
 
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https" or parsed.netloc.lower() != "github.com":

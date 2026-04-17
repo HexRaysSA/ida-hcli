@@ -144,6 +144,20 @@ def test_parse_plugin_reference_rejects_invalid_values(value: str):
         parse_plugin_reference(value)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "plugin1@https://gitlab.com/org/repo",
+        "plugin1@not-a-url",
+        "plugin1@https://github.com/org/repo/blob/main",
+        "plugin1@@https://github.com/org/repo",
+    ],
+)
+def test_parse_plugin_reference_rejects_at_with_invalid_suffix(value: str):
+    with pytest.raises(ValueError):
+        parse_plugin_reference(value)
+
+
 def test_format_qualified_plugin_reference_name_only():
     ref = PluginReference(name="plugin1", version_spec="", host="https://github.com/org/repo")
     assert format_qualified_plugin_reference(ref) == "plugin1@https://github.com/org/repo"
@@ -192,3 +206,12 @@ def test_parse_github_url_rejects_non_https():
 def test_parse_github_url_rejects_non_github():
     with pytest.raises(ValueError):
         parse_github_url("https://gitlab.com/org/repo")
+
+
+def test_parse_github_url_strips_trailing_slash_after_tag():
+    assert parse_github_url("https://github.com/org/repo@v1.0/") == ("org", "repo", "v1.0")
+
+
+def test_parse_github_url_rejects_empty_tag():
+    with pytest.raises(ValueError):
+        parse_github_url("https://github.com/org/repo@/")
