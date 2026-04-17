@@ -194,18 +194,16 @@ def download_asset(
                 file.write(data)
                 callback(i * block_size, asset.size)
             callback(asset.size, asset.size)
-    except OSError as e:
-        if e.errno == errno.ENOSPC:
-            if out_path.exists():
-                out_path.unlink()
+
+        # Guards update_asset against overwriting the running binary with a truncated/empty download.
+        actual_size = out_path.stat().st_size
+        if actual_size != asset.size:
+            raise RuntimeError(f"Downloaded {asset.name} has size {actual_size} bytes, expected {asset.size} bytes")
+    except Exception as e:
+        out_path.unlink(missing_ok=True)
+        if isinstance(e, OSError) and e.errno == errno.ENOSPC:
             raise NoSpaceError(out_dir) from e
         raise
-
-    # Guards update_asset against overwriting the running binary with a truncated/empty download.
-    actual_size = out_path.stat().st_size
-    if actual_size != asset.size:
-        out_path.unlink(missing_ok=True)
-        raise RuntimeError(f"Downloaded {asset.name} has size {actual_size} bytes, expected {asset.size} bytes")
 
 
 def default_download_callback(asset: ReleaseAsset, downloaded: int):
@@ -307,7 +305,7 @@ def is_already_installed(latest: Version, current: Version, compatibility_spec: 
     if current > latest:
         still_compatible = compatibility_spec is None or compatibility_spec.match(current)
         logging.warning(
-            f"Current version newer then latest found ({latest})"
+            f"Current version newer than latest found ({latest})"
             + (", but still compatible." if still_compatible else ", and incompatible!")
         )
     return True
@@ -345,7 +343,13 @@ def update_asset(repo: GitHubRepo, asset: ReleaseAsset, binary_path: Path) -> No
             if backup_path.exists():
                 backup_path.unlink()
             shutil.move(str(binary_path), str(backup_path))
-            shutil.move(str(tmp_path), str(binary_path))
+            try:
+                shutil.move(str(tmp_path), str(binary_path))
+            except Exception:
+                # Restore the backup so the user isn't left without a runnable binary.
+                if backup_path.exists() and not binary_path.exists():
+                    shutil.move(str(backup_path), str(binary_path))
+                raise
             try:
                 backup_path.unlink()
             except OSError:
