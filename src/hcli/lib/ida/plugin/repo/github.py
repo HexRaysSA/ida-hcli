@@ -1,7 +1,6 @@
 import functools
 import json
 import logging
-import re
 import time
 import urllib.error
 import urllib.parse
@@ -28,55 +27,38 @@ MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024
 GITHUB_API_URL = "https://api.github.com"
 
 
-def is_github_url(url: str) -> bool:
-    """Check if URL is a GitHub repository URL."""
-    return "github.com/" in url or url.startswith("git@github.com:")
-
-
 def parse_github_url(url: str) -> tuple[str, str, str | None]:
-    """Parse GitHub URL into (owner, repo, tag).
+    """Parse a direct-install GitHub URL into ``(owner, repo, tag)``.
 
-    Supports:
-    - https://github.com/owner/repo
-    - https://github.com/owner/repo.git
-    - https://github.com/owner/repo@tag
-    - git@github.com:owner/repo.git
-    - git@github.com:owner/repo.git@tag
+    Supports::
+
+        https://github.com/owner/repo
+        https://github.com/owner/repo/
+        https://github.com/owner/repo.git
+        https://github.com/owner/repo@tag
+        https://github.com/owner/repo.git@tag
+
+    Raises:
+        ValueError: when ``url`` is not an HTTPS GitHub repository URL.
     """
-    # Extract optional @tag suffix
     tag: str | None = None
     if "@" in url:
-        # Handle git@ prefix separately
-        if url.startswith("git@"):
-            # git@github.com:owner/repo.git@tag
-            parts = url.split(
-                "@", 2
-            )  # ['git', 'github.com:owner/repo.git', 'tag'] or ['git', 'github.com:owner/repo.git']
-            if len(parts) == 3:
-                tag = parts[2]
-                url = f"git@{parts[1]}"
-        else:
-            # https://github.com/owner/repo@tag
-            url, tag = url.rsplit("@", 1)
+        url, raw_tag = url.rsplit("@", 1)
+        raw_tag = raw_tag.rstrip("/")
+        if not raw_tag:
+            raise ValueError(f"Invalid GitHub URL: empty tag after '@': {url}")
+        tag = raw_tag
 
-    # Parse the URL to get owner/repo
-    if url.startswith("git@"):
-        # git@github.com:owner/repo.git
-        match = re.match(r"git@github\.com:([^/]+)/(.+?)(?:\.git)?$", url)
-        if not match:
-            raise ValueError(f"Invalid GitHub SSH URL: {url}")
-        owner, repo = match.groups()
-    else:
-        # https://github.com/owner/repo(.git)
-        parsed = urllib.parse.urlparse(url)
-        path = parsed.path.lstrip("/")
-        path = path.removesuffix(".git")
-        parts = path.split("/")
-        if len(parts) < 2:
-            raise ValueError(f"Invalid GitHub URL: {url}")
-        owner, repo = parts[0], parts[1]
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc.lower() != "github.com":
+        raise ValueError(f"Invalid GitHub URL: {url}")
 
-    return owner, repo, tag
+    path = parsed.path.lstrip("/").removesuffix(".git")
+    parts = [part for part in path.split("/") if part]
+    if len(parts) != 2:
+        raise ValueError(f"Invalid GitHub URL: {url}")
+
+    return parts[0], parts[1], tag
 
 
 def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None) -> bytes:

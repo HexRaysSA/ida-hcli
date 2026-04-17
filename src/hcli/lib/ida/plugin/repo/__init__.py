@@ -20,6 +20,8 @@ from hcli.lib.ida.plugin import (
     split_plugin_version_spec,
     validate_metadata_in_plugin_archive,
 )
+from hcli.lib.ida.plugin.exceptions import AmbiguousPluginReferenceError
+from hcli.lib.ida.plugin.reference import normalize_plugin_host
 from hcli.lib.util.logging import m
 
 logger = logging.getLogger(__name__)
@@ -104,27 +106,40 @@ def get_latest_compatible_plugin_metadata(
 
 
 def get_plugin_by_name(plugins: list[Plugin], name: str, host: str | None = None) -> Plugin:
+    """Find a plugin by name and, optionally, host.
+
+    Name matching is case-insensitive. Host matching, when supplied, uses
+    normalized URL comparison so trailing-slash and casing differences do
+    not prevent a match.
+
+    Raises:
+        KeyError: when no matching plugin exists.
+        AmbiguousPluginReferenceError: when the bare name matches multiple
+            plugins and no host was provided to disambiguate.
+    """
+    wanted_name = name.lower()
     if host:
-        plugins = [
-            plugin for plugin in plugins if plugin.name.lower() == name.lower() and plugin.host.lower() == host.lower()
+        normalized_host = normalize_plugin_host(host)
+        matches = [
+            plugin
+            for plugin in plugins
+            if plugin.name.lower() == wanted_name and normalize_plugin_host(plugin.host) == normalized_host
         ]
     else:
-        plugins = [plugin for plugin in plugins if plugin.name.lower() == name.lower()]
+        matches = [plugin for plugin in plugins if plugin.name.lower() == wanted_name]
 
-    if not plugins:
+    if not matches:
         raise KeyError(f"plugin not found: {name}")
 
-    if len(plugins) > 1:
-        logger.debug("found plugin:")
-        for plugin in plugins:
+    if len(matches) > 1:
+        logger.debug("ambiguous plugin reference, found matches:")
+        for plugin in matches:
             logger.debug("  - %s (%s)", plugin.name, plugin.host)
 
-        # this needs to be implemented.
-        # callers should handle this nicely and then provide host.
-        # but nobody does this today.
-        raise NotImplementedError(f"colliding plugin name: {name}")
+        candidates = [(plugin.name, plugin.host) for plugin in matches]
+        raise AmbiguousPluginReferenceError(name, candidates)
 
-    return plugins[0]
+    return matches[0]
 
 
 class BasePluginRepo(ABC):
@@ -172,7 +187,7 @@ class BasePluginRepo(ABC):
         raise KeyError(f"plugin not found: {plugin_spec}")
 
     def fetch_compatible_plugin_from_spec(
-        self, plugin_spec: str, current_platform: str, current_version: str
+        self, plugin_spec: str, current_platform: str, current_version: str, host: str | None = None
     ) -> tuple[str, bytes]:
         """Fetch compatible plugin from spec with SHA256 verification.
 
@@ -180,12 +195,13 @@ class BasePluginRepo(ABC):
             plugin_spec: Plugin specification (e.g., "plugin1", "plugin1==1.0.0")
             current_platform: Current IDA platform (e.g., "macos-aarch64")
             current_version: Current IDA version (e.g., "9.1")
+            host: optional repository URL to disambiguate colliding plugin names.
 
         Returns:
             Tuple of (actual_plugin_name, plugin_archive_bytes).
             The plugin name returned uses the correct casing from the metadata.
         """
-        location = self.find_compatible_plugin_from_spec(plugin_spec, current_platform, current_version)
+        location = self.find_compatible_plugin_from_spec(plugin_spec, current_platform, current_version, host=host)
         plugin_name = location.metadata.plugin.name
         logger.debug("plugin name: %s", plugin_name)
         buf = fetch_plugin_archive(location.url)
@@ -255,12 +271,13 @@ class PluginArchiveIndex:
 
             name = metadata.plugin.name
             host = metadata.plugin.host
+            normalized_host = normalize_plugin_host(host)
             version = metadata.plugin.version
             ida_versions = frozenset(metadata.plugin.ida_versions)
             platforms = frozenset(metadata.plugin.platforms)
             spec = (ida_versions, platforms)
 
-            if expected_host and expected_host.lower() != host.lower():
+            if expected_host and normalize_plugin_host(expected_host) != normalized_host:
                 logger.debug(m("host mismatch: %s: %s versus expected %s", name, host, expected_host, **context))
                 continue
 
@@ -277,7 +294,7 @@ class PluginArchiveIndex:
                 )
             )
 
-            versions = self.index[(name.lower(), host.lower())]
+            versions = self.index[(name.lower(), normalized_host)]
             specs = versions[version]
             specs[spec].append((url, sha256, metadata))
 
@@ -306,7 +323,6 @@ class PluginArchiveIndex:
                         )
                         locations_by_version[version].append(location)
                         display_name = metadata.plugin.name
-                        display_host = metadata.plugin.host
 
             plugin = Plugin(name=display_name, host=display_host, versions=locations_by_version)
             ret.append(plugin)

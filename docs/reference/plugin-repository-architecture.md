@@ -54,7 +54,12 @@ $IDAUSR/plugins/oplog/
 
 The directory name matches the plugin name from `ida-plugin.json`.
 This is why the contents of `name` are fairly restrictive. They should also be globally unique.
-We'll address collisions in plugin names by taking into account the code repository, too.
 
 During upgrades, the existing directory is replaced with the new version.
 Uninstallation is as easy as deleting the directory.
+
+### Plugin identity and name collisions
+
+In the repository index, a plugin is identified by the pair `(name, repository URL)`. Two plugins with the same bare name from different repositories are distinct entries, and the repository URL is normalized (lowercased scheme/host/path, trailing slash stripped) before comparison so that cosmetic URL differences do not split a single plugin into two.
+
+On disk, however, plugins still install as `$IDAUSR/plugins/<name>`. Name is therefore the installed-layout identity, and only one plugin with a given bare name can be installed at a time. When the repository contains multiple plugins with the same name, HCLI requires a qualified reference of the form `name@repository-url` (optionally with a version spec, e.g. `name==1.2.3@repository-url`). An installed plugin's local metadata records its source repository, so status and upgrade operations anchor their repository lookups on the installed plugin's host and stay consistent even when the bare name is ambiguous in the repository.

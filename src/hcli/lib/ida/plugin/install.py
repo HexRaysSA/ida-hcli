@@ -5,6 +5,7 @@ import pathlib
 import shutil
 import tempfile
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import rich.status
@@ -39,6 +40,7 @@ from hcli.lib.ida.plugin.exceptions import (
     PluginNotInstalledError,
     PluginVersionDowngradeError,
 )
+from hcli.lib.ida.plugin.reference import normalize_plugin_host
 from hcli.lib.ida.python import (
     CantInstallPackagesError,
     does_current_ida_have_pip,
@@ -144,12 +146,39 @@ def validate_metadata_in_plugin_directory(plugin_path: Path):
             raise ValueError(f"Logo file not found in directory: '{metadata.plugin.logo_path}'")
 
 
-def get_installed_plugin_paths() -> list[Path]:
+@dataclass(frozen=True)
+class InstalledPluginRecord:
+    """An installed plugin and its on-disk metadata."""
+
+    path: Path
+    metadata: IDAMetadataDescriptor
+
+    @property
+    def name(self) -> str:
+        return self.metadata.plugin.name
+
+    @property
+    def version(self) -> str:
+        return self.metadata.plugin.version
+
+    @property
+    def host(self) -> str:
+        return self.metadata.plugin.host
+
+
+def get_installed_plugin_records() -> list[InstalledPluginRecord]:
+    """Enumerate installed plugins with their on-disk metadata.
+
+    This is the canonical source of truth for "what is installed". Other
+    helpers (``get_installed_plugins``, ``is_plugin_installed``, etc.) are
+    implemented on top of this list so they agree on what counts as
+    installed.
+    """
     plugins_dir = get_plugins_directory()
-    installed_paths: list[Path] = []
+    records: list[InstalledPluginRecord] = []
 
     if not plugins_dir.exists():
-        return installed_paths
+        return records
 
     for plugin_path in plugins_dir.iterdir():
         if not plugin_path.is_dir():
@@ -165,29 +194,78 @@ def get_installed_plugin_paths() -> list[Path]:
             logger.debug(f"Invalid plugin metadata in {plugin_path}: {e}")
             continue
 
-        metadata = get_metadata_from_plugin_directory(plugin_path)
-        if metadata.plugin.name != plugin_path.name:
-            logger.debug("plugin name and path mismatch")
-            continue
-
-        installed_paths.append(plugin_path)
-
-    return installed_paths
-
-
-def get_installed_plugins() -> list[tuple[str, str]]:
-    """fetch (name, version) pairs for currently installed plugins"""
-    installed_plugins: list[tuple[str, str]] = []
-
-    for plugin_path in get_installed_plugin_paths():
         try:
             metadata = get_metadata_from_plugin_directory(plugin_path)
-            installed_plugins.append((metadata.plugin.name, metadata.plugin.version))
         except ValueError as e:
             logger.warning(f"Failed to read metadata from {plugin_path}: {e}")
             continue
 
-    return installed_plugins
+        if metadata.plugin.name != plugin_path.name:
+            logger.debug("plugin name and path mismatch")
+            continue
+
+        records.append(InstalledPluginRecord(path=plugin_path, metadata=metadata))
+
+    return records
+
+
+def find_installed_plugin_in(
+    records: list[InstalledPluginRecord],
+    name: str,
+    host: str | None = None,
+) -> InstalledPluginRecord | None:
+    """Search *pre-fetched* records for a plugin by name and optional host.
+
+    Returns ``None`` when no match is found (does not raise).
+    """
+    wanted_name = name.lower()
+    wanted_host = normalize_plugin_host(host) if host else None
+
+    for record in records:
+        if record.name.lower() != wanted_name:
+            continue
+        if wanted_host is not None and normalize_plugin_host(record.host) != wanted_host:
+            continue
+        return record
+
+    return None
+
+
+def find_installed_plugin(name: str, host: str | None = None) -> InstalledPluginRecord:
+    """Find an installed plugin by name, optionally qualified by host.
+
+    Name matching is case-insensitive because the user may type a different
+    case than the on-disk directory. Host matching, when supplied, is done
+    after normalization.
+
+    Raises:
+        PluginNotInstalledError: when no matching installed plugin exists.
+    """
+    record = find_installed_plugin_in(get_installed_plugin_records(), name, host)
+    if record is None:
+        raise PluginNotInstalledError(name)
+    return record
+
+
+def resolve_installed_plugin_directory(name: str) -> Path:
+    """Resolve the on-disk directory for an installed plugin by name.
+
+    Case-insensitive. Used by local commands (uninstall, config) so typing
+    ``PLUGIN1`` finds ``$IDAUSR/plugins/plugin1``.
+
+    Raises:
+        PluginNotInstalledError: when no matching installed plugin exists.
+    """
+    return find_installed_plugin(name).path
+
+
+def get_installed_plugin_paths() -> list[Path]:
+    return [r.path for r in get_installed_plugin_records()]
+
+
+def get_installed_plugins() -> list[tuple[str, str]]:
+    """fetch (name, version) pairs for currently installed plugins"""
+    return [(r.name, r.version) for r in get_installed_plugin_records()]
 
 
 def get_installed_minimal_plugins() -> list[tuple[Path, MinimalIDAPluginMetadata]]:
@@ -523,32 +601,31 @@ def validate_can_uninstall_plugin(name: str) -> None:
     Raises:
         PluginNotInstalledError: If plugin is not installed
     """
-    if name not in [name for (name, _version) in get_installed_plugins()]:
-        logger.warning(f"Plugin directory not installed: {name}")
-        raise PluginNotInstalledError(name)
+    # find_installed_plugin raises PluginNotInstalledError when no match; name
+    # matching is case-insensitive.
+    find_installed_plugin(name)
 
 
 def uninstall_plugin(name: str):
     # NOTE: keep this in sync with upgrade (checkpoint/rollback) which has an inlined copy.
 
-    validate_can_uninstall_plugin(name)
-
-    plugin_path = get_plugin_directory(name)
-    metadata = get_metadata_from_plugin_directory(plugin_path)
-    logger.info("uninstalling plugin: %s (%s)", name, metadata.plugin.version)
+    record = find_installed_plugin(name)
+    logger.info("uninstalling plugin: %s (%s)", record.name, record.version)
 
     # note that the pythonDependencies of the plugin aren't pruned.
     # we could re-collect all the deps requested by other plugins
     # but we shouldn't do a sync, since there might be other utils installed by the user.
     # so I think its better to just leave the orphans around.
 
-    shutil.rmtree(plugin_path)
+    shutil.rmtree(record.path)
 
 
 def is_plugin_installed(name: str) -> bool:
-    installed_plugins = [name for (name, _version) in get_installed_plugins()]
-    logger.debug("installed plugins: %s", installed_plugins)
-    return name in installed_plugins
+    try:
+        find_installed_plugin(name)
+    except PluginNotInstalledError:
+        return False
+    return True
 
 
 def validate_can_upgrade_plugin(

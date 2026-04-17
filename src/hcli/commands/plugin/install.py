@@ -23,9 +23,20 @@ from hcli.lib.ida.plugin import (
     get_metadata_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
 )
-from hcli.lib.ida.plugin.install import install_plugin_archive, uninstall_plugin
+from hcli.lib.ida.plugin.exceptions import (
+    AmbiguousPluginReferenceError,
+    InstalledPluginNameConflictError,
+    PluginNotInstalledError,
+)
+from hcli.lib.ida.plugin.install import find_installed_plugin, install_plugin_archive, uninstall_plugin
+from hcli.lib.ida.plugin.reference import (
+    format_qualified_plugin_reference,
+    is_github_direct_install_url,
+    normalize_plugin_host,
+    parse_plugin_reference,
+)
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
-from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, is_github_url, parse_github_url
+from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
 from hcli.lib.ida.plugin.settings import has_plugin_setting, parse_setting_value, set_plugin_setting
 
 logger = logging.getLogger(__name__)
@@ -66,7 +77,7 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
                 raise ValueError("plugin archive must contain a single plugin for local file system installation")
             plugin_name = items[0][1].plugin.name
 
-        elif is_github_url(plugin_spec):
+        elif is_github_direct_install_url(plugin_spec):
             logger.info("installing from GitHub repository")
             try:
                 owner, repo, tag = parse_github_url(plugin_spec)
@@ -101,12 +112,49 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
         else:
             logger.info("finding plugin in repository")
             plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
-            with rich.status.Status("fetching plugin", console=stderr_console):
-                plugin_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
-                    plugin_spec, current_ida_platform, current_ida_version
-                )
+            try:
+                ref = parse_plugin_reference(plugin_spec)
+            except ValueError as e:
+                raise click.BadParameter(f"invalid plugin reference: {plugin_spec!r}: {e}")
+
+            # reconstruct the plugin_spec for repo lookup without the @host suffix
+            bare_spec = ref.name + ref.version_spec
+            try:
+                with rich.status.Status("fetching plugin", console=stderr_console):
+                    plugin_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
+                        bare_spec, current_ida_platform, current_ida_version, host=ref.host
+                    )
+            except AmbiguousPluginReferenceError as e:
+                if ref.version_spec and not e.version_spec:
+                    e = AmbiguousPluginReferenceError(e.name, e.candidates, ref.version_spec)
+                console.print(f"[red]Error[/red]: plugin name '{e.name}' is ambiguous")
+                console.print("Choose one of:")
+                for candidate_ref in e.candidate_refs:
+                    console.print(f"  {format_qualified_plugin_reference(candidate_ref)}")
+                raise click.Abort()
 
         _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
+
+        # Same-name install conflict: another plugin with the same bare name is already
+        # installed from a different repository. The install layout is
+        # $IDAUSR/plugins/<name>, so only one same-name plugin can be installed at a time.
+        # Use the archive metadata host (not the download URL) as the long-term identity
+        # because GitHub redirects can cause the fetch URL and the metadata host to differ.
+        try:
+            installed = find_installed_plugin(plugin_name)
+        except PluginNotInstalledError:
+            installed = None
+
+        if installed is not None and normalize_plugin_host(installed.host) != normalize_plugin_host(
+            metadata.plugin.host
+        ):
+            raise InstalledPluginNameConflictError(
+                requested_name=plugin_name,
+                requested_host=metadata.plugin.host,
+                installed_name=installed.name,
+                installed_host=installed.host,
+                installed_path=installed.path,
+            )
 
         if metadata.plugin.settings:
             for config_item in config:
@@ -221,6 +269,16 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
 
     except FailedToDetectIDAVersion:
         explain_failed_to_detect_ida_version(console)
+        raise click.Abort()
+
+    except InstalledPluginNameConflictError as e:
+        console.print(
+            f"[red]Error[/red]: cannot install plugin "
+            f"'{e.requested_name}@{e.requested_host}' because "
+            f"'{e.installed_name}@{e.installed_host}' is already installed at {e.installed_path}"
+        )
+        console.print(f"Only one plugin with the bare name '{e.requested_name}' can be installed at a time.")
+        console.print("Uninstall the existing plugin first, then install the other qualified plugin.")
         raise click.Abort()
 
     except Exception as e:

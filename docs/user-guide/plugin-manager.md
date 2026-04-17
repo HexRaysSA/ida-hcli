@@ -71,6 +71,27 @@ You can discover interesting plugins via:
 
 HCLI supports installing plugins to be loaded by IDA 9.0 and newer.
 
+### Disambiguating plugin names
+
+When two plugins share the same bare name in the repository (for example, different forks of the same project), HCLI cannot tell which one you mean from the name alone. The `search`, `install`, and `upgrade` commands will print the ambiguous candidates and ask you to qualify the reference with the plugin's repository URL:
+
+```console
+❯ hcli plugin install ida-chat
+Error: plugin name 'ida-chat' is ambiguous
+Choose one of:
+  ida-chat@https://github.com/HexRaysSA/ida-chat-plugin
+  ida-chat@https://github.com/tanu360/ida-chat-plugin
+```
+
+You can pin the reference with `name@repository-url`, and optionally include a version spec:
+
+```console
+❯ hcli plugin install ida-chat@https://github.com/HexRaysSA/ida-chat-plugin
+❯ hcli plugin install ida-chat==1.0.0@https://github.com/HexRaysSA/ida-chat-plugin
+```
+
+Because plugins install into `$IDAUSR/plugins/<name>`, only one plugin with a given bare name can be installed at a time. If you need to switch to a different same-named plugin from another repository, uninstall the current one first. Similarly, `upgrade` will not change the source repository: once a plugin is installed, its repository is recorded in the local metadata and upgrades are anchored to it.
+
 
 ## As a plugin author...
 
