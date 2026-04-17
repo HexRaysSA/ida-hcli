@@ -83,8 +83,8 @@ class AuthSession:
 
 def check_and_download_updates(
     repo: GitHubRepo,
-    compatibility_spec: SimpleSpec = None,
-    current_version: Version = None,
+    compatibility_spec: SimpleSpec | None = None,
+    current_version: Version | None = None,
     assets_mask=re.compile(".*"),
     downloads_dir=Path(),
     download_callback: Callable[[ReleaseAsset, int], None] | None = None,
@@ -148,7 +148,7 @@ def download_assets(
     assets: typing.Iterable[ReleaseAsset],
     out_dir=Path(),
     block_size=2**20,
-    callback: Callable[[ReleaseAsset, int], None] = lambda _, __: None,
+    callback: Callable[[ReleaseAsset, int], None] = lambda *_: None,
 ):
     logging.info(f"Start downloading assets: {tuple(asset.name for asset in assets)}")
     for asset in assets:
@@ -164,7 +164,7 @@ def download_asset(
     asset: ReleaseAsset,
     out_dir=Path(),
     block_size=2**20,
-    callback: Callable[[int, int], None] = lambda _, __: None,
+    callback: Callable[[int, int], None] = lambda *_: None,
 ):
     logging.info(f"Start downloading asset: '{asset.name}'")
     if out_dir.is_file():
@@ -300,14 +300,15 @@ def get_assets(repo: GitHubRepo, tag_name: str, assets_mask=re.compile(".*")):
     return tuple(asset for asset in assets if asset.is_valid and assets_mask.match(asset.name) is not None)
 
 
-def is_already_installed(latest: Version, current: Version, compatibility_spec: SimpleSpec):
+def is_already_installed(latest: Version, current: Version, compatibility_spec: SimpleSpec | None):
     if current < latest:
         return False
     logging.info(f"Latest version is already installed: {current}")
     if current > latest:
+        still_compatible = compatibility_spec is None or compatibility_spec.match(current)
         logging.warning(
             f"Current version newer then latest found ({latest})"
-            + (", but still compatible." if compatibility_spec.match(current) else ", and incompatible!")
+            + (", but still compatible." if still_compatible else ", and incompatible!")
         )
     return True
 
