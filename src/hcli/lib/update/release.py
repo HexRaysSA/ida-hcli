@@ -180,22 +180,32 @@ def download_asset(
 
     check_free_space(out_dir, asset.size)
 
+    out_path = out_dir.joinpath(asset.name)
     try:
         with (
-            httpx.stream("GET", asset_url, headers=headers) as response,
-            open(out_dir.joinpath(asset.name), "wb") as file,
+            httpx.stream("GET", asset_url, headers=headers, follow_redirects=True) as response,
+            open(out_path, "wb") as file,
         ):
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Unexpected HTTP status {response.status_code} downloading {asset.name} from {asset_url}"
+                )
             for i, data in enumerate(response.iter_bytes(block_size)):
                 file.write(data)
                 callback(i * block_size, asset.size)
             callback(asset.size, asset.size)
     except OSError as e:
         if e.errno == errno.ENOSPC:
-            cleanup_path = out_dir.joinpath(asset.name)
-            if cleanup_path.exists():
-                cleanup_path.unlink()
+            if out_path.exists():
+                out_path.unlink()
             raise NoSpaceError(out_dir) from e
         raise
+
+    # Guards update_asset against overwriting the running binary with a truncated/empty download.
+    actual_size = out_path.stat().st_size
+    if actual_size != asset.size:
+        out_path.unlink(missing_ok=True)
+        raise RuntimeError(f"Downloaded {asset.name} has size {actual_size} bytes, expected {asset.size} bytes")
 
 
 def default_download_callback(asset: ReleaseAsset, downloaded: int):
