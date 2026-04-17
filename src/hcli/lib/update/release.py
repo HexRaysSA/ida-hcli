@@ -312,75 +312,45 @@ def is_already_installed(latest: Version, current: Version, compatibility_spec: 
     return True
 
 
-def update_asset(repo: GitHubRepo, asset: ReleaseAsset, binary_path: Path) -> bool:
-    """
-    Download an asset to a temporary file and replace the running binary.
+def update_asset(repo: GitHubRepo, asset: ReleaseAsset, binary_path: Path) -> None:
+    """Download an asset and replace the running binary.
 
-    Args:
-        repo: The GitHub repository information
-        asset: The ReleaseAsset to download
-        binary_path: Path to the current binary to replace
-
-    Returns:
-        True if update was successful, False otherwise
+    Raises:
+        ValueError: when `asset` is not a valid `ReleaseAsset`.
+        FileNotFoundError: when `binary_path` does not exist.
+        RuntimeError: when the download fails (non-200, size mismatch, etc.).
+        OSError: when the temporary file cannot be moved into place.
     """
     if not asset.is_valid:
-        logging.error(f"Invalid asset: {asset.name}")
-        return False
+        raise ValueError(f"Invalid asset: {asset.name}")
 
     binary_path = binary_path.resolve()
     if not binary_path.exists():
-        logging.error(f"Binary not found: {binary_path}")
-        return False
+        raise FileNotFoundError(f"Binary not found: {binary_path}")
 
-    # Store original permissions
-    original_stat = binary_path.stat()
-    original_mode = original_stat.st_mode
+    original_mode = binary_path.stat().st_mode
 
-    try:
-        # Create temporary directory for download
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_dir_path = Path(tmp_dir)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_dir_path = Path(tmp_dir)
+        logging.info(f"Downloading {asset.name} to temporary directory: {tmp_dir_path}")
+        download_asset(repo, asset, tmp_dir_path)
 
-            logging.info(f"Downloading {asset.name} to temporary directory: {tmp_dir_path}")
+        tmp_path = tmp_dir_path / asset.name
+        tmp_path.chmod(original_mode)
 
-            # Use existing download_asset function
-            download_asset(repo, asset, tmp_dir_path)
+        # On Windows the running binary can't be overwritten in place, so we rename it aside first.
+        if sys.platform == "win32":
+            backup_path = binary_path.with_suffix(binary_path.suffix + ".old")
+            if backup_path.exists():
+                backup_path.unlink()
+            shutil.move(str(binary_path), str(backup_path))
+            shutil.move(str(tmp_path), str(binary_path))
+            try:
+                backup_path.unlink()
+            except OSError:
+                # The old binary may still be locked by the running process; Windows will free it later.
+                pass
+        else:
+            shutil.move(tmp_path, binary_path)
 
-            tmp_path = tmp_dir_path / asset.name
-
-            # Set executable permissions on the temporary file
-            tmp_path.chmod(original_mode)
-
-            # Perform atomic replacement
-            # On Unix systems, this works even if the original file is currently running
-            if sys.platform == "win32":
-                # On Windows, we need to move the original file first
-                backup_path = binary_path.with_suffix(binary_path.suffix + ".old")
-                if backup_path.exists():
-                    backup_path.unlink()
-                shutil.move(str(binary_path), str(backup_path))
-                shutil.move(str(tmp_path), str(binary_path))
-                # Clean up backup file
-                try:
-                    backup_path.unlink()
-                except OSError:
-                    # Backup file might be in use, leave it
-                    pass
-            else:
-                # On Unix systems, atomic replacement using rename
-                # `move` rather than `rename` to support cross-filesystem operations
-                shutil.move(tmp_path, binary_path)
-
-        logging.info(f"Successfully updated binary: {binary_path}")
-        return True
-
-    except Exception as e:
-        logging.error(f"Failed to update binary: {e}")
-        # Clean up temporary file if it exists
-        try:
-            if "tmp_path" in locals() and tmp_path.exists():
-                tmp_path.unlink()
-        except OSError:
-            pass
-        return False
+    logging.info(f"Successfully updated binary: {binary_path}")
