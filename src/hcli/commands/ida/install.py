@@ -80,6 +80,10 @@ async def install(
                 downloaded_installers = await download.callback(output_dir=tmp_dir, key=download_id)
                 if not downloaded_installers:
                     raise FileNotFoundError(f"No installer file found in {tmp_dir} after download")
+                if len(downloaded_installers) != 1:
+                    raise ValueError(
+                        f"Expected exactly one installer for --download-id, got {len(downloaded_installers)} downloads"
+                    )
                 installer_path = Path(downloaded_installers[0]).resolve()
             elif installer is not None:
                 installer_path = Path(installer).resolve()
