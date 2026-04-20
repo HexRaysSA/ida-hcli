@@ -10,7 +10,7 @@ import hcli.lib.ida.plugin.repo
 import hcli.lib.ida.plugin.repo.file
 import hcli.lib.ida.plugin.repo.fs
 import hcli.lib.ida.plugin.repo.github
-from hcli.lib.console import console
+from hcli.lib.console import console, sync_console_streams
 from hcli.lib.ida import get_ida_config
 
 from .config import config
@@ -52,6 +52,7 @@ def plugin(ctx, repo: str | None, with_repos_list: str | None, with_ignored_repo
     """Manage IDA Pro plugins."""
     # TODO: cleanup list and anything else touching github
     ctx.ensure_object(dict)
+    sync_console_streams()
 
     plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo
     try:

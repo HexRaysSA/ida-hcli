@@ -1,5 +1,6 @@
 import rich_click as click
 from rich.console import Console
+import sys
 
 
 def __get_console() -> Console:
@@ -29,3 +30,9 @@ def __get_stderr_console() -> Console:
 # Global instances for convenience
 console = __get_console()
 stderr_console = __get_stderr_console()
+
+
+def sync_console_streams() -> None:
+    """Retarget global consoles to current stdio streams."""
+    console.file = sys.stdout
+    stderr_console.file = sys.stderr
