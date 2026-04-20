@@ -1,6 +1,7 @@
+import sys
+
 import rich_click as click
 from rich.console import Console
-import sys
 
 
 def __get_console() -> Console:
