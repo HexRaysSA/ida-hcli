@@ -82,7 +82,8 @@ async def install(
                     raise FileNotFoundError(f"No installer file found in {tmp_dir} after download")
                 if len(downloaded_installers) != 1:
                     raise ValueError(
-                        f"Expected exactly one installer for --download-id, got {len(downloaded_installers)} downloads"
+                        f"Expected exactly one installer for --download-id, got {len(downloaded_installers)} downloads. "
+                        "Please use a more specific --download-id that matches a single installer."
                     )
                 installer_path = Path(downloaded_installers[0]).resolve()
             elif installer is not None:
