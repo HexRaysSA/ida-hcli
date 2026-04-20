@@ -83,8 +83,8 @@ class AuthSession:
 
 def check_and_download_updates(
     repo: GitHubRepo,
-    compatibility_spec: SimpleSpec = None,
-    current_version: Version = None,
+    compatibility_spec: SimpleSpec | None = None,
+    current_version: Version | None = None,
     assets_mask=re.compile(".*"),
     downloads_dir=Path(),
     download_callback: Callable[[ReleaseAsset, int], None] | None = None,
@@ -148,7 +148,7 @@ def download_assets(
     assets: typing.Iterable[ReleaseAsset],
     out_dir=Path(),
     block_size=2**20,
-    callback: Callable[[ReleaseAsset, int], None] = lambda _, __: None,
+    callback: Callable[[ReleaseAsset, int], None] = lambda *_: None,
 ):
     logging.info(f"Start downloading assets: {tuple(asset.name for asset in assets)}")
     for asset in assets:
@@ -164,7 +164,7 @@ def download_asset(
     asset: ReleaseAsset,
     out_dir=Path(),
     block_size=2**20,
-    callback: Callable[[int, int], None] = lambda _, __: None,
+    callback: Callable[[int, int], None] = lambda *_: None,
 ):
     logging.info(f"Start downloading asset: '{asset.name}'")
     if out_dir.is_file():
@@ -180,20 +180,28 @@ def download_asset(
 
     check_free_space(out_dir, asset.size)
 
+    out_path = out_dir.joinpath(asset.name)
     try:
         with (
-            httpx.stream("GET", asset_url, headers=headers) as response,
-            open(out_dir.joinpath(asset.name), "wb") as file,
+            httpx.stream("GET", asset_url, headers=headers, follow_redirects=True) as response,
+            open(out_path, "wb") as file,
         ):
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Unexpected HTTP status {response.status_code} downloading {asset.name} from {asset_url}"
+                )
             for i, data in enumerate(response.iter_bytes(block_size)):
                 file.write(data)
                 callback(i * block_size, asset.size)
             callback(asset.size, asset.size)
-    except OSError as e:
-        if e.errno == errno.ENOSPC:
-            cleanup_path = out_dir.joinpath(asset.name)
-            if cleanup_path.exists():
-                cleanup_path.unlink()
+
+        # Guards update_asset against overwriting the running binary with a truncated/empty download.
+        actual_size = out_path.stat().st_size
+        if actual_size != asset.size:
+            raise RuntimeError(f"Downloaded {asset.name} has size {actual_size} bytes, expected {asset.size} bytes")
+    except Exception as e:
+        out_path.unlink(missing_ok=True)
+        if isinstance(e, OSError) and e.errno == errno.ENOSPC:
             raise NoSpaceError(out_dir) from e
         raise
 
@@ -290,87 +298,64 @@ def get_assets(repo: GitHubRepo, tag_name: str, assets_mask=re.compile(".*")):
     return tuple(asset for asset in assets if asset.is_valid and assets_mask.match(asset.name) is not None)
 
 
-def is_already_installed(latest: Version, current: Version, compatibility_spec: SimpleSpec):
+def is_already_installed(latest: Version, current: Version, compatibility_spec: SimpleSpec | None):
     if current < latest:
         return False
     logging.info(f"Latest version is already installed: {current}")
     if current > latest:
+        still_compatible = compatibility_spec is None or compatibility_spec.match(current)
         logging.warning(
-            f"Current version newer then latest found ({latest})"
-            + (", but still compatible." if compatibility_spec.match(current) else ", and incompatible!")
+            f"Current version newer than latest found ({latest})"
+            + (", but still compatible." if still_compatible else ", and incompatible!")
         )
     return True
 
 
-def update_asset(repo: GitHubRepo, asset: ReleaseAsset, binary_path: Path) -> bool:
-    """
-    Download an asset to a temporary file and replace the running binary.
+def update_asset(repo: GitHubRepo, asset: ReleaseAsset, binary_path: Path) -> None:
+    """Download an asset and replace the running binary.
 
-    Args:
-        repo: The GitHub repository information
-        asset: The ReleaseAsset to download
-        binary_path: Path to the current binary to replace
-
-    Returns:
-        True if update was successful, False otherwise
+    Raises:
+        ValueError: when `asset` is not a valid `ReleaseAsset`.
+        FileNotFoundError: when `binary_path` does not exist.
+        RuntimeError: when the download fails (non-200, size mismatch, etc.).
+        OSError: when the temporary file cannot be moved into place.
     """
     if not asset.is_valid:
-        logging.error(f"Invalid asset: {asset.name}")
-        return False
+        raise ValueError(f"Invalid asset: {asset.name}")
 
     binary_path = binary_path.resolve()
     if not binary_path.exists():
-        logging.error(f"Binary not found: {binary_path}")
-        return False
+        raise FileNotFoundError(f"Binary not found: {binary_path}")
 
-    # Store original permissions
-    original_stat = binary_path.stat()
-    original_mode = original_stat.st_mode
+    original_mode = binary_path.stat().st_mode
 
-    try:
-        # Create temporary directory for download
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_dir_path = Path(tmp_dir)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_dir_path = Path(tmp_dir)
+        logging.info(f"Downloading {asset.name} to temporary directory: {tmp_dir_path}")
+        download_asset(repo, asset, tmp_dir_path)
 
-            logging.info(f"Downloading {asset.name} to temporary directory: {tmp_dir_path}")
+        tmp_path = tmp_dir_path / asset.name
+        tmp_path.chmod(original_mode)
 
-            # Use existing download_asset function
-            download_asset(repo, asset, tmp_dir_path)
-
-            tmp_path = tmp_dir_path / asset.name
-
-            # Set executable permissions on the temporary file
-            tmp_path.chmod(original_mode)
-
-            # Perform atomic replacement
-            # On Unix systems, this works even if the original file is currently running
-            if sys.platform == "win32":
-                # On Windows, we need to move the original file first
-                backup_path = binary_path.with_suffix(binary_path.suffix + ".old")
-                if backup_path.exists():
-                    backup_path.unlink()
-                shutil.move(str(binary_path), str(backup_path))
+        # On Windows the running binary can't be overwritten in place, so we rename it aside first.
+        if sys.platform == "win32":
+            backup_path = binary_path.with_suffix(binary_path.suffix + ".old")
+            if backup_path.exists():
+                backup_path.unlink()
+            shutil.move(str(binary_path), str(backup_path))
+            try:
                 shutil.move(str(tmp_path), str(binary_path))
-                # Clean up backup file
-                try:
-                    backup_path.unlink()
-                except OSError:
-                    # Backup file might be in use, leave it
-                    pass
-            else:
-                # On Unix systems, atomic replacement using rename
-                # `move` rather than `rename` to support cross-filesystem operations
-                shutil.move(tmp_path, binary_path)
+            except Exception:
+                # Restore the backup so the user isn't left without a runnable binary.
+                if backup_path.exists() and not binary_path.exists():
+                    shutil.move(str(backup_path), str(binary_path))
+                raise
+            try:
+                backup_path.unlink()
+            except OSError:
+                # The old binary may still be locked by the running process; Windows will free it later.
+                pass
+        else:
+            shutil.move(tmp_path, binary_path)
 
-        logging.info(f"Successfully updated binary: {binary_path}")
-        return True
-
-    except Exception as e:
-        logging.error(f"Failed to update binary: {e}")
-        # Clean up temporary file if it exists
-        try:
-            if "tmp_path" in locals() and tmp_path.exists():
-                tmp_path.unlink()
-        except OSError:
-            pass
-        return False
+    logging.info(f"Successfully updated binary: {binary_path}")

@@ -93,10 +93,8 @@ async def update(
                         return
 
                 binary_path = get_executable_path()
-                if not update_asset(repo, assets[0], binary_path):
-                    console.print(f"[green]Already using the latest version ({current_version})[/green]")
-                else:
-                    console.print(f"[green]Successfully updated to {latest_version}[/green]")
+                update_asset(repo, assets[0], binary_path)
+                console.print(f"[green]Successfully updated to {latest_version}[/green]")
                 return
 
         except Exception as e:
