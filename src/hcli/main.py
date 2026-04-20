@@ -14,7 +14,7 @@ from rich.logging import RichHandler
 
 from hcli.commands import register_commands
 from hcli.env import ENV
-from hcli.lib.console import console, stderr_console, sync_console_streams
+from hcli.lib.console import console, stderr_console
 from hcli.lib.extensions import get_extensions
 from hcli.lib.update.version import BackgroundUpdateChecker, is_binary
 
@@ -111,7 +111,6 @@ def handle_command_completion(_ctx, _result, **_kwargs):
 @click.pass_context
 def cli(_ctx, quiet, auth, auth_credentials, disable_updates: bool):
     """Main CLI entry point with background update checking."""
-    sync_console_streams()
     if is_binary() and not (disable_updates or ENV.HCLI_DISABLE_UPDATES):
         global update_checker
 

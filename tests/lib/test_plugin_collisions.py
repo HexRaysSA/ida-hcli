@@ -11,8 +11,30 @@ from fixtures import *
 from fixtures import PLUGINS_DIR
 
 from hcli.commands.plugin import plugin as plugin_group
+from hcli.lib.console import sync_console_streams
 from hcli.lib.ida.plugin.exceptions import AmbiguousPluginReferenceError
 from hcli.lib.ida.plugin.repo import PluginArchiveIndex, get_plugin_by_name
+
+
+@pytest.fixture(autouse=True)
+def sync_console_to_runner(monkeypatch):
+    """Retarget the global Rich console singletons to whichever streams CliRunner has installed.
+
+    Console() captures sys.stdout/sys.stderr at module-import time.  CliRunner
+    replaces sys.stdout with a capture buffer *inside* runner.invoke(), so the
+    singletons would keep writing to the real terminal and result.output would
+    always be empty.
+
+    We patch plugin_group.invoke so that sync_console_streams() is called after
+    CliRunner has swapped the streams but before any command output is produced.
+    """
+    original_invoke = plugin_group.invoke
+
+    def _invoke_with_sync(ctx):
+        sync_console_streams()
+        return original_invoke(ctx)
+
+    monkeypatch.setattr(plugin_group, "invoke", _invoke_with_sync)
 
 
 def make_plugin_zip(
