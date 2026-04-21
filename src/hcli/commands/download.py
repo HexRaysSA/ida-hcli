@@ -229,7 +229,7 @@ async def download(
 
             if not tags:
                 console.print("[yellow]No tags available[/yellow]")
-                return
+                return []
 
             # Sort tags alphabetically by tag name
             sorted_tags = sorted(tags, key=lambda t: t.tag)
