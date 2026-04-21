@@ -1,8 +1,7 @@
-import sys
 import logging
+import sys
 
 from hcli.lib.ida.plugin.repo.github import find_github_repos_with_plugins
-
 
 logging.basicConfig(level=logging.DEBUG)
 

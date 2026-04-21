@@ -208,7 +208,7 @@ async def download(
     pattern: str | None = None,
     key: str | None = None,
     list_tags: bool = False,
-) -> None:
+) -> list[str]:
     """Download IDA binaries, SDKs, and utilities.
 
     KEY: The asset key for direct download eg. release/9.1/ida-pro/ida-pro_91_x64linux.run (optional)
@@ -229,7 +229,7 @@ async def download(
 
             if not tags:
                 console.print("[yellow]No tags available[/yellow]")
-                return
+                return []
 
             # Sort tags alphabetically by tag name
             sorted_tags = sorted(tags, key=lambda t: t.tag)
@@ -246,7 +246,7 @@ async def download(
             console.print(
                 "[grey69]Use 'category:version' to auto-detect OS, or 'category:version:os' for explicit OS[/grey69]"
             )
-            return
+            return []
 
         if pattern:
             mode = "direct"
@@ -274,7 +274,7 @@ async def download(
                             console.print(f"  • {tag.tag}")
                         if len(available_tags) > 10:
                             console.print(f"  ... and {len(available_tags) - 10} more")
-                    return
+                    return []
 
             selected_keys = [key]
         else:
@@ -288,7 +288,7 @@ async def download(
 
                 if not filtered_assets:
                     console.print(f"[red]No assets found matching pattern: {pattern}[/red]")
-                    return
+                    return []
 
                 console.print(f"[green]Found {len(filtered_assets)} assets matching pattern:[/green]")
                 for asset in filtered_assets:
@@ -304,7 +304,7 @@ async def download(
 
                 if not selected_asset:
                     console.print("[yellow]Download cancelled[/yellow]")
-                    return
+                    return []
 
                 selected_keys = [selected_asset.key]
 
@@ -341,6 +341,7 @@ async def download(
 
         if downloaded_files:
             console.print(f"[green]Successfully downloaded {len(downloaded_files)} file(s)[/green]")
+            return downloaded_files
         else:
             console.print("[red]No files were downloaded[/red]")
             raise ValueError("no files downloaded")
