@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 import rich_click as click
 
+import hcli.lib.console
 import hcli.lib.ida.plugin.repo
 import hcli.lib.ida.plugin.repo.file
 import hcli.lib.ida.plugin.repo.fs
@@ -52,6 +53,9 @@ def plugin(ctx, repo: str | None, with_repos_list: str | None, with_ignored_repo
     """Manage IDA Pro plugins."""
     # TODO: cleanup list and anything else touching github
     ctx.ensure_object(dict)
+
+    # fix #190: stale stdout/err handles due to click pytest integration
+    hcli.lib.console._sync_console_streams()
 
     plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo
     try:
