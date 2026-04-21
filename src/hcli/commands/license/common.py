@@ -149,10 +149,10 @@ async def download_license_asset(
         Downloaded file path or None if failed
     """
     try:
-        if not lic.pubhash:
-            console.print(f"[red]License has no ID for asset {asset_type}[/red]")
+        if not lic.license_key:
+            console.print(f"[red]License has no key for asset {asset_type}[/red]")
             return None
-        filename = await license.download_license(customer_id, lic.pubhash, asset_type, target_dir)
+        filename = await license.download_license(customer_id, lic.license_key, asset_type, target_dir)
         if filename:
             console.print(f"[green]License {asset_type} for {lic.pubhash} downloaded as: {filename}[/green]")
             return filename
