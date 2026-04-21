@@ -1,8 +1,10 @@
+import sys
+
 import rich_click as click
 from rich.console import Console
 
 
-def __get_console() -> Console:
+def _get_console() -> Console:
     """Get console instance with quiet mode support."""
     try:
         ctx = click.get_current_context(silent=True)
@@ -14,7 +16,7 @@ def __get_console() -> Console:
     return Console()
 
 
-def __get_stderr_console() -> Console:
+def _get_stderr_console() -> Console:
     """Get console instance with quiet mode support."""
     try:
         ctx = click.get_current_context(silent=True)
@@ -26,6 +28,19 @@ def __get_stderr_console() -> Console:
     return Console(stderr=True)
 
 
-# Global instances for convenience
-console = __get_console()
-stderr_console = __get_stderr_console()
+console = _get_console()
+stderr_console = _get_stderr_console()
+
+
+def _sync_console_streams():
+    """
+    helper to reset the console file handles.
+
+    useful in pytest environment, where click test integration may manipulate stdout/err
+    see #190
+    """
+    console.file = sys.stdout
+    stderr_console.file = sys.stderr
+
+
+_sync_console_streams()
