@@ -256,7 +256,7 @@ class IDALauncher:
             ida_bin_str = str(ida_bin)
             if "/Contents/MacOS/" in ida_bin_str:
                 app_bundle = ida_bin_str.split("/Contents/MacOS/")[0]
-                cmd = ["open", "-a", app_bundle, "--args", str(idb_path)]
+                cmd = ["open", "-n", "-a", app_bundle, "--args", str(idb_path)]
             else:
                 cmd = [ida_bin_str, str(idb_path)]
         else:
@@ -320,8 +320,8 @@ class IDALauncher:
             ida_bin_str = str(ida_bin)
             if "/Contents/MacOS/" in ida_bin_str:
                 app_bundle = ida_bin_str.split("/Contents/MacOS/")[0]
-                # Use --args to pass the IDB path as an argument to the app
-                cmd = ["open", "-a", app_bundle, "--args", str(idb_path)]
+                # Use -n to force a new instance, --args to pass the IDB path
+                cmd = ["open", "-n", "-a", app_bundle, "--args", str(idb_path)]
             else:
                 cmd = [ida_bin_str, str(idb_path)]
         else:
@@ -346,6 +346,10 @@ class IDALauncher:
         )
 
         # Wait for IDA instance with our IDB to appear
+        # NOTE: matching is by IDB filename only. If another instance with the same
+        # filename (from a different source) is already running, it may be matched
+        # instead of the newly launched one. This is a known limitation of filename-based
+        # matching — full path matching would require IDA IPC to expose the IDB path.
         target_idb_name = idb_path.name
         report(f"Waiting for IDA to open {target_idb_name}...")
         try:
