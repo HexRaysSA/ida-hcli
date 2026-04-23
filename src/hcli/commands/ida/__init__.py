@@ -18,6 +18,7 @@ from .remove import remove
 from .set_default import set_default_ida
 from .source import source
 from .switch import switch
+from .tool import tool
 
 ida.add_command(accept_eula_command)
 ida.add_command(add)
@@ -29,3 +30,4 @@ ida.add_command(remove)
 ida.add_command(set_default_ida)
 ida.add_command(source)
 ida.add_command(switch)
+ida.add_command(tool)
