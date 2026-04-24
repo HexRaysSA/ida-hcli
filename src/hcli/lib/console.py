@@ -14,11 +14,7 @@ def _is_quiet_context() -> bool:
     """
     try:
         ctx = click.get_current_context(silent=True)
-        return bool(
-            ctx
-            and isinstance(ctx.obj, Mapping)
-            and ctx.obj.get("quiet", False)
-        )
+        return bool(ctx and isinstance(ctx.obj, Mapping) and ctx.obj.get("quiet", False))
     except RuntimeError:
         return False
 
