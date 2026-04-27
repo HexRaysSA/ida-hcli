@@ -676,16 +676,31 @@ def find_current_idat_executable() -> Path:
     return find_current_ida_executable("t")
 
 
-def run_py_in_current_idapython(src: str) -> dict:
-    idat_path = find_current_idat_executable()
-    if not idat_path.exists():
-        raise ValueError(f"can't find idat: {idat_path}")
+def _prepare_headless_ida_user_dir(source_dir: Path, target_dir: Path) -> None:
+    """Copy the minimal IDAUSR state needed for headless idat invocations.
 
-    if get_os() == "linux" and "9.2" in str(idat_path.absolute()) and " " in str(idat_path.absolute()):
-        logger.warning(
-            "invoking idat on IDA 9.2/Linux with a space in the full path, you might encounter HCLI GitHub issue #99"
-        )
+    For Python detection we only need the Python selection state from
+    ``cfg/idapython.cfg`` plus the registry/license files required for IDA to start.
+    We intentionally omit ``plugins/`` and other user content so third-party plugins
+    and startup scripts cannot interfere with ``idat``.
+    """
+    target_dir.mkdir(parents=True, exist_ok=True)
 
+    idapython_cfg = source_dir / "cfg" / "idapython.cfg"
+    if idapython_cfg.is_file():
+        (target_dir / "cfg").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(idapython_cfg, target_dir / "cfg" / "idapython.cfg")
+
+    ida_reg = source_dir / "ida.reg"
+    if ida_reg.is_file():
+        shutil.copy2(ida_reg, target_dir / "ida.reg")
+
+    for license_file in source_dir.glob("*.hexlic"):
+        if license_file.is_file():
+            shutil.copy2(license_file, target_dir / license_file.name)
+
+
+def _run_ida_batch_script(idat_path: Path, src: str, env: dict[str, str] | None = None) -> dict:
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
@@ -714,8 +729,18 @@ def run_py_in_current_idapython(src: str) -> dict:
             f"-S{script_path.absolute()!s}",
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            env=env,
+        )
         logger.debug(f"idat command: {' '.join(cmd)}")
+        if env and env.get("IDAUSR"):
+            logger.debug(f"idat IDAUSR: {env['IDAUSR']}")
         logger.debug(f"idat exit code: {result.returncode}")
         if result.stdout:
             logger.debug(f"idat stdout: {result.stdout}")
@@ -725,13 +750,43 @@ def run_py_in_current_idapython(src: str) -> dict:
         if not log_path.exists():
             raise RuntimeError(f"failed to invoke idat: log file was not created: {log_path}")
 
-        for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        log_text = log_path.read_text(encoding="utf-8", errors="replace")
+        for line in log_text.splitlines():
             if not line.startswith("__hcli__:"):
                 continue
 
             return json.loads(line[len("__hcli__:") :])
 
+        log_tail = "\n".join(log_text.splitlines()[-20:])
+        if log_tail:
+            raise RuntimeError(f"failed to invoke idat: could not find expected lines in log output:\n{log_tail}")
+
         raise RuntimeError("failed to invoke idat: could not find expected lines in log output")
+
+
+def run_py_in_current_idapython(src: str) -> dict:
+    idat_path = find_current_idat_executable()
+    if not idat_path.exists():
+        raise ValueError(f"can't find idat: {idat_path}")
+
+    if get_os() == "linux" and "9.2" in str(idat_path.absolute()) and " " in str(idat_path.absolute()):
+        logger.warning(
+            "invoking idat on IDA 9.2/Linux with a space in the full path, you might encounter HCLI GitHub issue #99"
+        )
+
+    idausr = get_ida_user_dir()
+    if not idausr.exists() or not idausr.is_dir():
+        env = os.environ.copy()
+        env["IDAUSR"] = str(idausr)
+        return _run_ida_batch_script(idat_path, src, env=env)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        isolated_idausr = Path(temp_dir) / "idausr"
+        _prepare_headless_ida_user_dir(idausr, isolated_idausr)
+
+        env = os.environ.copy()
+        env["IDAUSR"] = str(isolated_idausr)
+        return _run_ida_batch_script(idat_path, src, env=env)
 
 
 def detect_binary_arch(path: Path) -> str | None:

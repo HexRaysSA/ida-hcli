@@ -95,7 +95,10 @@ def find_current_python_executable() -> Path:
     try:
         info = run_py_in_current_idapython(GET_PYTHON_INFO_PY)
     except RuntimeError as e:
-        raise PythonNotFoundError("failed to run idat to detect IDA's Python interpreter") from e
+        raise PythonNotFoundError(
+            "failed to run idat to detect IDA's Python interpreter. "
+            "If you already know the interpreter path, set HCLI_CURRENT_IDA_PYTHON_EXE=/path/to/python and retry."
+        ) from e
 
     logger.debug("IDA Python info: %s", info)
     return _derive_python_exe(info)
