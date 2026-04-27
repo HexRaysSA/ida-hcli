@@ -195,9 +195,9 @@ def test_prepare_headless_ida_user_dir_copies_only_required_files(tmp_path):
 
     assert (target_dir / "cfg" / "idapython.cfg").read_text(encoding="utf-8") == "configured"
     assert (target_dir / "ida.reg").read_text(encoding="utf-8") == "registry"
+    assert (target_dir / "idapythonrc.py").read_text(encoding="utf-8") == "raise RuntimeError"
     assert (target_dir / "license.hexlic").read_text(encoding="utf-8") == "license"
     assert not (target_dir / "ida-config.json").exists()
-    assert not (target_dir / "idapythonrc.py").exists()
     assert not (target_dir / "plugins").exists()
     assert not (target_dir / "mcp").exists()
 

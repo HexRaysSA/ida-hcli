@@ -679,10 +679,10 @@ def find_current_idat_executable() -> Path:
 def _prepare_headless_ida_user_dir(source_dir: Path, target_dir: Path) -> None:
     """Copy the minimal IDAUSR state needed for headless idat invocations.
 
-    For Python detection we only need the Python selection state from
-    ``cfg/idapython.cfg`` plus the registry/license files required for IDA to start.
-    We intentionally omit ``plugins/`` and other user content so third-party plugins
-    and startup scripts cannot interfere with ``idat``.
+    For Python detection we need the Python selection state and startup context from
+    ``ida.reg``, optional ``cfg/idapython.cfg``, optional ``idapythonrc.py``, plus the
+    license files required for IDA to start. We intentionally omit ``plugins/`` and
+    other user content so third-party plugins cannot interfere with ``idat``.
     """
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -694,6 +694,10 @@ def _prepare_headless_ida_user_dir(source_dir: Path, target_dir: Path) -> None:
     ida_reg = source_dir / "ida.reg"
     if ida_reg.is_file():
         shutil.copy2(ida_reg, target_dir / "ida.reg")
+
+    idapythonrc = source_dir / "idapythonrc.py"
+    if idapythonrc.is_file():
+        shutil.copy2(idapythonrc, target_dir / "idapythonrc.py")
 
     for license_file in source_dir.glob("*.hexlic"):
         if license_file.is_file():
