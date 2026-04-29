@@ -13,7 +13,10 @@ import hcli.lib.ida.plugin.repo.fs
 import hcli.lib.ida.plugin.repo.github
 from hcli.lib.console import console
 from hcli.lib.ida import get_ida_config
+from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo, is_plugin_bundle_zip
+from hcli.lib.ida.python import PipOptions
 
+from .bundle import bundle
 from .config import config
 from .install import install_plugin
 from .lint import lint_plugin_directory
@@ -49,11 +52,34 @@ def read_repos_file(path: Path) -> list[str]:
 )
 @click.option("--with-repos-list", help="path to file containing known GitHub repositories", hidden=True)
 @click.option("--with-ignored-repos-list", help="path to file containing ignored GitHub repositories", hidden=True)
+@click.option("--pip-index-url", help="pip --index-url for dependency installation", hidden=True)
+@click.option("--pip-extra-index-url", multiple=True, help="pip --extra-index-url (repeatable)", hidden=True)
+@click.option("--pip-find-links", multiple=True, help="pip --find-links (repeatable)", hidden=True)
+@click.option(
+    "--offline", is_flag=True, default=False, help="force pip to use only local sources (--no-index)", hidden=True
+)
 @click.pass_context
-def plugin(ctx, repo: str | None, with_repos_list: str | None, with_ignored_repos_list: str | None) -> None:
+def plugin(
+    ctx,
+    repo: str | None,
+    with_repos_list: str | None,
+    with_ignored_repos_list: str | None,
+    pip_index_url: str | None,
+    pip_extra_index_url: tuple[str, ...],
+    pip_find_links: tuple[str, ...],
+    offline: bool,
+) -> None:
     """Manage IDA Pro plugins."""
     # TODO: cleanup list and anything else touching github
     ctx.ensure_object(dict)
+
+    pip_options = PipOptions(
+        index_url=pip_index_url,
+        extra_index_urls=pip_extra_index_url,
+        find_links=tuple(Path(p) if not p.startswith(("http://", "https://")) else p for p in pip_find_links),
+        offline=offline,
+    )
+    ctx.obj["pip_options"] = pip_options
 
     # fix #190: stale stdout/err handles due to click pytest integration
     hcli.lib.console._sync_console_streams()
@@ -115,6 +141,8 @@ def plugin(ctx, repo: str | None, with_repos_list: str | None, with_ignored_repo
 
             if path.is_dir():
                 plugin_repo = hcli.lib.ida.plugin.repo.fs.FileSystemPluginRepo(path)
+            elif is_plugin_bundle_zip(path):
+                plugin_repo = PluginBundleRepo(path)
             else:
                 plugin_repo = hcli.lib.ida.plugin.repo.file.JSONFilePluginRepo.from_file(path)
 
@@ -132,6 +160,10 @@ def plugin(ctx, repo: str | None, with_repos_list: str | None, with_ignored_repo
 
     ctx.obj["plugin_repo"] = plugin_repo
 
+    if offline and not pip_find_links and not isinstance(plugin_repo, PluginBundleRepo):
+        console.print("[red]--offline requires --pip-find-links or a plugin bundle repository[/red]")
+        raise click.Abort()
+
 
 plugin.add_command(get_plugin_status, name="status")
 plugin.add_command(search_plugins, name="search")
@@ -142,3 +174,4 @@ plugin.add_command(uninstall_plugin, name="uninstall")
 plugin.add_command(repo, name="repo")
 plugin.add_command(config, name="config")
 plugin.add_command(schema, name="schema")
+plugin.add_command(bundle, name="bundle")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from hcli.lib.ida.plugin import (
     get_metadata_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
 )
+from hcli.lib.ida.plugin.bundle import bundle_dependency_source
 from hcli.lib.ida.plugin.exceptions import (
     AmbiguousPluginReferenceError,
     InstalledPluginNameConflictError,
@@ -43,8 +45,10 @@ from hcli.lib.ida.plugin.reference import (
     parse_plugin_reference,
 )
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
+from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
 from hcli.lib.ida.plugin.settings import has_plugin_setting, parse_setting_value, set_plugin_setting
+from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, detect_current_python_version
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +73,8 @@ logger = logging.getLogger(__name__)
 )
 def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no_build_isolation: bool) -> None:
     """Install a plugin from a repository, local directory, local .zip file, or URL."""
+    pip_options: PipOptions = ctx.obj.get("pip_options", PIP_OPTIONS_DEFAULT)
+    plugin_repo_obj = ctx.obj.get("plugin_repo")
     plugin_spec = plugin
     try:
         with rich.status.Status("collecting environment", console=stderr_console):
@@ -215,17 +221,26 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                 parsed_value = parse_setting_value(descr, value_str)
                 descr.validate_value(parsed_value)
 
-        # No outer Status here -- both install paths below have their own
-        # inner Status calls on stderr_console, and Rich allows only one Live
-        # per console. Wrapping in an outer Status raises
-        # "Only one live display may be active at once" on a real TTY (it's
-        # silently a no-op when stderr is piped, which is why this bug went
-        # unnoticed for so long).
         if editable:
             install_plugin_directory_editable(source_dir, plugin_name, no_build_isolation=no_build_isolation)
         else:
-            assert buf is not None  # invariant: only the editable branch leaves buf as None
-            install_plugin_archive(buf, plugin_name, no_build_isolation=no_build_isolation)
+            assert buf is not None
+            effective_pip_options = pip_options
+            if isinstance(plugin_repo_obj, PluginBundleRepo) and pip_options == PIP_OPTIONS_DEFAULT:
+                with bundle_dependency_source(
+                    plugin_repo_obj, current_ida_platform, detect_current_python_version()
+                ) as bundle_opts:
+                    if bundle_opts is not None:
+                        effective_pip_options = bundle_opts
+                    if no_build_isolation:
+                        effective_pip_options = dataclasses.replace(effective_pip_options, no_build_isolation=True)
+                    with rich.status.Status("installing plugin", console=stderr_console):
+                        install_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
+            else:
+                if no_build_isolation:
+                    effective_pip_options = dataclasses.replace(effective_pip_options, no_build_isolation=True)
+                with rich.status.Status("installing plugin", console=stderr_console):
+                    install_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
 
         try:
             if metadata.plugin.settings:

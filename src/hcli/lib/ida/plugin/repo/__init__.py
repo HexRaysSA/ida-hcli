@@ -149,9 +149,23 @@ class BasePluginRepo(ABC):
     def get_plugin_by_name(self, name: str, host: str | None = None) -> Plugin:
         return get_plugin_by_name(self.get_plugins(), name, host=host)
 
-    def find_compatible_plugin_from_spec(
-        self, plugin_spec: str, current_platform: str, current_version: str, host: str | None = None
+    def find_plugin_from_spec(
+        self,
+        plugin_spec: str,
+        current_platform: str | None = None,
+        current_version: str | None = None,
+        host: str | None = None,
     ) -> PluginArchiveLocation:
+        """Find a plugin location, filtering by whichever parameters are provided.
+
+        Matches on version spec always. Additionally filters by platform and/or
+        IDA version when those parameters are not None. Returns the first
+        matching location from the highest matching version.
+
+        Callers that know the target environment should prefer
+        ``find_compatible_plugin_from_spec`` which requires both platform and
+        IDA version, preventing accidental omission.
+        """
         plugin_name, _ = split_plugin_version_spec(plugin_spec)
         wanted_spec = semantic_version.SimpleSpec(plugin_spec[len(plugin_name) :] or ">=0")
 
@@ -166,7 +180,7 @@ class BasePluginRepo(ABC):
 
             logger.debug("found matching version: %s", version)
             for i, location in enumerate(plugin.versions[version]):
-                if current_platform not in location.metadata.plugin.platforms:
+                if current_platform is not None and current_platform not in location.metadata.plugin.platforms:
                     logger.debug(
                         "skipping location %d: unsupported platforms: %s",
                         i,
@@ -174,7 +188,9 @@ class BasePluginRepo(ABC):
                     )
                     continue
 
-                if not is_ida_version_compatible(current_version, location.metadata.plugin.ida_versions):
+                if current_version is not None and not is_ida_version_compatible(
+                    current_version, location.metadata.plugin.ida_versions
+                ):
                     logger.debug(
                         "skipping location %d: unsupported IDA versions: %s",
                         i,
@@ -186,22 +202,56 @@ class BasePluginRepo(ABC):
 
         raise KeyError(f"plugin not found: {plugin_spec}")
 
-    def fetch_compatible_plugin_from_spec(
-        self, plugin_spec: str, current_platform: str, current_version: str, host: str | None = None
+    def find_compatible_plugin_from_spec(
+        self,
+        plugin_spec: str,
+        current_platform: str,
+        current_version: str,
+        host: str | None = None,
+    ) -> PluginArchiveLocation:
+        """Find a plugin location matching spec, platform, and IDA version.
+
+        Use this for operations on a live IDA installation (install, upgrade,
+        status) where the target environment is known. For packaging workflows
+        where some parameters are unavailable, use ``find_plugin_from_spec``
+        directly.
+        """
+        return self.find_plugin_from_spec(plugin_spec, current_platform, current_version, host=host)
+
+    def fetch_plugin_from_spec(
+        self,
+        plugin_spec: str,
+        current_platform: str | None = None,
+        current_version: str | None = None,
+        host: str | None = None,
     ) -> tuple[str, bytes]:
-        """Fetch compatible plugin from spec with SHA256 verification.
+        """Fetch a plugin, filtering by whichever parameters are provided.
 
-        Args:
-            plugin_spec: Plugin specification (e.g., "plugin1", "plugin1==1.0.0")
-            current_platform: Current IDA platform (e.g., "macos-aarch64")
-            current_version: Current IDA version (e.g., "9.1")
-            host: optional repository URL to disambiguate colliding plugin names.
+        Callers that know the target environment should prefer
+        ``fetch_compatible_plugin_from_spec`` which requires both platform and
+        IDA version, preventing accidental omission.
+        """
+        location = self.find_plugin_from_spec(plugin_spec, current_platform, current_version, host=host)
+        return self._fetch_and_verify(location)
 
-        Returns:
-            Tuple of (actual_plugin_name, plugin_archive_bytes).
-            The plugin name returned uses the correct casing from the metadata.
+    def fetch_compatible_plugin_from_spec(
+        self,
+        plugin_spec: str,
+        current_platform: str,
+        current_version: str,
+        host: str | None = None,
+    ) -> tuple[str, bytes]:
+        """Fetch a plugin matching spec, platform, and IDA version.
+
+        Use this for operations on a live IDA installation (install, upgrade,
+        status) where the target environment is known. For packaging workflows
+        where some parameters are unavailable, use ``fetch_plugin_from_spec``
+        directly.
         """
         location = self.find_compatible_plugin_from_spec(plugin_spec, current_platform, current_version, host=host)
+        return self._fetch_and_verify(location)
+
+    def _fetch_and_verify(self, location: PluginArchiveLocation) -> tuple[str, bytes]:
         plugin_name = location.metadata.plugin.name
         logger.debug("plugin name: %s", plugin_name)
         buf = fetch_plugin_archive(location.url)

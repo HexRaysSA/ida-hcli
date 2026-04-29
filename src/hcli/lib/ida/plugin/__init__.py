@@ -738,6 +738,13 @@ def get_metadata_path_from_plugin_archive(zip_data: bytes, name: str) -> Path:
     raise ValueError(f"plugin '{name}' not found in zip archive")
 
 
+def get_version_from_plugin_archive(zip_data: bytes, name: str) -> str:
+    for _, metadata in get_metadatas_with_paths_from_plugin_archive(zip_data):
+        if metadata.plugin.name == name:
+            return metadata.plugin.version
+    raise ValueError(f"plugin '{name}' not found in archive")
+
+
 def get_metadata_from_plugin_archive(zip_data: bytes, name: str) -> tuple[Path, IDAMetadataDescriptor]:
     """Extract ida-plugin.json metadata for plugin with the given name from zip archive without extracting"""
 
