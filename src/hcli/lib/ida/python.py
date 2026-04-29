@@ -3,6 +3,7 @@ import logging
 import os
 import platform
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from hcli.env import ENV
@@ -204,8 +205,42 @@ def does_current_ida_have_pip(python_exe: Path, timeout=10.0) -> bool:
 class CantInstallPackagesError(ValueError): ...
 
 
+@dataclass(frozen=True)
+class PipOptions:
+    index_url: str | None = None
+    extra_index_urls: tuple[str, ...] = ()
+    find_links: tuple[Path | str, ...] = ()
+    offline: bool = False
+    isolated: bool = False
+    no_cache_dir: bool = False
+    disable_pip_version_check: bool = False
+    no_build_isolation: bool = False
+
+    def build_args(self) -> list[str]:
+        args: list[str] = []
+        if self.isolated:
+            args.append("--isolated")
+        if self.disable_pip_version_check:
+            args.append("--disable-pip-version-check")
+        if self.no_cache_dir:
+            args.append("--no-cache-dir")
+        if self.offline:
+            args.append("--no-index")
+        if self.index_url:
+            args.extend(["--index-url", self.index_url])
+        for url in self.extra_index_urls:
+            args.extend(["--extra-index-url", url])
+        for link in self.find_links:
+            args.extend(["--find-links", str(link)])
+        if self.no_build_isolation:
+            args.append("--no-build-isolation")
+        return args
+
+
+PIP_OPTIONS_DEFAULT = PipOptions()
+
+
 def _format_pip_error(stdout: bytes, stderr: bytes) -> str:
-    """Format pip error output for display."""
     stdout_text = stdout.decode("utf-8", errors="replace").strip()
     stderr_text = stderr.decode("utf-8", errors="replace").strip()
 
@@ -218,14 +253,20 @@ def _format_pip_error(stdout: bytes, stderr: bytes) -> str:
     return "\n".join(parts) if parts else stdout_text
 
 
-def verify_pip_can_install_packages(python_exe: Path, packages: list[str], no_build_isolation: bool = False):
+def verify_pip_can_install_packages(
+    python_exe: Path,
+    packages: list[str],
+    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    no_build_isolation: bool = False,
+):
     """Check if the given Python packages (e.g., "foo>=v1.0,<3") can be installed.
 
-    This allows pip to determine if there are any version conflicts
+    Raises:
+        CantInstallPackagesError: if pip dry-run fails.
     """
-    extra_args = ["--no-build-isolation"] if no_build_isolation else []
+    effective = _merge_no_build_isolation(pip_options, no_build_isolation)
     process = subprocess.run(
-        [str(python_exe), "-m", "pip", "install", "--dry-run"] + extra_args + packages,
+        [str(python_exe), "-m", "pip", "install", "--dry-run"] + effective.build_args() + packages,
         capture_output=True,
         check=False,
     )
@@ -237,11 +278,20 @@ def verify_pip_can_install_packages(python_exe: Path, packages: list[str], no_bu
         raise CantInstallPackagesError(_format_pip_error(stdout, stderr))
 
 
-def pip_install_packages(python_exe: Path, packages: list[str], no_build_isolation: bool = False):
-    """Install the given Python packages (e.g., "foo>=v1.0,<3")."""
-    extra_args = ["--no-build-isolation"] if no_build_isolation else []
+def pip_install_packages(
+    python_exe: Path,
+    packages: list[str],
+    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    no_build_isolation: bool = False,
+):
+    """Install the given Python packages (e.g., "foo>=v1.0,<3").
+
+    Raises:
+        CantInstallPackagesError: if pip install fails.
+    """
+    effective = _merge_no_build_isolation(pip_options, no_build_isolation)
     process = subprocess.run(
-        [str(python_exe), "-m", "pip", "install"] + extra_args + packages,
+        [str(python_exe), "-m", "pip", "install"] + effective.build_args() + packages,
         capture_output=True,
         check=False,
     )
@@ -251,6 +301,42 @@ def pip_install_packages(python_exe: Path, packages: list[str], no_build_isolati
         logger.debug(stdout.decode("utf-8", errors="replace"))
         logger.debug(stderr.decode("utf-8", errors="replace"))
         raise CantInstallPackagesError(_format_pip_error(stdout, stderr))
+
+
+def _merge_no_build_isolation(pip_options: PipOptions, no_build_isolation: bool) -> PipOptions:
+    if no_build_isolation and not pip_options.no_build_isolation:
+        return PipOptions(
+            index_url=pip_options.index_url,
+            extra_index_urls=pip_options.extra_index_urls,
+            find_links=pip_options.find_links,
+            offline=pip_options.offline,
+            isolated=pip_options.isolated,
+            no_cache_dir=pip_options.no_cache_dir,
+            disable_pip_version_check=pip_options.disable_pip_version_check,
+            no_build_isolation=True,
+        )
+    return pip_options
+
+
+def detect_current_python_version() -> str:
+    """Detect the major.minor Python version of the active IDA Python.
+
+    Falls back to the current interpreter's version if detection fails.
+    """
+    import sys as _sys
+
+    try:
+        python_exe = find_current_python_executable()
+        result = subprocess.run(
+            [str(python_exe), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return f"{_sys.version_info.major}.{_sys.version_info.minor}"
 
 
 def pip_freeze(python_exe: Path):

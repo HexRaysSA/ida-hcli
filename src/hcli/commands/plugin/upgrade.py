@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import logging
 from pathlib import Path
 
@@ -16,10 +17,13 @@ from hcli.lib.ida import (
     find_current_ida_version,
 )
 from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
+from hcli.lib.ida.plugin.bundle import bundle_dependency_source
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
 from hcli.lib.ida.plugin.install import find_installed_plugin, upgrade_plugin_archive
 from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo
+from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
+from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +39,7 @@ logger = logging.getLogger(__name__)
 )
 def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
     """Upgrade an installed plugin to the latest compatible version."""
+    pip_options: PipOptions = ctx.obj.get("pip_options", PIP_OPTIONS_DEFAULT)
     plugin_spec = plugin
     try:
         current_ida_platform = find_current_ida_platform()
@@ -88,7 +93,22 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             console.print("Please check your internet connection.")
             raise click.Abort()
 
-        upgrade_plugin_archive(buf, plugin_name, no_build_isolation=no_build_isolation)
+        effective_pip_options = pip_options
+        if isinstance(plugin_repo, PluginBundleRepo) and pip_options == PIP_OPTIONS_DEFAULT:
+            from hcli.lib.ida.python import detect_current_python_version
+
+            with bundle_dependency_source(
+                plugin_repo, current_ida_platform, detect_current_python_version()
+            ) as bundle_opts:
+                if bundle_opts is not None:
+                    effective_pip_options = bundle_opts
+                if no_build_isolation:
+                    effective_pip_options = dataclasses.replace(effective_pip_options, no_build_isolation=True)
+                upgrade_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
+        else:
+            if no_build_isolation:
+                effective_pip_options = dataclasses.replace(effective_pip_options, no_build_isolation=True)
+            upgrade_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
 
         _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 

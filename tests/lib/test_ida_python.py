@@ -8,6 +8,7 @@ import pytest
 from hcli.lib.ida import find_current_ida_install_directory, get_ida_user_dir
 from hcli.lib.ida.python import (
     CantInstallPackagesError,
+    PipOptions,
     _derive_python_exe,
     does_current_ida_have_pip,
     find_current_python_executable,
@@ -203,3 +204,61 @@ def test_verify_pip_can_install_packages():
 
     with pytest.raises(CantInstallPackagesError):
         verify_pip_can_install_packages(python_exe, ["flare-capa==v1.2.0", "flare-capa<=v1.0.0"])
+
+
+def test_pip_options_default_builds_empty_args():
+    opts = PipOptions()
+    assert opts.build_args() == []
+
+
+def test_pip_options_online_index_url():
+    opts = PipOptions(index_url="https://pypi.example.corp/simple")
+    args = opts.build_args()
+    assert args == ["--index-url", "https://pypi.example.corp/simple"]
+
+
+def test_pip_options_extra_index_urls():
+    opts = PipOptions(extra_index_urls=("https://a.example.com/simple", "https://b.example.com/simple"))
+    args = opts.build_args()
+    assert "--extra-index-url" in args
+    assert args.count("--extra-index-url") == 2
+
+
+def test_pip_options_find_links_offline():
+    opts = PipOptions(find_links=("/tmp/wheelhouse",), offline=True)
+    args = opts.build_args()
+    assert "--no-index" in args
+    assert "--find-links" in args
+    assert "/tmp/wheelhouse" in args
+
+
+def test_pip_options_bundle_mode():
+    opts = PipOptions(
+        offline=True,
+        isolated=True,
+        no_cache_dir=True,
+        disable_pip_version_check=True,
+        find_links=("/tmp/wh",),
+    )
+    args = opts.build_args()
+    assert "--isolated" in args
+    assert "--disable-pip-version-check" in args
+    assert "--no-cache-dir" in args
+    assert "--no-index" in args
+    assert "--find-links" in args
+
+
+def test_pip_options_no_build_isolation():
+    opts = PipOptions(no_build_isolation=True)
+    args = opts.build_args()
+    assert "--no-build-isolation" in args
+
+
+def test_pip_options_combined_index_and_find_links():
+    opts = PipOptions(
+        index_url="https://pypi.example.corp/simple",
+        find_links=("/local/wheels",),
+    )
+    args = opts.build_args()
+    assert "--index-url" in args
+    assert "--find-links" in args
