@@ -195,17 +195,20 @@ def split_plugin_version_spec(version_spec: str) -> tuple[str, str]:
 
 
 class Contact(BaseModel):
-    email: str
-    name: str | None = None
+    email: str = Field(description="Contact email address.")
+    name: str | None = Field(default=None, description="Contact name.")
 
 
 class URLs(BaseModel):
-    # URL of GitHub repository containing the source code for the plugin.
-    # Uses the form: https://github.com/org/project
-    repository: str
+    repository: str = Field(
+        description="URL of the GitHub repository containing the source code for the plugin.",
+        examples=["https://github.com/org/project"],
+    )
 
-    # URL of website describing the plugin, if different from the GitHub repo.
-    homepage: str | None = None
+    homepage: str | None = Field(
+        default=None,
+        description="URL of a website describing the plugin, if different from the GitHub repo.",
+    )
 
     @field_validator("repository", mode="after")
     @classmethod
@@ -217,40 +220,58 @@ class URLs(BaseModel):
 
 
 class PluginSettingDescriptor(BaseModel):
-    # unique code-level identifier for the setting
-    # like `open_ai_key`
-    key: str
+    key: str = Field(
+        description="Unique code-level identifier for the setting.",
+        examples=["openai_api_key"],
+    )
 
-    type: Literal["string", "boolean"]
+    type: Literal["string", "boolean"] = Field(description="Setting value type.")
 
-    required: bool
+    required: bool = Field(description="Whether the user must supply a value for this setting.")
 
-    # this is not written into `ida-config.json`
-    # but provided on-demand when no config can provide the setting.
-    default: str | bool | None = None
+    default: str | bool | None = Field(
+        default=None,
+        description=(
+            "Default value used when no other config provides one. "
+            "Not written into `ida-config.json`; provided on-demand."
+        ),
+    )
 
-    # human readable name for the setting
-    # like `OpenAI API key`
-    name: str
+    name: str = Field(
+        description="Human-readable name for the setting.",
+        examples=["OpenAI API key"],
+    )
 
-    # human readable explanation for the setting
-    # like: `OpenAI API key acquired from https://platform.openai.com/api-keys`
-    documentation: str | None = None
+    documentation: str | None = Field(
+        default=None,
+        description="Human-readable explanation for the setting.",
+        examples=["OpenAI API key acquired from https://platform.openai.com/api-keys"],
+    )
 
-    # regular expression used to validate candidate values
-    # like: `[a-z]{32}`
-    # only used for string types
-    validation_pattern: str | None = None
+    validation_pattern: str | None = Field(
+        default=None,
+        description=(
+            "Regular expression used to validate candidate values. "
+            "Only used for string types. Mutually exclusive with `choices`."
+        ),
+        examples=["[a-z]{32}"],
+    )
 
-    # tuple of acceptable string values
-    # like: `("option-a", "option-b", "option-c")`
-    # only used for string types
-    # mutually exclusive with validation_pattern
-    choices: tuple[str, ...] | None = None
+    choices: tuple[str, ...] | None = Field(
+        default=None,
+        description=(
+            "Acceptable string values. Only used for string types. Mutually exclusive with `validation_pattern`."
+        ),
+        examples=[["option-a", "option-b", "option-c"]],
+    )
 
-    # whether to prompt the user for this setting during installation
-    # set to False to use the default value without prompting
-    prompt: bool = True
+    prompt: bool = Field(
+        default=True,
+        description=(
+            "Whether to prompt the user for this setting during installation. "
+            "Set to false to use the default value without prompting."
+        ),
+    )
 
     @field_validator("choices", mode="before")
     @classmethod
@@ -295,50 +316,48 @@ class PluginSettingDescriptor(BaseModel):
 class PluginMetadata(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
-    ###########################################################################
-    # required
+    # required fields
+    name: str = Field(
+        description=(
+            "Identifier for the plugin. Must consist of ASCII letters, digits, "
+            "underscores, and hyphens, and must not start or end with an underscore "
+            "or hyphen. Two plugins with the same name cannot be installed at the "
+            "same time, so this should be globally unique. IDA Pro derives a "
+            "namespaced identifier by converting all non-alphanumeric characters to "
+            "underscores and prepending `__plugins__` (e.g. `my plugin` becomes "
+            "`__plugins__my_plugin`)."
+        ),
+        examples=["my-plugin"],
+    )
 
-    # The name will be used to identify the plugin.
-    #
-    # The project name must consist of ASCII letters, digits, underscores "_", hyphens "-".
-    # It must not start or end with an underscore or hyphen.
-    #
-    # Two plugins with the same name cannot be installed at the same time;
-    # therefore, this should be globally unique.
-    #
-    # This is used by IDA Pro when loading the plugin to derived a namespaced identifier.
-    # The namespace name is generated by converting all non alphanumeric characters
-    # of the plugin name to underscores (_) and prepending __plugins__ to it.
-    # For example "my plugin" would become __plugins__my_plugin.
-    name: str
+    version: str = Field(
+        description="Plugin version in `x.y.z` semver format. Do not include a leading `v`.",
+        examples=["1.0.0"],
+    )
 
-    # Specify the version of your plugin. It must follow the x.y.z format (e.g., 1.0.0).
-    # Do not include a leading "v".
-    #
-    # Examples:
-    #   - "1.0.0"
-    version: str
+    entry_point: str = Field(
+        alias="entryPoint",
+        description=(
+            "Filename of the plugin's main file, relative to this `ida-plugin.json`. "
+            "If the value has no file extension, IDA assumes a native plugin and "
+            "appends the host platform's dynamic shared object extension "
+            "(`.dll`, `.so`, `.dylib`). For IDAPython plugins, this should be a "
+            "`.py` file."
+        ),
+        examples=["my-first-plugin.py"],
+    )
 
-    # The filename of the "main" file for the plugin.
-    # It should be stored in the same directory as its ida-plugin.json file.
-    # If the entryPoint has no file extension,
-    #  IDA will assume it is a native plugin and append the appropriate file extension
-    #  for dynamic shared objects for the host platform (.dll, .so, .dylib).
-    # For IDAPython plugins, this should typically be a .py file (e.g., my-first-plugin.py).
-    entry_point: str = Field(alias="entryPoint")
+    urls: URLs = Field(description="URLs associated with the plugin.")
 
-    # A list of URLs associated with your project.
-    urls: URLs
+    # optional fields
+    description: str | None = Field(
+        default=None,
+        description=(
+            "One-line description of the plugin, shown as the headline of its page "
+            "on the plugin repository and in lists of search results."
+        ),
+    )
 
-    ###########################################################################
-    # optional
-
-    # This should be a one-line description of your project,
-    # to show as the “headline” of your project page on the plugin repository,
-    # and other places such as lists of search results.
-    description: str | None = None
-
-    # Used to improve discoverability in the plugin repository by providing major categories.
     categories: list[
         Literal[
             "disassembly-and-processor-modules",
@@ -354,48 +373,75 @@ class PluginMetadata(BaseModel):
             "vulnerability-research-and-exploit-development",
             "other",
         ]
-    ] = Field(default_factory=list)
+    ] = Field(
+        default_factory=list,
+        description="Major categories used to improve discoverability in the plugin repository.",
+    )
 
-    # Used to improve discoverability in the plugin repository by providing search terms.
-    keywords: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(
+        default_factory=list,
+        description="Search terms used to improve discoverability in the plugin repository.",
+    )
 
-    # License for the plugin.
-    # Examples:
-    #   - "Apache 2.0"
-    #   - "MIT"
-    #   - "BSD 3-Clause"
-    license: str | None = None
+    license: str | None = Field(
+        default=None,
+        description="License for the plugin.",
+        examples=["MIT", "Apache 2.0", "BSD 3-Clause"],
+    )
 
-    # Both of these fields contain lists of people identified by a name and/or an email address.
-    # There must be at least one author or maintainer provided for each plugin.
-    authors: list[Contact] = Field(default_factory=list)
-    maintainers: list[Contact] = Field(default_factory=list)
+    authors: list[Contact] = Field(
+        default_factory=list,
+        description="Authors of the plugin. At least one author or maintainer is required.",
+    )
+    maintainers: list[Contact] = Field(
+        default_factory=list,
+        description="Maintainers of the plugin. At least one author or maintainer is required.",
+    )
 
-    # Declare which versions of IDA your plugin supports.
-    # You must declare each version separately, because IDA's APIs don't clearly follow semantic versioning.
-    # The default is all versions, but this is almost certainly incorrect!
-    ida_versions: list[IdaVersion] = Field(alias="idaVersions", default_factory=lambda: sorted(ALL_IDA_VERSIONS))
+    ida_versions: list[IdaVersion] = Field(
+        alias="idaVersions",
+        default_factory=lambda: sorted(ALL_IDA_VERSIONS),
+        description=(
+            "Versions of IDA Pro the plugin supports. Each version must be declared "
+            "separately because IDA's APIs do not strictly follow semantic versioning. "
+            "The default is all versions, but this is almost certainly incorrect."
+        ),
+        examples=[["9.0", "9.1", "9.2"]],
+    )
 
-    # Declare which platforms your plugin supports.
-    # The default is all versions, which is likely for cross-platform Python plugins.
-    # Native plugins should declare the platform consistent with the .dll/.so/.dylib file in the archive.
-    platforms: list[Platform] = Field(default_factory=lambda: sorted(ALL_PLATFORMS))
+    platforms: list[Platform] = Field(
+        default_factory=lambda: sorted(ALL_PLATFORMS),
+        description=(
+            "Platforms the plugin supports. The default is all platforms, which is "
+            "appropriate for cross-platform Python plugins. Native plugins should "
+            "declare the platform consistent with the `.dll`/`.so`/`.dylib` file in "
+            "the archive."
+        ),
+    )
 
-    # Include an image to visually represent your plugin on its page at plugins.hex-rays.com.
-    # This should be a relative path to an image file within your plugin’s repository.
-    # The recommended aspect ratio for the image is 16:9.
-    logo_path: str | None = Field(alias="logoPath", default=None)
+    logo_path: str | None = Field(
+        alias="logoPath",
+        default=None,
+        description=(
+            "Relative path within the repository to an image representing the "
+            "plugin on `plugins.hex-rays.com`. Recommended aspect ratio is 16:9."
+        ),
+    )
 
-    # If your project has dependencies, list them like this:
-    # pythonDependencies = [
-    #   "httpx",
-    #   "gidgethub[httpx]>4.0.0",
-    #   "pkg3>=1.0,<=2.0",
-    # ]
-    # The dependency syntax is intended to be used by pip.
-    python_dependencies: list[str] | str = Field(alias="pythonDependencies", default_factory=list)
+    python_dependencies: list[str] | str = Field(
+        alias="pythonDependencies",
+        default_factory=list,
+        description=(
+            "List of pip-compatible dependency specifications, or the literal "
+            "string `inline` to read PEP 723 metadata from the entry point."
+        ),
+        examples=[["httpx", "gidgethub[httpx]>4.0.0", "pkg3>=1.0,<=2.0"], "inline"],
+    )
 
-    settings: list[PluginSettingDescriptor] = Field(default_factory=list)
+    settings: list[PluginSettingDescriptor] = Field(
+        default_factory=list,
+        description="User-configurable settings exposed by the plugin.",
+    )
 
     @field_validator("name", mode="after")
     @classmethod
@@ -499,13 +545,27 @@ class PluginMetadata(BaseModel):
 
 
 class IDAMetadataDescriptor(BaseModel):
-    """Metadata from ida-plugin.json"""
+    """Top-level descriptor for `ida-plugin.json`."""
 
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+    model_config = ConfigDict(  # type: ignore
+        serialize_by_alias=True,
+        json_schema_extra={
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "ida-plugin.json",
+        },
+    )
 
-    schema_: str | None = Field(alias="$schema", default=None, exclude=True)
-    metadata_version: Literal[1] = Field(alias="IDAMetadataDescriptorVersion")  # must be 2
-    plugin: PluginMetadata
+    schema_: str | None = Field(
+        alias="$schema",
+        default=None,
+        exclude=True,
+        description="Optional JSON Schema URL used by editors like VSCode for validation.",
+    )
+    metadata_version: Literal[1] = Field(
+        alias="IDAMetadataDescriptorVersion",
+        description="Version of the IDA metadata descriptor schema. Must be `1`.",
+    )
+    plugin: PluginMetadata = Field(description="Plugin metadata.")
 
 
 class MinimalIDAPluginMetadata(BaseModel):
