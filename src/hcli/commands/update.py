@@ -18,6 +18,7 @@ from hcli.lib.update.release import (
 )
 from hcli.lib.update.version import (
     is_binary,
+    is_editable,
 )
 from hcli.lib.util.io import get_arch, get_executable_path, get_os
 
@@ -53,6 +54,12 @@ async def update(
     if mode == "auto":
         if is_binary():
             mode = "binary"  # Use GitHub for frozen binaries
+        elif is_editable():
+            console.print(
+                "[yellow]Editable install detected; "
+                "update with [bold cyan]git pull[/bold cyan] in your checkout.[/yellow]"
+            )
+            return
         else:
             mode = "pypi"  # Use PyPI for non-frozen installs
 
@@ -111,4 +118,4 @@ async def update(
         console.print("\nTo update, run:")
         console.print("[bold cyan]uv tool upgrade ida-hcli[/bold cyan]")
         console.print("or")
-        console.print("[bold cyan]pipx upgrade ida-hcli[/bold cyan]")
+        console.print("[bold cyan]pip install --upgrade ida-hcli[/bold cyan]")

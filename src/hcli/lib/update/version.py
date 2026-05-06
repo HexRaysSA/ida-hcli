@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import sys
 import threading
@@ -73,6 +74,20 @@ def compare_versions(current: str, latest: Version) -> bool:
 
 def is_binary():
     return getattr(sys, "frozen", False)
+
+
+def is_editable() -> bool:
+    """Detect a `pip install -e .` install via PEP 610 direct_url.json."""
+    try:
+        raw = importlib.metadata.distribution("ida-hcli").read_text("direct_url.json")
+    except importlib.metadata.PackageNotFoundError:
+        return False
+    if not raw:
+        return False
+    try:
+        return bool(json.loads(raw).get("dir_info", {}).get("editable"))
+    except json.JSONDecodeError:
+        return False
 
 
 class BackgroundUpdateChecker:
