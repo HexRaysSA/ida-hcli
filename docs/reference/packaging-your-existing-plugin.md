@@ -40,13 +40,14 @@ The plugin ecosystem is fully automated. After you publish a new GitHub release 
 
 ### 1. Update or create `ida-plugin.json`
 
-IDA 9.0 introduced `ida-plugin.json` as a way to [declare metadata about plugins](https://docs.hex-rays.com/user-guide/plugins/plugin-submission-guide#define-plugin-metadata-with-ida-plugin.json), such as name and entry point.
+IDA 9.0 introduced `ida-plugin.json` as a way to [declare metadata about plugins](https://docs.hex-rays.com/developer/publishing-plugins/how-tos/plugin-publishing), such as name and entry point.
 We extend this format with **new required and optional fields** to ensure compatibility with HCLI and the Plugin Manager, and to make the metadata more informative.
 
 A minimal `ida-plugin.json` file now looks like:
 
 ```json
 {
+  "$schema": "https://hcli.docs.hex-rays.com/schemas/ida-plugin.json",
   "IDAMetadataDescriptorVersion": 1,
   "plugin": {
     "name": "plugin1",
@@ -67,6 +68,7 @@ and a more complete `ida-plugin.json` looks like:
 
 ```json
 {
+  "$schema": "https://hcli.docs.hex-rays.com/schemas/ida-plugin.json",
   "IDAMetadataDescriptorVersion": 1,
   "plugin": {
     "name": "ida-terminal-plugin",
