@@ -23,11 +23,12 @@ plugin.zip
 
 ### ida-plugin.json
 
-The [`ida-plugin.json` file](https://docs.hex-rays.com/user-guide/plugins/plugin-submission-guide#define-plugin-metadata-with-ida-plugin.json) is the marker for an IDA Pro plugin.
+The [`ida-plugin.json` file](https://docs.hex-rays.com/developer/publishing-plugins/how-tos/plugin-publishing) is the marker for an IDA Pro plugin.
 A typical `ida-plugin.json` file might look like this:
 
 ```json
 {
+  "$schema": "https://hcli.docs.hex-rays.com/schemas/ida-plugin.json",
   "IDAMetadataDescriptorVersion": 1,
   "plugin": {
     "name": "oplog",
@@ -62,6 +63,7 @@ And a minimal `ida-plugin.json` could look like this:
 
 ```json
 {
+  "$schema": "https://hcli.docs.hex-rays.com/schemas/ida-plugin.json",
   "IDAMetadataDescriptorVersion": 1,
   "plugin": {
     "name": "oplog",
@@ -78,7 +80,7 @@ And a minimal `ida-plugin.json` could look like this:
 }
 ```
 
-In addition to the primary fields described initially on the [Hex-Rays docs](https://docs.hex-rays.com/user-guide/plugins/plugin-submission-guide#define-plugin-metadata-with-ida-plugin.json), **HCLI compatibility added new, required fields** in `ida-plugin.json`:
+In addition to the primary fields described initially on the [Hex-Rays docs](https://docs.hex-rays.com/developer/publishing-plugins/how-tos/plugin-publishing), **HCLI compatibility added new, required fields** in `ida-plugin.json`:
 
   - `version`: the version of the plugin archive
   - `urls.repository`: the repository that publishes the plugin
@@ -95,6 +97,25 @@ And there are new optional fields:
 If there's a problem with the `ida-plugin.json` file, then the plugin is invalid and won't work with the repo.
 Unfortunately even things like trailing commas will break strict JSON parsers like the one used by HCLI.
 So, you can use `hcli plugin lint /path/to/plugin[.zip]` to check for problems and suggestions.
+
+!!! tip "Editor validation with JSON Schema"
+
+    HCLI publishes a JSON Schema for `ida-plugin.json` at
+    [`https://hcli.docs.hex-rays.com/schemas/ida-plugin.json`](https://hcli.docs.hex-rays.com/schemas/ida-plugin.json).
+
+    Reference it from the top of your `ida-plugin.json` to get inline validation,
+    autocompletion, and hover documentation in editors like VSCode:
+
+    ```json
+    {
+      "$schema": "https://hcli.docs.hex-rays.com/schemas/ida-plugin.json",
+      "IDAMetadataDescriptorVersion": 1,
+      "plugin": { ... }
+    }
+    ```
+
+    The schema is generated from the same Pydantic models HCLI uses to validate
+    plugins, so editor warnings match what `hcli plugin lint` will report.
 
 
 ### Shared Settings
@@ -180,7 +201,8 @@ With `ida-plugin.json`:
 
 ```json
 {
-  "IDAMetadataDescriptorVersion": 2,
+  "$schema": "https://hcli.docs.hex-rays.com/schemas/ida-plugin.json",
+  "IDAMetadataDescriptorVersion": 1,
   "plugin": {
     "name": "plugin1",
     "entryPoint": "entry_stub.py",

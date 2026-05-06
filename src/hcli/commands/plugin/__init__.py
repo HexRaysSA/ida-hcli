@@ -18,6 +18,7 @@ from .config import config
 from .install import install_plugin
 from .lint import lint_plugin_directory
 from .repo import repo
+from .schema import schema
 from .search import search_plugins
 from .status import get_plugin_status
 from .uninstall import uninstall_plugin
@@ -56,6 +57,10 @@ def plugin(ctx, repo: str | None, with_repos_list: str | None, with_ignored_repo
 
     # fix #190: stale stdout/err handles due to click pytest integration
     hcli.lib.console._sync_console_streams()
+
+    # `schema` doesn't touch any plugin repository or IDA install, so skip the setup.
+    if ctx.invoked_subcommand == "schema":
+        return
 
     plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo
     try:
@@ -136,3 +141,4 @@ plugin.add_command(upgrade_plugin, name="upgrade")
 plugin.add_command(uninstall_plugin, name="uninstall")
 plugin.add_command(repo, name="repo")
 plugin.add_command(config, name="config")
+plugin.add_command(schema, name="schema")

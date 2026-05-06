@@ -1,0 +1,469 @@
+{
+  "$defs": {
+    "Contact": {
+      "properties": {
+        "email": {
+          "description": "Contact email address.",
+          "title": "Email",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Contact name.",
+          "title": "Name"
+        }
+      },
+      "required": [
+        "email"
+      ],
+      "title": "Contact",
+      "type": "object"
+    },
+    "PluginMetadata": {
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "description": "Identifier for the plugin. Must consist of ASCII letters, digits, underscores, and hyphens, and must not start or end with an underscore or hyphen. Two plugins with the same name cannot be installed at the same time, so this should be globally unique. IDA Pro derives a namespaced identifier by converting all non-alphanumeric characters to underscores and prepending `__plugins__` (e.g. `my plugin` becomes `__plugins__my_plugin`).",
+          "examples": [
+            "my-plugin"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "description": "Plugin version in `x.y.z` semver format. Do not include a leading `v`.",
+          "examples": [
+            "1.0.0"
+          ],
+          "title": "Version",
+          "type": "string"
+        },
+        "entryPoint": {
+          "description": "Filename of the plugin's main file, relative to this `ida-plugin.json`. If the value has no file extension, IDA assumes a native plugin and appends the host platform's dynamic shared object extension (`.dll`, `.so`, `.dylib`). For IDAPython plugins, this should be a `.py` file.",
+          "examples": [
+            "my-first-plugin.py"
+          ],
+          "title": "Entrypoint",
+          "type": "string"
+        },
+        "urls": {
+          "$ref": "#/$defs/URLs",
+          "description": "URLs associated with the plugin."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "One-line description of the plugin, shown as the headline of its page on the plugin repository and in lists of search results.",
+          "title": "Description"
+        },
+        "categories": {
+          "description": "Major categories used to improve discoverability in the plugin repository.",
+          "items": {
+            "enum": [
+              "disassembly-and-processor-modules",
+              "file-parsers-and-loaders",
+              "decompilation",
+              "debugging-and-tracing",
+              "deobfuscation",
+              "collaboration-and-productivity",
+              "integration-with-third-parties-interoperability",
+              "api-scripting-and-automation",
+              "ui-ux-and-visualization",
+              "malware-analysis",
+              "vulnerability-research-and-exploit-development",
+              "other"
+            ],
+            "type": "string"
+          },
+          "title": "Categories",
+          "type": "array"
+        },
+        "keywords": {
+          "description": "Search terms used to improve discoverability in the plugin repository.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Keywords",
+          "type": "array"
+        },
+        "license": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "License for the plugin.",
+          "examples": [
+            "MIT",
+            "Apache 2.0",
+            "BSD 3-Clause"
+          ],
+          "title": "License"
+        },
+        "authors": {
+          "description": "Authors of the plugin. At least one author or maintainer is required.",
+          "items": {
+            "$ref": "#/$defs/Contact"
+          },
+          "title": "Authors",
+          "type": "array"
+        },
+        "maintainers": {
+          "description": "Maintainers of the plugin. At least one author or maintainer is required.",
+          "items": {
+            "$ref": "#/$defs/Contact"
+          },
+          "title": "Maintainers",
+          "type": "array"
+        },
+        "idaVersions": {
+          "description": "Versions of IDA Pro the plugin supports. Each version must be declared separately because IDA's APIs do not strictly follow semantic versioning. The default is all versions, but this is almost certainly incorrect.",
+          "examples": [
+            [
+              "9.0",
+              "9.1",
+              "9.2"
+            ]
+          ],
+          "items": {
+            "enum": [
+              "10.0",
+              "9.4",
+              "9.3",
+              "9.2",
+              "9.1",
+              "9.0sp1",
+              "9.0",
+              "8.5",
+              "8.4sp2",
+              "8.4sp1",
+              "8.4",
+              "8.3",
+              "8.2sp1",
+              "8.2",
+              "8.1",
+              "8.0sp1",
+              "8.0",
+              "7.7sp1",
+              "7.7",
+              "7.6sp1",
+              "7.6",
+              "7.5sp3",
+              "7.5sp2",
+              "7.5sp1",
+              "7.5",
+              "7.4sp1",
+              "7.4",
+              "7.3",
+              "7.2",
+              "7.1",
+              "7.0sp1",
+              "7.0",
+              "6.95",
+              "6.9",
+              "6.8",
+              "6.7",
+              "6.6",
+              "6.5",
+              "6.4",
+              "6.3",
+              "6.2",
+              "6.1",
+              "6.0",
+              "5.7",
+              "5.6",
+              "5.5",
+              "5.4",
+              "5.3",
+              "5.2",
+              "5.1",
+              "5.0",
+              "4.9sp1",
+              "4.9",
+              "4.8",
+              "4.7",
+              "4.6",
+              "4.5",
+              "4.4",
+              "4.3",
+              "4.2",
+              "4.1",
+              "4.0",
+              "3.0"
+            ],
+            "type": "string"
+          },
+          "title": "Idaversions",
+          "type": "array"
+        },
+        "platforms": {
+          "description": "Platforms the plugin supports. The default is all platforms, which is appropriate for cross-platform Python plugins. Native plugins should declare the platform consistent with the `.dll`/`.so`/`.dylib` file in the archive.",
+          "items": {
+            "enum": [
+              "windows-x86_64",
+              "linux-x86_64",
+              "macos-x86_64",
+              "macos-aarch64"
+            ],
+            "type": "string"
+          },
+          "title": "Platforms",
+          "type": "array"
+        },
+        "logoPath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Relative path within the repository to an image representing the plugin on `plugins.hex-rays.com`. Recommended aspect ratio is 16:9.",
+          "title": "Logopath"
+        },
+        "pythonDependencies": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "List of pip-compatible dependency specifications, or the literal string `inline` to read PEP 723 metadata from the entry point.",
+          "examples": [
+            [
+              "httpx",
+              "gidgethub[httpx]>4.0.0",
+              "pkg3>=1.0,<=2.0"
+            ],
+            "inline"
+          ],
+          "title": "Pythondependencies"
+        },
+        "settings": {
+          "description": "User-configurable settings exposed by the plugin.",
+          "items": {
+            "$ref": "#/$defs/PluginSettingDescriptor"
+          },
+          "title": "Settings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "entryPoint",
+        "urls"
+      ],
+      "title": "PluginMetadata",
+      "type": "object"
+    },
+    "PluginSettingDescriptor": {
+      "properties": {
+        "key": {
+          "description": "Unique code-level identifier for the setting.",
+          "examples": [
+            "openai_api_key"
+          ],
+          "title": "Key",
+          "type": "string"
+        },
+        "type": {
+          "description": "Setting value type.",
+          "enum": [
+            "string",
+            "boolean"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "required": {
+          "description": "Whether the user must supply a value for this setting.",
+          "title": "Required",
+          "type": "boolean"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Default value used when no other config provides one. Not written into `ida-config.json`; provided on-demand.",
+          "title": "Default"
+        },
+        "name": {
+          "description": "Human-readable name for the setting.",
+          "examples": [
+            "OpenAI API key"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "documentation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-readable explanation for the setting.",
+          "examples": [
+            "OpenAI API key acquired from https://platform.openai.com/api-keys"
+          ],
+          "title": "Documentation"
+        },
+        "validation_pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Regular expression used to validate candidate values. Only used for string types. Mutually exclusive with `choices`.",
+          "examples": [
+            "[a-z]{32}"
+          ],
+          "title": "Validation Pattern"
+        },
+        "choices": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Acceptable string values. Only used for string types. Mutually exclusive with `validation_pattern`.",
+          "examples": [
+            [
+              "option-a",
+              "option-b",
+              "option-c"
+            ]
+          ],
+          "title": "Choices"
+        },
+        "prompt": {
+          "default": true,
+          "description": "Whether to prompt the user for this setting during installation. Set to false to use the default value without prompting.",
+          "title": "Prompt",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "type",
+        "required",
+        "name"
+      ],
+      "title": "PluginSettingDescriptor",
+      "type": "object"
+    },
+    "URLs": {
+      "properties": {
+        "repository": {
+          "description": "URL of the GitHub repository containing the source code for the plugin.",
+          "examples": [
+            "https://github.com/org/project"
+          ],
+          "title": "Repository",
+          "type": "string"
+        },
+        "homepage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "URL of a website describing the plugin, if different from the GitHub repo.",
+          "title": "Homepage"
+        }
+      },
+      "required": [
+        "repository"
+      ],
+      "title": "URLs",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Top-level descriptor for `ida-plugin.json`.",
+  "properties": {
+    "$schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional JSON Schema URL used by editors like VSCode for validation.",
+      "title": "$Schema"
+    },
+    "IDAMetadataDescriptorVersion": {
+      "const": 1,
+      "description": "Version of the IDA metadata descriptor schema. Must be `1`.",
+      "title": "Idametadatadescriptorversion",
+      "type": "integer"
+    },
+    "plugin": {
+      "$ref": "#/$defs/PluginMetadata",
+      "description": "Plugin metadata."
+    }
+  },
+  "required": [
+    "IDAMetadataDescriptorVersion",
+    "plugin"
+  ],
+  "title": "ida-plugin.json",
+  "type": "object"
+}
