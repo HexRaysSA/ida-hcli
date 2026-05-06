@@ -46,3 +46,12 @@ jobs:
       - name: Lint with mypy
         run: |
           uvx mypy --check-untyped-defs  --disable-error-code=import-untyped --disable-error-code=import-not-found src/ tests/ --exclude tests/data/
+
+      - name: Verify ida-plugin.json schema is up to date
+        run: |
+          uv run hcli plugin schema -o docs/schemas/ida-plugin.json
+          if ! git diff --exit-code docs/schemas/ida-plugin.json; then
+            echo "::error::docs/schemas/ida-plugin.json is out of sync with the Pydantic models."
+            echo "Run 'uv run hcli plugin schema -o docs/schemas/ida-plugin.json' and commit the result."
+            exit 1
+          fi
