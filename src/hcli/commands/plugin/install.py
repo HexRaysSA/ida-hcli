@@ -217,11 +217,16 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                 parsed_value = parse_setting_value(descr, value_str)
                 descr.validate_value(parsed_value)
 
-        with rich.status.Status("installing plugin", console=stderr_console):
-            if editable:
-                install_plugin_directory_editable(source_dir, plugin_name, no_build_isolation=no_build_isolation)
-            else:
-                install_plugin_archive(buf, plugin_name, no_build_isolation=no_build_isolation)
+        # No outer Status here -- both install paths below have their own
+        # inner Status calls on stderr_console, and Rich allows only one Live
+        # per console. Wrapping in an outer Status raises
+        # "Only one live display may be active at once" on a real TTY (it's
+        # silently a no-op when stderr is piped, which is why this bug went
+        # unnoticed for so long).
+        if editable:
+            install_plugin_directory_editable(source_dir, plugin_name, no_build_isolation=no_build_isolation)
+        else:
+            install_plugin_archive(buf, plugin_name, no_build_isolation=no_build_isolation)
 
         try:
             if metadata.plugin.settings:
@@ -253,56 +258,64 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                             f"plugin requires configuration but console is not interactive. Please provide settings via command line: {setting_names}"
                         )
 
-                    console.print(f"configure {len(metadata.plugin.settings)} settings:")
+                    # Only the not-already-set, prompt-eligible settings get a
+                    # questionary form. If everything is either already set or
+                    # opted out via prompt: false, skip the heading + form so
+                    # the user doesn't see a misleading "configure N settings:"
+                    # banner with no questions underneath.
+                    promptable_settings = [
+                        s
+                        for s in metadata.plugin.settings
+                        if not has_plugin_setting(plugin_name, s.key) and s.prompt
+                    ]
 
-                    questions: dict[str, questionary.Question] = {}
-                    for setting in metadata.plugin.settings:
-                        if has_plugin_setting(plugin_name, setting.key):
-                            continue
+                    if not promptable_settings:
+                        answers: dict = {}
+                    else:
+                        plural = "s" if len(promptable_settings) != 1 else ""
+                        console.print(f"configure {len(promptable_settings)} setting{plural}:")
+                        questions: dict[str, questionary.Question] = {}
+                        for setting in promptable_settings:
+                            if setting.type == "boolean":
+                                default_bool = setting.default if isinstance(setting.default, bool) else False
+                                question = questionary.confirm(
+                                    message=setting.name,
+                                    default=default_bool,
+                                )
+                            elif setting.choices:
+                                default_str = str(setting.default) if setting.default is not None else setting.choices[0]
+                                question = questionary.select(
+                                    message=setting.name,
+                                    choices=setting.choices,
+                                    default=default_str,
+                                )
+                            else:
 
-                        if not setting.prompt:
-                            continue
+                                def make_validator(s):
+                                    def validate_func(value: str):
+                                        if not s.required and not value:
+                                            return True
+                                        if s.required and not value:
+                                            return "This field is required"
+                                        try:
+                                            parsed = parse_setting_value(s, value)
+                                            s.validate_value(parsed)
+                                            return True
+                                        except ValueError as e:
+                                            return str(e)
 
-                        if setting.type == "boolean":
-                            default_bool = setting.default if isinstance(setting.default, bool) else False
-                            question = questionary.confirm(
-                                message=setting.name,
-                                default=default_bool,
-                            )
-                        elif setting.choices:
-                            default_str = str(setting.default) if setting.default is not None else setting.choices[0]
-                            question = questionary.select(
-                                message=setting.name,
-                                choices=setting.choices,
-                                default=default_str,
-                            )
-                        else:
+                                    return validate_func
 
-                            def make_validator(s):
-                                def validate_func(value: str):
-                                    if not s.required and not value:
-                                        return True
-                                    if s.required and not value:
-                                        return "This field is required"
-                                    try:
-                                        parsed = parse_setting_value(s, value)
-                                        s.validate_value(parsed)
-                                        return True
-                                    except ValueError as e:
-                                        return str(e)
+                                default_str = str(setting.default) if setting.default is not None else ""
+                                question = questionary.text(
+                                    # TODO: descr.documentation
+                                    message=setting.name,
+                                    default=default_str,
+                                    validate=make_validator(setting),
+                                )
+                            questions[setting.key] = question
 
-                                return validate_func
-
-                            default_str = str(setting.default) if setting.default is not None else ""
-                            question = questionary.text(
-                                # TODO: descr.documentation
-                                message=setting.name,
-                                default=default_str,
-                                validate=make_validator(setting),
-                            )
-                        questions[setting.key] = question
-
-                    answers = questionary.form(**questions).ask()
+                        answers = questionary.form(**questions).ask()
 
                     for key, answer in answers.items():
                         descr = metadata.plugin.get_setting(key)
