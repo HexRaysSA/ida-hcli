@@ -278,9 +278,7 @@ async def download(
 
             if len(matching) > DISPLAY_CAP:
                 console.print()
-                console.print(
-                    "[yellow]Too many results. Use a more specific pattern to narrow down.[/yellow]"
-                )
+                console.print("[yellow]Too many results. Use a more specific pattern to narrow down.[/yellow]")
             return []
 
         if pattern:
