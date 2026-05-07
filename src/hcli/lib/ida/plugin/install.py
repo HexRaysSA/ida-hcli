@@ -595,6 +595,108 @@ def install_plugin_archive(zip_data: bytes, name: str, no_build_isolation: bool 
         raise ValueError("Invalid plugin archive")
 
 
+def install_plugin_directory_editable(source_dir: Path, name: str, no_build_isolation: bool = False):
+    """Install a plugin from a local source directory by symlinking it into
+    $IDAUSR/plugins/<name>.
+
+    Edits to files in `source_dir` take effect on the next plugin reload, with
+    no re-install needed -- the standard development workflow for plugin
+    authors.
+
+    Python dependencies declared in `ida-plugin.json` are installed the same
+    way as a regular install. The destination path is replaced if it already
+    exists (file, directory, or stale symlink), but the source directory is
+    never touched.
+    """
+    source_dir = source_dir.resolve()
+    metadata = get_metadata_from_plugin_directory(source_dir)
+    validate_metadata_in_plugin_directory(source_dir)
+
+    if metadata.plugin.name != name:
+        raise ValueError(
+            f"plugin name mismatch: caller passed '{name}', "
+            f"ida-plugin.json declares '{metadata.plugin.name}'"
+        )
+
+    logger.info("installing plugin (editable): %s (%s)", metadata.plugin.name, metadata.plugin.version)
+
+    with rich.status.Status("finding IDA installation", console=stderr_console):
+        current_platform = find_current_ida_platform()
+        current_version = find_current_ida_version()
+
+    platforms = metadata.plugin.platforms
+    if current_platform not in platforms:
+        logger.warning(f"Current platform not supported: {current_platform}")
+        raise PlatformIncompatibleError(current_platform, platforms)
+
+    if metadata.plugin.ida_versions and not is_ida_version_compatible(current_version, metadata.plugin.ida_versions):
+        logger.warning(f"Current IDA version not supported: {current_version}")
+        raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
+
+    try:
+        destination_path = get_plugin_directory(metadata.plugin.name)
+    except ValueError as e:
+        logger.error(f"Can't install plugin: {e!s}")
+        raise InvalidPluginNameError(metadata.plugin.name, str(e)) from e
+
+    # Validate + install Python dependencies. Excludes the current plugin from
+    # the existing-installed set so a re-install of the same plugin doesn't
+    # double-count its own deps when verifying the resolver.
+    python_dependencies = get_python_dependencies_from_plugin_directory(source_dir, metadata)
+    if python_dependencies:
+        with rich.status.Status("collecting existing Python dependencies", console=stderr_console):
+            all_python_dependencies: list[str] = []
+            for existing_plugin_path in get_installed_plugin_paths():
+                try:
+                    existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
+                except Exception:
+                    continue
+                if existing_metadata.plugin.name == metadata.plugin.name:
+                    continue
+                existing_deps = get_python_dependencies_from_plugin_directory(existing_plugin_path, existing_metadata)
+                all_python_dependencies.extend(existing_deps)
+            all_python_dependencies.extend(python_dependencies)
+
+        python_exe = find_current_python_executable()
+        if not does_current_ida_have_pip(python_exe):
+            raise PipNotAvailableError(python_exe)
+
+        try:
+            verify_pip_can_install_packages(python_exe, all_python_dependencies, no_build_isolation=no_build_isolation)
+        except CantInstallPackagesError as e:
+            raise DependencyInstallationError(python_dependencies, str(e)) from e
+
+        with rich.status.Status(
+            f"installing Python dependencies: {', '.join(python_dependencies)}", console=stderr_console
+        ):
+            try:
+                pip_install_packages(python_exe, all_python_dependencies, no_build_isolation=no_build_isolation)
+            except CantInstallPackagesError:
+                logger.debug("can't install dependencies")
+                raise
+
+    # Remove any existing install at the target. is_symlink() is checked
+    # before exists() because a broken symlink fails exists() but should
+    # still be replaced.
+    if destination_path.is_symlink():
+        destination_path.unlink()
+    elif destination_path.is_file():
+        destination_path.unlink()
+    elif destination_path.exists():
+        shutil.rmtree(destination_path)
+
+    try:
+        destination_path.symlink_to(source_dir, target_is_directory=True)
+    except OSError as e:
+        raise ValueError(
+            f"Failed to create symlink {destination_path} -> {source_dir}: {e}. "
+            "On Windows, symlink creation requires Developer Mode or "
+            "administrator privileges."
+        ) from e
+
+    logger.info("symlinked %s -> %s", destination_path, source_dir)
+
+
 def validate_can_uninstall_plugin(name: str) -> None:
     """Verify plugin can be uninstalled.
 
@@ -617,7 +719,14 @@ def uninstall_plugin(name: str):
     # but we shouldn't do a sync, since there might be other utils installed by the user.
     # so I think its better to just leave the orphans around.
 
-    shutil.rmtree(record.path)
+    if record.path.is_symlink():
+        # Editable install (or a manually-symlinked plugin): remove the
+        # symlink only. Calling shutil.rmtree on a directory symlink raises
+        # on POSIX and recurses into the target on some Windows configs --
+        # both wrong; we want to leave the source tree untouched.
+        record.path.unlink()
+    else:
+        shutil.rmtree(record.path)
 
 
 def is_plugin_installed(name: str) -> bool:

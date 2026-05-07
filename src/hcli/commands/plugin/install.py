@@ -28,7 +28,13 @@ from hcli.lib.ida.plugin.exceptions import (
     InstalledPluginNameConflictError,
     PluginNotInstalledError,
 )
-from hcli.lib.ida.plugin.install import find_installed_plugin, install_plugin_archive, uninstall_plugin
+from hcli.lib.ida.plugin.install import (
+    find_installed_plugin,
+    get_metadata_from_plugin_directory,
+    install_plugin_archive,
+    install_plugin_directory_editable,
+    uninstall_plugin,
+)
 from hcli.lib.ida.plugin.reference import (
     format_qualified_plugin_reference,
     is_github_direct_install_url,
@@ -45,6 +51,14 @@ logger = logging.getLogger(__name__)
 @click.command()
 @click.pass_context
 @click.argument("plugin")
+@click.option(
+    "-e",
+    "--editable",
+    is_flag=True,
+    default=False,
+    help="Install a local plugin directory by symlinking it into $IDAUSR/plugins/. "
+    "Edits to the source tree take effect immediately on the next plugin reload.",
+)
 @click.option("--config", multiple=True, help="Configuration setting in key=value format (use true/false for booleans)")
 @click.option(
     "--no-build-isolation",
@@ -52,7 +66,7 @@ logger = logging.getLogger(__name__)
     default=False,
     help="Disable pip build isolation when installing Python dependencies",
 )
-def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation: bool) -> None:
+def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no_build_isolation: bool) -> None:
     """Install a plugin from repository, local .zip file, or URL."""
     plugin_spec = plugin
     try:
@@ -60,7 +74,25 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
             current_ida_platform = find_current_ida_platform()
             current_ida_version = find_current_ida_version()
 
-        if Path(plugin_spec).exists() and plugin_spec.endswith(".zip"):
+        # Editable install: skip the archive pipeline entirely. Read metadata
+        # straight from the source directory and symlink it into place.
+        if editable:
+            source_dir = Path(plugin_spec).expanduser()
+            if not source_dir.exists():
+                raise click.BadParameter(f"path does not exist: {plugin_spec}")
+            if not source_dir.is_dir():
+                raise click.BadParameter(
+                    f"--editable requires a directory containing ida-plugin.json, got: {plugin_spec}"
+                )
+            source_dir = source_dir.resolve()
+            try:
+                metadata = get_metadata_from_plugin_directory(source_dir)
+            except ValueError as e:
+                raise click.BadParameter(str(e))
+            plugin_name = metadata.plugin.name
+            buf = None  # sentinel: editable; no archive bytes
+
+        elif Path(plugin_spec).exists() and plugin_spec.endswith(".zip"):
             logger.info("installing from the local file system")
             buf = Path(plugin_spec).read_bytes()
             items = list(get_metadatas_with_paths_from_plugin_archive(buf))
@@ -133,7 +165,9 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
                     console.print(f"  {format_qualified_plugin_reference(candidate_ref)}")
                 raise click.Abort()
 
-        _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
+        if not editable:
+            _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
+        # else: `metadata` was already populated from the source directory.
 
         # Same-name install conflict: another plugin with the same bare name is already
         # installed from a different repository. The install layout is
@@ -166,7 +200,10 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
                 descr.validate_value(parsed_value)
 
         with rich.status.Status("installing plugin", console=stderr_console):
-            install_plugin_archive(buf, plugin_name, no_build_isolation=no_build_isolation)
+            if editable:
+                install_plugin_directory_editable(source_dir, plugin_name, no_build_isolation=no_build_isolation)
+            else:
+                install_plugin_archive(buf, plugin_name, no_build_isolation=no_build_isolation)
 
         try:
             if metadata.plugin.settings:
@@ -262,7 +299,10 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
                 uninstall_plugin(plugin_name)
             raise
 
-        console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}")
+        suffix = " [yellow](editable)[/yellow]" if editable else ""
+        console.print(
+            f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}{suffix}"
+        )
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
         raise click.Abort()
