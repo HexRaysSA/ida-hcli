@@ -93,10 +93,7 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
             plugin_name = metadata.plugin.name
             buf = None  # sentinel: editable; no archive bytes
 
-        elif (
-            Path(plugin_spec).expanduser().is_dir()
-            and (Path(plugin_spec).expanduser() / "ida-plugin.json").is_file()
-        ):
+        elif Path(plugin_spec).expanduser().is_dir() and (Path(plugin_spec).expanduser() / "ida-plugin.json").is_file():
             # Local non-editable install: pack the directory into an in-memory
             # zip and run it through the same archive pipeline used for zip /
             # URL / repo installs. The dir must contain ida-plugin.json -- any
@@ -264,9 +261,7 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                     # the user doesn't see a misleading "configure N settings:"
                     # banner with no questions underneath.
                     promptable_settings = [
-                        s
-                        for s in metadata.plugin.settings
-                        if not has_plugin_setting(plugin_name, s.key) and s.prompt
+                        s for s in metadata.plugin.settings if not has_plugin_setting(plugin_name, s.key) and s.prompt
                     ]
 
                     if not promptable_settings:
@@ -283,7 +278,9 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                                     default=default_bool,
                                 )
                             elif setting.choices:
-                                default_str = str(setting.default) if setting.default is not None else setting.choices[0]
+                                default_str = (
+                                    str(setting.default) if setting.default is not None else setting.choices[0]
+                                )
                                 question = questionary.select(
                                     message=setting.name,
                                     choices=setting.choices,
@@ -331,9 +328,7 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
             raise
 
         suffix = " [yellow](editable)[/yellow]" if editable else ""
-        console.print(
-            f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}{suffix}"
-        )
+        console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}{suffix}")
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
         raise click.Abort()

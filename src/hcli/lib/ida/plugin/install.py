@@ -640,8 +640,7 @@ def install_plugin_directory_editable(source_dir: Path, name: str, no_build_isol
 
     if metadata.plugin.name != name:
         raise ValueError(
-            f"plugin name mismatch: caller passed '{name}', "
-            f"ida-plugin.json declares '{metadata.plugin.name}'"
+            f"plugin name mismatch: caller passed '{name}', ida-plugin.json declares '{metadata.plugin.name}'"
         )
 
     logger.info("installing plugin (editable): %s (%s)", metadata.plugin.name, metadata.plugin.version)
