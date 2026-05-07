@@ -199,6 +199,14 @@ def normalize_tag_with_os(tag_spec: str) -> str:
     "--pattern", "pattern", default=None, help="Pattern to search for assets", callback=validate_pattern_for_direct_mode
 )
 @click.option("--list-tags", is_flag=True, help="List all available download tags and exit")
+@click.option(
+    "--list-assets",
+    "list_assets",
+    is_flag=False,
+    flag_value="",
+    default=None,
+    help="List available assets and exit. Accepts an optional regex filter",
+)
 @click.argument("key", required=False)
 @async_command
 async def download(
@@ -208,6 +216,7 @@ async def download(
     pattern: str | None = None,
     key: str | None = None,
     list_tags: bool = False,
+    list_assets: str | None = None,
 ) -> list[str]:
     """Download IDA binaries, SDKs, and utilities.
 
@@ -246,6 +255,32 @@ async def download(
             console.print(
                 "[grey69]Use 'category:version' to auto-detect OS, or 'category:version:os' for explicit OS[/grey69]"
             )
+            return []
+
+        # Handle --list-assets flag
+        if list_assets is not None:
+            console.print("[yellow]Fetching available assets...[/yellow]")
+            page = await asset_api.get_files("installers")
+            matching = filter_assets_by_pattern(page.items, list_assets) if list_assets else page.items
+
+            if not matching:
+                console.print(f"[red]No assets found matching pattern: {list_assets}[/red]")
+                return []
+
+            DISPLAY_CAP = 200
+            sorted_matching = sorted(matching, key=lambda a: a.key)
+            shown = sorted_matching[:DISPLAY_CAP]
+
+            header = f"matching pattern '{list_assets}'" if list_assets else "available"
+            console.print(f"\n[bold]Assets {header} ({len(shown)} shown):[/bold]\n")
+            for asset in shown:
+                console.print(f"[blue]{asset.key}[/blue]")
+
+            if len(matching) > DISPLAY_CAP:
+                console.print()
+                console.print(
+                    "[yellow]Too many results. Use a more specific pattern to narrow down.[/yellow]"
+                )
             return []
 
         if pattern:
