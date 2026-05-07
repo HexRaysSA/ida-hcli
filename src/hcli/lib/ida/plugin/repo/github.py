@@ -215,9 +215,7 @@ def _is_transient_error(exception: BaseException) -> bool:
     # means the error is a non-HTTP URLError (e.g. connection refused, DNS).
     if isinstance(exception, urllib.error.URLError):
         return True
-    if isinstance(exception, (TimeoutError, socket.timeout)):
-        return True
-    return False
+    return isinstance(exception, (TimeoutError, socket.timeout))
 
 
 def _check_and_handle_proactive_rate_limit(response) -> None:

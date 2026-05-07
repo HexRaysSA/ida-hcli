@@ -181,6 +181,7 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                 raise click.Abort()
 
         if not editable:
+            assert buf is not None  # invariant: only the editable branch leaves buf as None
             _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
         # else: `metadata` was already populated from the source directory.
 
@@ -223,6 +224,7 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
         if editable:
             install_plugin_directory_editable(source_dir, plugin_name, no_build_isolation=no_build_isolation)
         else:
+            assert buf is not None  # invariant: only the editable branch leaves buf as None
             install_plugin_archive(buf, plugin_name, no_build_isolation=no_build_isolation)
 
         try:

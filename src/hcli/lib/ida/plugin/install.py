@@ -674,7 +674,8 @@ def install_plugin_directory_editable(source_dir: Path, name: str, no_build_isol
             for existing_plugin_path in get_installed_plugin_paths():
                 try:
                     existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
-                except Exception:
+                except Exception as e:
+                    logger.debug("skipping unreadable plugin metadata at %s: %s", existing_plugin_path, e)
                     continue
                 if existing_metadata.plugin.name == metadata.plugin.name:
                     continue
@@ -703,9 +704,7 @@ def install_plugin_directory_editable(source_dir: Path, name: str, no_build_isol
     # Remove any existing install at the target. is_symlink() is checked
     # before exists() because a broken symlink fails exists() but should
     # still be replaced.
-    if destination_path.is_symlink():
-        destination_path.unlink()
-    elif destination_path.is_file():
+    if destination_path.is_symlink() or destination_path.is_file():
         destination_path.unlink()
     elif destination_path.exists():
         shutil.rmtree(destination_path)
