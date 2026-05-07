@@ -33,6 +33,7 @@ from hcli.lib.ida.plugin.install import (
     get_metadata_from_plugin_directory,
     install_plugin_archive,
     install_plugin_directory_editable,
+    pack_plugin_directory_to_zip,
     uninstall_plugin,
 )
 from hcli.lib.ida.plugin.reference import (
@@ -67,7 +68,7 @@ logger = logging.getLogger(__name__)
     help="Disable pip build isolation when installing Python dependencies",
 )
 def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no_build_isolation: bool) -> None:
-    """Install a plugin from repository, local .zip file, or URL."""
+    """Install a plugin from a repository, local directory, local .zip file, or URL."""
     plugin_spec = plugin
     try:
         with rich.status.Status("collecting environment", console=stderr_console):
@@ -91,6 +92,23 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                 raise click.BadParameter(str(e))
             plugin_name = metadata.plugin.name
             buf = None  # sentinel: editable; no archive bytes
+
+        elif (
+            Path(plugin_spec).expanduser().is_dir()
+            and (Path(plugin_spec).expanduser() / "ida-plugin.json").is_file()
+        ):
+            # Local non-editable install: pack the directory into an in-memory
+            # zip and run it through the same archive pipeline used for zip /
+            # URL / repo installs. The dir must contain ida-plugin.json -- any
+            # bare directory name without metadata falls through so it can be
+            # resolved as a repository plugin reference instead.
+            logger.info("installing from the local file system (directory)")
+            source_dir = Path(plugin_spec).expanduser().resolve()
+            buf = pack_plugin_directory_to_zip(source_dir)
+            items = list(get_metadatas_with_paths_from_plugin_archive(buf))
+            if len(items) != 1:
+                raise ValueError("plugin directory must contain a single plugin")
+            plugin_name = items[0][1].plugin.name
 
         elif Path(plugin_spec).exists() and plugin_spec.endswith(".zip"):
             logger.info("installing from the local file system")

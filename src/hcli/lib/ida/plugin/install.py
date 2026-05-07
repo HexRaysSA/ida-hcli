@@ -595,6 +595,32 @@ def install_plugin_archive(zip_data: bytes, name: str, no_build_isolation: bool 
         raise ValueError("Invalid plugin archive")
 
 
+# Files/directories under a plugin source tree we never want to ship into a
+# distributable archive (dev / VCS / OS noise).
+_PLUGIN_DIRECTORY_SKIP_PARTS = frozenset({".git", ".hg", ".svn", "__pycache__", ".DS_Store"})
+
+
+def pack_plugin_directory_to_zip(source_dir: Path) -> bytes:
+    """Pack a plugin source directory into an in-memory ZIP archive, files
+    placed at the archive root. The resulting bytes can be fed straight into
+    `install_plugin_archive`, so a local directory install reuses the same
+    validation and extraction logic as a remote/zip install.
+
+    Skips common dev junk so an in-place git checkout doesn't poison the
+    install with `.git/`, `__pycache__/`, etc.
+    """
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(source_dir.rglob("*")):
+            if path.is_dir():
+                continue
+            rel = path.relative_to(source_dir)
+            if any(part in _PLUGIN_DIRECTORY_SKIP_PARTS for part in rel.parts):
+                continue
+            zf.write(path, str(rel))
+    return buf.getvalue()
+
+
 def install_plugin_directory_editable(source_dir: Path, name: str, no_build_isolation: bool = False):
     """Install a plugin from a local source directory by symlinking it into
     $IDAUSR/plugins/<name>.
