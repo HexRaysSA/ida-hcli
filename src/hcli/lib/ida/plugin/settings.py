@@ -181,20 +181,37 @@ def get_current_plugin() -> str:
     if frame is None:
         raise RuntimeError("failed to get current frame")
 
-    plugins_path = get_plugins_directory().resolve()
+    # Compare against both the symlink-preserving and resolved forms of the
+    # plugins directory. This lets editable installs that symlink the plugin
+    # directory into $IDAUSR/plugins/ work: Python's frame `co_filename` is
+    # whatever path was used to import (the symlink), while `Path.resolve()`
+    # follows symlinks. We try every combination so either layout matches.
+    plugins_path = get_plugins_directory()
+    plugin_root_candidates = {plugins_path, plugins_path.resolve()}
 
     current_frame = frame.f_back
     while current_frame is not None:
         logger.debug("inspecting frame: %s", current_frame)
         module_filename = current_frame.f_code.co_filename
+        module_path = Path(module_filename)
+        module_path_candidates = (module_path, module_path.resolve())
 
-        try:
-            module_relative_path = Path(module_filename).resolve().relative_to(plugins_path)
-        except ValueError:
+        plugin_directory_name = None
+        for mp in module_path_candidates:
+            for pp in plugin_root_candidates:
+                try:
+                    module_relative_path = mp.relative_to(pp)
+                except ValueError:
+                    continue
+                plugin_directory_name = module_relative_path.parts[0]
+                break
+            if plugin_directory_name is not None:
+                break
+
+        if plugin_directory_name is None:
             current_frame = current_frame.f_back
             continue
 
-        plugin_directory_name = module_relative_path.parts[0]
         plugin_directory = plugins_path / plugin_directory_name
         metadata = get_metadata_from_plugin_directory(plugin_directory)
         plugin_name = metadata.plugin.name
