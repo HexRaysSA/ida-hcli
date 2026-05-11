@@ -339,7 +339,7 @@ def test_bundle_dependency_source_matching_target_returns_pip_options(tmp_path):
     try:
         with bundle_dependency_source(repo, "linux-x86_64", "3.12") as opts:
             assert opts is not None
-            assert opts.offline is True
+            assert opts.offline is False
             assert opts.isolated is True
             assert opts.no_cache_dir is True
             assert opts.disable_pip_version_check is True

@@ -94,14 +94,20 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             raise click.Abort()
 
         effective_pip_options = pip_options
-        if isinstance(plugin_repo, PluginBundleRepo) and pip_options == PIP_OPTIONS_DEFAULT:
-            from hcli.lib.ida.python import detect_current_python_version
+        if isinstance(plugin_repo, PluginBundleRepo) and not pip_options.has_custom_sources:
+            from hcli.lib.ida.python import detect_current_python_version, merge_bundle_pip_options
 
-            with bundle_dependency_source(
-                plugin_repo, current_ida_platform, detect_current_python_version()
-            ) as bundle_opts:
-                if bundle_opts is not None:
-                    effective_pip_options = bundle_opts
+            current_python_version = detect_current_python_version()
+            with bundle_dependency_source(plugin_repo, current_ida_platform, current_python_version) as bundle_opts:
+                if bundle_opts is None:
+                    available = ", ".join(plugin_repo.target_ids) or "none"
+                    console.print(
+                        f"[red]Error[/red]: plugin bundle does not include dependencies"
+                        f" for {current_ida_platform}, Python {current_python_version}."
+                    )
+                    console.print(f"Available targets in this bundle: {available}")
+                    raise click.Abort()
+                effective_pip_options = merge_bundle_pip_options(pip_options, bundle_opts)
                 if no_build_isolation:
                     effective_pip_options = dataclasses.replace(effective_pip_options, no_build_isolation=True)
                 upgrade_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)

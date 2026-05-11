@@ -48,7 +48,7 @@ from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
 from hcli.lib.ida.plugin.settings import has_plugin_setting, parse_setting_value, set_plugin_setting
-from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, detect_current_python_version
+from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, detect_current_python_version, merge_bundle_pip_options
 
 logger = logging.getLogger(__name__)
 
@@ -226,12 +226,20 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
         else:
             assert buf is not None
             effective_pip_options = pip_options
-            if isinstance(plugin_repo_obj, PluginBundleRepo) and pip_options == PIP_OPTIONS_DEFAULT:
+            if isinstance(plugin_repo_obj, PluginBundleRepo) and not pip_options.has_custom_sources:
+                current_python_version = detect_current_python_version()
                 with bundle_dependency_source(
-                    plugin_repo_obj, current_ida_platform, detect_current_python_version()
+                    plugin_repo_obj, current_ida_platform, current_python_version
                 ) as bundle_opts:
-                    if bundle_opts is not None:
-                        effective_pip_options = bundle_opts
+                    if bundle_opts is None:
+                        available = ", ".join(plugin_repo_obj.target_ids) or "none"
+                        console.print(
+                            f"[red]Error[/red]: plugin bundle does not include dependencies"
+                            f" for {current_ida_platform}, Python {current_python_version}."
+                        )
+                        console.print(f"Available targets in this bundle: {available}")
+                        raise click.Abort()
+                    effective_pip_options = merge_bundle_pip_options(pip_options, bundle_opts)
                     if no_build_isolation:
                         effective_pip_options = dataclasses.replace(effective_pip_options, no_build_isolation=True)
                     with rich.status.Status("installing plugin", console=stderr_console):

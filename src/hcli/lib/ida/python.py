@@ -216,6 +216,10 @@ class PipOptions:
     disable_pip_version_check: bool = False
     no_build_isolation: bool = False
 
+    @property
+    def has_custom_sources(self) -> bool:
+        return self.index_url is not None or len(self.extra_index_urls) > 0 or len(self.find_links) > 0
+
     def build_args(self) -> list[str]:
         args: list[str] = []
         if self.isolated:
@@ -238,6 +242,19 @@ class PipOptions:
 
 
 PIP_OPTIONS_DEFAULT = PipOptions()
+
+
+def merge_bundle_pip_options(user_options: PipOptions, bundle_options: PipOptions) -> PipOptions:
+    return PipOptions(
+        index_url=user_options.index_url,
+        extra_index_urls=user_options.extra_index_urls,
+        find_links=bundle_options.find_links + user_options.find_links,
+        offline=bundle_options.offline or user_options.offline,
+        isolated=bundle_options.isolated or user_options.isolated,
+        no_cache_dir=bundle_options.no_cache_dir or user_options.no_cache_dir,
+        disable_pip_version_check=bundle_options.disable_pip_version_check or user_options.disable_pip_version_check,
+        no_build_isolation=user_options.no_build_isolation,
+    )
 
 
 def _format_pip_error(stdout: bytes, stderr: bytes) -> str:

@@ -47,7 +47,7 @@ def read_repos_file(path: Path) -> list[str]:
 @click.group()
 @click.option(
     "--repo",
-    help="'github', or path to directory containing plugins, or path to JSON file, or URL to JSON file",
+    help="'github', path to directory containing plugins, path to JSON file, URL to JSON file, or path to a plugin bundle .zip",
     hidden=True,
 )
 @click.option("--with-repos-list", help="path to file containing known GitHub repositories", hidden=True)
@@ -76,7 +76,7 @@ def plugin(
     pip_options = PipOptions(
         index_url=pip_index_url,
         extra_index_urls=pip_extra_index_url,
-        find_links=tuple(Path(p) if not p.startswith(("http://", "https://")) else p for p in pip_find_links),
+        find_links=tuple(Path(p).expanduser() if "://" not in p else p for p in pip_find_links),
         offline=offline,
     )
     ctx.obj["pip_options"] = pip_options

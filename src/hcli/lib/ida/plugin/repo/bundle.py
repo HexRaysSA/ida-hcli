@@ -177,6 +177,7 @@ class PluginBundleRepo(BasePluginRepo):
     def extract_wheelhouse(self, target: PluginBundleTargetPlatformTag, dest: Path) -> None:
         dest.mkdir(parents=True, exist_ok=True)
         wh_prefix = target.wheelhouse.rstrip("/") + "/"
+        seen: set[str] = set()
 
         for info in self._zf.infolist():
             if not info.filename.startswith(wh_prefix):
@@ -192,6 +193,10 @@ class PluginBundleRepo(BasePluginRepo):
 
             if (info.external_attr >> 28) == 0xA:
                 raise ValueError(f"symlink in wheelhouse: {info.filename}")
+
+            if relative.name in seen:
+                raise ValueError(f"duplicate filename in wheelhouse: {relative.name} (from {info.filename})")
+            seen.add(relative.name)
 
             target_file = dest / relative.name
             with self._zf.open(info.filename) as src, target_file.open("wb") as dst:
