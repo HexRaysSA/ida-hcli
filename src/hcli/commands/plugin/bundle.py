@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import shutil
@@ -76,12 +77,15 @@ def _resolve_plugin_bytes(
     plugin_repo=None,
     current_platform: str | None = None,
 ) -> tuple[str, bytes]:
-    path = Path(spec)
+    path = Path(spec).expanduser()
     if path.exists() and spec.endswith(".zip"):
         buf = path.read_bytes()
         items = list(get_metadatas_with_paths_from_plugin_archive(buf))
         if not items:
             raise ValueError(f"no ida-plugin.json found in {spec}")
+        if len(items) != 1:
+            names = ", ".join(item[1].plugin.name for item in items)
+            raise ValueError(f"plugin archive must contain a single plugin, found: {names}")
         return items[0][1].plugin.name, buf
 
     host: str | None = None
@@ -94,7 +98,8 @@ def _resolve_plugin_bytes(
         pass
 
     if "==" not in clean_spec:
-        raise click.BadParameter(f"repository plugin specs must include exact version (e.g. {spec}==1.0.0)")
+        example = f"{clean_spec}==1.0.0@{host}" if host else f"{clean_spec}==1.0.0"
+        raise click.BadParameter(f"repository plugin specs must include exact version (e.g. {example})")
 
     if plugin_repo is None:
         raise click.BadParameter("no plugin repository available to resolve spec")
@@ -234,7 +239,7 @@ def create(
     for t in pip_targets:
         stderr_console.print(f"  {t.ida_platform}  Python {t.python_version}  ({t.id})")
 
-    current_platform: str | None = None
+    target_platforms = sorted({t.ida_platform for t in pip_targets})
 
     with tempfile.TemporaryDirectory(prefix="hcli-bundle-staging-") as staging_dir:
         staging = Path(staging_dir)
@@ -247,26 +252,47 @@ def create(
         plugin_index = PluginArchiveIndex()
 
         for spec in plugin_specs:
-            if not (Path(spec).exists() and spec.endswith(".zip")) and current_platform is None:
-                from hcli.lib.ida import find_current_ida_platform
+            is_local = Path(spec).exists() and spec.endswith(".zip")
 
-                current_platform = find_current_ida_platform()
+            archives_by_hash: dict[str, tuple[str, bytes]] = {}
+            hash_by_platform: dict[str, str] = {}
 
-            with rich.status.Status(f"resolving {spec}", console=stderr_console):
-                name, buf = _resolve_plugin_bytes(spec, pip_options, parent_repo, current_platform)
-
-            archive_filename = f"{name}-{get_version_from_plugin_archive(buf, name)}.zip"
-            dest = plugins_dir / archive_filename
-            if dest.exists():
-                logger.debug("plugin archive already staged: %s", archive_filename)
+            if is_local:
+                with rich.status.Status(f"resolving {spec}", console=stderr_console):
+                    name, buf = _resolve_plugin_bytes(spec, pip_options, parent_repo)
+                h = hashlib.sha256(buf).hexdigest()
+                archives_by_hash[h] = (name, buf)
+                for plat in target_platforms:
+                    hash_by_platform[plat] = h
             else:
-                dest.write_bytes(buf)
+                for plat in target_platforms:
+                    with rich.status.Status(f"resolving {spec} for {plat}", console=stderr_console):
+                        name, buf = _resolve_plugin_bytes(spec, pip_options, parent_repo, plat)
+                    h = hashlib.sha256(buf).hexdigest()
+                    archives_by_hash[h] = (name, buf)
+                    hash_by_platform[plat] = h
 
-            plugin_index.index_plugin_archive(buf, f"hcli-bundle:plugins/{archive_filename}")
+            unique_hashes = set(hash_by_platform.values())
+            needs_platform_suffix = len(unique_hashes) > 1
 
-            for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
-                if isinstance(metadata.plugin.python_dependencies, list):
-                    all_python_deps.extend(metadata.plugin.python_dependencies)
+            for h, (name, buf) in archives_by_hash.items():
+                version = get_version_from_plugin_archive(buf, name)
+                if needs_platform_suffix:
+                    platforms_for_hash = sorted(p for p, ph in hash_by_platform.items() if ph == h)
+                    suffix = "-" + "+".join(platforms_for_hash)
+                    archive_filename = f"{name}-{version}{suffix}.zip"
+                else:
+                    archive_filename = f"{name}-{version}.zip"
+
+                dest = plugins_dir / archive_filename
+                if not dest.exists():
+                    dest.write_bytes(buf)
+
+                plugin_index.index_plugin_archive(buf, f"hcli-bundle:plugins/{archive_filename}")
+
+                for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
+                    if isinstance(metadata.plugin.python_dependencies, list):
+                        all_python_deps.extend(metadata.plugin.python_dependencies)
 
         target_manifests = []
         if all_python_deps:

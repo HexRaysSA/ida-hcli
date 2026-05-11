@@ -193,7 +193,6 @@ def bundle_dependency_source(
         wh_path = Path(tmpdir)
         repo.extract_wheelhouse(target, wh_path)
         yield PipOptions(
-            offline=True,
             isolated=True,
             no_cache_dir=True,
             disable_pip_version_check=True,

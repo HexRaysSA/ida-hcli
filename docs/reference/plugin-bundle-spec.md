@@ -184,14 +184,14 @@ Bundle creation does not check IDA version compatibility. The builder machine ma
 
 ## Dependency installation behavior
 
-When installing a plugin with `pythonDependencies`, HCLI installs dependencies with pip before extracting the plugin. In plugin bundle offline mode it extracts the matching wheelhouse to a temporary directory and invokes pip with local-only options:
+When installing a plugin with `pythonDependencies`, HCLI installs dependencies with pip before extracting the plugin. When a plugin bundle is in use, HCLI extracts the matching wheelhouse to a temporary directory and adds it as a `--find-links` source. By default pip can still reach online indexes, so a bundle with an incomplete wheelhouse will fall back to downloading missing wheels. When the user passes `--offline`, HCLI adds `--no-index` so pip resolves only from local sources:
 
 ```console
 python -m pip install \
   --isolated \
   --disable-pip-version-check \
   --no-cache-dir \
-  --no-index \
+  [--no-index]           # only when --offline is passed \
   --find-links <temporary-wheelhouse> \
   <all dependency specs>
 ```

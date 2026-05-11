@@ -12,6 +12,7 @@ from hcli.lib.ida.python import (
     _derive_python_exe,
     does_current_ida_have_pip,
     find_current_python_executable,
+    merge_bundle_pip_options,
     verify_pip_can_install_packages,
 )
 
@@ -262,3 +263,59 @@ def test_pip_options_combined_index_and_find_links():
     args = opts.build_args()
     assert "--index-url" in args
     assert "--find-links" in args
+
+
+def test_pip_options_has_custom_sources_default():
+    assert not PipOptions().has_custom_sources
+
+
+def test_pip_options_has_custom_sources_offline_only():
+    assert not PipOptions(offline=True).has_custom_sources
+
+
+def test_pip_options_has_custom_sources_index_url():
+    assert PipOptions(index_url="https://example.com").has_custom_sources
+
+
+def test_pip_options_has_custom_sources_extra_index():
+    assert PipOptions(extra_index_urls=("https://example.com",)).has_custom_sources
+
+
+def test_pip_options_has_custom_sources_find_links():
+    assert PipOptions(find_links=("/tmp/wh",)).has_custom_sources
+
+
+def test_merge_bundle_pip_options_offline_user():
+    user = PipOptions(offline=True)
+    bundle = PipOptions(
+        offline=True,
+        isolated=True,
+        no_cache_dir=True,
+        disable_pip_version_check=True,
+        find_links=("/tmp/wh",),
+    )
+    merged = merge_bundle_pip_options(user, bundle)
+    assert merged.offline is True
+    assert merged.find_links == ("/tmp/wh",)
+    assert merged.isolated is True
+
+
+def test_merge_bundle_pip_options_preserves_no_build_isolation():
+    user = PipOptions(no_build_isolation=True)
+    bundle = PipOptions(find_links=("/tmp/wh",), offline=True)
+    merged = merge_bundle_pip_options(user, bundle)
+    assert merged.no_build_isolation is True
+    assert merged.find_links == ("/tmp/wh",)
+
+
+def test_merge_bundle_pip_options_default_user():
+    user = PipOptions()
+    bundle = PipOptions(
+        offline=True,
+        isolated=True,
+        no_cache_dir=True,
+        disable_pip_version_check=True,
+        find_links=("/tmp/wh",),
+    )
+    merged = merge_bundle_pip_options(user, bundle)
+    assert merged == bundle
