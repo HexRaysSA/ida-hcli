@@ -424,6 +424,7 @@ For more detailed information:
 - [Plugin Packaging and Format](../reference/plugin-packaging-and-format.md)
 - [Plugin Manager User Guide](../user-guide/plugin-manager.md)
 - [Plugin Repository Architecture](../reference/plugin-repository-architecture.md)
+- [Plugin Bundles](../reference/plugin-bundle-spec.md) for offline distribution
 
 ## Getting Help
 

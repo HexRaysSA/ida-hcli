@@ -304,5 +304,6 @@ jobs:
 
 - Review [Environment Variables](../reference/environment-variables.md) for all configuration options
 - See [Packaging Your Plugin](../reference/packaging-your-existing-plugin.md) for automated plugin builds
+- Build [Plugin Bundles](../reference/plugin-bundle-spec.md) in CI for deploying to air-gapped machines
 - Check [Authentication](../getting-started/authentication.md) for more on API key management
 - Explore real-world examples in the [zydisinfo](https://github.com/milankovo/zydisinfo/blob/main/.github/workflows/build.yml) repository
