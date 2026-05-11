@@ -1,6 +1,7 @@
 import functools
 import json
 import logging
+import socket
 import time
 import urllib.error
 import urllib.parse
@@ -11,7 +12,7 @@ from typing import Any
 import httpx
 import rich.progress
 from pydantic import BaseModel, ConfigDict, Field
-from tenacity import RetryCallState, retry, retry_if_exception, stop_after_attempt
+from tenacity import RetryCallState, retry, retry_if_exception, stop_after_attempt, wait_exponential
 from tenacity.wait import wait_base
 
 from hcli.lib.console import stderr_console
@@ -200,6 +201,23 @@ def _is_rate_limit_error(exception: BaseException) -> bool:
     return isinstance(exception, urllib.error.HTTPError) and exception.code in (403, 429)
 
 
+def _is_transient_error(exception: BaseException) -> bool:
+    """Check if exception is a transient server-side or network error worth retrying.
+
+    Covers 5xx server errors (e.g. GitHub gateway timeouts during incidents) and
+    connection-level errors (DNS, connection reset, socket timeout). Rate limit
+    errors (403/429) are intentionally excluded — they're handled by a separate
+    retry layer with rate-limit-aware backoff.
+    """
+    if isinstance(exception, urllib.error.HTTPError):
+        return exception.code in (500, 502, 503, 504)
+    # urllib.error.HTTPError is a subclass of URLError, so reaching this branch
+    # means the error is a non-HTTP URLError (e.g. connection refused, DNS).
+    if isinstance(exception, urllib.error.URLError):
+        return True
+    return isinstance(exception, (TimeoutError, socket.timeout))
+
+
 def _check_and_handle_proactive_rate_limit(response) -> None:
     """Check response headers and proactively wait if rate limit is nearly exhausted."""
     remaining_str = response.headers.get("x-ratelimit-remaining") or response.headers.get("X-RateLimit-Remaining")
@@ -221,13 +239,32 @@ def _check_and_handle_proactive_rate_limit(response) -> None:
 
 
 @retry(
+    retry=retry_if_exception(_is_transient_error),
+    wait=wait_exponential(multiplier=2, min=2, max=30),
+    stop=stop_after_attempt(4),
+    reraise=True,
+    before_sleep=lambda rs: (
+        logger.warning(
+            f"transient GitHub error ({rs.outcome.exception()!r}), retrying in {rs.next_action.sleep:.0f}s "
+            f"(attempt {rs.attempt_number})"
+        )
+        if rs.outcome
+        else None
+    ),
+)
+@retry(
     retry=retry_if_exception(_is_rate_limit_error),
     wait=WaitGitHubRateLimit(min_wait=60, max_wait=3600),
     stop=stop_after_attempt(5),
     reraise=True,
 )
 def _urlopen_with_retry(req: urllib.request.Request):
-    """Wrapper around urllib.request.urlopen with GitHub rate limit retry logic."""
+    """Wrapper around urllib.request.urlopen with GitHub rate-limit and transient-error retry logic.
+
+    The inner retry handles 403/429 rate limits with rate-limit-aware backoff.
+    The outer retry handles 5xx server errors and connection-level errors with
+    short exponential backoff.
+    """
     response = urllib.request.urlopen(req)
     _check_and_handle_proactive_rate_limit(response)
     return response

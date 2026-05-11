@@ -28,7 +28,14 @@ from hcli.lib.ida.plugin.exceptions import (
     InstalledPluginNameConflictError,
     PluginNotInstalledError,
 )
-from hcli.lib.ida.plugin.install import find_installed_plugin, install_plugin_archive, uninstall_plugin
+from hcli.lib.ida.plugin.install import (
+    find_installed_plugin,
+    get_metadata_from_plugin_directory,
+    install_plugin_archive,
+    install_plugin_directory_editable,
+    pack_plugin_directory_to_zip,
+    uninstall_plugin,
+)
 from hcli.lib.ida.plugin.reference import (
     format_qualified_plugin_reference,
     is_github_direct_install_url,
@@ -45,6 +52,14 @@ logger = logging.getLogger(__name__)
 @click.command()
 @click.pass_context
 @click.argument("plugin")
+@click.option(
+    "-e",
+    "--editable",
+    is_flag=True,
+    default=False,
+    help="Install a local plugin directory by symlinking it into $IDAUSR/plugins/. "
+    "Edits to the source tree take effect immediately on the next plugin reload.",
+)
 @click.option("--config", multiple=True, help="Configuration setting in key=value format (use true/false for booleans)")
 @click.option(
     "--no-build-isolation",
@@ -52,15 +67,47 @@ logger = logging.getLogger(__name__)
     default=False,
     help="Disable pip build isolation when installing Python dependencies",
 )
-def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation: bool) -> None:
-    """Install a plugin from repository, local .zip file, or URL."""
+def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no_build_isolation: bool) -> None:
+    """Install a plugin from a repository, local directory, local .zip file, or URL."""
     plugin_spec = plugin
     try:
         with rich.status.Status("collecting environment", console=stderr_console):
             current_ida_platform = find_current_ida_platform()
             current_ida_version = find_current_ida_version()
 
-        if Path(plugin_spec).exists() and plugin_spec.endswith(".zip"):
+        # Editable install: skip the archive pipeline entirely. Read metadata
+        # straight from the source directory and symlink it into place.
+        if editable:
+            source_dir = Path(plugin_spec).expanduser()
+            if not source_dir.exists():
+                raise click.BadParameter(f"path does not exist: {plugin_spec}")
+            if not source_dir.is_dir():
+                raise click.BadParameter(
+                    f"--editable requires a directory containing ida-plugin.json, got: {plugin_spec}"
+                )
+            source_dir = source_dir.resolve()
+            try:
+                metadata = get_metadata_from_plugin_directory(source_dir)
+            except ValueError as e:
+                raise click.BadParameter(str(e))
+            plugin_name = metadata.plugin.name
+            buf = None  # sentinel: editable; no archive bytes
+
+        elif Path(plugin_spec).expanduser().is_dir() and (Path(plugin_spec).expanduser() / "ida-plugin.json").is_file():
+            # Local non-editable install: pack the directory into an in-memory
+            # zip and run it through the same archive pipeline used for zip /
+            # URL / repo installs. The dir must contain ida-plugin.json -- any
+            # bare directory name without metadata falls through so it can be
+            # resolved as a repository plugin reference instead.
+            logger.info("installing from the local file system (directory)")
+            source_dir = Path(plugin_spec).expanduser().resolve()
+            buf = pack_plugin_directory_to_zip(source_dir)
+            items = list(get_metadatas_with_paths_from_plugin_archive(buf))
+            if len(items) != 1:
+                raise ValueError("plugin directory must contain a single plugin")
+            plugin_name = items[0][1].plugin.name
+
+        elif Path(plugin_spec).exists() and plugin_spec.endswith(".zip"):
             logger.info("installing from the local file system")
             buf = Path(plugin_spec).read_bytes()
             items = list(get_metadatas_with_paths_from_plugin_archive(buf))
@@ -133,7 +180,10 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
                     console.print(f"  {format_qualified_plugin_reference(candidate_ref)}")
                 raise click.Abort()
 
-        _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
+        if not editable:
+            assert buf is not None  # invariant: only the editable branch leaves buf as None
+            _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
+        # else: `metadata` was already populated from the source directory.
 
         # Same-name install conflict: another plugin with the same bare name is already
         # installed from a different repository. The install layout is
@@ -165,7 +215,16 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
                 parsed_value = parse_setting_value(descr, value_str)
                 descr.validate_value(parsed_value)
 
-        with rich.status.Status("installing plugin", console=stderr_console):
+        # No outer Status here -- both install paths below have their own
+        # inner Status calls on stderr_console, and Rich allows only one Live
+        # per console. Wrapping in an outer Status raises
+        # "Only one live display may be active at once" on a real TTY (it's
+        # silently a no-op when stderr is piped, which is why this bug went
+        # unnoticed for so long).
+        if editable:
+            install_plugin_directory_editable(source_dir, plugin_name, no_build_isolation=no_build_isolation)
+        else:
+            assert buf is not None  # invariant: only the editable branch leaves buf as None
             install_plugin_archive(buf, plugin_name, no_build_isolation=no_build_isolation)
 
         try:
@@ -198,56 +257,64 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
                             f"plugin requires configuration but console is not interactive. Please provide settings via command line: {setting_names}"
                         )
 
-                    console.print(f"configure {len(metadata.plugin.settings)} settings:")
+                    # Only the not-already-set, prompt-eligible settings get a
+                    # questionary form. If everything is either already set or
+                    # opted out via prompt: false, skip the heading + form so
+                    # the user doesn't see a misleading "configure N settings:"
+                    # banner with no questions underneath.
+                    promptable_settings = [
+                        s for s in metadata.plugin.settings if not has_plugin_setting(plugin_name, s.key) and s.prompt
+                    ]
 
-                    questions: dict[str, questionary.Question] = {}
-                    for setting in metadata.plugin.settings:
-                        if has_plugin_setting(plugin_name, setting.key):
-                            continue
+                    if not promptable_settings:
+                        answers: dict = {}
+                    else:
+                        plural = "s" if len(promptable_settings) != 1 else ""
+                        console.print(f"configure {len(promptable_settings)} setting{plural}:")
+                        questions: dict[str, questionary.Question] = {}
+                        for setting in promptable_settings:
+                            if setting.type == "boolean":
+                                default_bool = setting.default if isinstance(setting.default, bool) else False
+                                question = questionary.confirm(
+                                    message=setting.name,
+                                    default=default_bool,
+                                )
+                            elif setting.choices:
+                                default_str = (
+                                    str(setting.default) if setting.default is not None else setting.choices[0]
+                                )
+                                question = questionary.select(
+                                    message=setting.name,
+                                    choices=setting.choices,
+                                    default=default_str,
+                                )
+                            else:
 
-                        if not setting.prompt:
-                            continue
+                                def make_validator(s):
+                                    def validate_func(value: str):
+                                        if not s.required and not value:
+                                            return True
+                                        if s.required and not value:
+                                            return "This field is required"
+                                        try:
+                                            parsed = parse_setting_value(s, value)
+                                            s.validate_value(parsed)
+                                            return True
+                                        except ValueError as e:
+                                            return str(e)
 
-                        if setting.type == "boolean":
-                            default_bool = setting.default if isinstance(setting.default, bool) else False
-                            question = questionary.confirm(
-                                message=setting.name,
-                                default=default_bool,
-                            )
-                        elif setting.choices:
-                            default_str = str(setting.default) if setting.default is not None else setting.choices[0]
-                            question = questionary.select(
-                                message=setting.name,
-                                choices=setting.choices,
-                                default=default_str,
-                            )
-                        else:
+                                    return validate_func
 
-                            def make_validator(s):
-                                def validate_func(value: str):
-                                    if not s.required and not value:
-                                        return True
-                                    if s.required and not value:
-                                        return "This field is required"
-                                    try:
-                                        parsed = parse_setting_value(s, value)
-                                        s.validate_value(parsed)
-                                        return True
-                                    except ValueError as e:
-                                        return str(e)
+                                default_str = str(setting.default) if setting.default is not None else ""
+                                question = questionary.text(
+                                    # TODO: descr.documentation
+                                    message=setting.name,
+                                    default=default_str,
+                                    validate=make_validator(setting),
+                                )
+                            questions[setting.key] = question
 
-                                return validate_func
-
-                            default_str = str(setting.default) if setting.default is not None else ""
-                            question = questionary.text(
-                                # TODO: descr.documentation
-                                message=setting.name,
-                                default=default_str,
-                                validate=make_validator(setting),
-                            )
-                        questions[setting.key] = question
-
-                    answers = questionary.form(**questions).ask()
+                        answers = questionary.form(**questions).ask()
 
                     for key, answer in answers.items():
                         descr = metadata.plugin.get_setting(key)
@@ -262,7 +329,8 @@ def install_plugin(ctx, plugin: str, config: tuple[str, ...], no_build_isolation
                 uninstall_plugin(plugin_name)
             raise
 
-        console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}")
+        suffix = " [yellow](editable)[/yellow]" if editable else ""
+        console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}{suffix}")
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
         raise click.Abort()
