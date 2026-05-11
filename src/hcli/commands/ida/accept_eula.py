@@ -25,8 +25,7 @@ def accept_eula_command(path: Path | None) -> None:
     """
     if path is None:
         try:
-            # find_current_ida_install_directory returns the binary dir directly
-            ida_path = find_current_ida_install_directory()
+            ida_path = get_ida_path(find_current_ida_install_directory())
         except MissingCurrentInstallationDirectory:
             explain_missing_current_installation_directory(console)
             console.print("\nAvailable installations:")
