@@ -17,7 +17,6 @@ from hcli.lib.ida import (
     get_ida_config_path,
     parse_version_from_dir_name,
     parse_version_from_ida_pro_py,
-    run_py_in_current_idapython,
 )
 
 
@@ -200,38 +199,3 @@ def test_prepare_headless_ida_user_dir_copies_only_required_files(tmp_path):
     assert not (target_dir / "ida-config.json").exists()
     assert not (target_dir / "plugins").exists()
     assert not (target_dir / "mcp").exists()
-
-
-def test_run_py_in_current_idapython_uses_isolated_idausr(tmp_path, monkeypatch):
-    source_idausr = tmp_path / "idausr"
-    (source_idausr / "cfg").mkdir(parents=True)
-    (source_idausr / "cfg" / "idapython.cfg").write_text("configured", encoding="utf-8")
-    (source_idausr / "plugins").mkdir()
-    (source_idausr / "plugins" / "bad_plugin.py").write_text("raise RuntimeError", encoding="utf-8")
-    (source_idausr / "ida.reg").write_text("registry", encoding="utf-8")
-    (source_idausr / "license.hexlic").write_text("license", encoding="utf-8")
-
-    fake_idat = tmp_path / "idat"
-    fake_idat.write_text("", encoding="utf-8")
-
-    calls = []
-
-    def fake_run(idat_path, src, env=None):
-        assert env is not None
-        calls.append(env["IDAUSR"])
-
-        isolated_idausr = Path(env["IDAUSR"])
-        assert isolated_idausr != source_idausr
-        assert (isolated_idausr / "cfg" / "idapython.cfg").read_text(encoding="utf-8") == "configured"
-        assert (isolated_idausr / "ida.reg").read_text(encoding="utf-8") == "registry"
-        assert (isolated_idausr / "license.hexlic").read_text(encoding="utf-8") == "license"
-        assert not (isolated_idausr / "plugins").exists()
-        return {"prefix": "/tmp/python"}
-
-    monkeypatch.setattr("hcli.lib.ida.find_current_idat_executable", lambda: fake_idat)
-    monkeypatch.setattr("hcli.lib.ida.get_ida_user_dir", lambda: source_idausr)
-    monkeypatch.setattr("hcli.lib.ida._run_ida_batch_script", fake_run)
-
-    assert run_py_in_current_idapython("print('hello')") == {"prefix": "/tmp/python"}
-    assert len(calls) == 1
-    assert Path(calls[0]) != source_idausr

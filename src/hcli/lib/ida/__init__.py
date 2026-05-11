@@ -194,9 +194,22 @@ def get_default_ida_install_directory(ver: IdaProduct) -> Path:
         raise ValueError(f"Unsupported operating system: {os_}")
 
 
+def _normalize_install_dir(ida_dir: Path) -> Path:
+    """Normalize an IDA install directory to the bundle root on macOS.
+
+    The ida-config.json ``ida-install-dir`` may contain either the ``.app``
+    bundle path or the inner ``Contents/MacOS`` path (IDA itself writes the
+    latter).  Every consumer expects the bundle root, so strip the suffix.
+    """
+    if get_os() == "mac" and ida_dir.name == "MacOS" and ida_dir.parent.name == "Contents":
+        return ida_dir.parent.parent
+    return ida_dir
+
+
 def get_ida_path(ida_dir: Path) -> Path:
     """Get the IDA application path from the installation directory."""
     if get_os() == "mac":
+        ida_dir = _normalize_install_dir(ida_dir)
         return Path(ida_dir) / "Contents" / "MacOS"
     else:
         return Path(ida_dir)
@@ -519,7 +532,9 @@ def _copy_dir(src_path: Path, dest_path: Path) -> None:
 class PathsConfig(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
 
-    # like: "/Applications/IDA Professional 9.1.app/Contents/MacOS"
+    # like: "/Applications/IDA Professional 9.1.app" (macOS)
+    # Note: IDA itself may write the inner "Contents/MacOS" path here;
+    # callers normalize via _normalize_install_dir().
     installation_directory: Path | None = Field(alias="ida-install-dir", default=None)
 
 
@@ -602,22 +617,24 @@ def find_current_ida_install_directory() -> Path:
     # but tests might update env vars for the current process.
     env = os.environ.get("HCLI_CURRENT_IDA_INSTALL_DIR")
     if env:
-        return Path(env)
+        return _normalize_install_dir(Path(env))
     if ENV.HCLI_CURRENT_IDA_INSTALL_DIR is not None:
-        return Path(ENV.HCLI_CURRENT_IDA_INSTALL_DIR)
+        return _normalize_install_dir(Path(ENV.HCLI_CURRENT_IDA_INSTALL_DIR))
 
     if ENV.IDADIR is not None:
-        return Path(ENV.IDADIR)
+        return _normalize_install_dir(Path(ENV.IDADIR))
 
     config = get_ida_config()
     if not config.paths.installation_directory:
         raise MissingCurrentInstallationDirectory("directory doesn't exist")
 
-    if not config.paths.installation_directory.exists():
+    install_dir = _normalize_install_dir(config.paths.installation_directory)
+
+    if not install_dir.exists():
         raise MissingCurrentInstallationDirectory("ida-config.json invalid: ida-install-dir doesn't exist")
 
-    logger.debug("current IDA installation: %s", config.paths.installation_directory)
-    return config.paths.installation_directory
+    logger.debug("current IDA installation: %s", install_dir)
+    return install_dir
 
 
 def explain_missing_current_installation_directory(console: rich.console.Console):
@@ -664,11 +681,6 @@ def explain_failed_to_detect_ida_version(console: rich.console.Console):
 
 def find_current_ida_executable(suffix: str = "") -> Path:
     install_directory = find_current_ida_install_directory()
-    current_os = get_os()
-    if current_os == "mac" and install_directory.name == "MacOS":
-        # strip off trailing Contents/MacOS
-        install_directory = install_directory.parent.parent
-
     return get_ida_binary_path(install_directory, suffix)
 
 
