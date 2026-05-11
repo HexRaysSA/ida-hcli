@@ -95,6 +95,7 @@ nav:
     - Repository Architecture: reference/plugin-repository-architecture.md
     - Packaging Format: reference/plugin-packaging-and-format.md
     - Publishing Your Plugin: reference/packaging-your-existing-plugin.md
+    - Plugin Bundles: reference/plugin-bundle-spec.md
   - Reference:
     - Environment Variables: reference/environment-variables.md
   - Changelog: changelog.md

@@ -279,3 +279,5 @@ plugins.zip
     └── ida-plugin.json
 ```
 
+Plugin archives can also be collected into a [plugin bundle](./plugin-bundle-spec.md) for offline installation on air-gapped machines.
+

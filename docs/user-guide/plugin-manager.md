@@ -61,6 +61,8 @@ You'll want to know the HCLI commands:
 ❯ hcli plugin uninstall <plugin-name>
 ```
 
+For offline or air-gapped environments, plugins can be installed from a plugin bundle archive. See [Plugin Bundles](../reference/plugin-bundle-spec.md) for details.
+
 Plugins are written to `$IDAUSR/plugins`, which is typically `~/.idapro/plugins` on Unix-like systems, where IDA Pro will load them the next time the application is opened.
 
 You can discover interesting plugins via:
@@ -101,3 +103,4 @@ Check out the following resources and don't hesitate to contact us for support:
   - [Plugin repository architecture](../reference/plugin-repository-architecture.md)
   - [Plugin packaging and format](../reference/plugin-packaging-and-format.md)
   - [Publishing your existing plugin](../reference/packaging-your-existing-plugin.md)
+  - [Plugin bundles](../reference/plugin-bundle-spec.md) for offline distribution

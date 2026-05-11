@@ -282,3 +282,9 @@ A future improvement could add a `--skip-on-error` flag to bundle creation so th
 ## Out of scope
 
 The first version does not address per-plugin dependency sandboxes, dependency removal on uninstall, reproducible builds, or wheel redistribution and license compliance. Plugin bundle signatures and external checksum files are also deferred, as is storing corporate pip index settings in `ida-config.json`.
+
+## See also
+
+- [Plugin packaging and format](./plugin-packaging-and-format.md) — the individual plugin archive format that bundles wrap
+- [Plugin repository architecture](./plugin-repository-architecture.md) — the online repository that bundles replace for offline use
+- [CI/CD Integration](../advanced/ci-cd-integration.md) — building bundles in automated pipelines
