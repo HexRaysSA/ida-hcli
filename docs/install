@@ -306,10 +306,11 @@ downloader() {
 get_binary_name() {
     case "$1:$2" in
         Linux:x86_64) echo "${APP_NAME}" ;;
+        Linux:aarch64) echo "${APP_NAME}" ;;
         Darwin:arm64) echo "${APP_NAME}" ;;
         Darwin:x86_64) echo "${APP_NAME}" ;;
         *)
-            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Darwin:arm64, Darwin:x86_64"
+            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Linux:aarch64, Darwin:arm64, Darwin:x86_64"
             ;;
     esac
 }
@@ -317,10 +318,11 @@ get_binary_name() {
 get_platform_name() {
     case "$1:$2" in
         Linux:x86_64) echo "linux" ;;
+        Linux:aarch64) echo "linux" ;;
         Darwin:arm64) echo "mac" ;;
         Darwin:x86_64) echo "mac" ;;
         *)
-            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Darwin:arm64, Darwin:x86_64"
+            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Linux:aarch64, Darwin:arm64, Darwin:x86_64"
             ;;
     esac
 }
