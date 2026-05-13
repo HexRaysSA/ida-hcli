@@ -725,7 +725,7 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
     Returns:
         List of repositories in "owner/repo" format
     """
-    BATCH_SIZE = 25
+    BATCH_SIZE = 100
 
     # Note: Forks with fewer stars than the parent repository or no commits are not indexed for code search.
     # via: https://docs.github.com/en/search-github/searching-on-github/searching-code
