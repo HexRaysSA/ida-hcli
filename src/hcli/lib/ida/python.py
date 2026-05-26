@@ -42,6 +42,10 @@ class PythonNotFoundError(RuntimeError):
     """Could not detect IDA's Python executable."""
 
 
+def _current_ida_python_exe_override_hint() -> str:
+    return "If you already know the interpreter path, set HCLI_CURRENT_IDA_PYTHON_EXE=/path/to/python and retry."
+
+
 def _normalize_path(path: str | None) -> str | None:
     if not path:
         return None
@@ -181,10 +185,17 @@ def find_current_python_executable() -> Path:
 
     try:
         info = run_py_in_current_idapython(GET_PYTHON_INFO_PY)
+    except ValueError as e:
+        if "can't find idat:" not in str(e):
+            raise
+
+        logger.warning("failed to detect IDA's Python interpreter: %s %s", e, _current_ida_python_exe_override_hint())
+        raise PythonNotFoundError(
+            f"failed to detect IDA's Python interpreter: {e}. {_current_ida_python_exe_override_hint()}"
+        ) from e
     except RuntimeError as e:
         raise PythonNotFoundError(
-            "failed to run idat to detect IDA's Python interpreter. "
-            "If you already know the interpreter path, set HCLI_CURRENT_IDA_PYTHON_EXE=/path/to/python and retry."
+            "failed to run idat to detect IDA's Python interpreter. " + _current_ida_python_exe_override_hint()
         ) from e
 
     logger.debug("IDA Python info: %s", info)
@@ -352,8 +363,10 @@ def detect_current_python_version() -> str:
             timeout=10,
         )
         return result.stdout.strip()
-    except Exception:
-        return f"{_sys.version_info.major}.{_sys.version_info.minor}"
+    except Exception as e:
+        fallback = f"{_sys.version_info.major}.{_sys.version_info.minor}"
+        logger.warning("failed to detect current IDA Python version; falling back to current interpreter version %s: %s", fallback, e)
+        return fallback
 
 
 def pip_freeze(python_exe: Path):

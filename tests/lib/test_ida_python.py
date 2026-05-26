@@ -9,7 +9,9 @@ from hcli.lib.ida import find_current_ida_install_directory, get_ida_user_dir
 from hcli.lib.ida.python import (
     CantInstallPackagesError,
     PipOptions,
+    PythonNotFoundError,
     _derive_python_exe,
+    detect_current_python_version,
     does_current_ida_have_pip,
     find_current_python_executable,
     merge_bundle_pip_options,
@@ -92,6 +94,20 @@ def test_derive_python_exe_honors_validated_virtualenv_executable_when_prefix_is
     }
 
     assert _derive_python_exe(info) == venv_python
+
+
+def test_find_current_python_executable_logs_override_hint_when_idat_missing(monkeypatch, caplog):
+    monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
+    monkeypatch.setattr(
+        "hcli.lib.ida.python.run_py_in_current_idapython",
+        lambda _src: (_ for _ in ()).throw(ValueError("can't find idat: /opt/ida/idat64")),
+    )
+
+    with pytest.raises(PythonNotFoundError, match="HCLI_CURRENT_IDA_PYTHON_EXE"):
+        find_current_python_executable()
+
+    assert "can't find idat: /opt/ida/idat64" in caplog.text
+    assert "HCLI_CURRENT_IDA_PYTHON_EXE" in caplog.text
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
@@ -319,3 +335,16 @@ def test_merge_bundle_pip_options_default_user():
     )
     merged = merge_bundle_pip_options(user, bundle)
     assert merged == bundle
+
+
+def test_detect_current_python_version_logs_when_falling_back(monkeypatch, caplog):
+    monkeypatch.setattr(
+        "hcli.lib.ida.python.find_current_python_executable",
+        lambda: (_ for _ in ()).throw(PythonNotFoundError("can't find idat")),
+    )
+
+    result = detect_current_python_version()
+
+    assert result == f"{sys.version_info.major}.{sys.version_info.minor}"
+    assert "failed to detect current IDA Python version" in caplog.text
+    assert "can't find idat" in caplog.text
