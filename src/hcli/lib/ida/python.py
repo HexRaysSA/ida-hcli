@@ -365,7 +365,11 @@ def detect_current_python_version() -> str:
         return result.stdout.strip()
     except Exception as e:
         fallback = f"{_sys.version_info.major}.{_sys.version_info.minor}"
-        logger.warning("failed to detect current IDA Python version; falling back to current interpreter version %s: %s", fallback, e)
+        logger.warning(
+            "failed to detect current IDA Python version; falling back to current interpreter version %s: %s",
+            fallback,
+            e,
+        )
         return fallback
 
 
