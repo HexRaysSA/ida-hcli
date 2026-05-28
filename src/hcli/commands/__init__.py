@@ -22,6 +22,7 @@ def register_commands(cli: click.Group) -> None:
     cli.add_command(plugin)
 
     # groups
+    from .asset import asset
     from .auth import auth
     from .extension import extension
     from .ida import ida
@@ -33,3 +34,4 @@ def register_commands(cli: click.Group) -> None:
     cli.add_command(share)
     cli.add_command(license)
     cli.add_command(extension)
+    cli.add_command(asset)
