@@ -11,6 +11,9 @@ def collect_all_commands(group: click.Group, parent_path: str = "") -> list[str]
     commands = []
 
     for name, command in group.commands.items():
+        if command.hidden:
+            continue
+
         current_path = f"{parent_path} {name}".strip()
 
         if isinstance(command, click.Group):
