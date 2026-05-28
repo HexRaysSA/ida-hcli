@@ -1,6 +1,5 @@
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -126,6 +125,16 @@ def test_derive_python_exe_honors_validated_virtualenv_executable_when_prefix_is
     assert _derive_python_exe(info) == venv_python
 
 
+def _create_venv_with_ida_python(venv_dir: Path) -> None:
+    """Build the venv using IDA's own Python so the venv is one IDA could plausibly use.
+
+    Otherwise the venv's interpreter version may not match IDA's embedded Python
+    (e.g. uv-managed test runner is 3.10 but IDA ships 3.13).
+    """
+    ida_python = find_current_python_executable()
+    subprocess.run([str(ida_python), "-m", "venv", str(venv_dir)], check=True)
+
+
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_find_current_python_executable_honors_activated_virtualenv(tmp_path, monkeypatch):
     """VIRTUAL_ENV in the hcli process env is stripped before invoking idat,
@@ -139,7 +148,7 @@ def test_find_current_python_executable_honors_activated_virtualenv(tmp_path, mo
 
     install_dir = find_current_ida_install_directory()
     venv_dir = tmp_path / "venv"
-    subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
+    _create_venv_with_ida_python(venv_dir)
 
     target_idausr = tmp_path / "idausr-activated"
     _prepare_isolated_idausr_for_python_detection(source_idausr, target_idausr)
@@ -168,7 +177,7 @@ def test_find_current_python_executable_honors_idapython_venv_executable(tmp_pat
 
     install_dir = find_current_ida_install_directory()
     venv_dir = tmp_path / "venv"
-    subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
+    _create_venv_with_ida_python(venv_dir)
 
     target_idausr = tmp_path / "idausr-venv-executable"
     _prepare_isolated_idausr_for_python_detection(source_idausr, target_idausr)
@@ -191,7 +200,7 @@ def test_find_current_python_executable_honors_idapythonrc(tmp_path, monkeypatch
 
     install_dir = find_current_ida_install_directory()
     venv_dir = tmp_path / "venv"
-    subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
+    _create_venv_with_ida_python(venv_dir)
 
     target_idausr = tmp_path / "idausr-idapythonrc"
     _prepare_isolated_idausr_for_python_detection(source_idausr, target_idausr)
