@@ -256,7 +256,10 @@ class IDALauncher:
             ida_bin_str = str(ida_bin)
             if "/Contents/MacOS/" in ida_bin_str:
                 app_bundle = ida_bin_str.split("/Contents/MacOS/")[0]
-                cmd = ["open", "-n", "-a", app_bundle, "--args", str(idb_path)]
+                if app_bundle.endswith(".app"):
+                    cmd = ["open", "-n", "-a", app_bundle, "--args", str(idb_path)]
+                else:
+                    cmd = [ida_bin_str, str(idb_path)]
             else:
                 cmd = [ida_bin_str, str(idb_path)]
         else:
@@ -313,15 +316,20 @@ class IDALauncher:
 
         # Launch IDA process
         # On macOS, use 'open -a' to launch via LaunchServices, which escapes
-        # any sandbox restrictions from protocol handlers
+        # any sandbox restrictions from protocol handlers. Only works when the
+        # bundle is named *.app — otherwise fall back to invoking the binary
+        # directly.
         if sys.platform == "darwin":
             # Extract .app bundle path from binary path
             # e.g., /Applications/IDA.app/Contents/MacOS/ida -> /Applications/IDA.app
             ida_bin_str = str(ida_bin)
             if "/Contents/MacOS/" in ida_bin_str:
                 app_bundle = ida_bin_str.split("/Contents/MacOS/")[0]
-                # Use -n to force a new instance, --args to pass the IDB path
-                cmd = ["open", "-n", "-a", app_bundle, "--args", str(idb_path)]
+                if app_bundle.endswith(".app"):
+                    # Use -n to force a new instance, --args to pass the IDB path
+                    cmd = ["open", "-n", "-a", app_bundle, "--args", str(idb_path)]
+                else:
+                    cmd = [ida_bin_str, str(idb_path)]
             else:
                 cmd = [ida_bin_str, str(idb_path)]
         else:
