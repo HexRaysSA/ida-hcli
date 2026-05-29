@@ -726,16 +726,64 @@ def install_plugin_directory_editable(source_dir: Path, name: str, no_build_isol
     elif destination_path.exists():
         shutil.rmtree(destination_path)
 
+    _link_editable_source(source_dir, destination_path)
+
+
+def _link_editable_source(source_dir: Path, destination_path: Path) -> None:
+    """Expose ``source_dir`` at ``destination_path`` for an editable install.
+
+    For a flat-layout project this is a single symlink ``destination_path ->
+    source_dir``. For a src-layout project (``source_dir/src`` exists), the
+    destination is built as a real directory of symlinks: every top-level
+    entry of ``source_dir`` (except ``src``) plus every immediate child of
+    ``source_dir/src`` is symlinked in. This matches the layout the wheel
+    would produce, so ``plugin.py`` can import packages without sys.path
+    hacks regardless of build backend (hatch, setuptools, poetry, ...).
+    """
+    src_dir = source_dir / "src"
+    if not src_dir.is_dir():
+        try:
+            destination_path.symlink_to(source_dir, target_is_directory=True)
+        except OSError as e:
+            raise ValueError(
+                f"Failed to create symlink {destination_path} -> {source_dir}: {e}. "
+                "On Windows, symlink creation requires Developer Mode or "
+                "administrator privileges."
+            ) from e
+        logger.info("symlinked %s -> %s", destination_path, source_dir)
+        return
+
+    # src-layout: build a directory of symlinks.
+    destination_path.mkdir()
+    linked: dict[str, Path] = {}
     try:
-        destination_path.symlink_to(source_dir, target_is_directory=True)
+        for entry in source_dir.iterdir():
+            if entry.name == "src":
+                continue
+            link = destination_path / entry.name
+            link.symlink_to(entry, target_is_directory=entry.is_dir())
+            linked[entry.name] = entry
+        for entry in src_dir.iterdir():
+            if entry.name in linked:
+                logger.warning(
+                    "skipping src/%s: project root already exposes %s (-> %s)",
+                    entry.name,
+                    entry.name,
+                    linked[entry.name],
+                )
+                continue
+            link = destination_path / entry.name
+            link.symlink_to(entry, target_is_directory=entry.is_dir())
+            linked[entry.name] = entry
     except OSError as e:
+        shutil.rmtree(destination_path, ignore_errors=True)
         raise ValueError(
-            f"Failed to create symlink {destination_path} -> {source_dir}: {e}. "
+            f"Failed to populate editable install at {destination_path}: {e}. "
             "On Windows, symlink creation requires Developer Mode or "
             "administrator privileges."
         ) from e
 
-    logger.info("symlinked %s -> %s", destination_path, source_dir)
+    logger.info("populated %s with %d symlinks from src-layout %s", destination_path, len(linked), source_dir)
 
 
 def validate_can_uninstall_plugin(name: str) -> None:
