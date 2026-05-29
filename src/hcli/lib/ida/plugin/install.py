@@ -3,6 +3,7 @@ import io
 import logging
 import pathlib
 import shutil
+import subprocess
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -586,6 +587,11 @@ def _install_plugin_archive(
                 logger.debug("can't install dependencies")
                 raise
 
+    # A previous editable install of the same plugin may have left a .pth
+    # behind in IDA's site-packages. Drop it so the non-editable install isn't
+    # shadowed by stale paths on sys.path.
+    _remove_editable_pth_file(metadata.plugin.name)
+
     extract_zip_subdirectory_to(zip_data, plugin_subdirectory, destination_path)
 
 
@@ -726,64 +732,70 @@ def install_plugin_directory_editable(source_dir: Path, name: str, no_build_isol
     elif destination_path.exists():
         shutil.rmtree(destination_path)
 
-    _link_editable_source(source_dir, destination_path)
-
-
-def _link_editable_source(source_dir: Path, destination_path: Path) -> None:
-    """Expose ``source_dir`` at ``destination_path`` for an editable install.
-
-    For a flat-layout project this is a single symlink ``destination_path ->
-    source_dir``. For a src-layout project (``source_dir/src`` exists), the
-    destination is built as a real directory of symlinks: every top-level
-    entry of ``source_dir`` (except ``src``) plus every immediate child of
-    ``source_dir/src`` is symlinked in. This matches the layout the wheel
-    would produce, so ``plugin.py`` can import packages without sys.path
-    hacks regardless of build backend (hatch, setuptools, poetry, ...).
-    """
-    src_dir = source_dir / "src"
-    if not src_dir.is_dir():
-        try:
-            destination_path.symlink_to(source_dir, target_is_directory=True)
-        except OSError as e:
-            raise ValueError(
-                f"Failed to create symlink {destination_path} -> {source_dir}: {e}. "
-                "On Windows, symlink creation requires Developer Mode or "
-                "administrator privileges."
-            ) from e
-        logger.info("symlinked %s -> %s", destination_path, source_dir)
-        return
-
-    # src-layout: build a directory of symlinks.
-    destination_path.mkdir()
-    linked: dict[str, Path] = {}
     try:
-        for entry in source_dir.iterdir():
-            if entry.name == "src":
-                continue
-            link = destination_path / entry.name
-            link.symlink_to(entry, target_is_directory=entry.is_dir())
-            linked[entry.name] = entry
-        for entry in src_dir.iterdir():
-            if entry.name in linked:
-                logger.warning(
-                    "skipping src/%s: project root already exposes %s (-> %s)",
-                    entry.name,
-                    entry.name,
-                    linked[entry.name],
-                )
-                continue
-            link = destination_path / entry.name
-            link.symlink_to(entry, target_is_directory=entry.is_dir())
-            linked[entry.name] = entry
+        destination_path.symlink_to(source_dir, target_is_directory=True)
     except OSError as e:
-        shutil.rmtree(destination_path, ignore_errors=True)
         raise ValueError(
-            f"Failed to populate editable install at {destination_path}: {e}. "
+            f"Failed to create symlink {destination_path} -> {source_dir}: {e}. "
             "On Windows, symlink creation requires Developer Mode or "
             "administrator privileges."
         ) from e
 
-    logger.info("populated %s with %d symlinks from src-layout %s", destination_path, len(linked), source_dir)
+    logger.info("symlinked %s -> %s", destination_path, source_dir)
+
+    # If the project uses the standard src-layout, drop a .pth file into IDA's
+    # site-packages so the package is importable. This mirrors what
+    # `pip install -e .` does (PEP 660). For flat-layout projects, IDA already
+    # exposes the plugin directory on sys.path (because plugin.py is exec'd
+    # from there), so no .pth is needed -- but we still clear any stale one
+    # left over from a prior src-layout install.
+    src_dir = source_dir / "src"
+    if src_dir.is_dir():
+        _write_editable_pth_file(metadata.plugin.name, src_dir)
+    else:
+        _remove_editable_pth_file(metadata.plugin.name)
+
+
+def _editable_pth_filename(plugin_name: str) -> str:
+    safe = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in plugin_name)
+    return f"_hcli_editable_{safe}.pth"
+
+
+def _get_ida_site_packages_dir() -> Path:
+    """Return IDA's Python site-packages directory (purelib).
+
+    Matches where ``pip install`` would land packages without ``--user`` /
+    ``--target``. Uses sysconfig on the IDA-side interpreter so the result
+    reflects IDA's bundled Python, not hcli's.
+    """
+    python_exe = find_current_python_executable()
+    result = subprocess.run(
+        [str(python_exe), "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return Path(result.stdout.strip())
+
+
+def _write_editable_pth_file(plugin_name: str, *paths: Path) -> None:
+    site_dir = _get_ida_site_packages_dir()
+    site_dir.mkdir(parents=True, exist_ok=True)
+    pth_path = site_dir / _editable_pth_filename(plugin_name)
+    pth_path.write_text("\n".join(str(p) for p in paths) + "\n", encoding="utf-8")
+    logger.info("wrote editable .pth file: %s", pth_path)
+
+
+def _remove_editable_pth_file(plugin_name: str) -> None:
+    try:
+        site_dir = _get_ida_site_packages_dir()
+    except Exception as e:
+        logger.debug("could not locate IDA site-packages to clean up .pth: %s", e)
+        return
+    pth_path = site_dir / _editable_pth_filename(plugin_name)
+    if pth_path.exists():
+        pth_path.unlink()
+        logger.info("removed editable .pth file: %s", pth_path)
 
 
 def validate_can_uninstall_plugin(name: str) -> None:
@@ -814,6 +826,9 @@ def uninstall_plugin(name: str):
         # on POSIX and recurses into the target on some Windows configs --
         # both wrong; we want to leave the source tree untouched.
         record.path.unlink()
+        # Editable installs may have dropped a .pth into IDA's site-packages
+        # to expose a src-layout package. Best-effort cleanup.
+        _remove_editable_pth_file(record.name)
     else:
         shutil.rmtree(record.path)
 
