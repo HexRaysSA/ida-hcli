@@ -98,6 +98,13 @@ class UploadResponse(BaseModel):
 class AssetAPI:
     """File sharing API client."""
 
+    @staticmethod
+    def _asset_path(bucket: str, key: str) -> str:
+        # Strip leading slashes from the key so a key copied verbatim from CLI
+        # output (which prints it as "/eap/...") doesn't produce a double slash
+        # ("/api/assets/installers//eap/..."), which the backend fails to match.
+        return f"/api/assets/{bucket}/{key.lstrip('/')}"
+
     async def upload_asset(
         self,
         bucket: str,
@@ -155,7 +162,7 @@ class AssetAPI:
             # Upload the file (without content parameter to use streaming)
             await client.put_file(upload_url, file_path_obj)
             # Confirm upload
-            response = await client.post_json(f"/api/assets/{bucket}/{key}", {})
+            response = await client.post_json(self._asset_path(bucket, key), {})
 
         return UploadResponse(
             bucket=bucket,
@@ -169,7 +176,7 @@ class AssetAPI:
     async def delete_file_by_key(self, bucket: str, key: str) -> None:
         """Delete a file."""
         client = await get_api_client()
-        await client.delete_json(f"/api/assets/{bucket}/{key}")
+        await client.delete_json(self._asset_path(bucket, key))
 
     async def get_shared_file_by_code(self, code: str, version: int = -1) -> Asset | None:
         """Get information about a file."""
@@ -193,7 +200,7 @@ class AssetAPI:
 
     async def get_file(self, bucket: str, key: str) -> Asset | None:
         client = await get_api_client()
-        data = await client.get_json(f"/api/assets/{bucket}/{key}")
+        data = await client.get_json(self._asset_path(bucket, key))
         return Asset(**data)
 
     async def get_files_tree(self, bucket: str, filter_params: PagingFilter | None = None) -> list[TreeNode]:
