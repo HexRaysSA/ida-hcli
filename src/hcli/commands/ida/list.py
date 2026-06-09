@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TypedDict
 
 import rich_click as click
 from packaging.version import Version
@@ -14,6 +15,15 @@ from hcli.lib.ida import is_ida_dir, parse_version_from_dir_name
 console = Console()
 
 
+class InstanceRow(TypedDict):
+    name: str
+    path: Path
+    status: str
+    status_style: str
+    is_default: bool
+    version: Version | None
+
+
 def _parse_instance_version(name: str, path: Path) -> Version | None:
     """Parse an IDA instance version for display ordering."""
     raw_version = parse_version_from_dir_name(path) or parse_version_from_dir_name(Path(name))
@@ -22,7 +32,7 @@ def _parse_instance_version(name: str, path: Path) -> Version | None:
     return Version(raw_version)
 
 
-def _sort_instance_rows(instance_rows: list[dict[str, object]]) -> None:
+def _sort_instance_rows(instance_rows: list[InstanceRow]) -> None:
     """Sort rows by version descending, then name ascending."""
     instance_rows.sort(key=lambda row: row["name"])
     instance_rows.sort(key=lambda row: row["version"] or Version("0"), reverse=True)
@@ -46,7 +56,7 @@ def list_instances() -> None:
     table.add_column("Path", style="white")
     table.add_column("Status", style="green", width=15)
 
-    instance_rows = []
+    instance_rows: list[InstanceRow] = []
     for name, path_str in instances.items():
         path = Path(path_str)
 
