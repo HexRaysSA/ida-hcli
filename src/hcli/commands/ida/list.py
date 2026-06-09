@@ -77,7 +77,7 @@ def list_instances() -> None:
     for row in instance_rows:
         display_name = Text(str(row["name"]), style="cyan")
         if row["is_default"]:
-            display_name.append(" (default)", style="yellow")
+            display_name.append(" (default)", style="grey69")
         table.add_row(display_name, str(row["path"]), f"[{row['status_style']}]{row['status']}[/{row['status_style']}]")
 
     console.print(table)
