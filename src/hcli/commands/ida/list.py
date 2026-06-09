@@ -6,6 +6,7 @@ import rich_click as click
 from packaging.version import Version
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from hcli.lib.config import config_store
 from hcli.lib.ida import is_ida_dir, parse_version_from_dir_name
@@ -19,6 +20,12 @@ def _parse_instance_version(name: str, path: Path) -> Version | None:
     if raw_version is None:
         return None
     return Version(raw_version)
+
+
+def _sort_instance_rows(instance_rows: list[dict[str, object]]) -> None:
+    """Sort rows by version descending, then name ascending."""
+    instance_rows.sort(key=lambda row: row["name"])
+    instance_rows.sort(key=lambda row: row["version"] or Version("0"), reverse=True)
 
 
 @click.command()
@@ -65,14 +72,12 @@ def list_instances() -> None:
             }
         )
 
-    instance_rows.sort(key=lambda row: row["name"])
-    instance_rows.sort(key=lambda row: row["version"] or Version("0"), reverse=True)
-    instance_rows.sort(key=lambda row: not row["is_default"])
+    _sort_instance_rows(instance_rows)
 
     for row in instance_rows:
-        display_name = row["name"]
+        display_name = Text(str(row["name"]), style="cyan")
         if row["is_default"]:
-            display_name += " (default)"
+            display_name.append(" (default)", style="yellow")
         table.add_row(display_name, str(row["path"]), f"[{row['status_style']}]{row['status']}[/{row['status_style']}]")
 
     console.print(table)
@@ -86,14 +91,12 @@ def list_instances() -> None:
     if default_instance:
         if default_instance in instances:
             console.print(f"[blue]Default instance:[/blue] {default_instance}")
-            latest_valid = max(
-                (row for row in instance_rows if row["status"] == "Valid"),
-                key=lambda row: row["version"] or Version("0"),
-                default=None,
-            )
+            valid_rows = [row for row in instance_rows if row["status"] == "Valid"]
+            _sort_instance_rows(valid_rows)
+            latest_valid = valid_rows[0] if valid_rows else None
             if latest_valid and latest_valid["name"] != default_instance:
                 console.print(
-                    "[yellow]Latest valid IDA installation is not the default. "
+                    "[yellow]Latest IDA version is not the default. "
                     f"Use 'hcli ida switch {latest_valid['name']}' to update it.[/yellow]"
                 )
         else:
