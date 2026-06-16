@@ -11,10 +11,13 @@ from hcli.commands.download import download
 from hcli.commands.license.get import get_license
 from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command, enforce_login
+from hcli.lib.config import config_store
 from hcli.lib.console import console
 from hcli.lib.ida import (
     IdaProduct,
     accept_eula,
+    add_instance_to_config,
+    generate_instance_name,
     get_default_ida_install_directory,
     get_ida_config_path,
     get_ida_path,
@@ -173,42 +176,64 @@ async def install(
                     install_license(lf, license_dir_path)
 
             if set_default:
-                config_path = get_ida_config_path()
-                if not config_path.exists():
-                    console.print("[yellow]Updating configuration (default installation)...[/yellow]")
-                    config_path.parent.mkdir(parents=True, exist_ok=True)
-                    _ = config_path.write_text(
-                        json.dumps({"Paths": {"ida-install-dir": str(install_dir_path.absolute())}}), encoding="utf-8"
-                    )
-                    console.print("[grey69]Wrote default ida-config.json[/grey69]")
+                instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
+                base_instance_name = generate_instance_name(install_dir_path)
+                instance_name = base_instance_name
+                i = 2
+                while (
+                    instance_name in instances
+                    and Path(instances[instance_name]).resolve() != install_dir_path.resolve()
+                ):
+                    instance_name = f"{base_instance_name}-{i}"
+                    i += 1
+                if instance_name not in instances:
+                    add_instance_to_config(instance_name, install_dir_path)
+                config_store.set_string("ida.default", instance_name)
+                console.print(f"[grey69]Set hcli default IDA instance: {instance_name}[/grey69]")
+
+                if version.product in ("IDA Professional", "IDA Classroom", "IDA Essential"):
+                    config_path = get_ida_config_path()
+                    if not config_path.exists():
+                        console.print("[yellow]Updating idalib configuration (default installation)...[/yellow]")
+                        config_path.parent.mkdir(parents=True, exist_ok=True)
+                        _ = config_path.write_text(
+                            json.dumps({"Paths": {"ida-install-dir": str(install_dir_path.absolute())}}),
+                            encoding="utf-8",
+                        )
+                        console.print("[grey69]Wrote default ida-config.json[/grey69]")
+                    else:
+                        # we update this without Pydantic validation to ensure we always can make the changes
+                        # and leave config validation to the code that requires interpretation of the file.
+                        doc = json.loads(config_path.read_text(encoding="utf-8"))
+                        if "Paths" not in doc:
+                            doc["Paths"] = {}
+                        existing = doc["Paths"].get("ida-install-dir") or "(empty)"
+                        new = str(install_dir_path.absolute())
+                        doc["Paths"]["ida-install-dir"] = new
+                        _ = config_path.write_text(json.dumps(doc), encoding="utf-8")
+                        console.print("[grey69]Updated idalib default in ida-config.json:[/grey69]")
+                        console.print(f"[grey69]  default install path: {existing}[/grey69]")
+                        console.print(f"[grey69]                     -> {new}[/grey69]")
                 else:
-                    # we update this without Pydantic validation to ensure we always can make the changes
-                    # and leave config validation to the code that requires interpretation of the file.
-                    doc = json.loads(config_path.read_text(encoding="utf-8"))
-                    if "Paths" not in doc:
-                        doc["Paths"] = {}
-                    existing = doc["Paths"].get("ida-install-dir") or "(empty)"
-                    new = str(install_dir_path.absolute())
-                    doc["Paths"]["ida-install-dir"] = new
-                    _ = config_path.write_text(json.dumps(doc), encoding="utf-8")
-                    console.print("[grey69]Updated ida-config.json:[/grey69]")
-                    console.print(f"[grey69]  default install path: {existing}[/grey69]")
-                    console.print(f"[grey69]                     -> {new}[/grey69]")
+                    console.print(
+                        "[grey69]Left idalib default unchanged; installed edition is not idalib-capable[/grey69]"
+                    )
 
             # this requires using ida_registry to set some keys
             # which requires idalib to be working
             # so it has to go after license and config installation
             if eula and version.product:
-                if version.product in ("IDA Free", "IDA Home", "IDA Classroom"):
-                    # these products don't include idalib, which is used to write to the registry.
-                    console.print("[yellow]Skipped EULA acceptance due to product features.[/yellow]")
-                else:
-                    # maybe its safer to have an allow-list for products with idalib
+                # Matches ida.xml: has_idalib is enabled for the pro family, which
+                # includes Professional, Classroom, and Essential. Home and Free do
+                # not ship the idalib pieces needed by accept_eula().
+                if version.product in ("IDA Professional", "IDA Classroom", "IDA Essential"):
                     console.print("[yellow]Accepting EULA...[/yellow]")
                     try:
                         accept_eula(get_ida_path(install_dir_path))
                     except RuntimeError:
                         console.print("[red]Skipped EULA acceptance due to missing idalib.[/red]")
+                else:
+                    console.print("[yellow]Skipped EULA acceptance due to product features.[/yellow]")
 
             console.print("[green]Installation complete![/green]")
 

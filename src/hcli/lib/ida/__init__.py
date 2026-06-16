@@ -72,14 +72,17 @@ class IdaProduct:
 
         product_mapping = {
             "pro": "IDA Professional",
-            "home-pc": "IDA Home",
-            "home-arm": "IDA Home",
-            "home-mips": "IDA Home",
-            "home-ppc": "IDA Home",
-            "home-riscv": "IDA Home",
-            "free-pc": "IDA Free",
+            "classroom": "IDA Classroom",
             "essential": "IDA Essential",
+            "free": "IDA Free",
+            "home-arm": "IDA Home (ARM)",
+            "home-mips": "IDA Home (MIPS)",
+            "home-pc": "IDA Home (PC)",
+            "home-ppc": "IDA Home (PPC)",
+            "home-riscv": "IDA Home (RISC-V)",
+            # Backwards-compatible aliases used by older portal assets.
             "classroom-free": "IDA Classroom",
+            "free-pc": "IDA Free",
         }
 
         product = product_mapping.get(product_part, f"IDA {product_part.title()}")
@@ -228,27 +231,78 @@ def get_idat_path(ida_dir: Path) -> Path:
     return get_ida_binary_path(ida_dir, "t")
 
 
-# Edition names as they appear on disk, per the IDA installer (ci-ida/ida/build/ida.xml).
-# Free is intentionally excluded — hcli features generally don't apply to it.
-_IDA_EDITIONS = (
-    "Professional",
-    "Classroom",
-    "Essential",
-    "Home (ARM)",
-    "Home (MIPS)",
-    "Home (PC)",
-    "Home (PPC)",
-    "Home (RISC-V)",
-)
+# Edition names as they appear on disk, per the IDA installer (../ida/ida/build/ida.xml).
+# Windows install directories and macOS app bundles use ``IDA ${ida_edition} ${version}``;
+# Linux install directories use ``ida-${edition}-${version}``.
+_IDA_INSTALLER_EDITIONS: dict[str, str] = {
+    "pro": "Professional",
+    "classroom": "Classroom",
+    "essential": "Essential",
+    "free": "Free",
+    "home-arm": "Home (ARM)",
+    "home-mips": "Home (MIPS)",
+    "home-pc": "Home (PC)",
+    "home-ppc": "Home (PPC)",
+    "home-riscv": "Home (RISC-V)",
+}
 
-_IDA_DIR_NAME_RE = re.compile(
-    r"^IDA (?:" + "|".join(re.escape(e) for e in _IDA_EDITIONS) + r") \d+\.\d+",
+_IDA_VERSION_RE = r"\d+\.\d+(?:sp\d+)?"
+_IDA_DISPLAY_DIR_NAME_RE = re.compile(
+    r"^IDA (?:" + "|".join(re.escape(e) for e in _IDA_INSTALLER_EDITIONS.values()) + rf") {_IDA_VERSION_RE}$",
+)
+_IDA_LINUX_DIR_NAME_RE = re.compile(
+    r"^ida-(?:" + "|".join(re.escape(e) for e in _IDA_INSTALLER_EDITIONS) + rf")-{_IDA_VERSION_RE}$",
+)
+# hcli <= 0.12 installed Linux IDA under display-style directory names below
+# ~/.local/share/applications; IDA 9.2 used a space-free variant as a workaround.
+_IDA_LEGACY_LINUX_DIR_NAME_RE = re.compile(
+    r"^IDA[- ](?:"
+    + "|".join(re.escape(e).replace(r"\ ", r"[- ]") for e in _IDA_INSTALLER_EDITIONS.values())
+    + rf")[- ]{_IDA_VERSION_RE}$",
+)
+_IDALIB_CAPABLE_DISPLAY_EDITIONS = ("Professional", "Classroom", "Essential")
+_IDALIB_CAPABLE_LINUX_EDITIONS = ("pro", "classroom", "essential")
+_IDALIB_CAPABLE_DISPLAY_DIR_NAME_RE = re.compile(
+    r"^IDA (?:" + "|".join(re.escape(e) for e in _IDALIB_CAPABLE_DISPLAY_EDITIONS) + rf") {_IDA_VERSION_RE}$",
+)
+_IDALIB_CAPABLE_LINUX_DIR_NAME_RE = re.compile(
+    r"^ida-(?:" + "|".join(re.escape(e) for e in _IDALIB_CAPABLE_LINUX_EDITIONS) + rf")-{_IDA_VERSION_RE}$",
+)
+_IDALIB_CAPABLE_LEGACY_LINUX_DIR_NAME_RE = re.compile(
+    r"^IDA[- ](?:"
+    + "|".join(re.escape(e).replace(r"\ ", r"[- ]") for e in _IDALIB_CAPABLE_DISPLAY_EDITIONS)
+    + rf")[- ]{_IDA_VERSION_RE}$",
 )
 
 
 def _is_ida_install_dir_name(name: str) -> bool:
-    """Match installer-produced install dir / app-bundle names like 'IDA Professional 9.2'."""
-    return bool(_IDA_DIR_NAME_RE.match(name.removesuffix(".app")))
+    """Match installer-produced install dir / app-bundle names."""
+    name = name.removesuffix(".app")
+    return bool(
+        _IDA_DISPLAY_DIR_NAME_RE.match(name)
+        or _IDA_LINUX_DIR_NAME_RE.match(name)
+        or _IDA_LEGACY_LINUX_DIR_NAME_RE.match(name)
+    )
+
+
+def is_idalib_capable_install_dir_name(name: str) -> bool:
+    """Whether an installer-produced install dir name is for an idalib-capable edition."""
+    name = name.removesuffix(".app")
+    return bool(
+        _IDALIB_CAPABLE_DISPLAY_DIR_NAME_RE.match(name)
+        or _IDALIB_CAPABLE_LINUX_DIR_NAME_RE.match(name)
+        or _IDALIB_CAPABLE_LEGACY_LINUX_DIR_NAME_RE.match(name)
+    )
+
+
+def is_idalib_capable_installation(ida_dir: Path) -> bool:
+    """Whether an IDA installation path's edition should support idalib.
+
+    This intentionally follows installer edition naming instead of probing for
+    files, matching ida.xml where idalib is enabled for the pro family
+    (Professional, Classroom, Essential).
+    """
+    return is_idalib_capable_install_dir_name(ida_dir.name)
 
 
 def _dedupe_paths(paths: list[Path]) -> list[Path]:
@@ -375,22 +429,40 @@ def _find_linux_installs_from_desktop_files() -> list[Path]:
     return ret
 
 
+def _find_ida_installs_in_directory(base: Path) -> list[Path]:
+    """Find direct child directories whose names match IDA installer naming."""
+    ret: list[Path] = []
+    try:
+        entries = list(base.iterdir()) if base.exists() else []
+    except OSError:
+        return ret
+
+    for entry in entries:
+        if not entry.is_dir():
+            continue
+        if not _is_ida_install_dir_name(entry.name):
+            continue
+        if not is_ida_dir(entry):
+            continue
+        ret.append(entry)
+    return ret
+
+
 def find_standard_linux_installations() -> list[Path]:
     """Find standard IDA installations on Linux."""
     ret: list[Path] = list(_find_linux_installs_from_desktop_files())
 
-    # Also scan the directory hcli itself installs into (non-standard location, see
-    # _install_ida_unix and get_default_ida_install_directory).
-    legacy_base = get_user_home_dir() / ".local" / "share" / "applications"
-    if legacy_base.exists():
-        for entry in legacy_base.iterdir():
-            if not entry.is_dir():
-                continue
-            if not _is_ida_install_dir_name(entry.name):
-                continue
-            if not is_ida_dir(entry):
-                continue
-            ret.append(entry)
+    # ida.xml's Linux default is ${platform_install_prefix}/ida-${edition}-${version}.
+    # Depending on whether the installer runs per-user or as root, common prefixes
+    # are the user's home directory or system locations like /opt. Also retain the
+    # legacy hcli prefix used before we matched installer naming.
+    for base in (
+        get_user_home_dir(),
+        Path("/opt"),
+        Path("/usr/local"),
+        get_user_home_dir() / ".local" / "share" / "applications",
+    ):
+        ret.extend(_find_ida_installs_in_directory(base))
 
     return _dedupe_paths(ret)
 
@@ -781,6 +853,25 @@ class FailedToDetectIDAVersion(RuntimeError):
             super().__init__("failed to determine current IDA version")
 
 
+def find_hcli_default_ida_install_directory() -> Path | None:
+    """Return hcli's selected default IDA installation, if configured and valid."""
+    from hcli.lib.config import config_store
+
+    default_instance = config_store.get_string("ida.default", "")
+    instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
+    if not default_instance or default_instance not in instances:
+        return None
+
+    install_dir = _normalize_install_dir(Path(instances[default_instance]))
+    if not install_dir.exists():
+        logger.warning("configured hcli default IDA installation does not exist: %s", install_dir)
+        return None
+    if not is_ida_dir(install_dir):
+        logger.warning("configured hcli default IDA installation is invalid: %s", install_dir)
+        return None
+    return install_dir
+
+
 def find_current_ida_install_directory() -> Path:
     # duplicate here, because we prefer access through ENV
     # but tests might update env vars for the current process.
@@ -793,6 +884,11 @@ def find_current_ida_install_directory() -> Path:
     if ENV.IDADIR is not None:
         return _normalize_install_dir(Path(ENV.IDADIR))
 
+    hcli_default = find_hcli_default_ida_install_directory()
+    if hcli_default is not None:
+        logger.debug("current IDA installation from hcli default: %s", hcli_default)
+        return hcli_default
+
     config = get_ida_config()
     if not config.paths.installation_directory:
         raise MissingCurrentInstallationDirectory("directory doesn't exist")
@@ -802,7 +898,7 @@ def find_current_ida_install_directory() -> Path:
     if not install_dir.exists():
         raise MissingCurrentInstallationDirectory("ida-config.json invalid: ida-install-dir doesn't exist")
 
-    logger.debug("current IDA installation: %s", install_dir)
+    logger.debug("current IDA installation from ida-config.json: %s", install_dir)
     return install_dir
 
 
