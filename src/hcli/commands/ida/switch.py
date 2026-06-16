@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from hcli.env import ENV
 import questionary
 import rich_click as click
 from rich.console import Console
@@ -25,7 +26,9 @@ def switch(name: str | None) -> None:
 
     if not instances:
         console.print("[yellow]No IDA Pro instances registered.[/yellow]")
-        console.print("[yellow]Use 'hcli ida add --auto' to discover and add IDA installations.[/yellow]")
+        console.print(
+            f"[yellow]Use '{ENV.HCLI_BINARY_NAME} ida add --auto' to discover and add IDA installations.[/yellow]"
+        )
         raise click.Abort()
 
     # If name is provided, validate and set it

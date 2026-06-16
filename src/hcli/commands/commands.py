@@ -3,6 +3,7 @@ from __future__ import annotations
 import rich_click as click
 from rich.table import Table
 
+from hcli.env import ENV
 from hcli.lib.console import console
 
 
@@ -64,7 +65,7 @@ def commands(ctx: click.Context):
         except (KeyError, AttributeError):
             help_text = "No description available"
 
-        table.add_row(f"hcli {cmd_path}", help_text)
+        table.add_row(f"{ENV.HCLI_BINARY_NAME} {cmd_path}", help_text)
 
     console.print(table)
     console.print(f"\n[dim]Total commands: {len(all_commands)}[/dim]")

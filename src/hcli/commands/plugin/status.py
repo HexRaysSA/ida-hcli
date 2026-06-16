@@ -7,6 +7,7 @@ import logging
 import rich.table
 import rich_click as click
 
+from hcli.env import ENV
 from hcli.lib.console import console
 from hcli.lib.ida import (
     FailedToDetectIDAVersion,
@@ -93,7 +94,9 @@ def get_plugin_status(ctx) -> None:
         if has_incompatible_plugins:
             console.print()
             console.print("[yellow]Incompatible plugins[/yellow] don't work with this version of hcli.")
-            console.print("They might be broken or outdated. Try using `hcli plugin lint /path/to/plugin`.")
+            console.print(
+                f"[dim]They might be broken or outdated. Try using `{ENV.HCLI_BINARY_NAME} plugin lint /path/to/plugin`.[/dim]"
+            )
 
         if has_legacy_plugins:
             # TODO: suggest plugins in the repo, by maintaining a translation list from filename to package name

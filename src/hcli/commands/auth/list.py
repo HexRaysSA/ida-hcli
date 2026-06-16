@@ -3,6 +3,7 @@ from __future__ import annotations
 import rich_click as click
 from rich.table import Table
 
+from hcli.env import ENV
 from hcli.lib.auth import get_auth_service
 from hcli.lib.console import console
 
@@ -17,7 +18,9 @@ def list_credentials() -> None:
 
     if not sources:
         console.print("[yellow]No credentials found.[/yellow]")
-        console.print("Use '[bold]hcli login[/bold]' or '[bold]hcli auth key install[/bold]' to add credentials.")
+        console.print(
+            f"Use '[bold]{ENV.HCLI_BINARY_NAME} login[/bold]' or '[bold]{ENV.HCLI_BINARY_NAME} auth key install[/bold]' to add credentials."
+        )
         return
 
     console.print(f"[bold]Credentials ({len(sources)}):[/bold]")
