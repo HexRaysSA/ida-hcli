@@ -16,6 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from hcli.env import ENV
 from hcli.lib.config import config_store
 from hcli.lib.ida import (
     MissingCurrentInstallationDirectory,
@@ -188,7 +189,9 @@ class IDALauncher:
         except MissingCurrentInstallationDirectory:
             pass
 
-        raise NoIDAInstallationError("No IDA installation configured. Use: hcli ida instance add --auto")
+        raise NoIDAInstallationError(
+            f"No IDA installation configured. Use: {ENV.HCLI_BINARY_NAME} ida instance add --auto"
+        )
 
     def _get_ida_dir_from_binary(self, ida_bin: Path) -> Path:
         """Derive the IDA installation directory from the binary path."""

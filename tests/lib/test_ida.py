@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 
 from hcli.lib.ida import (
+    IdaProduct,
+    _is_ida_install_dir_name,
     _prepare_headless_ida_user_dir,
     accept_eula,
     detect_binary_arch,
@@ -18,6 +20,7 @@ from hcli.lib.ida import (
     find_current_idat_executable,
     get_ida_config,
     get_ida_config_path,
+    is_idalib_capable_install_dir_name,
     parse_version_from_dir_name,
     parse_version_from_ida_pro_py,
 )
@@ -115,6 +118,7 @@ def test_parse_version_from_dir_name():
     assert parse_version_from_dir_name(Path("/Applications/IDA Professional 9.2.app")) == "9.2"
     assert parse_version_from_dir_name(Path("/opt/IDA Professional 9.4 beta 1")) == "9.4"
     assert parse_version_from_dir_name(Path("/opt/IDA-Professional-9.4-beta-1")) == "9.4"
+    assert parse_version_from_dir_name(Path("/opt/ida-pro-9.4")) == "9.4"
     assert parse_version_from_dir_name(Path("/opt/my-ida")) is None
 
 
@@ -137,6 +141,95 @@ def test_accept_eula_writes_supported_registry_keys(monkeypatch, tmp_path):
         ("EULA 93", 1),
         ("EULA 94", 1),
     ]
+
+
+@pytest.mark.parametrize(
+    "filename, expected",
+    [
+        ("ida-pro_94_x64linux.run", "IDA Professional 9.4"),
+        ("ida-classroom_94_x64linux.run", "IDA Classroom 9.4"),
+        ("ida-essential_94_x64linux.run", "IDA Essential 9.4"),
+        ("ida-free_94_x64linux.run", "IDA Free 9.4"),
+        ("ida-home-arm_94_x64linux.run", "IDA Home (ARM) 9.4"),
+        ("ida-home-mips_94_x64linux.run", "IDA Home (MIPS) 9.4"),
+        ("ida-home-pc_94_x64linux.run", "IDA Home (PC) 9.4"),
+        ("ida-home-ppc_94_x64linux.run", "IDA Home (PPC) 9.4"),
+        ("ida-home-riscv_94_x64linux.run", "IDA Home (RISC-V) 9.4"),
+    ],
+)
+def test_installer_filename_parsing_matches_ida_xml_editions(filename, expected):
+    """Installer filename editions should map to ida.xml's ida_edition names."""
+    assert str(IdaProduct.from_installer_filename(filename)) == expected
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        # Windows install directories and macOS app bundles from ida.xml.
+        "IDA Professional 9.4",
+        "IDA Classroom 9.4",
+        "IDA Essential 9.4",
+        "IDA Free 9.4",
+        "IDA Home (ARM) 9.4",
+        "IDA Home (MIPS) 9.4",
+        "IDA Home (PC) 9.4",
+        "IDA Home (PPC) 9.4",
+        "IDA Home (RISC-V) 9.4.app",
+        # Linux install directories from ida.xml.
+        "ida-pro-9.4",
+        "ida-classroom-9.4",
+        "ida-essential-9.4",
+        "ida-free-9.4",
+        "ida-home-arm-9.4",
+        "ida-home-mips-9.4",
+        "ida-home-pc-9.4",
+        "ida-home-ppc-9.4",
+        "ida-home-riscv-9.4",
+        # Legacy hcli Linux install directory names.
+        "IDA Professional 9.2",
+        "IDA-Professional-9.2",
+        "IDA-Home-(PC)-9.2",
+    ],
+)
+def test_ida_install_dir_name_detection_matches_ida_xml(name):
+    assert _is_ida_install_dir_name(name)
+
+
+@pytest.mark.parametrize("name", ["IDA 9.4", "ida-unknown-9.4", "IDA Professional", "my-ida-pro-9.4"])
+def test_ida_install_dir_name_detection_rejects_non_installer_names(name):
+    assert not _is_ida_install_dir_name(name)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "IDA Professional 9.4",
+        "IDA Classroom 9.4",
+        "IDA Essential 9.4",
+        "IDA Professional 9.4.app",
+        "ida-pro-9.4",
+        "ida-classroom-9.4",
+        "ida-essential-9.4",
+        "IDA-Professional-9.2",
+    ],
+)
+def test_idalib_capable_install_dir_name_detection_accepts_pro_family(name):
+    assert is_idalib_capable_install_dir_name(name)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "IDA Free 9.4",
+        "IDA Home (PC) 9.4",
+        "IDA Home (ARM) 9.4.app",
+        "ida-free-9.4",
+        "ida-home-pc-9.4",
+        "ida-home-riscv-9.4",
+    ],
+)
+def test_idalib_capable_install_dir_name_detection_rejects_non_pro_family(name):
+    assert not is_idalib_capable_install_dir_name(name)
 
 
 def test_detect_binary_arch_elf_x86_64():

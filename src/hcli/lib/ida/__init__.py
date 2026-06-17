@@ -13,7 +13,7 @@ import tempfile
 from dataclasses import dataclass
 from functools import total_ordering
 from pathlib import Path
-from typing import Literal, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 import rich.console
 from pydantic import BaseModel, ConfigDict, Field
@@ -72,14 +72,17 @@ class IdaProduct:
 
         product_mapping = {
             "pro": "IDA Professional",
-            "home-pc": "IDA Home",
-            "home-arm": "IDA Home",
-            "home-mips": "IDA Home",
-            "home-ppc": "IDA Home",
-            "home-riscv": "IDA Home",
-            "free-pc": "IDA Free",
+            "classroom": "IDA Classroom",
             "essential": "IDA Essential",
+            "free": "IDA Free",
+            "home-arm": "IDA Home (ARM)",
+            "home-mips": "IDA Home (MIPS)",
+            "home-pc": "IDA Home (PC)",
+            "home-ppc": "IDA Home (PPC)",
+            "home-riscv": "IDA Home (RISC-V)",
+            # Backwards-compatible aliases used by older portal assets.
             "classroom-free": "IDA Classroom",
+            "free-pc": "IDA Free",
         }
 
         product = product_mapping.get(product_part, f"IDA {product_part.title()}")
@@ -228,85 +231,315 @@ def get_idat_path(ida_dir: Path) -> Path:
     return get_ida_binary_path(ida_dir, "t")
 
 
+# Edition names as they appear on disk, per the IDA installer (../ida/ida/build/ida.xml).
+# Windows install directories and macOS app bundles use ``IDA ${ida_edition} ${version}``;
+# Linux install directories use ``ida-${edition}-${version}``.
+_IDA_INSTALLER_EDITIONS: dict[str, str] = {
+    "pro": "Professional",
+    "classroom": "Classroom",
+    "essential": "Essential",
+    "free": "Free",
+    "home-arm": "Home (ARM)",
+    "home-mips": "Home (MIPS)",
+    "home-pc": "Home (PC)",
+    "home-ppc": "Home (PPC)",
+    "home-riscv": "Home (RISC-V)",
+}
+
+_IDA_VERSION_RE = r"\d+\.\d+(?:sp\d+)?"
+_IDA_DISPLAY_DIR_NAME_RE = re.compile(
+    r"^IDA (?:" + "|".join(re.escape(e) for e in _IDA_INSTALLER_EDITIONS.values()) + rf") {_IDA_VERSION_RE}$",
+)
+_IDA_LINUX_DIR_NAME_RE = re.compile(
+    r"^ida-(?:" + "|".join(re.escape(e) for e in _IDA_INSTALLER_EDITIONS) + rf")-{_IDA_VERSION_RE}$",
+)
+# hcli <= 0.12 installed Linux IDA under display-style directory names below
+# ~/.local/share/applications; IDA 9.2 used a space-free variant as a workaround.
+_IDA_LEGACY_LINUX_DIR_NAME_RE = re.compile(
+    r"^IDA[- ](?:"
+    + "|".join(re.escape(e).replace(r"\ ", r"[- ]") for e in _IDA_INSTALLER_EDITIONS.values())
+    + rf")[- ]{_IDA_VERSION_RE}$",
+)
+_IDALIB_CAPABLE_DISPLAY_EDITIONS = ("Professional", "Classroom", "Essential")
+_IDALIB_CAPABLE_LINUX_EDITIONS = ("pro", "classroom", "essential")
+_IDALIB_CAPABLE_DISPLAY_DIR_NAME_RE = re.compile(
+    r"^IDA (?:" + "|".join(re.escape(e) for e in _IDALIB_CAPABLE_DISPLAY_EDITIONS) + rf") {_IDA_VERSION_RE}$",
+)
+_IDALIB_CAPABLE_LINUX_DIR_NAME_RE = re.compile(
+    r"^ida-(?:" + "|".join(re.escape(e) for e in _IDALIB_CAPABLE_LINUX_EDITIONS) + rf")-{_IDA_VERSION_RE}$",
+)
+_IDALIB_CAPABLE_LEGACY_LINUX_DIR_NAME_RE = re.compile(
+    r"^IDA[- ](?:"
+    + "|".join(re.escape(e).replace(r"\ ", r"[- ]") for e in _IDALIB_CAPABLE_DISPLAY_EDITIONS)
+    + rf")[- ]{_IDA_VERSION_RE}$",
+)
+
+
+def _is_ida_install_dir_name(name: str) -> bool:
+    """Match installer-produced install dir / app-bundle names."""
+    name = name.removesuffix(".app")
+    return bool(
+        _IDA_DISPLAY_DIR_NAME_RE.match(name)
+        or _IDA_LINUX_DIR_NAME_RE.match(name)
+        or _IDA_LEGACY_LINUX_DIR_NAME_RE.match(name)
+    )
+
+
+def is_idalib_capable_install_dir_name(name: str) -> bool:
+    """Whether an installer-produced install dir name is for an idalib-capable edition."""
+    name = name.removesuffix(".app")
+    return bool(
+        _IDALIB_CAPABLE_DISPLAY_DIR_NAME_RE.match(name)
+        or _IDALIB_CAPABLE_LINUX_DIR_NAME_RE.match(name)
+        or _IDALIB_CAPABLE_LEGACY_LINUX_DIR_NAME_RE.match(name)
+    )
+
+
+def is_idalib_capable_installation(ida_dir: Path) -> bool:
+    """Whether an IDA installation path's edition should support idalib.
+
+    This intentionally follows installer edition naming instead of probing for
+    files, matching ida.xml where idalib is enabled for the pro family
+    (Professional, Classroom, Essential).
+    """
+    return is_idalib_capable_install_dir_name(ida_dir.name)
+
+
+def _dedupe_paths(paths: list[Path]) -> list[Path]:
+    """Deduplicate by resolved path, preserving first-seen order."""
+    seen: set[Path] = set()
+    ret: list[Path] = []
+    for p in paths:
+        try:
+            key = p.resolve()
+        except OSError:
+            key = p
+        if key in seen:
+            continue
+        seen.add(key)
+        ret.append(p)
+    return ret
+
+
+def _find_windows_installs_from_registry() -> list[Path]:
+    """Read InstallLocation from the Add/Remove Programs registry under HKLM.
+
+    The installer writes a key per install under
+    ``HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IDA <edition> <version>``.
+    """
+    try:
+        import winreg as _winreg  # type: ignore[import-not-found]
+    except ImportError:
+        return []
+
+    winreg: Any = _winreg
+    ret: list[Path] = []
+    uninstall_path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
+    try:
+        root = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, uninstall_path, 0, winreg.KEY_READ)
+    except OSError:
+        return ret
+
+    try:
+        i = 0
+        while True:
+            try:
+                subkey_name = winreg.EnumKey(root, i)
+            except OSError:
+                break
+            i += 1
+            try:
+                with winreg.OpenKey(root, subkey_name, 0, winreg.KEY_READ) as subkey:
+                    try:
+                        display_name, _ = winreg.QueryValueEx(subkey, "DisplayName")
+                    except OSError:
+                        continue
+                    if not isinstance(display_name, str) or not _is_ida_install_dir_name(display_name):
+                        continue
+                    try:
+                        install_location, _ = winreg.QueryValueEx(subkey, "InstallLocation")
+                    except OSError:
+                        continue
+                    if not install_location:
+                        continue
+                    path = Path(install_location)
+                    if is_ida_dir(path):
+                        ret.append(path)
+            except OSError:
+                continue
+    finally:
+        winreg.CloseKey(root)
+    return ret
+
+
 def find_standard_windows_installations() -> list[Path]:
-    """Find standard IDA Pro installations on Windows."""
-    ret = []
+    """Find standard IDA installations on Windows."""
+    ret: list[Path] = list(_find_windows_installs_from_registry())
 
     base_directory = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
-
-    # Check the base directory for IDA installations
     if base_directory.exists():
         for entry in base_directory.iterdir():
             if not entry.is_dir():
                 continue
-
-            if not entry.name.startswith("IDA Pro"):
+            if not _is_ida_install_dir_name(entry.name):
                 continue
-
+            if not is_ida_dir(entry):
+                continue
             ret.append(entry)
 
+    return _dedupe_paths(ret)
+
+
+def _find_linux_installs_from_desktop_files() -> list[Path]:
+    """Parse ``com.hex_rays.IDA.*.desktop`` shortcut files to recover install dirs.
+
+    The installer writes a desktop entry whose ``Exec=`` points at ``<installdir>/ida``,
+    so the parent of that path is the install directory regardless of where the user
+    chose to install.
+    """
+    ret: list[Path] = []
+
+    search_dirs: list[Path] = []
+    xdg = os.environ.get("XDG_DATA_HOME")
+    if xdg:
+        search_dirs.append(Path(xdg) / "applications")
+    search_dirs.append(get_user_home_dir() / ".local" / "share" / "applications")
+    search_dirs.append(Path("/usr/share/applications"))
+
+    for app_dir in search_dirs:
+        if not app_dir.exists():
+            continue
+        for desktop in app_dir.glob("com.hex_rays.IDA.*.desktop"):
+            try:
+                text = desktop.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for line in text.splitlines():
+                if not line.startswith("Exec="):
+                    continue
+                # Exec= can include arguments; the binary is the first whitespace-separated token.
+                exec_value = line[len("Exec=") :].strip()
+                if not exec_value:
+                    break
+                exec_path = Path(exec_value.split()[0])
+                install_dir = exec_path.parent
+                if is_ida_dir(install_dir):
+                    ret.append(install_dir)
+                break
+    return ret
+
+
+def _find_ida_installs_in_directory(base: Path) -> list[Path]:
+    """Find direct child directories whose names match IDA installer naming."""
+    ret: list[Path] = []
+    try:
+        entries = list(base.iterdir()) if base.exists() else []
+    except OSError:
+        return ret
+
+    for entry in entries:
+        if not entry.is_dir():
+            continue
+        if not _is_ida_install_dir_name(entry.name):
+            continue
+        if not is_ida_dir(entry):
+            continue
+        ret.append(entry)
     return ret
 
 
 def find_standard_linux_installations() -> list[Path]:
-    """Find standard IDA Pro installations on Linux."""
-    # TODO: can also look in registered XDG applications, or maybe in /opt
-    ret = []
-    base_directory = get_user_home_dir() / ".local" / "share" / "applications"
+    """Find standard IDA installations on Linux."""
+    ret: list[Path] = list(_find_linux_installs_from_desktop_files())
 
-    if base_directory.exists():
-        for entry in base_directory.iterdir():
-            if not entry.is_dir():
-                continue
+    # ida.xml's Linux default is ${platform_install_prefix}/ida-${edition}-${version}.
+    # Depending on whether the installer runs per-user or as root, common prefixes
+    # are the user's home directory or system locations like /opt. Also retain the
+    # legacy hcli prefix used before we matched installer naming.
+    for base in (
+        get_user_home_dir(),
+        Path("/opt"),
+        Path("/usr/local"),
+        get_user_home_dir() / ".local" / "share" / "applications",
+    ):
+        ret.extend(_find_ida_installs_in_directory(base))
 
-            if not entry.name.startswith("IDA Pro"):
-                continue
+    return _dedupe_paths(ret)
 
-            ret.append(entry)
 
+def _find_mac_installs_from_spotlight() -> list[Path]:
+    """Use Spotlight to locate IDA app bundles by CFBundleIdentifier.
+
+    All editions share ``com.hexrays.ida`` (per ui/ida/qt/Info.plist.ida in ci-ida).
+    """
+    if not shutil.which("mdfind"):
+        return []
+    try:
+        result = subprocess.run(
+            ["mdfind", "kMDItemCFBundleIdentifier == 'com.hexrays.ida'"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0:
+        return []
+
+    ret: list[Path] = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        path = Path(line)
+        if not _is_ida_install_dir_name(path.name):
+            continue
+        if not is_ida_dir(path):
+            continue
+        ret.append(path)
     return ret
 
 
 def find_standard_mac_installations() -> list[Path]:
-    """Find standard IDA Pro installations on macOS."""
-    ret = []
+    """Find standard IDA installations on macOS."""
+    ret: list[Path] = list(_find_mac_installs_from_spotlight())
 
-    base_directory = Path("/Applications")
-
-    # Check the base directory for IDA installations
-    if base_directory.exists():
-        for entry in base_directory.iterdir():
+    for base in (Path("/Applications"), get_user_home_dir() / "Applications"):
+        if not base.exists():
+            continue
+        for entry in base.iterdir():
             if not entry.is_dir():
                 continue
-
-            if not entry.name.startswith("IDA Pro"):
+            if not _is_ida_install_dir_name(entry.name):
                 continue
-
+            if not is_ida_dir(entry):
+                continue
             ret.append(entry)
 
-    return ret
+    return _dedupe_paths(ret)
 
 
 def find_standard_installations() -> list[Path]:
-    """Find standard IDA Pro installations."""
-    ret = set()
+    """Find standard IDA installations."""
+    ret: list[Path] = []
 
     try:
-        ret.add(find_current_ida_install_directory())
-    except ValueError:
+        ret.append(find_current_ida_install_directory())
+    except MissingCurrentInstallationDirectory:
         pass
 
     os_ = get_os()
     if os_ == "windows":
-        ret.update(find_standard_windows_installations())
+        ret.extend(find_standard_windows_installations())
     elif os_ == "linux":
-        ret.update(find_standard_linux_installations())
+        ret.extend(find_standard_linux_installations())
     elif os_ == "mac":
-        ret.update(find_standard_mac_installations())
+        ret.extend(find_standard_mac_installations())
     else:
         raise ValueError(f"Unsupported operating system: {os_}")
 
-    return list(ret)
+    return _dedupe_paths(ret)
 
 
 def is_ida_dir(ida_dir: Path) -> bool:
@@ -620,6 +853,25 @@ class FailedToDetectIDAVersion(RuntimeError):
             super().__init__("failed to determine current IDA version")
 
 
+def find_hcli_default_ida_install_directory() -> Path | None:
+    """Return hcli's selected default IDA installation, if configured and valid."""
+    from hcli.lib.config import config_store
+
+    default_instance = config_store.get_string("ida.default", "")
+    instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
+    if not default_instance or default_instance not in instances:
+        return None
+
+    install_dir = _normalize_install_dir(Path(instances[default_instance]))
+    if not install_dir.exists():
+        logger.warning("configured hcli default IDA installation does not exist: %s", install_dir)
+        return None
+    if not is_ida_dir(install_dir):
+        logger.warning("configured hcli default IDA installation is invalid: %s", install_dir)
+        return None
+    return install_dir
+
+
 def find_current_ida_install_directory() -> Path:
     # duplicate here, because we prefer access through ENV
     # but tests might update env vars for the current process.
@@ -632,6 +884,11 @@ def find_current_ida_install_directory() -> Path:
     if ENV.IDADIR is not None:
         return _normalize_install_dir(Path(ENV.IDADIR))
 
+    hcli_default = find_hcli_default_ida_install_directory()
+    if hcli_default is not None:
+        logger.debug("current IDA installation from hcli default: %s", hcli_default)
+        return hcli_default
+
     config = get_ida_config()
     if not config.paths.installation_directory:
         raise MissingCurrentInstallationDirectory("directory doesn't exist")
@@ -641,7 +898,7 @@ def find_current_ida_install_directory() -> Path:
     if not install_dir.exists():
         raise MissingCurrentInstallationDirectory("ida-config.json invalid: ida-install-dir doesn't exist")
 
-    logger.debug("current IDA installation: %s", install_dir)
+    logger.debug("current IDA installation from ida-config.json: %s", install_dir)
     return install_dir
 
 
@@ -652,7 +909,7 @@ def explain_missing_current_installation_directory(console: rich.console.Console
     console.print("")
     console.print("1. set the default value in $IDAUSR/ida-config.json, which you can do via:")
     console.print("")
-    console.print("     [grey69]hcli ida set-default /path/to/IDA/installation/[/grey69]")
+    console.print(f"     [grey69]{ENV.HCLI_BINARY_NAME} ida set-default /path/to/IDA/installation/[/grey69]")
     console.print("")
     console.print("2. provide the HCLI_CURRENT_IDA_INSTALL_DIR environment variable, like:")
     console.print("")
@@ -679,7 +936,7 @@ def explain_failed_to_detect_ida_version(console: rich.console.Console):
     console.print("")
     console.print("2. also ensure IDA installation directory is configured:")
     console.print("")
-    console.print("     [grey69]hcli ida set-default /path/to/IDA/installation/[/grey69]")
+    console.print(f"     [grey69]{ENV.HCLI_BINARY_NAME} ida set-default /path/to/IDA/installation/[/grey69]")
     console.print("")
     console.print("   or via environment variable:")
     console.print("")

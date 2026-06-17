@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
+from hcli.env import ENV
+
 
 class PluginInstallationError(Exception):
     """Base exception for plugin installation failures."""
@@ -18,7 +20,7 @@ class PluginAlreadyInstalledError(PluginInstallationError):
         self.path = path
         super().__init__(
             f"Plugin '{name}' is already installed at {path}. "
-            f"Use 'hcli plugin upgrade {name}' to update or 'hcli plugin uninstall {name}' first."
+            f"Use '{ENV.HCLI_BINARY_NAME} plugin upgrade {name}' to update or '{ENV.HCLI_BINARY_NAME} plugin uninstall {name}' first."
         )
 
 

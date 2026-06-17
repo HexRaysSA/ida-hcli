@@ -6,8 +6,9 @@ import questionary
 import rich_click as click
 from rich.console import Console
 
+from hcli.env import ENV
 from hcli.lib.config import config_store
-from hcli.lib.ida import get_ida_config, set_ida_config
+from hcli.lib.ida import get_ida_config, is_idalib_capable_installation, set_ida_config
 
 console = Console()
 
@@ -25,7 +26,9 @@ def switch(name: str | None) -> None:
 
     if not instances:
         console.print("[yellow]No IDA Pro instances registered.[/yellow]")
-        console.print("[yellow]Use 'hcli ida add --auto' to discover and add IDA installations.[/yellow]")
+        console.print(
+            f"[yellow]Use '{ENV.HCLI_BINARY_NAME} ida add --auto' to discover and add IDA installations.[/yellow]"
+        )
         raise click.Abort()
 
     # If name is provided, validate and set it
@@ -74,11 +77,19 @@ def _set_default_instance(name: str) -> None:
     instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
     config_store.set_string("ida.default", name)
 
-    # Also update ida-config.json so idalib/install commands pick up the path
+    # hcli's default lives in ida.default. ida-config.json's ida-install-dir is
+    # also consumed by idalib, so only move it when the selected edition is
+    # idalib-capable; switching hcli to Home/Free must not break an existing Pro
+    # idalib activation.
     path = instances.get(name)
     if path:
-        config = get_ida_config()
-        config.paths.installation_directory = Path(path)
-        set_ida_config(config)
+        install_dir = Path(path)
+        if is_idalib_capable_installation(install_dir):
+            config = get_ida_config()
+            config.paths.installation_directory = install_dir
+            set_ida_config(config)
+            console.print("[grey69]Updated idalib default in ida-config.json[/grey69]")
+        else:
+            console.print("[grey69]Left idalib default unchanged; selected edition is not idalib-capable[/grey69]")
 
     console.print(f"[green]Set '{name}' as the default IDA Pro instance[/green]")

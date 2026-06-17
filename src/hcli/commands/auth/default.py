@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import rich_click as click
 
+from hcli.env import ENV
 from hcli.lib.auth import get_auth_service
 from hcli.lib.console import console
 
@@ -38,7 +39,9 @@ def set_default_credentials(name: str | None) -> None:
 
     if not sources:
         console.print("[yellow]No credentialss found.[/yellow]")
-        console.print("Use '[bold]hcli login[/bold]' or '[bold]hcli auth key install[/bold]' to add credentialss.")
+        console.print(
+            f"Use '[bold]{ENV.HCLI_BINARY_NAME} login[/bold]' or '[bold]{ENV.HCLI_BINARY_NAME} auth key install[/bold]' to add credentialss."
+        )
         return
 
     # Check if source exists

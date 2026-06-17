@@ -74,7 +74,9 @@ class MainGroup(click.RichGroup):
                         f"\n[yellow]Suggestion:[/yellow] If your temporary directory is full, you can use a different one by setting the [bold]{env_var}[/bold] environment variable."
                     )
             elif isinstance(e, AuthenticationError):
-                console.print("[red]Authentication failed. Please check your credentials or use 'hcli login'.[/red]")
+                console.print(
+                    f"[red]Authentication failed. Please check your credentials or use '{ENV.HCLI_BINARY_NAME} login'.[/red]"
+                )
             elif isinstance(e, NotFoundError):
                 console.print(f"[red]Resource not found: {e}[/red]")
             elif isinstance(e, RateLimitError):

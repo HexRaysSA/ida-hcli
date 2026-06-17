@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from hcli.env import ENV
 from hcli.lib.config import config_store
 from hcli.lib.ida import is_ida_dir, parse_version_from_dir_name
 
@@ -47,7 +48,9 @@ def list_instances() -> None:
 
     if not instances:
         console.print("[yellow]No IDA Pro instances registered.[/yellow]")
-        console.print("[yellow]Use 'hcli ida add --auto' to discover and add IDA installations.[/yellow]")
+        console.print(
+            f"[yellow]Use '{ENV.HCLI_BINARY_NAME} ida add --auto' to discover and add IDA installations.[/yellow]"
+        )
         return
 
     # Create table
@@ -112,4 +115,4 @@ def list_instances() -> None:
         else:
             console.print(f"[red]Default instance '{default_instance}' no longer exists![/red]")
     else:
-        console.print("[yellow]No default instance set. Use 'hcli ida switch' to set one.[/yellow]")
+        console.print(f"[yellow]No default instance set. Use '{ENV.HCLI_BINARY_NAME} ida switch' to set one.[/yellow]")

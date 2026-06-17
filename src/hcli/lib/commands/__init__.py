@@ -5,6 +5,7 @@ from functools import wraps
 
 import rich_click as click
 
+from hcli.env import ENV
 from hcli.lib.auth import get_auth_service
 from hcli.lib.console import console
 from hcli.lib.constants.auth import CredentialType
@@ -23,9 +24,9 @@ def require_auth(f: Callable) -> Callable:
             if auth_service.has_expired_session():
                 current_source = auth_service.get_current_credentials()
                 email = current_source.email if current_source else "unknown"
-                console.print(f"[red]Your session {email} has expired, use 'hcli login'.[/red]")
+                console.print(f"[red]Your session {email} has expired, use '{ENV.HCLI_BINARY_NAME} login'.[/red]")
             else:
-                console.print("[red]You are not logged in. Use 'hcli login'.[/red]")
+                console.print(f"[red]You are not logged in. Use '{ENV.HCLI_BINARY_NAME} login'.[/red]")
             sys.exit(1)
 
         return f(*args, **kwargs)
@@ -60,9 +61,9 @@ def enforce_login() -> bool:
         if auth_service.has_expired_session():
             current_source = auth_service.get_current_credentials()
             email = current_source.email if current_source else "unknown"
-            console.print(f"[red]Your session {email} has expired, use 'hcli login'.[/red]")
+            console.print(f"[red]Your session {email} has expired, use '{ENV.HCLI_BINARY_NAME} login'.[/red]")
         else:
-            console.print("[red]You are not logged in. Use 'hcli login'.[/red]")
+            console.print(f"[red]You are not logged in. Use '{ENV.HCLI_BINARY_NAME} login'.[/red]")
         sys.exit(1)
 
     return True
@@ -110,9 +111,9 @@ class AuthCommand(BaseCommand):
             if auth_service.has_expired_session():
                 current_source = auth_service.get_current_credentials()
                 email = current_source.email if current_source else "unknown"
-                console.print(f"[red]Your session {email} has expired, use 'hcli login'.[/red]")
+                console.print(f"[red]Your session {email} has expired, use '{ENV.HCLI_BINARY_NAME} login'.[/red]")
             else:
-                console.print("[red]You are not logged in. Use 'hcli login'.[/red]")
+                console.print(f"[red]You are not logged in. Use '{ENV.HCLI_BINARY_NAME} login'.[/red]")
             sys.exit(1)
 
         # Validate forced credentials exists
@@ -124,7 +125,9 @@ class AuthCommand(BaseCommand):
                 if available_sources:
                     console.print(f"Available credentials: {', '.join(available_sources)}")
                 else:
-                    console.print("No credentials available. Use 'hcli login' or 'hcli auth key install'.")
+                    console.print(
+                        f"No credentials available. Use '{ENV.HCLI_BINARY_NAME} login' or '{ENV.HCLI_BINARY_NAME} auth key install'."
+                    )
                 sys.exit(1)
 
         # If auth type is forced, validate current auth matches
@@ -135,10 +138,12 @@ class AuthCommand(BaseCommand):
                     f"[red]Authentication type mismatch. Required: '{forced_auth_type}', current: '{current_auth['type']}'.[/red]"
                 )
                 if forced_auth_type == CredentialType.INTERACTIVE:
-                    console.print("[yellow]Please use 'hcli login' to authenticate interactively.[/yellow]")
+                    console.print(
+                        f"[yellow]Please use '{ENV.HCLI_BINARY_NAME} login' to authenticate interactively.[/yellow]"
+                    )
                 else:
                     console.print(
-                        "[yellow]Please set an API key using 'hcli auth key install' or HCLI_API_KEY environment variable.[/yellow]"
+                        f"[yellow]Please set an API key using '{ENV.HCLI_BINARY_NAME} auth key install' or HCLI_API_KEY environment variable.[/yellow]"
                     )
                 sys.exit(1)
 

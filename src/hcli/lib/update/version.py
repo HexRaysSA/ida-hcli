@@ -195,7 +195,7 @@ class BackgroundUpdateChecker:
         return (
             f"\n[yellow]Update available![/yellow] "
             f"[dim]{current}[/dim] -> [green]{latest}[/green]\n"
-            f"[dim]Run[/dim] [bold cyan]hcli update[/bold cyan] [dim]to update[/dim]\n"
+            f"[dim]Run[/dim] [bold cyan]{ENV.HCLI_BINARY_NAME} update[/bold cyan] [dim]to update[/dim]\n"
         )
 
     def _format_no_update_message(self, current: str, latest: str) -> str:
