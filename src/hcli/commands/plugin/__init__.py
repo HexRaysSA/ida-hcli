@@ -24,6 +24,7 @@ from .repo import repo
 from .schema import schema
 from .search import search_plugins
 from .status import get_plugin_status
+from .explain_environment import explain_environment
 from .uninstall import uninstall_plugin
 from .upgrade import upgrade_plugin
 
@@ -85,7 +86,7 @@ def plugin(
     hcli.lib.console._sync_console_streams()
 
     # `schema` doesn't touch any plugin repository or IDA install, so skip the setup.
-    if ctx.invoked_subcommand == "schema":
+    if ctx.invoked_subcommand in ("schema", "explain-environment"):
         return
 
     plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo
@@ -175,3 +176,4 @@ plugin.add_command(repo, name="repo")
 plugin.add_command(config, name="config")
 plugin.add_command(schema, name="schema")
 plugin.add_command(bundle, name="bundle")
+plugin.add_command(explain_environment, name="explain-environment")

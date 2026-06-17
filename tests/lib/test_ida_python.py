@@ -96,6 +96,11 @@ def test_derive_python_exe_honors_validated_virtualenv_executable_when_prefix_is
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_find_current_python_executable_honors_activated_virtualenv(tmp_path, monkeypatch):
+    """VIRTUAL_ENV in the hcli process env is stripped before invoking idat,
+    so the only way to detect a venv is via idapythonrc.py activating it inside idat.
+    This test verifies that an idapythonrc.py that sets sys.prefix to a venv
+    causes find_current_python_executable to return the venv's Python.
+    """
     source_idausr = get_ida_user_dir()
     if not source_idausr.exists():
         pytest.skip("Current IDAUSR directory not available")
@@ -107,10 +112,18 @@ def test_find_current_python_executable_honors_activated_virtualenv(tmp_path, mo
     target_idausr = tmp_path / "idausr-activated"
     _prepare_isolated_idausr_for_python_detection(source_idausr, target_idausr)
 
+    (target_idausr / "idapythonrc.py").write_text(
+        "import os, sys\n"
+        "venv = os.environ['HCLI_TEST_VENV']\n"
+        "os.environ['VIRTUAL_ENV'] = venv\n"
+        "sys.prefix = venv\n",
+        encoding="utf-8",
+    )
+
     monkeypatch.setenv("HCLI_IDAUSR", str(target_idausr))
     monkeypatch.setenv("HCLI_CURRENT_IDA_INSTALL_DIR", str(install_dir))
-    monkeypatch.setenv("VIRTUAL_ENV", str(venv_dir))
-    monkeypatch.setenv("PATH", str(_venv_bin_dir(venv_dir)) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("HCLI_TEST_VENV", str(venv_dir))
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
     monkeypatch.delenv("IDAPYTHON_VENV_EXECUTABLE", raising=False)
     monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
 
