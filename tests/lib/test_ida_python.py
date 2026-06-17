@@ -71,6 +71,38 @@ def _venv_bin_dir(venv_dir: Path) -> Path:
     return venv_dir / ("Scripts" if os.name == "nt" else "bin")
 
 
+def test_derive_python_exe_uses_idapython_venv_executable_when_sys_executable_is_idat(tmp_path):
+    """IDA 9.4 macOS: sys.executable is the idat binary, not a Python interpreter.
+
+    When prefix==base_prefix (macOS framework) and sys.executable is not a Python
+    path, _derive_python_exe must still honour IDAPYTHON_VENV_EXECUTABLE.
+    """
+    venv_dir = tmp_path / "venv"
+    venv_dir.mkdir()
+    (venv_dir / "pyvenv.cfg").write_text("home = /base/python\n", encoding="utf-8")
+    bin_dir = _venv_bin_dir(venv_dir)
+    bin_dir.mkdir()
+    venv_python = _venv_launcher_for_ida(venv_dir)
+    venv_python.write_text("", encoding="utf-8")
+
+    # Simulate a fake idat binary as sys.executable
+    idat_binary = tmp_path / "idat"
+    idat_binary.write_text("", encoding="utf-8")
+
+    info = {
+        "frozen": False,
+        "prefix": "/Library/Frameworks/Python.framework/Versions/3.14",
+        "base_prefix": "/Library/Frameworks/Python.framework/Versions/3.14",
+        "executable": str(idat_binary),
+        "virtual_env": None,
+        "idapython_venv_executable": str(venv_python),
+        "version_major": 3,
+        "version_minor": 14,
+    }
+
+    assert _derive_python_exe(info) == venv_python
+
+
 def test_derive_python_exe_honors_validated_virtualenv_executable_when_prefix_is_base(tmp_path):
     venv_dir = tmp_path / "venv"
     venv_dir.mkdir()

@@ -328,19 +328,27 @@ def get_license_dir(ida_dir: Path) -> Path:
 
 def accept_eula(install_dir: Path) -> None:
     # Accept the EULA (to be persistent across runs - you need to mount $HOME/.idapro as a volume)
+    old_idadir = os.environ.get("IDADIR")
     os.environ["IDADIR"] = str(install_dir)
     try:
-        # force this to be imported first and not reordered by ruff
-        import idapro  # noqa: F401
-        import ida_registry  # isort: skip
-    except Exception:
-        raise RuntimeError("idalib not available")
+        try:
+            # force this to be imported first and not reordered by ruff
+            import idapro  # noqa: F401
+            import ida_registry  # isort: skip
+        except Exception:
+            raise RuntimeError("idalib not available")
 
-    ida_registry.reg_write_int("EULA 90", 1)
-    ida_registry.reg_write_int("EULA 91", 1)
-    ida_registry.reg_write_int("EULA 92", 1)
-    ida_registry.reg_write_int("EULA 93", 1)
-    logger.info("EULA accepted")
+        ida_registry.reg_write_int("EULA 90", 1)
+        ida_registry.reg_write_int("EULA 91", 1)
+        ida_registry.reg_write_int("EULA 92", 1)
+        ida_registry.reg_write_int("EULA 93", 1)
+        ida_registry.reg_write_int("EULA 94", 1)
+        logger.info("EULA accepted")
+    finally:
+        if old_idadir is None:
+            os.environ.pop("IDADIR", None)
+        else:
+            os.environ["IDADIR"] = old_idadir
 
 
 def install_ida(installer: Path, install_dir: Path):
