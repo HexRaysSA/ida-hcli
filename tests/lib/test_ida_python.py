@@ -113,10 +113,7 @@ def test_find_current_python_executable_honors_activated_virtualenv(tmp_path, mo
     _prepare_isolated_idausr_for_python_detection(source_idausr, target_idausr)
 
     (target_idausr / "idapythonrc.py").write_text(
-        "import os, sys\n"
-        "venv = os.environ['HCLI_TEST_VENV']\n"
-        "os.environ['VIRTUAL_ENV'] = venv\n"
-        "sys.prefix = venv\n",
+        "import os, sys\nvenv = os.environ['HCLI_TEST_VENV']\nos.environ['VIRTUAL_ENV'] = venv\nsys.prefix = venv\n",
         encoding="utf-8",
     )
 

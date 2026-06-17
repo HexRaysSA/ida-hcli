@@ -229,6 +229,4 @@ def explain_environment() -> None:
             highlight=False,
         )
     if not active_venv and not ida_venv:
-        console.print(
-            "[dim]To change IDA's Python, use idapyswitch to point at a different interpreter.[/dim]"
-        )
+        console.print("[dim]To change IDA's Python, use idapyswitch to point at a different interpreter.[/dim]")
