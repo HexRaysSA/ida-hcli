@@ -338,22 +338,22 @@ def _merge_no_build_isolation(pip_options: PipOptions, no_build_isolation: bool)
 def detect_current_python_version() -> str:
     """Detect the major.minor Python version of the active IDA Python.
 
-    Falls back to the current interpreter's version if detection fails.
+    Raises if detection fails rather than silently falling back to the
+    hcli interpreter's version, which may differ from IDA's Python.
     """
-    import sys as _sys
-
-    try:
-        python_exe = find_current_python_executable()
-        result = subprocess.run(
-            [str(python_exe), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10,
-        )
-        return result.stdout.strip()
-    except Exception:
-        return f"{_sys.version_info.major}.{_sys.version_info.minor}"
+    logger.debug("detecting IDA Python executable...")
+    python_exe = find_current_python_executable()
+    logger.debug("found IDA Python executable: %s", python_exe)
+    result = subprocess.run(
+        [str(python_exe), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    version = result.stdout.strip()
+    logger.debug("detected Python version: %s", version)
+    return version
 
 
 def pip_freeze(python_exe: Path):

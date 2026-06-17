@@ -780,6 +780,13 @@ def _run_ida_batch_script(idat_path: Path, src: str, env: dict[str, str] | None 
         raise RuntimeError("failed to invoke idat: could not find expected lines in log output")
 
 
+def _clean_env_for_idat() -> dict[str, str]:
+    env = os.environ.copy()
+    for key in ("VIRTUAL_ENV", "PYTHONHOME", "PYTHONPATH", "PATH"):
+        env.pop(key, None)
+    return env
+
+
 def run_py_in_current_idapython(src: str) -> dict:
     idat_path = find_current_idat_executable()
     if not idat_path.exists():
@@ -792,7 +799,7 @@ def run_py_in_current_idapython(src: str) -> dict:
 
     idausr = get_ida_user_dir()
     if not idausr.exists() or not idausr.is_dir():
-        env = os.environ.copy()
+        env = _clean_env_for_idat()
         env["IDAUSR"] = str(idausr)
         return _run_ida_batch_script(idat_path, src, env=env)
 
@@ -800,7 +807,7 @@ def run_py_in_current_idapython(src: str) -> dict:
         isolated_idausr = Path(temp_dir) / "idausr"
         _prepare_headless_ida_user_dir(idausr, isolated_idausr)
 
-        env = os.environ.copy()
+        env = _clean_env_for_idat()
         env["IDAUSR"] = str(isolated_idausr)
         return _run_ida_batch_script(idat_path, src, env=env)
 
