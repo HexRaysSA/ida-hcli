@@ -153,6 +153,19 @@ def _derive_python_exe(info: dict) -> Path:
             logger.debug("using sys.executable matching IDAPYTHON_VENV_EXECUTABLE: %s", sys_executable)
             return Path(sys_executable)
 
+    # On IDA 9.4+ macOS, sys.executable may be the idat binary itself rather than a
+    # Python interpreter, so the sys.executable checks above cannot validate the venv.
+    # When IDAPYTHON_VENV_EXECUTABLE points to an existing, valid venv python, trust it
+    # directly before falling back to the base-framework interpreter.
+    if (
+        requested_venv_root
+        and requested_venv_executable
+        and os.path.exists(requested_venv_executable)
+        and _get_venv_root_from_python(requested_venv_executable) == requested_venv_root
+    ):
+        logger.debug("using IDAPYTHON_VENV_EXECUTABLE directly: %s", requested_venv_executable)
+        return Path(requested_venv_executable)
+
     for candidate in prefix_candidates:
         if os.path.exists(candidate):
             return Path(candidate)
