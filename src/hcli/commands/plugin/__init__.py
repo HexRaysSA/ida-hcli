@@ -18,13 +18,13 @@ from hcli.lib.ida.python import PipOptions
 
 from .bundle import bundle
 from .config import config
+from .explain_environment import explain_environment
 from .install import install_plugin
 from .lint import lint_plugin_directory
 from .repo import repo
 from .schema import schema
 from .search import search_plugins
 from .status import get_plugin_status
-from .explain_environment import explain_environment
 from .uninstall import uninstall_plugin
 from .upgrade import upgrade_plugin
 
