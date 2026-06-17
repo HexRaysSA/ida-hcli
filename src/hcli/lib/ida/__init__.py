@@ -798,18 +798,32 @@ def run_py_in_current_idapython(src: str) -> dict:
         )
 
     idausr = get_ida_user_dir()
-    if not idausr.exists() or not idausr.is_dir():
+
+    # First, try with the real IDAUSR so idapythonrc.py runs and activates any user venv.
+    # IDA_IS_INTERACTIVE=1 is needed because most idapythonrc.py scripts guard venv
+    # activation behind that flag.
+    # If this fails (e.g. a broken plugin crashes idat on startup), fall back to a
+    # minimal isolated IDAUSR that omits plugins and other user content.
+    if idausr.exists() and idausr.is_dir():
         env = _clean_env_for_idat()
         env["IDAUSR"] = str(idausr)
-        return _run_ida_batch_script(idat_path, src, env=env)
+        env["IDA_IS_INTERACTIVE"] = "1"
+        try:
+            return _run_ida_batch_script(idat_path, src, env=env)
+        except RuntimeError:
+            logger.debug("idat probe with real IDAUSR failed, retrying with isolated IDAUSR")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        isolated_idausr = Path(temp_dir) / "idausr"
-        _prepare_headless_ida_user_dir(idausr, isolated_idausr)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            isolated_idausr = Path(temp_dir) / "idausr"
+            _prepare_headless_ida_user_dir(idausr, isolated_idausr)
 
-        env = _clean_env_for_idat()
-        env["IDAUSR"] = str(isolated_idausr)
-        return _run_ida_batch_script(idat_path, src, env=env)
+            env = _clean_env_for_idat()
+            env["IDAUSR"] = str(isolated_idausr)
+            return _run_ida_batch_script(idat_path, src, env=env)
+
+    env = _clean_env_for_idat()
+    env["IDAUSR"] = str(idausr)
+    return _run_ida_batch_script(idat_path, src, env=env)
 
 
 def detect_binary_arch(path: Path) -> str | None:
