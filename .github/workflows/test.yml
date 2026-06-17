@@ -245,6 +245,17 @@ jobs:
         include:
           - python-version: "3.13"
             os_ida:
+              name: IDA 9.4 beta 1 on Linux
+              arch: intel
+              os: ubuntu-latest
+              ida_version: "9.4-beta-1"
+              slug: "beta/ida-pro/9.4-beta-1/ida-pro_94_x64linux.run"
+              idat_path: "/idat"
+              default_path: "/home/runner/.local/share/applications/IDA Professional 9.4"
+              supports_idalib: true
+
+          - python-version: "3.13"
+            os_ida:
               name: IDA Free 9.3 on macOS (ARM)
               arch: arm
               os: macos-latest

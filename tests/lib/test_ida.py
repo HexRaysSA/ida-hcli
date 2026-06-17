@@ -1,13 +1,16 @@
 import os
 import platform
 import struct
+import sys
 import tempfile
+import types
 from pathlib import Path
 
 import pytest
 
 from hcli.lib.ida import (
     _prepare_headless_ida_user_dir,
+    accept_eula,
     detect_binary_arch,
     find_current_ida_install_directory,
     find_current_ida_platform,
@@ -85,7 +88,7 @@ def test_find_current_ida_version():
     """Test find_current_ida_version() returns expected version."""
     result = find_current_ida_version()
     assert isinstance(result, str)
-    assert result in ["9.0", "9.1", "9.2", "9.3"]
+    assert result in ["9.0", "9.1", "9.2", "9.3", "9.4"]
 
 
 def test_parse_version_from_ida_pro_py():
@@ -94,7 +97,7 @@ def test_parse_version_from_ida_pro_py():
     result = parse_version_from_ida_pro_py(ida_dir)
     if has_idat():
         # editions with IDAPython should have python/ida_pro.py
-        assert result in ["9.0", "9.1", "9.2", "9.3"]
+        assert result in ["9.0", "9.1", "9.2", "9.3", "9.4"]
 
 
 def test_parse_version_from_ida_pro_py_missing():
@@ -110,7 +113,30 @@ def test_parse_version_from_dir_name():
     assert parse_version_from_dir_name(Path("/opt/IDA-Professional-9.2")) == "9.2"
     assert parse_version_from_dir_name(Path("/opt/IDA Professional 9.1sp1")) == "9.1"
     assert parse_version_from_dir_name(Path("/Applications/IDA Professional 9.2.app")) == "9.2"
+    assert parse_version_from_dir_name(Path("/opt/IDA Professional 9.4 beta 1")) == "9.4"
+    assert parse_version_from_dir_name(Path("/opt/IDA-Professional-9.4-beta-1")) == "9.4"
     assert parse_version_from_dir_name(Path("/opt/my-ida")) is None
+
+
+def test_accept_eula_writes_supported_registry_keys(monkeypatch, tmp_path):
+    writes = []
+
+    monkeypatch.setitem(sys.modules, "idapro", types.SimpleNamespace())
+    monkeypatch.setitem(
+        sys.modules,
+        "ida_registry",
+        types.SimpleNamespace(reg_write_int=lambda key, value: writes.append((key, value))),
+    )
+
+    accept_eula(tmp_path)
+
+    assert writes == [
+        ("EULA 90", 1),
+        ("EULA 91", 1),
+        ("EULA 92", 1),
+        ("EULA 93", 1),
+        ("EULA 94", 1),
+    ]
 
 
 def test_detect_binary_arch_elf_x86_64():
