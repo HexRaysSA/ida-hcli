@@ -181,44 +181,47 @@ def get_current_plugin() -> str:
     if frame is None:
         raise RuntimeError("failed to get current frame")
 
-    # Compare against both the symlink-preserving and resolved forms of the
-    # plugins directory. This lets editable installs that symlink the plugin
-    # directory into $IDAUSR/plugins/ work: Python's frame `co_filename` is
-    # whatever path was used to import (the symlink), while `Path.resolve()`
-    # follows symlinks. We try every combination so either layout matches.
-    plugins_path = get_plugins_directory()
-    plugin_root_candidates = {plugins_path, plugins_path.resolve()}
+    try:
+        # Compare against both the symlink-preserving and resolved forms of the
+        # plugins directory. This lets editable installs that symlink the plugin
+        # directory into $IDAUSR/plugins/ work: Python's frame `co_filename` is
+        # whatever path was used to import (the symlink), while `Path.resolve()`
+        # follows symlinks. We try every combination so either layout matches.
+        plugins_path = get_plugins_directory()
+        plugin_root_candidates = {plugins_path, plugins_path.resolve()}
 
-    current_frame = frame.f_back
-    while current_frame is not None:
-        logger.debug("inspecting frame: %s", current_frame)
-        module_filename = current_frame.f_code.co_filename
-        module_path = Path(module_filename)
-        module_path_candidates = (module_path, module_path.resolve())
+        current_frame = frame.f_back
+        while current_frame is not None:
+            logger.debug("inspecting frame: %s", current_frame)
+            module_filename = current_frame.f_code.co_filename
+            module_path = Path(module_filename)
+            module_path_candidates = (module_path, module_path.resolve())
 
-        plugin_directory_name = None
-        for mp in module_path_candidates:
-            for pp in plugin_root_candidates:
-                try:
-                    module_relative_path = mp.relative_to(pp)
-                except ValueError:
-                    continue
-                plugin_directory_name = module_relative_path.parts[0]
-                break
-            if plugin_directory_name is not None:
-                break
+            plugin_directory_name = None
+            for mp in module_path_candidates:
+                for pp in plugin_root_candidates:
+                    try:
+                        module_relative_path = mp.relative_to(pp)
+                    except ValueError:
+                        continue
+                    plugin_directory_name = module_relative_path.parts[0]
+                    break
+                if plugin_directory_name is not None:
+                    break
 
-        if plugin_directory_name is None:
-            current_frame = current_frame.f_back
-            continue
+            if plugin_directory_name is None:
+                current_frame = current_frame.f_back
+                continue
 
-        plugin_directory = plugins_path / plugin_directory_name
-        metadata = get_metadata_from_plugin_directory(plugin_directory)
-        plugin_name = metadata.plugin.name
-        logger.debug("found plugin by path: %s %s", module_filename, plugin_name)
-        return plugin_name
+            plugin_directory = plugins_path / plugin_directory_name
+            metadata = get_metadata_from_plugin_directory(plugin_directory)
+            plugin_name = metadata.plugin.name
+            logger.debug("found plugin by path: %s %s", module_filename, plugin_name)
+            return plugin_name
 
-    raise RuntimeError("get_current_plugin() must be called from within a plugin module")
+        raise RuntimeError("get_current_plugin() must be called from within a plugin module")
+    finally:
+        del frame
 
 
 def get_current_plugin_setting(key: str) -> str | bool:
