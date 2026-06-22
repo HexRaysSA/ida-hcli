@@ -8,7 +8,13 @@ from rich.console import Console
 from rich.table import Table
 
 from hcli.lib.config import config_store
-from hcli.lib.ida import add_instance_to_config, find_standard_installations, generate_instance_name, is_ida_dir
+from hcli.lib.ida import (
+    add_instance_to_config,
+    find_standard_installations,
+    generate_instance_name,
+    is_ida_dir,
+    select_default_ida_instance,
+)
 
 console = Console()
 
@@ -121,11 +127,10 @@ def _add_auto_discovered_instances() -> None:
         if added_count > 0:
             default_instance = config_store.get_string("ida.default", "")
             if not default_instance:
-                # Sort added instances alphabetically and pick the last one
-                sorted_instances = sorted(added_instances, key=lambda x: x[0])
-                last_instance_name = sorted_instances[-1][0]
-                config_store.set_string("ida.default", last_instance_name)
-                console.print(f"[green]Set '{last_instance_name}' as default IDA instance[/green]")
+                default_instance_name = select_default_ida_instance(added_instances)
+                if default_instance_name:
+                    config_store.set_string("ida.default", default_instance_name)
+                    console.print(f"[green]Set '{default_instance_name}' as default IDA instance[/green]")
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Selection cancelled[/yellow]")

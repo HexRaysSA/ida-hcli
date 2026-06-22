@@ -8,7 +8,13 @@ from hcli.env import ENV
 from hcli.lib.commands import async_command
 from hcli.lib.config import config_store
 from hcli.lib.console import console
-from hcli.lib.ida import add_instance_to_config, find_standard_installations, generate_instance_name, is_ida_dir
+from hcli.lib.ida import (
+    add_instance_to_config,
+    find_standard_installations,
+    generate_instance_name,
+    is_ida_dir,
+    select_default_ida_instance,
+)
 from hcli.lib.ida.protocol import register_protocol_handler
 from hcli.lib.util.io import get_hcli_executable_path
 
@@ -82,19 +88,20 @@ async def _check_and_setup_ida_instances() -> None:
 
         # Auto-register the discovered installations
         added_count = 0
+        added_instances = []
         for installation in valid_installations:
             instance_name = generate_instance_name(installation)
             if add_instance_to_config(instance_name, installation):
                 added_count += 1
+                added_instances.append((instance_name, installation))
 
         if added_count > 0:
             console.print(f"[green]✓ Automatically registered {added_count} IDA instance(s)[/green]")
 
-            # Set the last one alphabetically as default if no default exists
-            sorted_installations = sorted(valid_installations, key=lambda p: generate_instance_name(p))
-            last_instance = generate_instance_name(sorted_installations[-1])
-            config_store.set_string("ida.default", last_instance)
-            console.print(f"[green]✓ Set '{last_instance}' as default IDA instance[/green]")
+            default_instance_name = select_default_ida_instance(added_instances)
+            if default_instance_name:
+                config_store.set_string("ida.default", default_instance_name)
+                console.print(f"[green]✓ Set '{default_instance_name}' as default IDA instance[/green]")
         else:
             console.print("[yellow]! All discovered IDA instances were already registered[/yellow]")
 

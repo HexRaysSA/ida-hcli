@@ -11,7 +11,7 @@ from rich.text import Text
 
 from hcli.env import ENV
 from hcli.lib.config import config_store
-from hcli.lib.ida import is_ida_dir, parse_version_from_dir_name
+from hcli.lib.ida import is_ida_dir, parse_instance_version
 
 console = Console()
 
@@ -23,14 +23,6 @@ class InstanceRow(TypedDict):
     status_style: str
     is_default: bool
     version: Version | None
-
-
-def _parse_instance_version(name: str, path: Path) -> Version | None:
-    """Parse an IDA instance version for display ordering."""
-    raw_version = parse_version_from_dir_name(path) or parse_version_from_dir_name(Path(name))
-    if raw_version is None:
-        return None
-    return Version(raw_version)
 
 
 def _sort_instance_rows(instance_rows: list[InstanceRow]) -> None:
@@ -81,7 +73,7 @@ def list_instances() -> None:
                 "status": status,
                 "status_style": status_style,
                 "is_default": name == default_instance,
-                "version": _parse_instance_version(name, path),
+                "version": parse_instance_version(name, path),
             }
         )
 

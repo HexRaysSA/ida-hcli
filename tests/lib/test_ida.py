@@ -18,11 +18,15 @@ from hcli.lib.ida import (
     find_current_ida_platform,
     find_current_ida_version,
     find_current_idat_executable,
+    generate_instance_name,
     get_ida_config,
     get_ida_config_path,
     is_idalib_capable_install_dir_name,
+    parse_instance_version,
     parse_version_from_dir_name,
     parse_version_from_ida_pro_py,
+    parse_version_from_windows_registry,
+    select_default_ida_instance,
 )
 
 
@@ -120,6 +124,77 @@ def test_parse_version_from_dir_name():
     assert parse_version_from_dir_name(Path("/opt/IDA-Professional-9.4-beta-1")) == "9.4"
     assert parse_version_from_dir_name(Path("/opt/ida-pro-9.4")) == "9.4"
     assert parse_version_from_dir_name(Path("/opt/my-ida")) is None
+
+
+def test_parse_version_from_windows_registry(monkeypatch):
+    class FakeKey:
+        def __init__(self, name):
+            self.name = name
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    fake_winreg = types.SimpleNamespace(HKEY_LOCAL_MACHINE="HKLM", KEY_READ=1)
+
+    def open_key(root, path, *_args):
+        if root == "HKLM" and path == r"Software\Microsoft\Windows\CurrentVersion\Uninstall":
+            return FakeKey("root")
+        if isinstance(root, FakeKey) and root.name == "root" and path == "IDA Professional 9.1":
+            return FakeKey("ida91")
+        raise OSError
+
+    def enum_key(_root, index):
+        if index == 0:
+            return "IDA Professional 9.1"
+        raise OSError
+
+    def query_value_ex(key, value_name):
+        values = {
+            "DisplayName": "IDA Professional 9.1",
+            "DisplayVersion": "9.1",
+            "InstallLocation": r"C:\IDA91",
+        }
+        if key.name == "ida91" and value_name in values:
+            return values[value_name], None
+        raise OSError
+
+    fake_winreg.OpenKey = open_key
+    fake_winreg.EnumKey = enum_key
+    fake_winreg.QueryValueEx = query_value_ex
+    fake_winreg.CloseKey = lambda _key: None
+
+    monkeypatch.setitem(sys.modules, "winreg", fake_winreg)
+    monkeypatch.setattr("hcli.lib.ida.is_ida_dir", lambda _path: True)
+
+    assert parse_version_from_windows_registry(Path(r"C:\IDA91")) == "9.1"
+    assert generate_instance_name(Path(r"C:\IDA91")) == "ida-pro-9.1"
+
+
+def test_parse_instance_version_uses_ida_pro_py_for_nonstandard_directory(tmp_path):
+    ida_dir = tmp_path / "IDA91"
+    python_dir = ida_dir / "python"
+    python_dir.mkdir(parents=True)
+    (python_dir / "ida_pro.py").write_text('"""IDA SDK v9.1."""', encoding="utf-8")
+
+    assert str(parse_instance_version("ida91", ida_dir)) == "9.1"
+
+
+def test_select_default_ida_instance_uses_highest_parsed_version(tmp_path):
+    ida91 = tmp_path / "IDA91"
+    python_dir = ida91 / "python"
+    python_dir.mkdir(parents=True)
+    (python_dir / "ida_pro.py").write_text('"""IDA SDK v9.1."""', encoding="utf-8")
+
+    ida94 = tmp_path / "IDA Professional 9.4"
+
+    assert select_default_ida_instance([("ida-pro-9.4", ida94), ("ida91", ida91)]) == "ida-pro-9.4"
+
+
+def test_select_default_ida_instance_falls_back_to_name_without_versions(tmp_path):
+    assert select_default_ida_instance([("ida-a", tmp_path / "ida-a"), ("ida-z", tmp_path / "ida-z")]) == "ida-z"
 
 
 def test_accept_eula_writes_supported_registry_keys(monkeypatch, tmp_path):

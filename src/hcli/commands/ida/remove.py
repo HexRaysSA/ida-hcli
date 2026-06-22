@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import rich_click as click
 from rich.console import Console
 
 from hcli.lib.config import config_store
+from hcli.lib.ida import select_default_ida_instance
 
 console = Console()
 
@@ -83,11 +86,12 @@ def _remove_single_instance(name: str, instances: dict[str, str]) -> None:
     # Handle default instance removal
     if is_default:
         if instances:  # If there are remaining instances
-            # Select the last alphabetical instance as the new default
-            sorted_instance_names = sorted(instances.keys())
-            new_default = sorted_instance_names[-1]
-            config_store.set_string("ida.default", new_default)
-            console.print(f"[green]Set '{new_default}' as new default IDA instance[/green]")
+            new_default = select_default_ida_instance(
+                (instance_name, Path(path)) for instance_name, path in instances.items()
+            )
+            if new_default:
+                config_store.set_string("ida.default", new_default)
+                console.print(f"[green]Set '{new_default}' as new default IDA instance[/green]")
         else:
             # No instances left, clear default
             config_store.remove_string("ida.default")
