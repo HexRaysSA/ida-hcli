@@ -3,6 +3,7 @@
 import errno
 import json
 import logging
+import ntpath
 import os
 import re
 import shutil
@@ -10,15 +11,18 @@ import stat
 import struct
 import subprocess
 import tempfile
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import total_ordering
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
 import rich.console
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field
 
 from hcli.env import ENV
+from hcli.lib.ida.version import parse_version_from_ida_binary
 from hcli.lib.util.io import NoSpaceError, check_free_space, get_os
 
 logger = logging.getLogger(__name__)
@@ -34,6 +38,14 @@ class DownloadResource(NamedTuple):
     version: str
     os: str
     arch: str
+
+
+class _WindowsRegistryInstallation(NamedTuple):
+    """IDA installation metadata from the Windows uninstall registry."""
+
+    path: Path
+    display_name: str
+    display_version: str | None
 
 
 @dataclass
@@ -231,6 +243,20 @@ def get_idat_path(ida_dir: Path) -> Path:
     return get_ida_binary_path(ida_dir, "t")
 
 
+def get_idalib_path(ida_dir: Path) -> Path:
+    """Get the expected idalib library path for an IDA installation."""
+    os_ = get_os()
+    if os_ == "windows":
+        filename = "idalib.dll"
+    elif os_ == "linux":
+        filename = "libidalib.so"
+    elif os_ == "mac":
+        filename = "libidalib.dylib"
+    else:
+        raise ValueError(f"Unsupported operating system: {os_}")
+    return Path(get_ida_path(ida_dir)) / filename
+
+
 # Edition names as they appear on disk, per the IDA installer (../ida/ida/build/ida.xml).
 # Windows install directories and macOS app bundles use ``IDA ${ida_edition} ${version}``;
 # Linux install directories use ``ida-${edition}-${version}``.
@@ -260,19 +286,6 @@ _IDA_LEGACY_LINUX_DIR_NAME_RE = re.compile(
     + "|".join(re.escape(e).replace(r"\ ", r"[- ]") for e in _IDA_INSTALLER_EDITIONS.values())
     + rf")[- ]{_IDA_VERSION_RE}$",
 )
-_IDALIB_CAPABLE_DISPLAY_EDITIONS = ("Professional", "Classroom", "Essential")
-_IDALIB_CAPABLE_LINUX_EDITIONS = ("pro", "classroom", "essential")
-_IDALIB_CAPABLE_DISPLAY_DIR_NAME_RE = re.compile(
-    r"^IDA (?:" + "|".join(re.escape(e) for e in _IDALIB_CAPABLE_DISPLAY_EDITIONS) + rf") {_IDA_VERSION_RE}$",
-)
-_IDALIB_CAPABLE_LINUX_DIR_NAME_RE = re.compile(
-    r"^ida-(?:" + "|".join(re.escape(e) for e in _IDALIB_CAPABLE_LINUX_EDITIONS) + rf")-{_IDA_VERSION_RE}$",
-)
-_IDALIB_CAPABLE_LEGACY_LINUX_DIR_NAME_RE = re.compile(
-    r"^IDA[- ](?:"
-    + "|".join(re.escape(e).replace(r"\ ", r"[- ]") for e in _IDALIB_CAPABLE_DISPLAY_EDITIONS)
-    + rf")[- ]{_IDA_VERSION_RE}$",
-)
 
 
 def _is_ida_install_dir_name(name: str) -> bool:
@@ -285,24 +298,9 @@ def _is_ida_install_dir_name(name: str) -> bool:
     )
 
 
-def is_idalib_capable_install_dir_name(name: str) -> bool:
-    """Whether an installer-produced install dir name is for an idalib-capable edition."""
-    name = name.removesuffix(".app")
-    return bool(
-        _IDALIB_CAPABLE_DISPLAY_DIR_NAME_RE.match(name)
-        or _IDALIB_CAPABLE_LINUX_DIR_NAME_RE.match(name)
-        or _IDALIB_CAPABLE_LEGACY_LINUX_DIR_NAME_RE.match(name)
-    )
-
-
 def is_idalib_capable_installation(ida_dir: Path) -> bool:
-    """Whether an IDA installation path's edition should support idalib.
-
-    This intentionally follows installer edition naming instead of probing for
-    files, matching ida.xml where idalib is enabled for the pro family
-    (Professional, Classroom, Essential).
-    """
-    return is_idalib_capable_install_dir_name(ida_dir.name)
+    """Whether an IDA installation has idalib available."""
+    return get_idalib_path(ida_dir).exists()
 
 
 def _dedupe_paths(paths: list[Path]) -> list[Path]:
@@ -321,8 +319,8 @@ def _dedupe_paths(paths: list[Path]) -> list[Path]:
     return ret
 
 
-def _find_windows_installs_from_registry() -> list[Path]:
-    """Read InstallLocation from the Add/Remove Programs registry under HKLM.
+def _find_windows_registry_installations() -> list[_WindowsRegistryInstallation]:
+    """Read IDA installation metadata from the Add/Remove Programs registry under HKLM.
 
     The installer writes a key per install under
     ``HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IDA <edition> <version>``.
@@ -333,7 +331,7 @@ def _find_windows_installs_from_registry() -> list[Path]:
         return []
 
     winreg: Any = _winreg
-    ret: list[Path] = []
+    ret: list[_WindowsRegistryInstallation] = []
     uninstall_path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
     try:
         root = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, uninstall_path, 0, winreg.KEY_READ)
@@ -362,14 +360,27 @@ def _find_windows_installs_from_registry() -> list[Path]:
                         continue
                     if not install_location:
                         continue
+                    display_version = None
+                    try:
+                        raw_display_version, _ = winreg.QueryValueEx(subkey, "DisplayVersion")
+                    except OSError:
+                        pass
+                    else:
+                        if isinstance(raw_display_version, str):
+                            display_version = raw_display_version
                     path = Path(install_location)
                     if is_ida_dir(path):
-                        ret.append(path)
+                        ret.append(_WindowsRegistryInstallation(path, display_name, display_version))
             except OSError:
                 continue
     finally:
         winreg.CloseKey(root)
     return ret
+
+
+def _find_windows_installs_from_registry() -> list[Path]:
+    """Read InstallLocation from the Add/Remove Programs registry under HKLM."""
+    return [installation.path for installation in _find_windows_registry_installations()]
 
 
 def find_standard_windows_installations() -> list[Path]:
@@ -1190,6 +1201,82 @@ def parse_version_from_dir_name(ida_dir: Path) -> str | None:
     return None
 
 
+def _windows_path_key(path: Path) -> str:
+    """Normalize a path for Windows registry comparisons."""
+    return ntpath.normcase(ntpath.normpath(str(path)))
+
+
+def _find_windows_registry_installation(ida_dir: Path) -> _WindowsRegistryInstallation | None:
+    """Find the Windows registry metadata for an IDA installation path."""
+    target = _windows_path_key(ida_dir)
+    for installation in _find_windows_registry_installations():
+        if _windows_path_key(installation.path) == target:
+            return installation
+    return None
+
+
+def parse_version_from_windows_registry(ida_dir: Path) -> str | None:
+    """Parse the IDA version for an installation from the Windows uninstall registry."""
+    installation = _find_windows_registry_installation(ida_dir)
+    if installation is None:
+        return None
+
+    version = parse_version_from_dir_name(Path(installation.display_name))
+    if version:
+        return version
+
+    if installation.display_version:
+        m = re.search(r"(\d+\.\d+)", installation.display_version)
+        if m:
+            return m.group(1)
+    return None
+
+
+def parse_instance_version(name: str, ida_dir: Path) -> Version | None:
+    """Parse an IDA instance version for ordering.
+
+    Prefer Windows registry metadata when available, then the SDK version
+    embedded in python/ida_pro.py, then the main IDA executable. Fall back to
+    the installation path and configured instance name, so non-standard paths
+    still work when the user names the instance with a version.
+    """
+    version_sources: tuple[Callable[[], str | None], ...] = (
+        lambda: parse_version_from_windows_registry(ida_dir),
+        lambda: parse_version_from_ida_pro_py(ida_dir),
+        lambda: parse_version_from_ida_binary(get_ida_binary_path(ida_dir)),
+        lambda: parse_version_from_dir_name(ida_dir),
+        lambda: parse_version_from_dir_name(Path(name)),
+    )
+
+    for get_raw_version in version_sources:
+        raw_version = get_raw_version()
+        if raw_version is None:
+            continue
+        try:
+            return Version(raw_version)
+        except InvalidVersion:
+            logger.debug("ignoring invalid IDA version %r for instance %s at %s", raw_version, name, ida_dir)
+    return None
+
+
+def select_default_ida_instance(instances: Iterable[tuple[str, Path]]) -> str | None:
+    """Select the default IDA instance by highest parsed version.
+
+    Instances without a parsed version sort below instances with a version. Name
+    ordering is retained as a deterministic fallback and tie-breaker.
+    """
+    candidates = list(instances)
+    if not candidates:
+        return None
+
+    def sort_key(instance: tuple[str, Path]) -> tuple[bool, Version, str]:
+        name, ida_dir = instance
+        version = parse_instance_version(name, ida_dir)
+        return (version is not None, version or Version("0"), name)
+
+    return max(candidates, key=sort_key)[0]
+
+
 def find_current_ida_version() -> str:
     """find the version of the current IDA installation, like '9.1'"""
     # duplicate here, because we prefer access through ENV
@@ -1202,7 +1289,15 @@ def find_current_ida_version() -> str:
 
     ida_dir = find_current_ida_install_directory()
 
+    version = parse_version_from_windows_registry(ida_dir)
+    if version:
+        return version
+
     version = parse_version_from_ida_pro_py(ida_dir)
+    if version:
+        return version
+
+    version = parse_version_from_ida_binary(get_ida_binary_path(ida_dir))
     if version:
         return version
 
@@ -1211,15 +1306,16 @@ def find_current_ida_version() -> str:
         return version
 
     raise FailedToDetectIDAVersion(
-        "could not determine IDA version from python/ida_pro.py or the installation directory name"
+        "could not determine IDA version from python/ida_pro.py, the IDA executable, or the installation directory name"
     )
 
 
 def generate_instance_name(path: Path) -> str:
-    """Generate a reasonable instance name from installation path."""
-    # For macOS: "IDA Professional 9.2.app" -> "ida-pro-9.2"
-    # For others: "IDA Professional 9.2" -> "ida-pro-9.2"
-    name = path.name
+    """Generate a reasonable instance name from installation metadata or path."""
+    # Prefer the Windows registry display name because InstallLocation may be a
+    # custom directory such as C:\IDA91 while DisplayName is "IDA Professional 9.1".
+    registry_installation = _find_windows_registry_installation(path)
+    name = registry_installation.display_name if registry_installation else path.name
 
     # Remove .app extension for macOS
     name = name.removesuffix(".app")

@@ -101,7 +101,8 @@ def resolve_and_navigate(
             raise click.Abort()
 
         # 4. Launch IDA
-        from hcli.lib.ida.launcher import MIN_IPC_VERSION, IDALauncher, LaunchConfig, _parse_version_tuple
+        from hcli.lib.ida.launcher import MIN_IPC_VERSION, IDALauncher, LaunchConfig
+        from hcli.lib.ida.version import parse_ida_binary_version
 
         console.print(f"[yellow]No IDA instance has '{target_idb_name}' open.[/yellow]")
 
@@ -114,7 +115,8 @@ def resolve_and_navigate(
         )
 
         ida_version = launcher.get_ida_version()
-        use_ipc = ida_version is None or _parse_version_tuple(ida_version) >= MIN_IPC_VERSION
+        parsed_ida_version = parse_ida_binary_version(ida_version) if ida_version is not None else None
+        use_ipc = ida_version is None or parsed_ida_version is None or parsed_ida_version[:2] >= MIN_IPC_VERSION
 
         if not use_ipc:
             result = launcher.launch_only(

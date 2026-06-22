@@ -78,9 +78,9 @@ def _set_default_instance(name: str) -> None:
     config_store.set_string("ida.default", name)
 
     # hcli's default lives in ida.default. ida-config.json's ida-install-dir is
-    # also consumed by idalib, so only move it when the selected edition is
-    # idalib-capable; switching hcli to Home/Free must not break an existing Pro
-    # idalib activation.
+    # also consumed by idalib, so only move it when the selected installation
+    # includes idalib; switching hcli to an install without idalib must not break
+    # an existing idalib activation.
     path = instances.get(name)
     if path:
         install_dir = Path(path)
@@ -90,6 +90,6 @@ def _set_default_instance(name: str) -> None:
             set_ida_config(config)
             console.print("[grey69]Updated idalib default in ida-config.json[/grey69]")
         else:
-            console.print("[grey69]Left idalib default unchanged; selected edition is not idalib-capable[/grey69]")
+            console.print("[grey69]Left idalib default unchanged; selected IDA does not include idalib[/grey69]")
 
     console.print(f"[green]Set '{name}' as the default IDA Pro instance[/green]")

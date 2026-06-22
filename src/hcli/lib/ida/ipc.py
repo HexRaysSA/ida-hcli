@@ -284,7 +284,7 @@ class IDAIPCClient:
     @staticmethod
     def _send_command_unix(socket_path: str, command: dict, read_timeout: float | None = None) -> dict:
         """Send command via Unix domain socket."""
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)  # type: ignore[attr-defined]
         sock.settimeout(IDAIPCClient.CONNECT_TIMEOUT)
 
         try:

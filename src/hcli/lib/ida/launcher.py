@@ -87,11 +87,6 @@ class LaunchResult:
 MIN_IPC_VERSION = (9, 4)
 
 
-def _parse_version_tuple(version: str) -> tuple[int, ...]:
-    """Parse a version string like '9.4' into a tuple of ints."""
-    return tuple(int(x) for x in version.split("."))
-
-
 class IDALauncher:
     """Manages IDA process lifecycle with robust error handling."""
 
