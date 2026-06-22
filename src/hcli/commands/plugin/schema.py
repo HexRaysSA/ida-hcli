@@ -32,7 +32,7 @@ def schema(output: Path | None, indent: int) -> None:
 
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(payload + "\n", encoding="utf-8")
+        output.write_text(payload + "\n", encoding="utf-8", newline="\n")
         console.print(f"[green]wrote schema to {output}[/green]")
     else:
         click.echo(payload)
