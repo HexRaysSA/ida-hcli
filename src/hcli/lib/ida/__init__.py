@@ -11,7 +11,7 @@ import stat
 import struct
 import subprocess
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import total_ordering
 from pathlib import Path
@@ -22,6 +22,7 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field
 
 from hcli.env import ENV
+from hcli.lib.ida.version import parse_version_from_ida_binary
 from hcli.lib.util.io import NoSpaceError, check_free_space, get_os
 
 logger = logging.getLogger(__name__)
@@ -1249,16 +1250,20 @@ def parse_instance_version(name: str, ida_dir: Path) -> Version | None:
     """Parse an IDA instance version for ordering.
 
     Prefer Windows registry metadata when available, then the SDK version
-    embedded in python/ida_pro.py. Fall back to the installation path and then
-    the configured instance name, so non-standard paths still work when the user
-    names the instance with a version.
+    embedded in python/ida_pro.py, then the main IDA executable. Fall back to
+    the installation path and configured instance name, so non-standard paths
+    still work when the user names the instance with a version.
     """
-    for raw_version in (
-        parse_version_from_windows_registry(ida_dir),
-        parse_version_from_ida_pro_py(ida_dir),
-        parse_version_from_dir_name(ida_dir),
-        parse_version_from_dir_name(Path(name)),
-    ):
+    version_sources: tuple[Callable[[], str | None], ...] = (
+        lambda: parse_version_from_windows_registry(ida_dir),
+        lambda: parse_version_from_ida_pro_py(ida_dir),
+        lambda: parse_version_from_ida_binary(get_ida_binary_path(ida_dir)),
+        lambda: parse_version_from_dir_name(ida_dir),
+        lambda: parse_version_from_dir_name(Path(name)),
+    )
+
+    for get_raw_version in version_sources:
+        raw_version = get_raw_version()
         if raw_version is None:
             continue
         try:
@@ -1298,7 +1303,15 @@ def find_current_ida_version() -> str:
 
     ida_dir = find_current_ida_install_directory()
 
+    version = parse_version_from_windows_registry(ida_dir)
+    if version:
+        return version
+
     version = parse_version_from_ida_pro_py(ida_dir)
+    if version:
+        return version
+
+    version = parse_version_from_ida_binary(get_ida_binary_path(ida_dir))
     if version:
         return version
 
@@ -1307,7 +1320,7 @@ def find_current_ida_version() -> str:
         return version
 
     raise FailedToDetectIDAVersion(
-        "could not determine IDA version from python/ida_pro.py or the installation directory name"
+        "could not determine IDA version from python/ida_pro.py, the IDA executable, or the installation directory name"
     )
 
 

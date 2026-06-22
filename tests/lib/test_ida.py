@@ -21,6 +21,7 @@ from hcli.lib.ida import (
     generate_instance_name,
     get_ida_config,
     get_ida_config_path,
+    get_ida_path,
     is_idalib_capable_install_dir_name,
     parse_instance_version,
     parse_version_from_dir_name,
@@ -28,6 +29,7 @@ from hcli.lib.ida import (
     parse_version_from_windows_registry,
     select_default_ida_instance,
 )
+from hcli.lib.ida.version import normalize_ida_binary_version, parse_version_from_ida_binary
 
 
 def test_get_ida_config_path():
@@ -126,6 +128,39 @@ def test_parse_version_from_dir_name():
     assert parse_version_from_dir_name(Path("/opt/my-ida")) is None
 
 
+def test_normalize_ida_binary_version():
+    assert normalize_ida_binary_version("9.4.260622.abc123def") == "9.4"
+    assert normalize_ida_binary_version("9.0.241217") == "9.0"
+    assert normalize_ida_binary_version("9.0.24.0925") == "9.0"
+    assert normalize_ida_binary_version("9.4") == "9.4"
+    assert normalize_ida_binary_version("not-a-version") is None
+
+
+def test_parse_version_from_ida_binary_linux_fallback(monkeypatch, tmp_path):
+    binary = tmp_path / "ida"
+    binary.write_bytes(b"prefix 9.4.260622.abc123def suffix")
+
+    monkeypatch.setattr("hcli.lib.ida.version.sys.platform", "linux")
+
+    assert parse_version_from_ida_binary(binary) == "9.4"
+
+
+def test_parse_version_from_ida_binary_windows_fallback(monkeypatch, tmp_path):
+    binary = tmp_path / "ida.exe"
+    binary.write_bytes(
+        b"prefix"
+        + "FileVersion".encode("utf-16-le")
+        + b"\x00\x00"
+        + "9.0.24.0925".encode("utf-16-le")
+        + b"\x00\x00"
+        + b"suffix"
+    )
+
+    monkeypatch.setattr("hcli.lib.ida.version.sys.platform", "win32")
+
+    assert parse_version_from_ida_binary(binary) == "9.0"
+
+
 def test_parse_version_from_windows_registry(monkeypatch):
     class FakeKey:
         def __init__(self, name):
@@ -173,9 +208,40 @@ def test_parse_version_from_windows_registry(monkeypatch):
     assert generate_instance_name(Path(r"C:\IDA91")) == "ida-pro-9.1"
 
 
+def test_parse_instance_version_stops_after_first_valid_source(monkeypatch, tmp_path):
+    def fail(*_args):
+        raise AssertionError("version source should not be evaluated")
+
+    monkeypatch.setattr("hcli.lib.ida.parse_version_from_windows_registry", lambda _ida_dir: "9.4")
+    monkeypatch.setattr("hcli.lib.ida.parse_version_from_ida_pro_py", fail)
+    monkeypatch.setattr("hcli.lib.ida.parse_version_from_ida_binary", fail)
+    monkeypatch.setattr("hcli.lib.ida.parse_version_from_dir_name", fail)
+
+    assert str(parse_instance_version("ida94", tmp_path / "IDA94")) == "9.4"
+
+
+def test_parse_instance_version_uses_ida_binary_for_nonstandard_directory(monkeypatch, tmp_path):
+    ida_dir = tmp_path / "IDA94"
+    ida_dir.mkdir()
+    binary = ida_dir / "ida.exe"
+    binary.write_bytes(
+        b"prefix"
+        + "FileVersion".encode("utf-16-le")
+        + b"\x00\x00"
+        + "9.4.26.0622".encode("utf-16-le")
+        + b"\x00\x00"
+        + b"suffix"
+    )
+
+    monkeypatch.setattr("hcli.lib.ida.version.sys.platform", "win32")
+    monkeypatch.setattr("hcli.lib.ida.get_ida_binary_path", lambda _ida_dir: binary)
+
+    assert str(parse_instance_version("ida94", ida_dir)) == "9.4"
+
+
 def test_parse_instance_version_uses_ida_pro_py_for_nonstandard_directory(tmp_path):
     ida_dir = tmp_path / "IDA91"
-    python_dir = ida_dir / "python"
+    python_dir = get_ida_path(ida_dir) / "python"
     python_dir.mkdir(parents=True)
     (python_dir / "ida_pro.py").write_text('"""IDA SDK v9.1."""', encoding="utf-8")
 
