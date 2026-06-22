@@ -24,6 +24,7 @@ from hcli.lib.ida import (
     get_license_dir,
     install_ida,
     install_license,
+    is_idalib_capable_installation,
 )
 from hcli.lib.util.io import get_os
 
@@ -191,7 +192,7 @@ async def install(
                 config_store.set_string("ida.default", instance_name)
                 console.print(f"[grey69]Set hcli default IDA instance: {instance_name}[/grey69]")
 
-                if version.product in ("IDA Professional", "IDA Classroom", "IDA Essential"):
+                if is_idalib_capable_installation(install_dir_path):
                     config_path = get_ida_config_path()
                     if not config_path.exists():
                         console.print("[yellow]Updating idalib configuration (default installation)...[/yellow]")
@@ -216,24 +217,21 @@ async def install(
                         console.print(f"[grey69]                     -> {new}[/grey69]")
                 else:
                     console.print(
-                        "[grey69]Left idalib default unchanged; installed edition is not idalib-capable[/grey69]"
+                        "[grey69]Left idalib default unchanged; installed IDA does not include idalib[/grey69]"
                     )
 
             # this requires using ida_registry to set some keys
             # which requires idalib to be working
             # so it has to go after license and config installation
-            if eula and version.product:
-                # Matches ida.xml: has_idalib is enabled for the pro family, which
-                # includes Professional, Classroom, and Essential. Home and Free do
-                # not ship the idalib pieces needed by accept_eula().
-                if version.product in ("IDA Professional", "IDA Classroom", "IDA Essential"):
+            if eula:
+                if is_idalib_capable_installation(install_dir_path):
                     console.print("[yellow]Accepting EULA...[/yellow]")
                     try:
                         accept_eula(get_ida_path(install_dir_path))
                     except RuntimeError:
                         console.print("[red]Skipped EULA acceptance due to missing idalib.[/red]")
                 else:
-                    console.print("[yellow]Skipped EULA acceptance due to product features.[/yellow]")
+                    console.print("[yellow]Skipped EULA acceptance due to missing idalib.[/yellow]")
 
             console.print("[green]Installation complete![/green]")
 

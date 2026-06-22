@@ -243,6 +243,20 @@ def get_idat_path(ida_dir: Path) -> Path:
     return get_ida_binary_path(ida_dir, "t")
 
 
+def get_idalib_path(ida_dir: Path) -> Path:
+    """Get the expected idalib library path for an IDA installation."""
+    os_ = get_os()
+    if os_ == "windows":
+        filename = "idalib.dll"
+    elif os_ == "linux":
+        filename = "libidalib.so"
+    elif os_ == "mac":
+        filename = "libidalib.dylib"
+    else:
+        raise ValueError(f"Unsupported operating system: {os_}")
+    return Path(get_ida_path(ida_dir)) / filename
+
+
 # Edition names as they appear on disk, per the IDA installer (../ida/ida/build/ida.xml).
 # Windows install directories and macOS app bundles use ``IDA ${ida_edition} ${version}``;
 # Linux install directories use ``ida-${edition}-${version}``.
@@ -272,19 +286,6 @@ _IDA_LEGACY_LINUX_DIR_NAME_RE = re.compile(
     + "|".join(re.escape(e).replace(r"\ ", r"[- ]") for e in _IDA_INSTALLER_EDITIONS.values())
     + rf")[- ]{_IDA_VERSION_RE}$",
 )
-_IDALIB_CAPABLE_DISPLAY_EDITIONS = ("Professional", "Classroom", "Essential")
-_IDALIB_CAPABLE_LINUX_EDITIONS = ("pro", "classroom", "essential")
-_IDALIB_CAPABLE_DISPLAY_DIR_NAME_RE = re.compile(
-    r"^IDA (?:" + "|".join(re.escape(e) for e in _IDALIB_CAPABLE_DISPLAY_EDITIONS) + rf") {_IDA_VERSION_RE}$",
-)
-_IDALIB_CAPABLE_LINUX_DIR_NAME_RE = re.compile(
-    r"^ida-(?:" + "|".join(re.escape(e) for e in _IDALIB_CAPABLE_LINUX_EDITIONS) + rf")-{_IDA_VERSION_RE}$",
-)
-_IDALIB_CAPABLE_LEGACY_LINUX_DIR_NAME_RE = re.compile(
-    r"^IDA[- ](?:"
-    + "|".join(re.escape(e).replace(r"\ ", r"[- ]") for e in _IDALIB_CAPABLE_DISPLAY_EDITIONS)
-    + rf")[- ]{_IDA_VERSION_RE}$",
-)
 
 
 def _is_ida_install_dir_name(name: str) -> bool:
@@ -297,24 +298,9 @@ def _is_ida_install_dir_name(name: str) -> bool:
     )
 
 
-def is_idalib_capable_install_dir_name(name: str) -> bool:
-    """Whether an installer-produced install dir name is for an idalib-capable edition."""
-    name = name.removesuffix(".app")
-    return bool(
-        _IDALIB_CAPABLE_DISPLAY_DIR_NAME_RE.match(name)
-        or _IDALIB_CAPABLE_LINUX_DIR_NAME_RE.match(name)
-        or _IDALIB_CAPABLE_LEGACY_LINUX_DIR_NAME_RE.match(name)
-    )
-
-
 def is_idalib_capable_installation(ida_dir: Path) -> bool:
-    """Whether an IDA installation path's edition should support idalib.
-
-    This intentionally follows installer edition naming instead of probing for
-    files, matching ida.xml where idalib is enabled for the pro family
-    (Professional, Classroom, Essential).
-    """
-    return is_idalib_capable_install_dir_name(ida_dir.name)
+    """Whether an IDA installation has idalib available."""
+    return get_idalib_path(ida_dir).exists()
 
 
 def _dedupe_paths(paths: list[Path]) -> list[Path]:

@@ -22,7 +22,8 @@ from hcli.lib.ida import (
     get_ida_config,
     get_ida_config_path,
     get_ida_path,
-    is_idalib_capable_install_dir_name,
+    get_idalib_path,
+    is_idalib_capable_installation,
     parse_instance_version,
     parse_version_from_dir_name,
     parse_version_from_ida_pro_py,
@@ -342,35 +343,25 @@ def test_ida_install_dir_name_detection_rejects_non_installer_names(name):
 
 
 @pytest.mark.parametrize(
-    "name",
+    ("os_name", "filename"),
     [
-        "IDA Professional 9.4",
-        "IDA Classroom 9.4",
-        "IDA Essential 9.4",
-        "IDA Professional 9.4.app",
-        "ida-pro-9.4",
-        "ida-classroom-9.4",
-        "ida-essential-9.4",
-        "IDA-Professional-9.2",
+        ("windows", "idalib.dll"),
+        ("linux", "libidalib.so"),
+        ("mac", "libidalib.dylib"),
     ],
 )
-def test_idalib_capable_install_dir_name_detection_accepts_pro_family(name):
-    assert is_idalib_capable_install_dir_name(name)
+def test_idalib_capable_installation_probes_for_idalib(monkeypatch, tmp_path, os_name, filename):
+    monkeypatch.setattr("hcli.lib.ida.get_os", lambda: os_name)
+    ida_dir = tmp_path / "IDA Home 9.4"
+    idalib_path = get_idalib_path(ida_dir)
 
+    assert idalib_path.name == filename
+    assert not is_idalib_capable_installation(ida_dir)
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "IDA Free 9.4",
-        "IDA Home (PC) 9.4",
-        "IDA Home (ARM) 9.4.app",
-        "ida-free-9.4",
-        "ida-home-pc-9.4",
-        "ida-home-riscv-9.4",
-    ],
-)
-def test_idalib_capable_install_dir_name_detection_rejects_non_pro_family(name):
-    assert not is_idalib_capable_install_dir_name(name)
+    idalib_path.parent.mkdir(parents=True)
+    idalib_path.write_bytes(b"")
+
+    assert is_idalib_capable_installation(ida_dir)
 
 
 def test_detect_binary_arch_elf_x86_64():
