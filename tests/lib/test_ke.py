@@ -1,9 +1,9 @@
-"""Tests for KE URL handling in ida:// protocol."""
+"""Tests for KE deep-link handling in the ida:// protocol."""
 
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import click
 import pytest
@@ -12,87 +12,87 @@ from hcli.lib.ida.handler.ke_url_handler import (
     KEURLHandler,
     _cleanup_old_downloads,
     _default_downloads_dir,
-    _parse_asset_path,
-    _resolve_base_url,
+    _has_nav_params,
+    _idb_name_from_path,
+    _ns,
+    _strip_query_param,
 )
 
+# A representative KE asset base — what KE percent-encodes into the ``url=`` parameter.
+ASSET_URL = "http://host:8080/api/v1/buckets/mybucket/assets/test.i64"
 
-class TestIsKeUrl:
-    def test_ke_url_detected(self):
-        parsed = urlparse("ida://host:8080/api/v1/buckets/mybucket/assets/mykey")
+
+def _ke_link(idb: str, resource: str, asset_url: str, *, nav: str = "") -> str:
+    """Build a KE deep link the way KE emits it (asset URL percent-encoded into url=)."""
+    query = (f"{nav}&" if nav else "") + f"url={quote(asset_url, safe='')}"
+    return f"ida://ke/{idb}/{resource}?{query}"
+
+
+class TestMatches:
+    def test_ke_link_with_url_param_detected(self):
+        parsed = urlparse(_ke_link("test.i64", "functions", ASSET_URL, nav="ea=0x1000&view=pseudocode"))
         assert KEURLHandler().matches(parsed) is True
 
-    def test_regular_ida_url_not_detected(self):
+    def test_open_only_link_detected(self):
+        parsed = urlparse(_ke_link("test.i64", "addresses", ASSET_URL))
+        assert KEURLHandler().matches(parsed) is True
+
+    def test_plain_navigation_link_not_detected(self):
+        # No url= param → handled by DefaultURLHandler, not KE.
         parsed = urlparse("ida://malwares/trojan.i64/functions?rva=0x1000")
         assert KEURLHandler().matches(parsed) is False
 
-    def test_relative_ida_url_not_detected(self):
-        parsed = urlparse("ida:///myfile.i64/functions?rva=0x1000")
+    def test_obsolete_locator_not_detected(self):
+        # The old download-locator form carried no url= param — it no longer matches.
+        parsed = urlparse("ida://host:8080/api/v1/buckets/mybucket/assets/test.i64")
         assert KEURLHandler().matches(parsed) is False
 
-    def test_ke_url_with_nested_key(self):
-        parsed = urlparse("ida://host/api/v1/buckets/b/assets/path/to/file.idb")
-        assert KEURLHandler().matches(parsed) is True
+
+class TestIdbNameFromPath:
+    def test_first_segment_is_the_idb(self):
+        assert _idb_name_from_path("/test.i64/functions") == "test.i64"
+
+    def test_open_only_path(self):
+        assert _idb_name_from_path("/chall.i64/addresses") == "chall.i64"
+
+    def test_percent_encoded_name_decoded(self):
+        assert _idb_name_from_path("/my%20file.i64/functions") == "my file.i64"
 
     def test_empty_path(self):
-        parsed = urlparse("ida://host")
-        assert KEURLHandler().matches(parsed) is False
+        assert _idb_name_from_path("") == ""
 
 
-class TestParseAssetPath:
-    def test_basic_path(self):
-        bucket, key = _parse_asset_path("/api/v1/buckets/mybucket/assets/mykey")
-        assert bucket == "mybucket"
-        assert key == "mykey"
+class TestNs:
+    def test_stable_and_short(self):
+        assert _ns(ASSET_URL) == _ns(ASSET_URL)
+        assert len(_ns(ASSET_URL)) == 16
 
-    def test_nested_key(self):
-        bucket, key = _parse_asset_path("/api/v1/buckets/mybucket/assets/path/to/file.idb")
-        assert bucket == "mybucket"
-        assert key == "path/to/file.idb"
-
-    def test_url_encoded_key(self):
-        bucket, key = _parse_asset_path("/api/v1/buckets/mybucket/assets/my%20file.idb")
-        assert bucket == "mybucket"
-        assert key == "my file.idb"
-
-    def test_missing_buckets_raises(self):
-        with pytest.raises(click.Abort):
-            _parse_asset_path("/api/v1/something/mybucket/assets/mykey")
-
-    def test_missing_assets_raises(self):
-        with pytest.raises(click.Abort):
-            _parse_asset_path("/api/v1/buckets/mybucket/something/mykey")
-
-    def test_empty_bucket_raises(self):
-        with pytest.raises(click.Abort):
-            _parse_asset_path("/api/v1/buckets//assets/mykey")
-
-    def test_empty_key_raises(self):
-        with pytest.raises(click.Abort):
-            _parse_asset_path("/api/v1/buckets/mybucket/assets/")
+    def test_differs_per_url(self):
+        assert _ns(ASSET_URL) != _ns(ASSET_URL + "x")
 
 
-class TestResolveBaseUrl:
-    @patch("hcli.lib.ida.handler.ke_url_handler.httpx.Client")
-    def test_https_available(self, mock_client_cls):
-        mock_client = MagicMock()
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
+class TestHasNavParams:
+    def test_ea_is_navigation(self):
+        assert _has_nav_params("ea=0x1000&url=x") is True
 
-        result = _resolve_base_url("example.com:8080")
-        assert result == "https://example.com:8080"
+    def test_view_is_navigation(self):
+        assert _has_nav_params("view=pseudocode&url=x") is True
 
-    @patch("hcli.lib.ida.handler.ke_url_handler.httpx.Client")
-    def test_https_unavailable_falls_back_to_http(self, mock_client_cls):
-        import httpx
+    def test_url_only_is_open_only(self):
+        assert _has_nav_params("url=x") is False
 
-        mock_client = MagicMock()
-        mock_client.head.side_effect = httpx.ConnectError("Connection refused")
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
+    def test_empty_query(self):
+        assert _has_nav_params("") is False
 
-        result = _resolve_base_url("example.com:8080")
-        assert result == "http://example.com:8080"
+
+class TestStripQueryParam:
+    def test_drops_url_keeps_the_rest(self):
+        uri = "ida://ke/test.i64/functions?ea=0x1000&view=pseudocode&url=" + quote(ASSET_URL, safe="")
+        assert _strip_query_param(uri, "url") == "ida://ke/test.i64/functions?ea=0x1000&view=pseudocode"
+
+    def test_drops_only_url_when_open_only(self):
+        uri = "ida://ke/test.i64/addresses?url=" + quote(ASSET_URL, safe="")
+        assert _strip_query_param(uri, "url") == "ida://ke/test.i64/addresses"
 
 
 class TestDefaultDownloadsDir:
@@ -135,10 +135,9 @@ class TestHandleKeUrl:
     @patch("hcli.lib.ida.handler.ke_url_handler._show_download_dialog", return_value=None)
     @patch("hcli.lib.ida.handler.ke_url_handler._dismiss_dialog")
     @patch("hcli.lib.ida.handler.ke_url_handler._cleanup_old_downloads")
-    @patch("hcli.lib.ida.handler.ke_url_handler._resolve_base_url", return_value="https://host:8080")
     @patch("hcli.lib.ida.handler.ke_url_handler.httpx.Client")
-    def test_no_launch_downloads_only(
-        self, mock_client_cls, mock_resolve, mock_cleanup, mock_dismiss, mock_dialog, tmp_path
+    def test_no_launch_downloads_to_hashed_dir(
+        self, mock_client_cls, mock_cleanup, mock_dismiss, mock_dialog, tmp_path
     ):
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -148,7 +147,7 @@ class TestHandleKeUrl:
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        uri = "ida://host:8080/api/v1/buckets/mybucket/assets/test.idb"
+        uri = _ke_link("test.i64", "addresses", ASSET_URL)
         parsed = urlparse(uri)
 
         with (
@@ -159,30 +158,28 @@ class TestHandleKeUrl:
             mock_env.HCLI_KE_DOWNLOADS_RETENTION_DAYS = 3
             KEURLHandler().handle(uri, parsed, no_launch=True, timeout=120.0, skip_analysis=False)
 
-        # File should be downloaded
-        downloaded = tmp_path / "mybucket" / "test.idb"
+        # File and its .ke.json sidecar land under the url-hash namespace dir.
+        downloaded = tmp_path / _ns(ASSET_URL) / "test.i64"
         assert downloaded.exists()
         assert downloaded.read_bytes() == b"file content"
+        assert (tmp_path / _ns(ASSET_URL) / "test.i64.ke.json").exists()
 
     @patch("hcli.lib.ida.handler.ke_url_handler._show_download_dialog", return_value=None)
     @patch("hcli.lib.ida.handler.ke_url_handler._dismiss_dialog")
     @patch("hcli.lib.ida.handler.ke_url_handler._cleanup_old_downloads")
-    @patch("hcli.lib.ida.handler.ke_url_handler._resolve_base_url", return_value="https://host:8080")
     @patch("hcli.lib.ida.handler.ke_url_handler.httpx.Client")
     @patch("hcli.lib.ida.resolve.IDAIPCClient")
-    def test_reuses_running_instance(
-        self, mock_ipc, mock_client_cls, mock_resolve, mock_cleanup, mock_dismiss, mock_dialog, tmp_path
+    def test_relays_navigation_link_without_url_param(
+        self, mock_ipc, mock_client_cls, mock_cleanup, mock_dismiss, mock_dialog, tmp_path
     ):
-        """KE should reuse an already-open IDA instance instead of launching a new one."""
+        """The link relayed to IDA must be the url=-stripped nav URI (the IDA 9.4 fix)."""
         from hcli.lib.ida.ipc import IDAInstance
 
-        # Setup: a running IDA instance already has test.idb open
-        running_instance = IDAInstance(pid=1234, socket_path="/tmp/ida_ipc_1234", idb_name="test.idb", has_idb=True)
+        running_instance = IDAInstance(pid=1234, socket_path="/tmp/ida_ipc_1234", idb_name="test.i64", has_idb=True)
         mock_ipc.discover_instances.return_value = [running_instance]
         mock_ipc.query_instance.return_value = running_instance
         mock_ipc.send_open_ida_link.return_value = (True, "OK")
 
-        # Setup: HTTP download mock
         mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -191,7 +188,7 @@ class TestHandleKeUrl:
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        uri = "ida://host:8080/api/v1/buckets/mybucket/assets/test.idb?rva=0x1000"
+        uri = _ke_link("test.i64", "functions", ASSET_URL, nav="ea=0x1000&view=pseudocode")
         parsed = urlparse(uri)
 
         with (
@@ -203,11 +200,13 @@ class TestHandleKeUrl:
             mock_env.HCLI_KE_DOWNLOADS_RETENTION_DAYS = 3
             KEURLHandler().handle(uri, parsed, no_launch=False, timeout=120.0, skip_analysis=False)
 
-        # Should navigate to the running instance, NOT launch a new one
-        mock_ipc.send_open_ida_link.assert_called_once_with("/tmp/ida_ipc_1234", uri)
+        # Reuse the running instance and forward the nav link WITHOUT url=.
+        mock_ipc.send_open_ida_link.assert_called_once_with(
+            "/tmp/ida_ipc_1234", "ida://ke/test.i64/functions?ea=0x1000&view=pseudocode"
+        )
 
-    def test_no_host_aborts(self):
-        parsed = urlparse("ida:///api/v1/buckets/b/assets/k")
-        # parsed.netloc is empty for triple-slash
+    def test_missing_url_param_aborts(self):
+        uri = "ida://ke/test.i64/functions?ea=0x1000"
+        parsed = urlparse(uri)
         with pytest.raises(click.Abort):
-            KEURLHandler().handle("ida:///api/v1/buckets/b/assets/k", parsed, False, 120.0, False)
+            KEURLHandler().handle(uri, parsed, False, 120.0, False)

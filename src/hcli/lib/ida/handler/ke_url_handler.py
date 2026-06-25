@@ -1,17 +1,27 @@
-"""Handler for KE URLs — download assets from KE servers, cache locally, and launch IDA.
+"""Handler for KE "open in IDA" deep links — download the asset, cache it, launch IDA, navigate.
 
-Matches URLs containing ``/api/v1/buckets/`` in the path.
-Example: ``ida://ke.example.com:8080/api/v1/buckets/mybucket/assets/mykey``
+KE emits IDA-native navigation links that carry the asset's download location as a
+``url=`` query parameter::
+
+    ida://ke/<idb>/<resource>?ea=0x<HEX>&view=<view>&url=<percent-encoded asset URL>
+
+This handler matches on the presence of ``url=`` — plain navigation links without it
+fall through to the default handler. It downloads the IDB from ``url=`` (and the
+``.ke.json`` metadata sidecar from the same base), then relays the link, minus
+``url=``, to IDA for navigation. The scheme (http/https) comes from ``url=`` as KE
+emits it, so it matches however KE is served — this handler does no scheme probing.
+See the KE ``docs/deep-links.md``.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import platform
 import subprocess
 import time
 from pathlib import Path
-from urllib.parse import ParseResult, unquote
+from urllib.parse import ParseResult, parse_qsl, unquote, urlparse, urlunparse
 
 import httpx
 import rich_click as click
@@ -27,14 +37,16 @@ console = Console()
 
 
 class KEURLHandler(URLHandler):
-    """Handler for KE URLs: ``ida://host/api/v1/buckets/{bucket}/assets/{key}``.
+    """Handler for KE deep links: ``ida://ke/<idb>/<resource>?…&url=<asset URL>``.
 
-    Downloads the asset from a KE server (with HTTPS/HTTP fallback),
-    caches it locally, then finds or launches an IDA instance.
+    Downloads the asset from the ``url=`` location, caches it locally, then finds
+    or launches an IDA instance and relays the link (minus ``url=``) for navigation.
     """
 
     def matches(self, parsed: ParseResult) -> bool:
-        return "/api/v1/buckets/" in parsed.path
+        # KE deep links carry the asset download location as a ``url=`` parameter.
+        # Plain navigation links (rva/ea/name/view only) fall through to DefaultURLHandler.
+        return "url" in dict(parse_qsl(parsed.query, keep_blank_values=True))
 
     def handle(
         self,
@@ -44,34 +56,35 @@ class KEURLHandler(URLHandler):
         timeout: float,
         skip_analysis: bool,
     ) -> None:
-        if not parsed.netloc:
-            console.print("[red]Error: No host in KE URL[/red]")
+        params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        asset_url = params.get("url", "")
+        if not asset_url:
+            console.print("[red]Error: KE URL is missing the 'url' download parameter[/red]")
             raise click.Abort()
 
-        bucket, key = _parse_asset_path(parsed.path)
-        base_url = _resolve_base_url(parsed.netloc)
-
-        asset_url = f"{base_url}{parsed.path}"
-        download_url = f"{asset_url}/download"
+        idb_name = _idb_name_from_path(parsed.path)
+        if not idb_name:
+            console.print("[red]Error: KE URL has no <idb> path segment[/red]")
+            raise click.Abort()
 
         # Cleanup old downloads (best-effort)
         _cleanup_old_downloads()
 
-        # Setup cache path
+        # Cache under a hash of the asset URL so two assets that share a basename
+        # (e.g. both "chall.i64") don't collide in the downloads dir.
         downloads_dir = Path(ENV.HCLI_KE_DOWNLOADS_DIR or _default_downloads_dir())
-        resource_path = downloads_dir / bucket / key
+        resource_path = downloads_dir / _ns(asset_url) / idb_name
         sidecar_path = resource_path.parent / f"{resource_path.name}.ke.json"
         resource_path.parent.mkdir(parents=True, exist_ok=True)
 
-        console.print(f"[blue]Downloading {key} from KE...[/blue]")
+        console.print(f"[blue]Downloading {idb_name} from KE...[/blue]")
 
-        filename = Path(key).name
-        dialog = _show_download_dialog(filename)
+        dialog = _show_download_dialog(idb_name)
 
         try:
             with httpx.Client(timeout=300.0) as client:
                 _download_metadata(client, asset_url, sidecar_path)
-                _download_file(client, download_url, resource_path)
+                _download_file(client, f"{asset_url}/download", resource_path)
         except click.ClickException:
             _dismiss_dialog(dialog)
             _show_error_dialog("Download failed")
@@ -89,15 +102,16 @@ class KEURLHandler(URLHandler):
             console.print(f"[green]Downloaded file: {resource_path}[/green]")
             return
 
-        # Launch IDA (or reuse a running instance) and navigate
+        # Relay the link to IDA for navigation, minus the url= download annotation
+        # (IDA ignores url= anyway; we drop it for hygiene).
         resolve_and_navigate(
-            uri=uri,
+            uri=_strip_query_param(uri, "url"),
             target_idb_name=resource_path.name,
             idb_path=resource_path,
             no_launch=False,
             timeout=timeout,
             skip_analysis=skip_analysis,
-            navigate=bool(parsed.query),
+            navigate=_has_nav_params(parsed.query),
             on_error=_show_error_dialog,
         )
 
@@ -111,39 +125,31 @@ def _default_downloads_dir() -> str:
     return str(Path.home() / ".ke" / "downloads")
 
 
-def _parse_asset_path(path: str) -> tuple[str, str]:
-    """Extract bucket and key from ``/api/v1/buckets/{bucket}/assets/{key}``."""
-    parts = path.split("/")
-
-    try:
-        buckets_idx = parts.index("buckets")
-        assets_idx = parts.index("assets")
-    except ValueError:
-        console.print("[red]Error: URL path must contain /buckets/{bucket}/assets/{key}[/red]")
-        raise click.Abort()
-
-    bucket = parts[buckets_idx + 1] if buckets_idx + 1 < len(parts) else ""
-    key = "/".join(parts[assets_idx + 1 :]) if assets_idx + 1 < len(parts) else ""
-    key = unquote(key)
-
-    if not bucket or not key:
-        console.print("[red]Error: Could not extract bucket or key from URL[/red]")
-        raise click.Abort()
-
-    return bucket, key
+def _idb_name_from_path(path: str) -> str:
+    """Return the ``<idb>`` segment (the first path segment) of an
+    ``ida://ke/<idb>/<resource>`` link — the IDB filename IDA reports."""
+    segments = [seg for seg in path.split("/") if seg]
+    return unquote(segments[0]) if segments else ""
 
 
-def _resolve_base_url(netloc: str) -> str:
-    """Try HTTPS first (3 s timeout), fall back to HTTP."""
-    https_url = f"https://{netloc}"
-    try:
-        with httpx.Client(timeout=3.0) as client:
-            client.head(https_url)
-        _print("[dim]Using HTTPS[/dim]")
-        return https_url
-    except (httpx.RequestError, httpx.TimeoutException):
-        _print("[dim]HTTPS unavailable, using HTTP[/dim]")
-        return f"http://{netloc}"
+def _ns(url: str) -> str:
+    """Short stable hash of the asset URL, used to namespace local downloads."""
+    return hashlib.sha256(url.encode()).hexdigest()[:16]
+
+
+_NAV_PARAMS = frozenset({"ea", "rva", "name", "view"})
+
+
+def _has_nav_params(query: str) -> bool:
+    """True if the link carries any IDA navigation parameter (else it is open-only)."""
+    return any(key in _NAV_PARAMS for key, _ in parse_qsl(query, keep_blank_values=True))
+
+
+def _strip_query_param(uri: str, param: str) -> str:
+    """Return *uri* with the given query parameter removed, preserving the rest verbatim."""
+    parsed = urlparse(uri)
+    kept = [kv for kv in parsed.query.split("&") if kv and kv.split("=", 1)[0] != param]
+    return urlunparse(parsed._replace(query="&".join(kept)))
 
 
 def _download_metadata(client: httpx.Client, asset_url: str, sidecar_path: Path) -> None:
