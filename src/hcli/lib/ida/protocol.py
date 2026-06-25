@@ -4,6 +4,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -19,12 +20,17 @@ def setup_macos_protocol_handler() -> None:
         hcli_path = get_hcli_executable_path()
 
         # Create AppleScript application that handles ida:// URLs
-        # Use login shell (-l) to get full user environment, avoiding sandbox restrictions
+        # Use login shell (-l) to get full user environment, avoiding sandbox restrictions.
+        # Strip PYTHON* vars first: the requesting app (e.g. IDA running its own
+        # Python 3.13) leaks PYTHONHOME into the handler's environment, which makes
+        # hcli's pinned interpreter load the wrong stdlib and abort ("No module named
+        # 'encodings'") before it runs. env -u clears them so hcli uses its own Python.
         log_file = "/tmp/idb_handler.log"
+        py_env_strip = "env -u PYTHONHOME -u PYTHONPATH -u PYTHONEXECUTABLE -u PYTHONSTARTUP"
         applescript_content = f'''
 on open location this_URL
     set logFile to "{log_file}"
-    do shell script "/bin/zsh -l -c " & quoted form of ("{hcli_path} ida open " & quoted form of this_URL) & " >> " & quoted form of logFile & " 2>&1"
+    do shell script "/bin/zsh -l -c " & quoted form of ("{py_env_strip} {hcli_path} ida open " & quoted form of this_URL) & " >> " & quoted form of logFile & " 2>&1"
 end open location
 
 on run
@@ -117,8 +123,18 @@ def setup_windows_protocol_handler() -> None:
 
         hcli_path = get_hcli_executable_path()
 
-        # Register ida:// protocol
-        command = f'"{hcli_path}" ida open "%1"'
+        # Register ida:// protocol.
+        # A PYTHONHOME/PYTHONPATH leaked by the launching app (e.g. IDA running its own
+        # Python) would point a non-frozen hcli's interpreter at the wrong stdlib and
+        # abort it before it runs. Neutralize it WITHOUT cmd.exe: routing the
+        # percent-encoded URL through `cmd /c` corrupts its %XX escapes, and there is no
+        # `env -u` on Windows. ShellExecute/CreateProcess passes argv verbatim, so invoke
+        # the interpreter directly with -E (ignore all PYTHON* env vars). Frozen builds
+        # embed their own runtime and are immune, so run them as-is.
+        if getattr(sys, "frozen", False):
+            command = f'"{hcli_path}" ida open "%1"'
+        else:
+            command = f'"{sys.executable}" -E -m hcli.main ida open "%1"'
         reg_key = rf"SOFTWARE\Classes\{PROTOCOL}"
 
         with winreg.CreateKey(HKEY_CURRENT_USER, reg_key) as key:  # type: ignore[attr-defined]
@@ -156,10 +172,15 @@ def setup_linux_protocol_handler() -> None:
         applications_dir = Path.home() / ".local" / "share" / "applications"
         applications_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create desktop entry for ida:// protocol
+        # Create desktop entry for ida:// protocol.
+        # Strip PYTHON* first (via env -u): the launching app (e.g. IDA running its own
+        # Python) can leak PYTHONHOME into the handler's environment, which makes hcli's
+        # interpreter load the wrong stdlib and abort before it runs. The desktop
+        # launcher passes %u as a literal argv, so no shell mangles the URL here.
+        py_env_strip = "env -u PYTHONHOME -u PYTHONPATH -u PYTHONEXECUTABLE -u PYTHONSTARTUP"
         desktop_content = f"""[Desktop Entry]
 Name=HCLI IDB Link Handler
-Exec={hcli_path} ida open %u
+Exec={py_env_strip} {hcli_path} ida open %u
 Type=Application
 NoDisplay=true
 MimeType=x-scheme-handler/{PROTOCOL};
