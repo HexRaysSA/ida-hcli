@@ -207,14 +207,7 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """True for addresses an attacker-supplied download must never reach."""
     if ip.version == 4 and ip in _CGNAT_NET:
         return True
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified
 
 
 def _validate_asset_url(asset_url: str) -> list[str] | None:
@@ -385,9 +378,7 @@ def _download_file(
                     for chunk in response.iter_bytes():
                         written += len(chunk)
                         if max_bytes is not None and written > max_bytes:
-                            raise click.ClickException(
-                                f"Download exceeded the {ENV.HCLI_KE_MAX_DOWNLOAD_MB} MB limit"
-                            )
+                            raise click.ClickException(f"Download exceeded the {ENV.HCLI_KE_MAX_DOWNLOAD_MB} MB limit")
                         f.write(chunk)
             return
         except httpx.ConnectError as e:
@@ -471,7 +462,10 @@ def _confirm_open_dialog(filename: str, host: str) -> bool:
     ):
         if shutil.which(cmd[0]):
             try:
-                return subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+                return (
+                    subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+                    == 0
+                )
             except Exception:
                 break
     _print("[yellow]No GUI prompt available (install zenity/kdialog to confirm); proceeding.[/yellow]")
@@ -485,7 +479,9 @@ def _run_confirm(cmd: list[str], prompt: str) -> bool:
     ``system attribute``/``$env:``), never interpolated into interpreter source.
     """
     env = {**os.environ, "KE_DLG_MSG": prompt}
-    return subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    return (
+        subprocess.run(cmd, check=False, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    )
 
 
 def _cleanup_old_downloads() -> None:

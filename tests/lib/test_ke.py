@@ -95,7 +95,10 @@ class TestConfirmOpenDialog:
         with (
             patch.object(ENV_CLS, "HCLI_KE_SKIP_CONFIRM", False),
             patch("hcli.lib.ida.handler.ke_url_handler.platform.system", return_value="Linux"),
-            patch("hcli.lib.ida.handler.ke_url_handler.shutil.which", side_effect=lambda c: "/usr/bin/zenity" if c == "zenity" else None),
+            patch(
+                "hcli.lib.ida.handler.ke_url_handler.shutil.which",
+                side_effect=lambda c: "/usr/bin/zenity" if c == "zenity" else None,
+            ),
             patch("hcli.lib.ida.handler.ke_url_handler.subprocess.run", return_value=completed),
         ):
             assert _confirm_open_dialog("chall.i64", "ke.example.com") is False
@@ -208,31 +211,39 @@ class TestValidateAssetUrl:
     @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
     def test_rejects_loopback(self, mock_gai):
         mock_gai.return_value = _addrinfo("127.0.0.1")
-        with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False):
-            with pytest.raises(click.ClickException, match="non-public"):
-                _validate_asset_url("http://evil.example/x")
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False),
+            pytest.raises(click.ClickException, match="non-public"),
+        ):
+            _validate_asset_url("http://evil.example/x")
 
     @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
     def test_rejects_link_local_metadata(self, mock_gai):
         mock_gai.return_value = _addrinfo("169.254.169.254")
-        with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False):
-            with pytest.raises(click.ClickException, match="non-public"):
-                _validate_asset_url("http://metadata.example/x")
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False),
+            pytest.raises(click.ClickException, match="non-public"),
+        ):
+            _validate_asset_url("http://metadata.example/x")
 
     @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
     def test_rejects_cgnat(self, mock_gai):
         mock_gai.return_value = _addrinfo("100.64.1.1")
-        with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False):
-            with pytest.raises(click.ClickException, match="non-public"):
-                _validate_asset_url("http://cgnat.example/x")
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False),
+            pytest.raises(click.ClickException, match="non-public"),
+        ):
+            _validate_asset_url("http://cgnat.example/x")
 
     @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
     def test_rejects_when_any_resolved_ip_is_private(self, mock_gai):
         # A host that returns one public + one private IP must be rejected (rebinding hedge).
         mock_gai.return_value = _addrinfo("93.184.216.34", "10.0.0.5")
-        with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False):
-            with pytest.raises(click.ClickException, match="non-public"):
-                _validate_asset_url("http://mixed.example/x")
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False),
+            pytest.raises(click.ClickException, match="non-public"),
+        ):
+            _validate_asset_url("http://mixed.example/x")
 
     @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
     def test_returns_pinned_ip_for_public_host(self, mock_gai):
@@ -434,8 +445,12 @@ class TestHandleKeUrl:
             "/tmp/ida_ipc_1234", "ida://ke/test.i64/functions?ea=0x1000&view=pseudocode"
         )
 
-    def test_missing_url_param_aborts(self):
+    @patch("hcli.lib.ida.handler.ke_url_handler._show_error_dialog")
+    def test_missing_url_param_aborts(self, mock_error_dialog):
+        # Patch the native dialog so the rejection path doesn't spawn a real
+        # notify-send/osascript/PowerShell during the test run.
         uri = "ida://ke/test.i64/functions?ea=0x1000"
         parsed = urlparse(uri)
         with pytest.raises(click.Abort):
             KEURLHandler().handle(uri, parsed, False, 120.0, False)
+        mock_error_dialog.assert_called_once()
