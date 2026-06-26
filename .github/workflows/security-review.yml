@@ -40,20 +40,40 @@ jobs:
             Review ONLY the diff of this PR against its base branch — the newly
             added/changed code — not the whole repository.
 
-            hcli registers an `ida://` protocol handler, so deep-link URLs are
-            attacker-reachable: treat parsed URL paths, query parameters, and any
-            `url=`-style values as fully untrusted input. Look hardest at changes under
-            `src/hcli/lib/ida/handler/` (the deep-link handlers), `src/hcli/lib/ida/protocol.py`
-            (handler registration), `src/hcli/lib/ida/ipc.py` (local IPC), and any
+            Threat model. hcli is a desktop CLI that registers an `ida://` protocol
+            handler, so deep-link URLs are attacker-reachable (any web page can launch
+            them): treat parsed URL paths, query parameters, and any `url=`-style values
+            as fully untrusted input. It also downloads assets and hands them to IDA,
+            and talks to running IDA instances over local IPC (a same-user trust
+            boundary). Look hardest at changes under `src/hcli/lib/ida/handler/` (the
+            deep-link handlers), `src/hcli/lib/ida/protocol.py` (OS handler
+            registration), `src/hcli/lib/ida/ipc.py` (local IPC), and any
             auth/credential, subprocess, download, or file-write code.
 
-            Report only HIGH/MEDIUM findings you are >80% confident are real and
-            exploitable: command/code injection, path traversal, SSRF (host/protocol
-            control), authn/authz bypass, insecure deserialization, hardcoded secrets,
-            unsafe subprocess/shell use, and unsafe handling of untrusted input.
-            Explicitly SKIP and do not report: denial-of-service / resource exhaustion,
-            secrets-at-rest, rate-limiting, pure style/quality, and purely theoretical
-            issues. Prefer missing a speculative issue over adding noise.
+            Report HIGH/MEDIUM findings you are >80% confident are real and have a
+            concrete attack path. Consider these categories (not exhaustive):
+            - command/code/template injection; unsafe subprocess or shell use
+            - path traversal / arbitrary file write; insecure, predictable, or
+              world-writable file/socket/registry paths and permissions
+            - SSRF (attacker control of host or protocol), and DNS-rebinding/TOCTOU
+              around validate-then-fetch
+            - authn/authz bypass; fail-OPEN security logic (a check that is skipped or
+              defaults to "allow" on error/unknown platform)
+            - resource exhaustion driven by ATTACKER-CONTROLLED input (e.g. unbounded
+              download/read/write that can fill memory or disk) — this IS in scope here
+            - concretely-exploitable race conditions / TOCTOU
+            - insecure deserialization; eval/pickle/yaml on untrusted data
+            - hardcoded or leaked secrets; sensitive data (tokens, credentials, PII)
+              written to logs, error text, or dialogs
+            - weak crypto, bad randomness, or certificate-validation bypass
+            - supply-chain: newly added/changed dependencies, unpinned action/refs, or
+              install/postinstall hooks
+
+            Noise control (important): prefer missing a speculative issue over adding
+            noise. Do NOT report pure style/quality or non-security correctness bugs,
+            theoretical issues with no concrete attack path, or generic "best practice"
+            nits. Environment variables and CLI flags are trusted inputs (an attacker
+            cannot set them), so do not build findings on controlling them.
 
             Post a single PR comment. For each finding include: `file:line`, severity
             (HIGH/MEDIUM), category, a one-line description, a brief exploit scenario,
