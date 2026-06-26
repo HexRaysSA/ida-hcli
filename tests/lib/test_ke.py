@@ -58,6 +58,15 @@ class TestMatches:
         parsed = urlparse("ida://evil/test.i64/functions?url=http://attacker/x")
         assert KEURLHandler().matches(parsed) is False
 
+    def test_non_ida_scheme_not_detected(self):
+        parsed = urlparse("http://ke/test.i64/functions?url=http://attacker/x")
+        assert KEURLHandler().matches(parsed) is False
+
+    def test_too_few_path_segments_not_detected(self):
+        # Documented shape is ida://ke/<idb>/<resource>; fewer than two segments isn't it.
+        parsed = urlparse("ida://ke/test.i64?url=http://attacker/x")
+        assert KEURLHandler().matches(parsed) is False
+
 
 class TestDownloadUrl:
     def test_appends_download_segment(self):
@@ -80,14 +89,15 @@ class TestConfirmOpenDialog:
             assert _confirm_open_dialog("chall.i64", "ke.example.com") is True
             mock_run.assert_not_called()
 
-    def test_linux_without_gui_tool_proceeds(self):
+    def test_linux_without_gui_tool_fails_closed(self):
+        # No zenity/kdialog → cannot get consent → must NOT auto-open (fail closed).
         with (
             patch.object(ENV_CLS, "HCLI_KE_SKIP_CONFIRM", False),
             patch("hcli.lib.ida.handler.ke_url_handler.platform.system", return_value="Linux"),
             patch("hcli.lib.ida.handler.ke_url_handler.shutil.which", return_value=None),
             patch("hcli.lib.ida.handler.ke_url_handler._print"),
         ):
-            assert _confirm_open_dialog("chall.i64", "ke.example.com") is True
+            assert _confirm_open_dialog("chall.i64", "ke.example.com") is False
 
     def test_linux_zenity_decline_denies(self):
         completed = MagicMock()
@@ -103,17 +113,16 @@ class TestConfirmOpenDialog:
         ):
             assert _confirm_open_dialog("chall.i64", "ke.example.com") is False
 
-    def test_unknown_platform_proceeds_without_silent_failopen(self):
-        # A platform with no scriptable dialog proceeds (consent = the launcher click)
-        # but emits a notice rather than silently auto-opening.
+    def test_unknown_platform_fails_closed(self):
+        # A platform with no scriptable dialog cannot get consent → fail closed.
         with (
             patch.object(ENV_CLS, "HCLI_KE_SKIP_CONFIRM", False),
             patch("hcli.lib.ida.handler.ke_url_handler.platform.system", return_value="FreeBSD"),
             patch("hcli.lib.ida.handler.ke_url_handler.shutil.which", return_value=None),
             patch("hcli.lib.ida.handler.ke_url_handler._print") as mock_print,
         ):
-            assert _confirm_open_dialog("chall.i64", "ke.example.com") is True
-            assert mock_print.called  # user was told confirmation was skipped
+            assert _confirm_open_dialog("chall.i64", "ke.example.com") is False
+            assert mock_print.called  # user was told how to enable opening
 
     def test_macos_dialog_error_fails_closed(self):
         with (
@@ -154,6 +163,41 @@ class TestDownloadMetadataCap:
             ke_url_handler._download_metadata(client, "https://h/a", sidecar, None)
 
         assert not sidecar.exists()  # refused to write the oversized body
+
+    def test_non_json_metadata_skips_sidecar(self, tmp_path):
+        # The .ke.json sidecar must only persist valid JSON, not arbitrary 200 bodies.
+        from hcli.lib.ida.handler import ke_url_handler
+
+        sidecar = tmp_path / "x.ke.json"
+        stream_response = MagicMock()
+        stream_response.status_code = 200
+        stream_response.iter_bytes.return_value = [b"<html>not json</html>"]
+        cm = MagicMock()
+        cm.__enter__ = MagicMock(return_value=stream_response)
+        cm.__exit__ = MagicMock(return_value=False)
+        client = MagicMock()
+        client.stream.return_value = cm
+
+        with patch("hcli.lib.ida.handler.ke_url_handler._print"):
+            ke_url_handler._download_metadata(client, "https://h/a", sidecar, None)
+
+        assert not sidecar.exists()  # non-JSON body rejected
+
+    def test_valid_json_metadata_is_written(self, tmp_path):
+        from hcli.lib.ida.handler import ke_url_handler
+
+        sidecar = tmp_path / "x.ke.json"
+        stream_response = MagicMock()
+        stream_response.status_code = 200
+        stream_response.iter_bytes.return_value = [b'{"ok": true}']
+        cm = MagicMock()
+        cm.__enter__ = MagicMock(return_value=stream_response)
+        cm.__exit__ = MagicMock(return_value=False)
+        client = MagicMock()
+        client.stream.return_value = cm
+
+        ke_url_handler._download_metadata(client, "https://h/a", sidecar, None)
+        assert sidecar.read_bytes() == b'{"ok": true}'
 
 
 class TestIdbNameFromPath:
@@ -498,6 +542,35 @@ class TestHandleKeUrl:
 
         # And it still downloaded to the hashed dir.
         assert (tmp_path / _ns(ASSET_URL) / "test.i64").read_bytes() == b"file content"
+
+    @patch("hcli.lib.ida.handler.ke_url_handler._confirm_open_dialog", return_value=False)
+    @patch("hcli.lib.ida.handler.ke_url_handler._show_download_dialog", return_value=None)
+    @patch("hcli.lib.ida.handler.ke_url_handler._dismiss_dialog")
+    @patch("hcli.lib.ida.handler.ke_url_handler._cleanup_old_downloads")
+    @patch("hcli.lib.ida.handler.ke_url_handler.httpx.Client")
+    def test_declined_confirmation_downloads_nothing(
+        self, mock_client_cls, mock_cleanup, mock_dismiss, mock_dialog, mock_confirm, tmp_path
+    ):
+        """A passive (declined) ida://ke/... click must write NOTHING to disk — the
+        confirm gate runs before any download, killing the drive-by disk-fill."""
+        mock_client = _mock_httpx_client(b"file content")
+        mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        uri = _ke_link("test.i64", "functions", ASSET_URL, nav="ea=0x1000")
+        parsed = urlparse(uri)
+
+        with (
+            patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env,
+            patch("hcli.lib.ida.handler.ke_url_handler.time.sleep"),
+        ):
+            _set_handler_env(mock_env, tmp_path, allow_private=True, skip_confirm=False)
+            KEURLHandler().handle(uri, parsed, no_launch=False, timeout=120.0, skip_analysis=False)
+
+        mock_confirm.assert_called_once()
+        # No HTTP request was made and nothing landed under the downloads dir.
+        mock_client.stream.assert_not_called()
+        assert not (tmp_path / _ns(ASSET_URL)).exists() or not any((tmp_path / _ns(ASSET_URL)).iterdir())
 
     @patch("hcli.lib.ida.handler.ke_url_handler._show_error_dialog")
     def test_missing_url_param_aborts(self, mock_error_dialog):

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import json
 import logging
 import os
 import platform
@@ -48,11 +49,15 @@ class KEURLHandler(URLHandler):
     """
 
     def matches(self, parsed: ParseResult) -> bool:
-        # KE deep links have the documented shape ``ida://ke/<idb>/...?...&url=<asset>``:
-        # the ``ke`` host AND a ``url=`` download parameter. Requiring both keeps the
-        # download path from being reached by any other ``ida://...?url=`` link — those
-        # (and plain navigation links) fall through to DefaultURLHandler.
-        if parsed.hostname != "ke":
+        # KE deep links have the documented shape ``ida://ke/<idb>/<resource>?…&url=``:
+        # the ``ida`` scheme, the ``ke`` host, an ``<idb>/<resource>`` path, AND a
+        # ``url=`` download parameter. Requiring all of them keeps the download path
+        # from being reached by any other ``ida://...?url=`` link — those (and plain
+        # navigation links) fall through to DefaultURLHandler.
+        if parsed.scheme != "ida" or parsed.hostname != "ke":
+            return False
+        segments = [s for s in parsed.path.split("/") if s]
+        if len(segments) < 2:
             return False
         return "url" in dict(parse_qsl(parsed.query, keep_blank_values=True))
 
@@ -107,6 +112,16 @@ class KEURLHandler(URLHandler):
 
         resource_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Confirm BEFORE downloading. The handler is reachable from any web page, so a
+        # passive ida://ke/... click must not stream attacker content to disk (let alone
+        # hand it to IDA) without the user's consent. Skipped only for --no-launch (an
+        # explicit local CLI invocation, not the drive-by surface).
+        host = urlparse(asset_url).hostname or "an unknown host"
+        if not no_launch and not _confirm_open_dialog(idb_name, host):
+            console.print("[yellow]Cancelled — nothing downloaded.[/yellow]")
+            console.print("[dim]Set HCLI_KE_SKIP_CONFIRM=1 to skip this prompt.[/dim]")
+            return
+
         console.print(f"[blue]Downloading {idb_name} from KE...[/blue]")
 
         dialog = _show_download_dialog(idb_name)
@@ -131,15 +146,6 @@ class KEURLHandler(URLHandler):
         _dismiss_dialog(dialog)
 
         if no_launch:
-            console.print(f"[green]Downloaded file: {resource_path}[/green]")
-            return
-
-        # The download path is reachable from any web page, so confirm before handing
-        # attacker-influenced content to IDA (loaders/IDBs can auto-run scripts).
-        host = urlparse(asset_url).hostname or "an unknown host"
-        if not _confirm_open_dialog(resource_path.name, host):
-            console.print("[yellow]Cancelled — not opening in IDA.[/yellow]")
-            console.print("[dim]Set HCLI_KE_SKIP_CONFIRM=1 to skip this prompt.[/dim]")
             console.print(f"[green]Downloaded file: {resource_path}[/green]")
             return
 
@@ -354,6 +360,14 @@ def _download_metadata(
                     if len(data) > _METADATA_MAX_BYTES:
                         _print("[yellow]Warning: Metadata exceeded size limit; skipping sidecar[/yellow]")
                         return
+                # The body is attacker-influenced; only persist it as the .ke.json
+                # sidecar if it's actually JSON, so the sidecar can't become an
+                # arbitrary-content write primitive.
+                try:
+                    json.loads(bytes(data))
+                except ValueError:
+                    _print("[yellow]Warning: Metadata is not valid JSON; skipping sidecar[/yellow]")
+                    return
                 sidecar_path.write_bytes(bytes(data))
                 return
         except _RETRYABLE_CONNECT as e:
@@ -418,18 +432,17 @@ def _unlink_quiet(path: Path) -> None:
 def _confirm_open_dialog(filename: str, host: str) -> bool:
     """Native yes/no confirmation before opening downloaded content in IDA.
 
-    Returns True only if the user approved (or confirmation is suppressed via
-    ``HCLI_KE_SKIP_CONFIRM``). macOS/Windows always have a dialog, so any error
-    there fails CLOSED (deny). Platforms without a guaranteed dialog (Linux and any
-    other) use zenity/kdialog when present and otherwise proceed — the desktop
-    launcher click is itself the user's consent, and failing closed would break the
-    feature where no scriptable prompt exists.
+    Returns True only if the user explicitly approved (or confirmation is suppressed
+    via ``HCLI_KE_SKIP_CONFIRM``). Every platform fails CLOSED: if no prompt can be
+    shown (no dialog tool, or the dialog errors), it returns False rather than
+    auto-opening attacker-influenced content. The handler is browser-launched with no
+    usable console, so "no prompt" cannot count as consent.
     """
     if ENV.HCLI_KE_SKIP_CONFIRM:
         return True
 
     system = platform.system().lower()
-    prompt = f"Open downloaded IDB '{filename}' from {host} in IDA?"
+    prompt = f"Download and open IDB '{filename}' from {host} in IDA?"
 
     if system == "darwin":
         try:
@@ -462,7 +475,10 @@ def _confirm_open_dialog(filename: str, host: str) -> bool:
         except Exception:
             return False  # fail closed — a dialog is always available on Windows
 
-    # Linux and any other platform: best-effort GUI prompt; proceed if none works.
+    # Linux and any other platform: use zenity/kdialog when present. If neither is
+    # available (or it errors), fail CLOSED — we cannot get consent, so we must not
+    # open. The file is left on disk; the user can open it manually or set
+    # HCLI_KE_SKIP_CONFIRM=1 for one-click flows.
     for cmd in (
         ["zenity", "--question", "--title=KE", f"--text={prompt}"],
         ["kdialog", "--yesno", prompt, "--title", "KE"],
@@ -474,9 +490,9 @@ def _confirm_open_dialog(filename: str, host: str) -> bool:
                     == 0
                 )
             except Exception:
-                break
-    _print("[yellow]No GUI prompt available (install zenity/kdialog to confirm); proceeding.[/yellow]")
-    return True
+                return False
+    _print("[yellow]No confirmation prompt available (install zenity/kdialog, or set HCLI_KE_SKIP_CONFIRM=1).[/yellow]")
+    return False
 
 
 def _run_confirm(cmd: list[str], prompt: str) -> bool:
