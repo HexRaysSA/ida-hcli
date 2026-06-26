@@ -18,7 +18,7 @@ class TestOpenArgSeparator:
     def test_url_after_separator_is_dispatched_as_the_uri(self):
         # A normal URL after `--` is parsed as the single positional and dispatched
         # verbatim to the handler. A fake handler captures it so no real I/O happens.
-        captured = {}
+        captured: dict[str, str] = {}
         fake = MagicMock()
         fake.matches.return_value = True
         fake.handle.side_effect = lambda uri, *a, **k: captured.__setitem__("uri", uri)
