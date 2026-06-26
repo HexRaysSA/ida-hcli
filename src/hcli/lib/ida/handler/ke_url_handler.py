@@ -90,11 +90,9 @@ class KEURLHandler(URLHandler):
             _show_error_dialog(e.message or "Invalid KE link")
             raise
 
-        # Cleanup old downloads (best-effort)
-        _cleanup_old_downloads()
-
-        # Cache under a hash of the asset URL so two assets that share a basename
-        # (e.g. both "chall.i64") don't collide in the downloads dir.
+        # Compute the cache paths (under a hash of the asset URL so two assets that
+        # share a basename don't collide). No filesystem writes happen yet — these are
+        # pure path ops, and resolve() does not create anything.
         downloads_dir = Path(ENV.HCLI_KE_DOWNLOADS_DIR or _default_downloads_dir())
         resource_path = downloads_dir / _ns(asset_url) / idb_name
         sidecar_path = resource_path.parent / f"{resource_path.name}.ke.json"
@@ -110,17 +108,20 @@ class KEURLHandler(URLHandler):
         if outside:
             _reject("refusing to write outside the downloads directory")
 
-        resource_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Confirm BEFORE downloading. The handler is reachable from any web page, so a
-        # passive ida://ke/... click must not stream attacker content to disk (let alone
-        # hand it to IDA) without the user's consent. Skipped only for --no-launch (an
-        # explicit local CLI invocation, not the drive-by surface).
+        # Confirm BEFORE any filesystem side effect. The handler is reachable from any
+        # web page, so a passive ida://ke/... click must not touch disk at all (no
+        # cleanup, no dir creation, no download) without the user's consent. Skipped
+        # only for --no-launch (an explicit local CLI invocation, not the drive-by
+        # surface).
         host = urlparse(asset_url).hostname or "an unknown host"
         if not no_launch and not _confirm_open_dialog(idb_name, host):
             console.print("[yellow]Cancelled — nothing downloaded.[/yellow]")
             console.print("[dim]Set HCLI_KE_SKIP_CONFIRM=1 to skip this prompt.[/dim]")
             return
+
+        # Consent given (or explicit CLI): now it's safe to touch the filesystem.
+        _cleanup_old_downloads()
+        resource_path.parent.mkdir(parents=True, exist_ok=True)
 
         console.print(f"[blue]Downloading {idb_name} from KE...[/blue]")
 
@@ -325,6 +326,11 @@ def _download_url(asset_url: str) -> str:
 # so a huge response can't exhaust memory/disk via the (otherwise uncapped) sidecar.
 _METADATA_MAX_BYTES = 16 * 1024 * 1024
 
+# Always keep at least this much free disk during a download, so a server can't fill
+# the disk even after the user approves the download (independent of any size cap).
+_MIN_FREE_BYTES = 512 * 1024 * 1024
+_SPACE_CHECK_INTERVAL = 32 * 1024 * 1024
+
 
 # Failures that mean "this validated IP wouldn't accept a connection" — worth
 # retrying on the next pinned IP. Mid-stream resets, read timeouts, and non-200
@@ -385,9 +391,11 @@ def _download_file(
     """Stream the resource file to disk.
 
     Streams rather than buffering the whole body in memory, enforces the optional
-    ``HCLI_KE_MAX_DOWNLOAD_MB`` cap, and — when an IP won't accept a connection —
-    tries the next validated IP so a single dead address doesn't fail a host that
-    has other healthy ones. A partial file is removed on failure.
+    ``HCLI_KE_MAX_DOWNLOAD_MB`` cap, and — even without that cap — refuses to fill the
+    disk: it aborts if free space would drop below ``_MIN_FREE_BYTES``, so a malicious
+    server can't stream until the disk is full after one approval. When an IP won't
+    accept a connection it tries the next validated IP. A partial file is removed on
+    failure.
     """
     max_bytes = ENV.HCLI_KE_MAX_DOWNLOAD_MB * 1024 * 1024 if ENV.HCLI_KE_MAX_DOWNLOAD_MB > 0 else None
     attempts = _pinned_attempts(pinned_ips)
@@ -399,11 +407,18 @@ def _download_file(
                 if response.status_code != 200:
                     raise click.ClickException(f"Download failed: HTTP {response.status_code}")
                 written = 0
+                next_space_check = 0
                 with open(resource_path, "wb") as f:
                     for chunk in response.iter_bytes():
                         written += len(chunk)
                         if max_bytes is not None and written > max_bytes:
                             raise click.ClickException(f"Download exceeded the {ENV.HCLI_KE_MAX_DOWNLOAD_MB} MB limit")
+                        # Periodically (and up front) ensure the download isn't filling
+                        # the disk — bounds disk use regardless of any configured cap.
+                        if written >= next_space_check:
+                            if shutil.disk_usage(resource_path.parent).free < _MIN_FREE_BYTES:
+                                raise click.ClickException("Download aborted: insufficient free disk space")
+                            next_space_check = written + _SPACE_CHECK_INTERVAL
                         f.write(chunk)
             return
         except _RETRYABLE_CONNECT as e:

@@ -200,6 +200,38 @@ class TestDownloadMetadataCap:
         assert sidecar.read_bytes() == b'{"ok": true}'
 
 
+class TestDownloadFileDiskGuard:
+    def test_aborts_and_cleans_up_when_disk_nearly_full(self, tmp_path):
+        # Even with no size cap, the download must not fill the disk: when free space
+        # is below the reserve, it aborts and removes the partial file.
+        from types import SimpleNamespace
+
+        from hcli.lib.ida.handler import ke_url_handler
+
+        dest = tmp_path / "big.i64"
+        stream_response = MagicMock()
+        stream_response.status_code = 200
+        stream_response.iter_bytes.return_value = [b"x" * 4096]
+        cm = MagicMock()
+        cm.__enter__ = MagicMock(return_value=stream_response)
+        cm.__exit__ = MagicMock(return_value=False)
+        client = MagicMock()
+        client.stream.return_value = cm
+
+        with (
+            patch(
+                "hcli.lib.ida.handler.ke_url_handler.shutil.disk_usage",
+                return_value=SimpleNamespace(total=0, used=0, free=1024),  # only 1 KB free
+            ),
+            patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env,
+            pytest.raises(click.ClickException, match="disk space"),
+        ):
+            mock_env.HCLI_KE_MAX_DOWNLOAD_MB = 0
+            ke_url_handler._download_file(client, "https://h/a/download", dest, None)
+
+        assert not dest.exists()  # partial file removed
+
+
 class TestIdbNameFromPath:
     def test_first_segment_is_the_idb(self):
         assert _idb_name_from_path("/test.i64/functions") == "test.i64"
@@ -568,9 +600,10 @@ class TestHandleKeUrl:
             KEURLHandler().handle(uri, parsed, no_launch=False, timeout=120.0, skip_analysis=False)
 
         mock_confirm.assert_called_once()
-        # No HTTP request was made and nothing landed under the downloads dir.
+        # No HTTP request, no cleanup, and no directory creation — zero FS side effects.
         mock_client.stream.assert_not_called()
-        assert not (tmp_path / _ns(ASSET_URL)).exists() or not any((tmp_path / _ns(ASSET_URL)).iterdir())
+        mock_cleanup.assert_not_called()
+        assert not (tmp_path / _ns(ASSET_URL)).exists()
 
     @patch("hcli.lib.ida.handler.ke_url_handler._show_error_dialog")
     def test_missing_url_param_aborts(self, mock_error_dialog):
