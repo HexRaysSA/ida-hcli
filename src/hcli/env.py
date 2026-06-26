@@ -3,11 +3,19 @@ import os
 from . import __version__
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    """Parse a boolean environment variable using one consistent truthy set."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("true", "yes", "on", "1")
+
+
 class ENV:
     """Environment configuration mirroring the Deno version."""
 
     HCLI_API_KEY: str | None = os.getenv("HCLI_API_KEY")
-    HCLI_DEBUG: bool = os.getenv("HCLI_DEBUG", "").lower() in ("true", "yes", "on", "1")
+    HCLI_DEBUG: bool = _env_bool("HCLI_DEBUG")
     HCLI_API_URL: str = os.getenv("HCLI_API_URL", "https://api.eu.hex-rays.com")
     HCLI_CLOUD_URL: str = os.getenv("HCLI_CLOUD_URL", "https://api.hcli.run")
     HCLI_PORTAL_URL: str = os.getenv("HCLI_PORTAL_URL", "https://my.hex-rays.com")
@@ -30,7 +38,7 @@ class ENV:
     HCLI_MODE: str = os.getenv("HCLI_MODE", "user")
     QUIET: bool = False
 
-    HCLI_DISABLE_UPDATES: bool = os.getenv("HCLI_DISABLE_UPDATES", "").lower() in ("true", "yes", "on", "1")
+    HCLI_DISABLE_UPDATES: bool = _env_bool("HCLI_DISABLE_UPDATES")
 
     IDAUSR: str | None = os.getenv("IDAUSR")
     IDADIR: str | None = os.getenv("IDADIR")
@@ -47,8 +55,8 @@ class ENV:
     HCLI_KE_DOWNLOADS_RETENTION_DAYS: int = int(os.getenv("HCLI_KE_DOWNLOADS_RETENTION_DAYS", "3"))
     # Allow KE deep links to download from private/loopback/link-local hosts. Off by
     # default so a clicked ida:// link cannot make hcli reach internal services; set
-    # to 1/true/yes for self-hosted KE deployments on an internal network.
-    HCLI_KE_ALLOW_PRIVATE_HOSTS: bool = os.getenv("HCLI_KE_ALLOW_PRIVATE_HOSTS", "").lower() in ("1", "true", "yes")
+    # to true/yes/on/1 for self-hosted KE deployments on an internal network.
+    HCLI_KE_ALLOW_PRIVATE_HOSTS: bool = _env_bool("HCLI_KE_ALLOW_PRIVATE_HOSTS")
 
 
 # Constants

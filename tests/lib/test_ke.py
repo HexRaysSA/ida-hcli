@@ -8,6 +8,7 @@ from urllib.parse import quote, urlparse
 import click
 import pytest
 
+from hcli.env import ENV as ENV_CLS
 from hcli.lib.ida.handler.ke_url_handler import (
     KEURLHandler,
     _cleanup_old_downloads,
@@ -15,7 +16,9 @@ from hcli.lib.ida.handler.ke_url_handler import (
     _has_nav_params,
     _idb_name_from_path,
     _ns,
+    _pinned_request_args,
     _strip_query_param,
+    _validate_asset_url,
 )
 
 # A representative KE asset base — what KE percent-encodes into the ``url=`` parameter.
@@ -60,6 +63,105 @@ class TestIdbNameFromPath:
 
     def test_empty_path(self):
         assert _idb_name_from_path("") == ""
+
+    def test_rejects_encoded_traversal(self):
+        # %2F-encoded separators survive urlparse and would escape the downloads dir.
+        assert _idb_name_from_path("/..%2F..%2F..%2Fhome%2Fvictim%2F.bashrc/functions") == ""
+
+    def test_rejects_encoded_absolute_path(self):
+        assert _idb_name_from_path("/%2Fetc%2Fcron.d%2Fevil/functions") == ""
+
+    def test_rejects_dotdot(self):
+        assert _idb_name_from_path("/../functions") == ""
+
+    def test_rejects_backslash(self):
+        assert _idb_name_from_path("/a%5Cb/functions") == ""
+
+    def test_rejects_embedded_nul(self):
+        # A NUL would make the later Path.resolve() raise ValueError; reject up front.
+        assert _idb_name_from_path("/foo%00.i64/functions") == ""
+
+
+def _addrinfo(*ips: str):
+    """Build a getaddrinfo-style result list for the given IP strings."""
+    return [(2, 1, 6, "", (ip, 443)) for ip in ips]
+
+
+class TestValidateAssetUrl:
+    """Tests for the SSRF guard / DNS-rebinding pin in _validate_asset_url."""
+
+    def test_rejects_non_http_scheme(self):
+        with pytest.raises(click.ClickException, match="non-HTTP"):
+            _validate_asset_url("file:///etc/passwd")
+
+    def test_rejects_missing_host(self):
+        with pytest.raises(click.ClickException, match="no host"):
+            _validate_asset_url("http:///path/only")
+
+    def test_rejects_malformed_port(self):
+        # parsed.port raises ValueError — must surface as a clean ClickException.
+        with pytest.raises(click.ClickException, match="Invalid asset URL"):
+            _validate_asset_url("http://host:notaport/x")
+
+    @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
+    def test_rejects_loopback(self, mock_gai):
+        mock_gai.return_value = _addrinfo("127.0.0.1")
+        with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False):
+            with pytest.raises(click.ClickException, match="non-public"):
+                _validate_asset_url("http://evil.example/x")
+
+    @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
+    def test_rejects_link_local_metadata(self, mock_gai):
+        mock_gai.return_value = _addrinfo("169.254.169.254")
+        with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False):
+            with pytest.raises(click.ClickException, match="non-public"):
+                _validate_asset_url("http://metadata.example/x")
+
+    @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
+    def test_rejects_cgnat(self, mock_gai):
+        mock_gai.return_value = _addrinfo("100.64.1.1")
+        with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False):
+            with pytest.raises(click.ClickException, match="non-public"):
+                _validate_asset_url("http://cgnat.example/x")
+
+    @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
+    def test_rejects_when_any_resolved_ip_is_private(self, mock_gai):
+        # A host that returns one public + one private IP must be rejected (rebinding hedge).
+        mock_gai.return_value = _addrinfo("93.184.216.34", "10.0.0.5")
+        with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False):
+            with pytest.raises(click.ClickException, match="non-public"):
+                _validate_asset_url("http://mixed.example/x")
+
+    @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
+    def test_returns_pinned_ip_for_public_host(self, mock_gai):
+        mock_gai.return_value = _addrinfo("93.184.216.34")
+        with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False):
+            assert _validate_asset_url("https://public.example/x") == "93.184.216.34"
+
+    def test_returns_none_when_private_hosts_allowed(self):
+        # Opt-out: no resolution, no pinning — preserves self-hosted/internal KE.
+        with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", True):
+            assert _validate_asset_url("http://internal-ke.lan:8080/x") is None
+
+
+class TestPinnedRequestArgs:
+    """Tests for the IP-pinning rewrite that defeats DNS rebinding at fetch time."""
+
+    def test_none_pin_passes_through(self):
+        url, kwargs = _pinned_request_args("https://host:8080/a/b", None)
+        assert url == "https://host:8080/a/b"
+        assert kwargs == {}
+
+    def test_pins_ip_and_preserves_host_and_sni(self):
+        url, kwargs = _pinned_request_args("https://host.example:8080/a/b", "93.184.216.34")
+        assert url == "https://93.184.216.34:8080/a/b"
+        assert kwargs["headers"]["Host"] == "host.example:8080"
+        assert kwargs["extensions"]["sni_hostname"] == "host.example"
+
+    def test_pins_ipv6_with_brackets(self):
+        url, kwargs = _pinned_request_args("http://host.example/a", "2606:2800:220:1:248:1893:25c8:1946")
+        assert url == "http://[2606:2800:220:1:248:1893:25c8:1946]/a"
+        assert kwargs["extensions"]["sni_hostname"] == "host.example"
 
 
 class TestNs:

@@ -64,7 +64,9 @@ class KEURLHandler(URLHandler):
         if not asset_url:
             console.print("[red]Error: KE URL is missing the 'url' download parameter[/red]")
             raise click.Abort()
-        _validate_asset_url(asset_url)
+        # Validate and (when pinning is enabled) get the exact IP to connect to, so the
+        # download can't re-resolve to a blocked address after the check (DNS rebinding).
+        pinned_ip = _validate_asset_url(asset_url)
 
         idb_name = _idb_name_from_path(parsed.path)
         if not idb_name:
@@ -81,9 +83,14 @@ class KEURLHandler(URLHandler):
         sidecar_path = resource_path.parent / f"{resource_path.name}.ke.json"
 
         # Defense in depth: never write outside the downloads directory, even if
-        # idb_name somehow carried traversal/absolute-path components.
+        # idb_name somehow carried traversal/absolute-path components. Any resolve
+        # error (e.g. an unexpected invalid path byte) is treated as "outside".
         downloads_root = downloads_dir.resolve()
-        if not resource_path.resolve().is_relative_to(downloads_root):
+        try:
+            outside = not resource_path.resolve().is_relative_to(downloads_root)
+        except (ValueError, OSError):
+            outside = True
+        if outside:
             console.print("[red]Error: refusing to write outside the downloads directory[/red]")
             raise click.Abort()
 
@@ -95,8 +102,8 @@ class KEURLHandler(URLHandler):
 
         try:
             with httpx.Client(timeout=300.0) as client:
-                _download_metadata(client, asset_url, sidecar_path)
-                _download_file(client, f"{asset_url}/download", resource_path)
+                _download_metadata(client, asset_url, sidecar_path, pinned_ip)
+                _download_file(client, f"{asset_url}/download", resource_path, pinned_ip)
         except click.ClickException:
             _dismiss_dialog(dialog)
             _show_error_dialog("Download failed")
@@ -150,20 +157,53 @@ def _idb_name_from_path(path: str) -> str:
     if not segments:
         return ""
     name = unquote(segments[0])
+    # Reject separators, traversal, and NUL/control bytes (a NUL makes the later
+    # Path.resolve() raise ValueError and would bypass the clean error path).
     if "/" in name or "\\" in name or name in (".", ".."):
+        return ""
+    if any(ord(ch) < 0x20 or ch == "\x7f" for ch in name):
         return ""
     return name
 
 
-def _validate_asset_url(asset_url: str) -> None:
-    """Reject asset URLs that aren't safe to fetch from a clicked deep link.
+# RFC 6598 carrier-grade NAT shared address space — not flagged by any of the
+# ipaddress is_* properties, but must be treated as non-public for SSRF.
+_CGNAT_NET = ipaddress.ip_network("100.64.0.0/10")
+
+
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True for addresses an attacker-supplied download must never reach."""
+    if ip.version == 4 and ip in _CGNAT_NET:
+        return True
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _validate_asset_url(asset_url: str) -> str | None:
+    """Validate ``url=`` and return the IP to pin the download connection to.
 
     KE links are attacker-reachable (any web page can launch ``ida://...``), so an
     unrestricted ``url=`` would let a page make hcli fetch arbitrary internal or
-    loopback services. Allow only http(s), and block non-public address space
-    unless the operator opts in for an internal KE deployment.
+    loopback services. Allow only http(s), and — unless the operator opted into
+    private hosts — resolve the host once, reject non-public addresses, and return
+    the validated IP. The caller pins the connection to that IP so the host cannot
+    re-resolve to a blocked address between this check and the fetch (DNS rebinding).
+
+    Returns the IP literal to connect to, or ``None`` when pinning is disabled
+    (private hosts allowed), leaving normal hostname resolution in place.
     """
-    parsed = urlparse(asset_url)
+    try:
+        parsed = urlparse(asset_url)
+        port = parsed.port  # property access parses (and may reject) the port
+    except ValueError as e:
+        raise click.ClickException(f"Invalid asset URL: {e}")
+
     if parsed.scheme not in ("http", "https"):
         raise click.ClickException(f"Refusing non-HTTP(S) asset URL: {parsed.scheme or 'missing'}://")
 
@@ -172,17 +212,45 @@ def _validate_asset_url(asset_url: str) -> None:
         raise click.ClickException("Asset URL has no host")
 
     if ENV.HCLI_KE_ALLOW_PRIVATE_HOSTS:
-        return
+        return None
 
+    resolve_port = port or (443 if parsed.scheme == "https" else 80)
     try:
-        infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80))
+        infos = socket.getaddrinfo(host, resolve_port, type=socket.SOCK_STREAM)
     except socket.gaierror as e:
         raise click.ClickException(f"Cannot resolve asset host: {e}")
 
+    pinned_ip: str | None = None
     for *_, sockaddr in infos:
         ip = ipaddress.ip_address(sockaddr[0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+        if _is_blocked_ip(ip):
             raise click.ClickException(f"Refusing to download from non-public address: {ip}")
+        if pinned_ip is None:
+            pinned_ip = str(ip)
+
+    if pinned_ip is None:
+        raise click.ClickException("Asset host did not resolve to any address")
+    return pinned_ip
+
+
+def _pinned_request_args(url: str, pinned_ip: str | None) -> tuple[str, dict]:
+    """Rewrite *url* to connect to *pinned_ip* while preserving Host/SNI.
+
+    Connecting to the validated IP literal stops httpx from re-resolving the host
+    at fetch time. The original hostname is carried in the ``Host`` header and the
+    ``sni_hostname`` extension so virtual hosting and (for https) TLS SNI plus
+    certificate verification still work against the real name. With *pinned_ip*
+    ``None`` the URL is returned unchanged.
+    """
+    if pinned_ip is None:
+        return url, {}
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    ip_host = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
+    netloc = f"{ip_host}:{parsed.port}" if parsed.port else ip_host
+    pinned_url = urlunparse(parsed._replace(netloc=netloc))
+    host_header = f"{host}:{parsed.port}" if parsed.port else host
+    return pinned_url, {"headers": {"Host": host_header}, "extensions": {"sni_hostname": host}}
 
 
 def _ns(url: str) -> str:
@@ -205,10 +273,13 @@ def _strip_query_param(uri: str, param: str) -> str:
     return urlunparse(parsed._replace(query="&".join(kept)))
 
 
-def _download_metadata(client: httpx.Client, asset_url: str, sidecar_path: Path) -> None:
+def _download_metadata(
+    client: httpx.Client, asset_url: str, sidecar_path: Path, pinned_ip: str | None = None
+) -> None:
     """Download asset metadata and save as ``.ke.json`` sidecar."""
+    url, kwargs = _pinned_request_args(asset_url, pinned_ip)
     try:
-        response = client.get(asset_url)
+        response = client.get(url, **kwargs)
         if response.status_code == 200:
             sidecar_path.write_bytes(response.content)
         else:
@@ -217,10 +288,13 @@ def _download_metadata(client: httpx.Client, asset_url: str, sidecar_path: Path)
         _print(f"[yellow]Warning: Metadata fetch failed: {e}[/yellow]")
 
 
-def _download_file(client: httpx.Client, download_url: str, resource_path: Path) -> None:
+def _download_file(
+    client: httpx.Client, download_url: str, resource_path: Path, pinned_ip: str | None = None
+) -> None:
     """Download the resource file."""
+    url, kwargs = _pinned_request_args(download_url, pinned_ip)
     try:
-        response = client.get(download_url)
+        response = client.get(url, **kwargs)
         if response.status_code != 200:
             raise click.ClickException(f"Download failed: HTTP {response.status_code}")
         resource_path.write_bytes(response.content)
