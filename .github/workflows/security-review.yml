@@ -75,11 +75,39 @@ jobs:
             nits. Environment variables and CLI flags are trusted inputs (an attacker
             cannot set them), so do not build findings on controlling them.
 
-            Post a single PR comment. For each finding include: `file:line`, severity
-            (HIGH/MEDIUM), category, a one-line description, a brief exploit scenario,
-            and a concrete fix. If you find no high-confidence issues, say so in one
-            line. This review is ADVISORY — it does not block merge; a human still
-            reviews the PR.
+            ALWAYS post a single PR comment, even when nothing is wrong, so there is a
+            visible record that the review ran and what it covered. Use this exact
+            structure:
+
+            ## 🔒 Automated security review
+
+            **Verdict:** one line — either
+            `✅ Checked, all OK — no high-confidence security issues found.`
+            or `⚠️ N potential issue(s) found — see below.`
+
+            **Scope:** the diff of PR #${{ github.event.pull_request.number }}
+            (base…head) only.
+            **Files reviewed:** comma-separated changed files you assessed, or
+            "none security-relevant".
+
+            **Checked** — mark each category ✅ (reviewed, no concern), ⚠️ (finding
+            below), or — (n/a to this diff):
+            - Injection (command/code/template/shell)
+            - Path traversal / file write / insecure or world-writable paths & perms
+            - SSRF / DNS-rebinding / validate-then-fetch TOCTOU
+            - Authn/authz bypass / fail-open logic
+            - Attacker-driven resource exhaustion (memory/disk)
+            - Insecure deserialization (eval/pickle/yaml)
+            - Secrets / sensitive data in logs, errors, or dialogs
+            - Crypto / randomness / certificate validation
+            - Supply-chain (new/changed deps, unpinned refs, install hooks)
+
+            **Findings:** for each — `file:line` · SEVERITY (HIGH/MEDIUM) · category —
+            one-line description; brief exploit scenario; concrete fix. If none, write
+            "None."
+
+            **Notes / limitations:** scope caveats, anything not assessable from the
+            diff, and: "Advisory — does not block merge; a human still reviews this PR."
           # Read-only review tools (no Edit/Write). To use a stronger model, append
           # e.g. `--model <id>`; omitted here so the action's current default is used.
           claude_args: |
