@@ -161,77 +161,54 @@ class IDAIPCClient:
         return instances
 
     @staticmethod
-    def _pid_from_socket_path(socket_path: str) -> int | None:
-        """Extract the ``<pid>`` from an ``ida_ipc_<pid>`` socket path / pipe name.
+    def _verify_peer_uid(sock: socket.socket) -> None:
+        """Reject a connected AF_UNIX peer owned by a *different user*.
 
-        Separator-independent (handles both ``/tmp/ida_ipc_<pid>`` and the Windows
-        ``\\\\.\\pipe\\ida_ipc_<pid>``) so it works regardless of os.path semantics.
+        The sockets live in world-writable ``/tmp``, so on a shared multi-user host
+        another user could squat an ``ida_ipc_<pid>`` name to capture relayed
+        ``ida://`` links or spoof responses. Checking the peer uid on the *connected*
+        socket (closing the squat/rebind TOCTOU and covering every caller through
+        ``_send_command``) enforces the boundary the OS itself uses for local IPC: the
+        user. On Linux/macOS the uid is always available for a connected stream
+        socket, so an unreadable uid there is anomalous and fails CLOSED.
+
+        NOTE: this deliberately does NOT try to defend against a *same-user* process
+        impersonating IDA. Same uid == same OS trust domain: such a process can
+        already read your files/IDBs, any on-disk token, or talk to the real IDA
+        directly, so per-process authentication of a same-user peer isn't achievable
+        client-side (or via an on-disk secret the same user can read). See the PR
+        description for the scope rationale.
         """
-        marker = IDAIPCClient.SOCKET_PREFIX
-        idx = socket_path.rfind(marker)
-        if idx == -1:
-            return None
-        try:
-            return int(socket_path[idx + len(marker) :])
-        except ValueError:
-            return None
-
-    @staticmethod
-    def _verify_peer(sock: socket.socket, expected_pid: int | None) -> None:
-        """Reject a connected AF_UNIX peer that isn't the IDA process we expect.
-
-        The sockets live in world-writable ``/tmp``, so another local process — even
-        one running as the SAME user — could squat the ``ida_ipc_<pid>`` name and
-        impersonate IDA to capture relayed ``ida://`` links or spoof responses. We
-        check the peer's credentials on the *connected* socket (closing the
-        squat/rebind TOCTOU and covering every caller through ``_send_command``):
-
-        - the peer uid must be ours, and
-        - the peer PID must equal the ``<pid>`` encoded in the socket name. Since the
-          real IDA binds ``ida_ipc_<its own pid>``, a same-user impostor (whose pid
-          differs, and which cannot choose the kernel-assigned pid of a live IDA) is
-          rejected.
-
-        Best-effort: if the platform can't report a credential, that check is skipped
-        rather than failing a working flow on an unsupported OS.
-        """
-        peer_uid, peer_pid = IDAIPCClient._peer_cred(sock)
-        if peer_uid is not None and peer_uid != os.getuid():
+        peer_uid = IDAIPCClient._peer_uid(sock)
+        if peer_uid is None:
+            # On Linux/macOS the uid is reliably available; treat its absence as a
+            # failure and refuse. Other (unsupported) platforms: best-effort allow.
+            if sys.platform in ("linux", "darwin"):
+                raise IPCConnectionError("could not read IPC peer uid; refusing connection")
+            return
+        if peer_uid != os.getuid():
             raise IPCConnectionError(f"refusing IPC peer owned by uid {peer_uid} (expected {os.getuid()})")
-        if expected_pid is not None and peer_pid is not None and peer_pid != expected_pid:
-            raise IPCConnectionError(f"refusing IPC peer pid {peer_pid} (socket names pid {expected_pid})")
 
     @staticmethod
-    def _peer_cred(sock: socket.socket) -> tuple[int | None, int | None]:
-        """Return ``(uid, pid)`` of the connected AF_UNIX peer; each None if the
-        platform can't report it."""
+    def _peer_uid(sock: socket.socket) -> int | None:
+        """Return the uid of the connected AF_UNIX peer, or None if the platform
+        can't report it."""
         try:
             if sys.platform == "linux":
                 # struct ucred { pid_t pid; uid_t uid; gid_t gid; } — three ints.
                 creds = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
-                pid, uid, _gid = struct.unpack("3i", creds)
-                return uid, pid
+                _pid, uid, _gid = struct.unpack("3i", creds)
+                return uid
             if sys.platform == "darwin":
-                uid: int | None = None
-                pid: int | None = None
-                # struct xucred { u_int cr_version; uid_t cr_uid; ... } via LOCAL_PEERCRED;
-                # the peer pid comes separately from LOCAL_PEERPID. SOL_LOCAL == 0.
-                try:
-                    xucred = sock.getsockopt(0, 0x001, 128)  # LOCAL_PEERCRED
-                    if len(xucred) >= 8:
-                        _version, uid = struct.unpack("II", xucred[:8])
-                except OSError:
-                    pass
-                try:
-                    buf = sock.getsockopt(0, 0x002, struct.calcsize("i"))  # LOCAL_PEERPID
-                    if len(buf) >= struct.calcsize("i"):
-                        (pid,) = struct.unpack("i", buf)
-                except OSError:
-                    pass
-                return uid, pid
+                # struct xucred { u_int cr_version; uid_t cr_uid; ... }; cr_uid is the
+                # second 4-byte field. SOL_LOCAL == 0, LOCAL_PEERCRED == 0x001.
+                xucred = sock.getsockopt(0, 0x001, 128)
+                if len(xucred) >= 8:
+                    _version, uid = struct.unpack("II", xucred[:8])
+                    return uid
         except OSError as e:
             logger.debug(f"could not read IPC peer credentials: {e}")
-        return None, None
+        return None
 
     @staticmethod
     def _is_process_alive(pid: int) -> bool:
@@ -368,12 +345,11 @@ class IDAIPCClient:
         except OSError as e:
             raise IPCConnectionError(f"Failed to connect to {socket_path}: {e}")
 
-        # Verify the connected peer is the IDA process we expect (right uid AND the pid
-        # the socket name claims) before sending the (possibly sensitive) command. Done
-        # here, on the live connection, so a squatter that rebinds the path after
-        # discovery — even one running as the same user — cannot receive a relayed link.
+        # Verify the connected peer belongs to our user before sending the (possibly
+        # sensitive) command. Done here, on the live connection, so a different-user
+        # squatter that rebinds the path after discovery cannot receive a relayed link.
         try:
-            IDAIPCClient._verify_peer(sock, IDAIPCClient._pid_from_socket_path(socket_path))
+            IDAIPCClient._verify_peer_uid(sock)
         except IPCConnectionError:
             sock.close()
             raise
@@ -432,19 +408,12 @@ class IDAIPCClient:
             if handle == -1:
                 raise IPCConnectionError(f"Failed to open pipe: {pipe_path}")
 
-            # Verify the pipe's server process is the IDA pid the name claims, so a
-            # same-namespace squatter that pre-created the pipe can't impersonate IDA
-            # and receive the relayed link. GetNamedPipeServerProcessId returns the pid
-            # of the process that created the server end.
-            expected_pid = IDAIPCClient._pid_from_socket_path(pipe_path)
-            if expected_pid is not None:
-                server_pid = wintypes.DWORD()
-                got = kernel32.GetNamedPipeServerProcessId(handle, ctypes.byref(server_pid))
-                if got and server_pid.value != expected_pid:
-                    kernel32.CloseHandle(handle)
-                    raise IPCConnectionError(
-                        f"refusing IPC pipe server pid {server_pid.value} (name claims pid {expected_pid})"
-                    )
+            # NOTE: cross-user protection for Windows named pipes is the *server's*
+            # (IDA's) responsibility via the pipe ACL — the client cannot enforce it
+            # without an unreliable owner-token dance, and a peer-pid check provides no
+            # real protection (a squatter just names the pipe after its own pid). See
+            # the PR description: same-user impersonation is out of scope (same trust
+            # domain), and cross-user requires the server-side ACL.
 
             try:
                 data = json.dumps(command).encode("utf-8")

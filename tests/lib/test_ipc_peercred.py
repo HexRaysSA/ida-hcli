@@ -1,4 +1,4 @@
-"""Tests for IPC peer-credential verification (the socket-squatting defense)."""
+"""Tests for IPC peer-credential verification (the cross-user squatting defense)."""
 
 from __future__ import annotations
 
@@ -29,56 +29,40 @@ def short_dir():
         shutil.rmtree(path, ignore_errors=True)
 
 
-class TestPidFromSocketPath:
-    def test_parses_pid(self):
-        assert IDAIPCClient._pid_from_socket_path("/tmp/ida_ipc_4242") == 4242
-        assert IDAIPCClient._pid_from_socket_path(r"\\.\pipe\ida_ipc_99") == 99
-
-    def test_rejects_non_matching(self):
-        assert IDAIPCClient._pid_from_socket_path("/tmp/other_4242") is None
-        assert IDAIPCClient._pid_from_socket_path("/tmp/ida_ipc_notanint") is None
-
-
-class TestVerifyPeer:
-    """_verify_peer is the chokepoint guard: reject a peer with a different uid OR a
-    pid that doesn't match the one the socket name claims; allow a match; and (best
-    effort) allow when the platform can't report a credential."""
+class TestVerifyPeerUid:
+    """_verify_peer_uid is the chokepoint guard: reject a peer owned by another user,
+    allow our own user, and fail CLOSED on Linux/macOS if the uid can't be read."""
 
     def test_rejects_foreign_uid(self):
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        with _force_peer_cred(os.getuid() + 12345, 4242), pytest.raises(IPCConnectionError, match="uid"):
-            IDAIPCClient._verify_peer(sock, 4242)
+        with _force_peer_uid(os.getuid() + 12345), pytest.raises(IPCConnectionError, match="uid"):
+            IDAIPCClient._verify_peer_uid(sock)
         sock.close()
 
-    def test_rejects_mismatched_pid_same_user(self):
-        # Same-user impostor: right uid, but its pid != the pid the socket name claims.
+    def test_allows_same_uid(self):
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        with _force_peer_cred(os.getuid(), 9999), pytest.raises(IPCConnectionError, match="pid"):
-            IDAIPCClient._verify_peer(sock, 4242)
+        with _force_peer_uid(os.getuid()):
+            IDAIPCClient._verify_peer_uid(sock)  # must not raise
         sock.close()
 
-    def test_allows_matching_uid_and_pid(self):
+    def test_fails_closed_when_uid_unreadable_on_supported_platform(self):
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        with _force_peer_cred(os.getuid(), 4242):
-            IDAIPCClient._verify_peer(sock, 4242)  # must not raise
+        with (
+            _force_peer_uid(None),
+            patch("hcli.lib.ida.ipc.sys.platform", "linux"),
+            pytest.raises(IPCConnectionError),
+        ):
+            IDAIPCClient._verify_peer_uid(sock)
         sock.close()
 
-    def test_allows_when_creds_unknown(self):
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        with _force_peer_cred(None, None):
-            IDAIPCClient._verify_peer(sock, 4242)  # best-effort: must not raise
-        sock.close()
 
-
-class TestPeerCredRealSocket:
+class TestPeerUidRealSocket:
     def test_socketpair_reports_self_or_none(self):
-        # On a real connected pair the peer is us; the platform must report our
-        # uid/pid (or None) — never a different value.
+        # On a real connected pair the peer is us; the platform must report our uid
+        # (or None) — never a different uid.
         a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
-            uid, pid = IDAIPCClient._peer_cred(a)
-            assert uid in (None, os.getuid())
-            assert pid in (None, os.getpid())
+            assert IDAIPCClient._peer_uid(a) in (None, os.getuid())
         finally:
             a.close()
             b.close()
@@ -88,9 +72,8 @@ class TestSendCommandEnforcesPeer:
     """The guard lives at the connect chokepoint, so every _send_command goes through
     it — not just discovery."""
 
-    def test_matching_peer_roundtrips(self, short_dir):
-        # Server runs in this process, so peer pid == our pid; name the socket after it.
-        sock_path = str(short_dir / f"ida_ipc_{os.getpid()}")
+    def test_same_user_peer_roundtrips(self, short_dir):
+        sock_path = str(short_dir / "ida_ipc_4242")
         srv = _serve_once(sock_path, response=json.dumps({"status": "ok"}).encode())
         try:
             resp = IDAIPCClient._send_command_unix(sock_path, {"cmd": "ping"})
@@ -99,11 +82,11 @@ class TestSendCommandEnforcesPeer:
             srv.close()
 
     def test_foreign_peer_is_rejected_before_send(self, short_dir):
-        sock_path = str(short_dir / f"ida_ipc_{os.getpid()}")
+        sock_path = str(short_dir / "ida_ipc_4242")
         received: list[bytes] = []
         srv = _serve_once(sock_path, response=b'{"status":"ok"}', sink=received)
         try:
-            with _force_peer_cred(os.getuid() + 12345, os.getpid()), pytest.raises(IPCConnectionError):
+            with _force_peer_uid(os.getuid() + 12345), pytest.raises(IPCConnectionError):
                 IDAIPCClient._send_command_unix(sock_path, {"cmd": "open_ida_link", "uri": "ida://secret"})
         finally:
             srv.close()
@@ -115,9 +98,9 @@ class TestSendCommandEnforcesPeer:
 # ---------------------------------------------------------------------------
 
 
-def _force_peer_cred(uid, pid):
-    """Patch IDAIPCClient._peer_cred to report fixed (uid, pid)."""
-    return patch.object(IDAIPCClient, "_peer_cred", staticmethod(lambda sock: (uid, pid)))
+def _force_peer_uid(uid):
+    """Patch IDAIPCClient._peer_uid to report a fixed uid (or None)."""
+    return patch.object(IDAIPCClient, "_peer_uid", staticmethod(lambda sock: uid))
 
 
 def _serve_once(sock_path: str, response: bytes, sink: list | None = None):
