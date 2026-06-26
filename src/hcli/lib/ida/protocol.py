@@ -25,7 +25,13 @@ def setup_macos_protocol_handler() -> None:
         # Python 3.13) leaks PYTHONHOME into the handler's environment, which makes
         # hcli's pinned interpreter load the wrong stdlib and abort ("No module named
         # 'encodings'") before it runs. env -u clears them so hcli uses its own Python.
-        log_file = "/tmp/idb_handler.log"
+        # Log to a per-user, non-world-writable location. A fixed /tmp path is a
+        # classic symlink-write target on shared machines (another user pre-plants a
+        # symlink and the handler's ">>" appends into a file they chose), and the log
+        # records full ida:// URLs.
+        log_dir = Path.home() / "Library" / "Logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = str(log_dir / "idb_handler.log")
         py_env_strip = "env -u PYTHONHOME -u PYTHONPATH -u PYTHONEXECUTABLE -u PYTHONSTARTUP"
         applescript_content = f'''
 on open location this_URL
@@ -131,10 +137,15 @@ def setup_windows_protocol_handler() -> None:
         # `env -u` on Windows. ShellExecute/CreateProcess passes argv verbatim, so invoke
         # the interpreter directly with -E (ignore all PYTHON* env vars). Frozen builds
         # embed their own runtime and are immune, so run them as-is.
+        # Use a "--" separator before %1: Windows substitutes the raw URL into the
+        # command line, and a stray quote in the URL could otherwise append extra
+        # argv tokens parsed as options to `ida open`. After "--" click treats the
+        # URL strictly as the positional argument; injected tokens become surplus
+        # positionals and are rejected rather than interpreted.
         if getattr(sys, "frozen", False):
-            command = f'"{hcli_path}" ida open "%1"'
+            command = f'"{hcli_path}" ida open -- "%1"'
         else:
-            command = f'"{sys.executable}" -E -m hcli.main ida open "%1"'
+            command = f'"{sys.executable}" -E -m hcli.main ida open -- "%1"'
         reg_key = rf"SOFTWARE\Classes\{PROTOCOL}"
 
         with winreg.CreateKey(HKEY_CURRENT_USER, reg_key) as key:  # type: ignore[attr-defined]
