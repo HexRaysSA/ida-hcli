@@ -75,9 +75,16 @@ jobs:
             nits. Environment variables and CLI flags are trusted inputs (an attacker
             cannot set them), so do not build findings on controlling them.
 
-            ALWAYS post a single PR comment, even when nothing is wrong, so there is a
-            visible record that the review ran and what it covered. Use this exact
-            structure:
+            You MUST post the report below as a PR comment — even when nothing is wrong
+            — so there is a visible record that the review ran and what it covered. Do
+            not rely on the action to post it; post it yourself with the GitHub CLI
+            (GITHUB_TOKEN is already in the environment):
+            - if you have already posted a report on this PR (a comment that starts with
+              "## 🔒 Automated security review"), UPDATE it:
+              `gh pr comment ${{ github.event.pull_request.number }} --edit-last --body "<report>"`
+            - otherwise create one:
+              `gh pr comment ${{ github.event.pull_request.number }} --body "<report>"`
+            Post exactly one comment, using this exact structure for `<report>`:
 
             ## 🔒 Automated security review
 
@@ -108,7 +115,10 @@ jobs:
 
             **Notes / limitations:** scope caveats, anything not assessable from the
             diff, and: "Advisory — does not block merge; a human still reviews this PR."
-          # Read-only review tools (no Edit/Write). To use a stronger model, append
-          # e.g. `--model <id>`; omitted here so the action's current default is used.
+          # Read-only analysis tools + the gh command used to post the report comment
+          # (automation mode does not auto-post the agent's prose, so it posts itself).
+          # To use a stronger model, append e.g. `--model <id>`; omitted so the action's
+          # current default is used.
           claude_args: |
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --max-turns 25
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
