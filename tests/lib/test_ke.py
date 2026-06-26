@@ -12,7 +12,9 @@ from hcli.env import ENV as ENV_CLS
 from hcli.lib.ida.handler.ke_url_handler import (
     KEURLHandler,
     _cleanup_old_downloads,
+    _confirm_open_dialog,
     _default_downloads_dir,
+    _download_url,
     _has_nav_params,
     _idb_name_from_path,
     _ns,
@@ -49,6 +51,54 @@ class TestMatches:
         # The old download-locator form carried no url= param — it no longer matches.
         parsed = urlparse("ida://host:8080/api/v1/buckets/mybucket/assets/test.i64")
         assert KEURLHandler().matches(parsed) is False
+
+    def test_url_param_on_non_ke_host_not_detected(self):
+        # Only the documented ida://ke/... host gets the download path; a url= param
+        # on any other host must fall through to DefaultURLHandler.
+        parsed = urlparse("ida://evil/test.i64/functions?url=http://attacker/x")
+        assert KEURLHandler().matches(parsed) is False
+
+
+class TestDownloadUrl:
+    def test_appends_download_segment(self):
+        assert _download_url("https://host/a/b") == "https://host/a/b/download"
+
+    def test_preserves_query(self):
+        # Naive f"{url}/download" would put the segment inside the query string.
+        assert _download_url("https://host/a?token=x") == "https://host/a/download?token=x"
+
+    def test_handles_trailing_slash(self):
+        assert _download_url("https://host/a/") == "https://host/a/download"
+
+
+class TestConfirmOpenDialog:
+    def test_skip_confirm_returns_true_without_prompting(self):
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_SKIP_CONFIRM", True),
+            patch("hcli.lib.ida.handler.ke_url_handler.subprocess.run") as mock_run,
+        ):
+            assert _confirm_open_dialog("chall.i64", "ke.example.com") is True
+            mock_run.assert_not_called()
+
+    def test_linux_without_gui_tool_proceeds(self):
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_SKIP_CONFIRM", False),
+            patch("hcli.lib.ida.handler.ke_url_handler.platform.system", return_value="Linux"),
+            patch("hcli.lib.ida.handler.ke_url_handler.shutil.which", return_value=None),
+            patch("hcli.lib.ida.handler.ke_url_handler._print"),
+        ):
+            assert _confirm_open_dialog("chall.i64", "ke.example.com") is True
+
+    def test_linux_zenity_decline_denies(self):
+        completed = MagicMock()
+        completed.returncode = 1  # user clicked No / closed
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_SKIP_CONFIRM", False),
+            patch("hcli.lib.ida.handler.ke_url_handler.platform.system", return_value="Linux"),
+            patch("hcli.lib.ida.handler.ke_url_handler.shutil.which", side_effect=lambda c: "/usr/bin/zenity" if c == "zenity" else None),
+            patch("hcli.lib.ida.handler.ke_url_handler.subprocess.run", return_value=completed),
+        ):
+            assert _confirm_open_dialog("chall.i64", "ke.example.com") is False
 
 
 class TestIdbNameFromPath:
@@ -233,6 +283,34 @@ class TestCleanupOldDownloads:
             _cleanup_old_downloads()  # should not raise
 
 
+def _mock_httpx_client(content: bytes = b"file content", status: int = 200):
+    """Build a mock httpx client supporting both .get (metadata) and .stream (file)."""
+    mock_client = MagicMock()
+
+    meta_response = MagicMock()
+    meta_response.status_code = 200
+    meta_response.content = b"{}"
+    mock_client.get.return_value = meta_response
+
+    stream_response = MagicMock()
+    stream_response.status_code = status
+    stream_response.iter_bytes.return_value = [content]
+    stream_cm = MagicMock()
+    stream_cm.__enter__ = MagicMock(return_value=stream_response)
+    stream_cm.__exit__ = MagicMock(return_value=False)
+    mock_client.stream.return_value = stream_cm
+    return mock_client
+
+
+def _set_handler_env(mock_env, tmp_path):
+    """Populate the patched ENV with concrete (non-MagicMock) values the handler reads."""
+    mock_env.HCLI_KE_DOWNLOADS_DIR = str(tmp_path)
+    mock_env.HCLI_KE_DOWNLOADS_RETENTION_DAYS = 3
+    mock_env.HCLI_KE_MAX_DOWNLOAD_MB = 0
+    mock_env.HCLI_KE_SKIP_CONFIRM = True
+    mock_env.HCLI_KE_ALLOW_PRIVATE_HOSTS = True
+
+
 class TestHandleKeUrl:
     @patch("hcli.lib.ida.handler.ke_url_handler._show_download_dialog", return_value=None)
     @patch("hcli.lib.ida.handler.ke_url_handler._dismiss_dialog")
@@ -241,11 +319,7 @@ class TestHandleKeUrl:
     def test_no_launch_downloads_to_hashed_dir(
         self, mock_client_cls, mock_cleanup, mock_dismiss, mock_dialog, tmp_path
     ):
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.content = b"file content"
-        mock_client.get.return_value = mock_response
+        mock_client = _mock_httpx_client(b"file content")
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -256,8 +330,7 @@ class TestHandleKeUrl:
             patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env,
             patch("hcli.lib.ida.handler.ke_url_handler.time.sleep"),
         ):
-            mock_env.HCLI_KE_DOWNLOADS_DIR = str(tmp_path)
-            mock_env.HCLI_KE_DOWNLOADS_RETENTION_DAYS = 3
+            _set_handler_env(mock_env, tmp_path)
             KEURLHandler().handle(uri, parsed, no_launch=True, timeout=120.0, skip_analysis=False)
 
         # File and its .ke.json sidecar land under the url-hash namespace dir.
@@ -282,11 +355,7 @@ class TestHandleKeUrl:
         mock_ipc.query_instance.return_value = running_instance
         mock_ipc.send_open_ida_link.return_value = (True, "OK")
 
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.content = b"file content"
-        mock_client.get.return_value = mock_response
+        mock_client = _mock_httpx_client(b"file content")
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -298,8 +367,7 @@ class TestHandleKeUrl:
             patch("hcli.lib.ida.handler.ke_url_handler.time.sleep"),
             patch("hcli.lib.ida.resolve._print"),
         ):
-            mock_env.HCLI_KE_DOWNLOADS_DIR = str(tmp_path)
-            mock_env.HCLI_KE_DOWNLOADS_RETENTION_DAYS = 3
+            _set_handler_env(mock_env, tmp_path)
             KEURLHandler().handle(uri, parsed, no_launch=False, timeout=120.0, skip_analysis=False)
 
         # Reuse the running instance and forward the nav link WITHOUT url=.

@@ -57,6 +57,13 @@ class ENV:
     # default so a clicked ida:// link cannot make hcli reach internal services; set
     # to true/yes/on/1 for self-hosted KE deployments on an internal network.
     HCLI_KE_ALLOW_PRIVATE_HOSTS: bool = _env_bool("HCLI_KE_ALLOW_PRIVATE_HOSTS")
+    # Suppress the "open downloaded IDB in IDA?" confirmation prompt. The KE download
+    # path is reachable from any web page, so by default hcli asks before handing
+    # attacker-influenced content to IDA; set to true/yes/on/1 for one-click flows.
+    HCLI_KE_SKIP_CONFIRM: bool = _env_bool("HCLI_KE_SKIP_CONFIRM")
+    # Optional cap (in MB) on a single KE asset download; 0 means no limit. Downloads
+    # always stream to disk regardless, so this only bounds total bytes written.
+    HCLI_KE_MAX_DOWNLOAD_MB: int = int(os.getenv("HCLI_KE_MAX_DOWNLOAD_MB", "0"))
 
 
 # Constants

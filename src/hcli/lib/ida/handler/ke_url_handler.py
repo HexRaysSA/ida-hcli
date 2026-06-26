@@ -20,6 +20,7 @@ import ipaddress
 import logging
 import os
 import platform
+import shutil
 import socket
 import subprocess
 import time
@@ -47,8 +48,12 @@ class KEURLHandler(URLHandler):
     """
 
     def matches(self, parsed: ParseResult) -> bool:
-        # KE deep links carry the asset download location as a ``url=`` parameter.
-        # Plain navigation links (rva/ea/name/view only) fall through to DefaultURLHandler.
+        # KE deep links have the documented shape ``ida://ke/<idb>/...?...&url=<asset>``:
+        # the ``ke`` host AND a ``url=`` download parameter. Requiring both keeps the
+        # download path from being reached by any other ``ida://...?url=`` link — those
+        # (and plain navigation links) fall through to DefaultURLHandler.
+        if parsed.hostname != "ke":
+            return False
         return "url" in dict(parse_qsl(parsed.query, keep_blank_values=True))
 
     def handle(
@@ -103,7 +108,7 @@ class KEURLHandler(URLHandler):
         try:
             with httpx.Client(timeout=300.0) as client:
                 _download_metadata(client, asset_url, sidecar_path, pinned_ip)
-                _download_file(client, f"{asset_url}/download", resource_path, pinned_ip)
+                _download_file(client, _download_url(asset_url), resource_path, pinned_ip)
         except click.ClickException:
             _dismiss_dialog(dialog)
             _show_error_dialog("Download failed")
@@ -118,6 +123,14 @@ class KEURLHandler(URLHandler):
         _dismiss_dialog(dialog)
 
         if no_launch:
+            console.print(f"[green]Downloaded file: {resource_path}[/green]")
+            return
+
+        # The download path is reachable from any web page, so confirm before handing
+        # attacker-influenced content to IDA (loaders/IDBs can auto-run scripts).
+        host = urlparse(asset_url).hostname or "an unknown host"
+        if not _confirm_open_dialog(resource_path.name, host):
+            console.print("[yellow]Cancelled — not opening in IDA.[/yellow]")
             console.print(f"[green]Downloaded file: {resource_path}[/green]")
             return
 
@@ -273,6 +286,18 @@ def _strip_query_param(uri: str, param: str) -> str:
     return urlunparse(parsed._replace(query="&".join(kept)))
 
 
+def _download_url(asset_url: str) -> str:
+    """Append the ``/download`` path segment to *asset_url*, preserving query/fragment.
+
+    KE serves the file at ``<asset>/download``. Plain ``f"{asset_url}/download"`` is
+    wrong when the asset URL carries a query or fragment (the segment would land in
+    the query string), so splice it into the path component instead.
+    """
+    parsed = urlparse(asset_url)
+    new_path = parsed.path.rstrip("/") + "/download"
+    return urlunparse(parsed._replace(path=new_path))
+
+
 def _download_metadata(
     client: httpx.Client, asset_url: str, sidecar_path: Path, pinned_ip: str | None = None
 ) -> None:
@@ -291,17 +316,102 @@ def _download_metadata(
 def _download_file(
     client: httpx.Client, download_url: str, resource_path: Path, pinned_ip: str | None = None
 ) -> None:
-    """Download the resource file."""
+    """Stream the resource file to disk.
+
+    Streams rather than buffering the whole body in memory, and enforces the
+    optional ``HCLI_KE_MAX_DOWNLOAD_MB`` cap. A partial file is removed on failure.
+    """
     url, kwargs = _pinned_request_args(download_url, pinned_ip)
+    max_bytes = ENV.HCLI_KE_MAX_DOWNLOAD_MB * 1024 * 1024 if ENV.HCLI_KE_MAX_DOWNLOAD_MB > 0 else None
     try:
-        response = client.get(url, **kwargs)
-        if response.status_code != 200:
-            raise click.ClickException(f"Download failed: HTTP {response.status_code}")
-        resource_path.write_bytes(response.content)
+        with client.stream("GET", url, **kwargs) as response:
+            if response.status_code != 200:
+                raise click.ClickException(f"Download failed: HTTP {response.status_code}")
+            written = 0
+            with open(resource_path, "wb") as f:
+                for chunk in response.iter_bytes():
+                    written += len(chunk)
+                    if max_bytes is not None and written > max_bytes:
+                        raise click.ClickException(
+                            f"Download exceeded the {ENV.HCLI_KE_MAX_DOWNLOAD_MB} MB limit"
+                        )
+                    f.write(chunk)
     except httpx.TimeoutException:
+        _unlink_quiet(resource_path)
         raise click.ClickException("Download timed out")
     except httpx.RequestError as e:
+        _unlink_quiet(resource_path)
         raise click.ClickException(f"Download failed: {e}")
+    except click.ClickException:
+        _unlink_quiet(resource_path)
+        raise
+
+
+def _unlink_quiet(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _confirm_open_dialog(filename: str, host: str) -> bool:
+    """Native yes/no confirmation before opening downloaded content in IDA.
+
+    Returns True if the user approved (or confirmation is suppressed via
+    ``HCLI_KE_SKIP_CONFIRM``). On macOS/Windows a dialog is always available, so an
+    error there fails closed (deny). Linux uses zenity/kdialog when present and
+    otherwise proceeds — the desktop launcher click is itself the user's consent.
+    """
+    if ENV.HCLI_KE_SKIP_CONFIRM:
+        return True
+
+    system = platform.system().lower()
+    prompt = f"Open downloaded IDB '{filename}' from {host} in IDA?"
+    try:
+        if system == "darwin":
+            env = {**os.environ, "KE_DLG_MSG": prompt}
+            result = subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    'display dialog (system attribute "KE_DLG_MSG") with title "KE" '
+                    'buttons {"Cancel", "Open"} default button "Open" cancel button "Cancel"',
+                ],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return result.returncode == 0  # osascript exits non-zero when Cancel is pressed
+        if system == "windows":
+            env = {**os.environ, "KE_DLG_MSG": prompt}
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-WindowStyle",
+                    "Hidden",
+                    "-Command",
+                    "Add-Type -AssemblyName System.Windows.Forms; "
+                    "if ([System.Windows.Forms.MessageBox]::Show("
+                    '$env:KE_DLG_MSG, "KE", "YesNo", "Warning") -eq "Yes") { exit 0 } else { exit 1 }',
+                ],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return result.returncode == 0
+        if system == "linux":
+            for cmd in (
+                ["zenity", "--question", "--title=KE", f"--text={prompt}"],
+                ["kdialog", "--yesno", prompt, "--title", "KE"],
+            ):
+                if shutil.which(cmd[0]):
+                    return subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+            _print("[yellow]No GUI prompt available (install zenity/kdialog to confirm); proceeding.[/yellow]")
+            return True
+    except Exception:
+        # Fail closed where a dialog is expected; don't hard-break Linux.
+        return system == "linux"
+    return True
 
 
 def _cleanup_old_downloads() -> None:
