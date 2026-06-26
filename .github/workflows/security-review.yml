@@ -1,0 +1,114 @@
+name: Security Review
+
+# Automatic AI security review on every PR to main. Advisory / non-blocking: it posts
+# its findings as a single PR comment and does not gate merge. To make it merge-blocking
+# later, add this job's check ("security-review") to the required status checks in the
+# branch-protection rule for `main` (see the PR description / repo docs).
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: security-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write # post the review comment
+  id-token: write
+
+jobs:
+  security-review:
+    name: security-review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the base..head diff is available
+
+      - name: Claude security review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # One sticky comment per PR (updated on each push) instead of a new comment each run.
+          use_sticky_comment: true
+          prompt: |
+            You are a senior security engineer reviewing this pull request
+            (#${{ github.event.pull_request.number }}) in ${{ github.repository }}.
+            Review ONLY the diff of this PR against its base branch — the newly
+            added/changed code — not the whole repository.
+
+            Threat model. hcli is a desktop CLI that registers an `ida://` protocol
+            handler, so deep-link URLs are attacker-reachable (any web page can launch
+            them): treat parsed URL paths, query parameters, and any `url=`-style values
+            as fully untrusted input. It also downloads assets and hands them to IDA,
+            and talks to running IDA instances over local IPC (a same-user trust
+            boundary). Look hardest at changes under `src/hcli/lib/ida/handler/` (the
+            deep-link handlers), `src/hcli/lib/ida/protocol.py` (OS handler
+            registration), `src/hcli/lib/ida/ipc.py` (local IPC), and any
+            auth/credential, subprocess, download, or file-write code.
+
+            Report HIGH/MEDIUM findings you are >80% confident are real and have a
+            concrete attack path. Consider these categories (not exhaustive):
+            - command/code/template injection; unsafe subprocess or shell use
+            - path traversal / arbitrary file write; insecure, predictable, or
+              world-writable file/socket/registry paths and permissions
+            - SSRF (attacker control of host or protocol), and DNS-rebinding/TOCTOU
+              around validate-then-fetch
+            - authn/authz bypass; fail-OPEN security logic (a check that is skipped or
+              defaults to "allow" on error/unknown platform)
+            - resource exhaustion driven by ATTACKER-CONTROLLED input (e.g. unbounded
+              download/read/write that can fill memory or disk) — this IS in scope here
+            - concretely-exploitable race conditions / TOCTOU
+            - insecure deserialization; eval/pickle/yaml on untrusted data
+            - hardcoded or leaked secrets; sensitive data (tokens, credentials, PII)
+              written to logs, error text, or dialogs
+            - weak crypto, bad randomness, or certificate-validation bypass
+            - supply-chain: newly added/changed dependencies, unpinned action/refs, or
+              install/postinstall hooks
+
+            Noise control (important): prefer missing a speculative issue over adding
+            noise. Do NOT report pure style/quality or non-security correctness bugs,
+            theoretical issues with no concrete attack path, or generic "best practice"
+            nits. Environment variables and CLI flags are trusted inputs (an attacker
+            cannot set them), so do not build findings on controlling them.
+
+            ALWAYS post a single PR comment, even when nothing is wrong, so there is a
+            visible record that the review ran and what it covered. Use this exact
+            structure:
+
+            ## 🔒 Automated security review
+
+            **Verdict:** one line — either
+            `✅ Checked, all OK — no high-confidence security issues found.`
+            or `⚠️ N potential issue(s) found — see below.`
+
+            **Scope:** the diff of PR #${{ github.event.pull_request.number }}
+            (base…head) only.
+            **Files reviewed:** comma-separated changed files you assessed, or
+            "none security-relevant".
+
+            **Checked** — mark each category ✅ (reviewed, no concern), ⚠️ (finding
+            below), or — (n/a to this diff):
+            - Injection (command/code/template/shell)
+            - Path traversal / file write / insecure or world-writable paths & perms
+            - SSRF / DNS-rebinding / validate-then-fetch TOCTOU
+            - Authn/authz bypass / fail-open logic
+            - Attacker-driven resource exhaustion (memory/disk)
+            - Insecure deserialization (eval/pickle/yaml)
+            - Secrets / sensitive data in logs, errors, or dialogs
+            - Crypto / randomness / certificate validation
+            - Supply-chain (new/changed deps, unpinned refs, install hooks)
+
+            **Findings:** for each — `file:line` · SEVERITY (HIGH/MEDIUM) · category —
+            one-line description; brief exploit scenario; concrete fix. If none, write
+            "None."
+
+            **Notes / limitations:** scope caveats, anything not assessable from the
+            diff, and: "Advisory — does not block merge; a human still reviews this PR."
+          # Read-only review tools (no Edit/Write). To use a stronger model, append
+          # e.g. `--model <id>`; omitted here so the action's current default is used.
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
