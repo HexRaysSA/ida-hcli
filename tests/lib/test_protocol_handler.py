@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -37,3 +38,25 @@ class TestOpenArgSeparator:
         result = runner.invoke(open_ida_link, ["--", "ida://ke/x.i64/f", "--no-launch", ""])
         assert result.exit_code != 0
         assert "Got unexpected extra argument" in result.output
+
+
+class TestWindowsRegistration:
+    """Guard the actual registered artifact: the REG_SZ command string must carry the
+    `--` separator before %1 (a regression here wouldn't be caught by the click tests)."""
+
+    def test_registered_command_has_separator_before_percent1(self):
+        fake_winreg = MagicMock()
+        fake_winreg.HKEY_CURRENT_USER = 0
+        fake_winreg.REG_SZ = 1
+        # `with winreg.CreateKey(...) as key:` — MagicMock supports the context manager
+        # protocol out of the box.
+
+        with patch.dict(sys.modules, {"winreg": fake_winreg}):
+            from hcli.lib.ida.protocol import setup_windows_protocol_handler
+
+            setup_windows_protocol_handler()
+
+        # SetValueEx(key, name, reserved, type, value) — find the command value.
+        commands = [c.args[4] for c in fake_winreg.SetValueEx.call_args_list if "ida open" in str(c.args[4])]
+        assert commands, "no ida open command was registered"
+        assert commands[0].endswith('ida open -- "%1"'), commands[0]

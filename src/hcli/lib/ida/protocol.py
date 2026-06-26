@@ -30,13 +30,22 @@ def setup_macos_protocol_handler() -> None:
         # symlink and the handler's ">>" appends into a file they chose), and the log
         # records full ida:// URLs.
         log_dir = Path.home() / "Library" / "Logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
+        # Best-effort at registration; the handler also `mkdir -p`s at click time, so a
+        # locked-down home (or the dir being removed later) can't fail registration or
+        # break the redirect.
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
         log_file = str(log_dir / "idb_handler.log")
         py_env_strip = "env -u PYTHONHOME -u PYTHONPATH -u PYTHONEXECUTABLE -u PYTHONSTARTUP"
+        # `ida open -- <url>`: the `--` stops the URL (or anything that decodes from it)
+        # from being parsed as an option to the open command.
         applescript_content = f'''
 on open location this_URL
     set logFile to "{log_file}"
-    do shell script "/bin/zsh -l -c " & quoted form of ("{py_env_strip} {hcli_path} ida open " & quoted form of this_URL) & " >> " & quoted form of logFile & " 2>&1"
+    set logDir to "{log_dir}"
+    do shell script "/bin/mkdir -p " & quoted form of logDir & " ; /bin/zsh -l -c " & quoted form of ("{py_env_strip} {hcli_path} ida open -- " & quoted form of this_URL) & " >> " & quoted form of logFile & " 2>&1"
 end open location
 
 on run
@@ -169,8 +178,8 @@ def setup_windows_protocol_handler() -> None:
     except ImportError:
         console.print("[red]winreg module not available (not on Windows?)[/red]")
         raise
-    except Exception:
-        console.print("[red]Error setting up Windows protocol handler: {e}[/red]")
+    except Exception as e:
+        console.print(f"[red]Error setting up Windows protocol handler: {e}[/red]")
         raise
 
 
@@ -188,10 +197,11 @@ def setup_linux_protocol_handler() -> None:
         # Python) can leak PYTHONHOME into the handler's environment, which makes hcli's
         # interpreter load the wrong stdlib and abort before it runs. The desktop
         # launcher passes %u as a literal argv, so no shell mangles the URL here.
+        # `-- %u` keeps the URL from being parsed as an option to the open command.
         py_env_strip = "env -u PYTHONHOME -u PYTHONPATH -u PYTHONEXECUTABLE -u PYTHONSTARTUP"
         desktop_content = f"""[Desktop Entry]
 Name=HCLI IDB Link Handler
-Exec={py_env_strip} {hcli_path} ida open %u
+Exec={py_env_strip} {hcli_path} ida open -- %u
 Type=Application
 NoDisplay=true
 MimeType=x-scheme-handler/{PROTOCOL};
