@@ -50,14 +50,16 @@ class KEURLHandler(URLHandler):
 
     def matches(self, parsed: ParseResult) -> bool:
         # KE deep links have the documented shape ``ida://ke/<idb>/<resource>?…&url=``:
-        # the ``ida`` scheme, the ``ke`` host, an ``<idb>/<resource>`` path, AND a
+        # the ``ida`` scheme, the ``ke`` host, at least an ``<idb>`` path segment, AND a
         # ``url=`` download parameter. Requiring all of them keeps the download path
         # from being reached by any other ``ida://...?url=`` link — those (and plain
         # navigation links) fall through to DefaultURLHandler.
         if parsed.scheme != "ida" or parsed.hostname != "ke":
             return False
+        # At least the <idb> segment (handle() needs it); a missing resource is tolerated
+        # so open-only links (ida://ke/<idb>?...&url=) still route here.
         segments = [s for s in parsed.path.split("/") if s]
-        if len(segments) < 2:
+        if len(segments) < 1:
             return False
         return "url" in dict(parse_qsl(parsed.query, keep_blank_values=True))
 
@@ -79,16 +81,6 @@ class KEURLHandler(URLHandler):
         idb_name = _idb_name_from_path(parsed.path)
         if not idb_name:
             _reject("KE URL has no valid <idb> path segment")
-
-        # Validate url= and (when pinning is enabled) get the validated IPs to connect
-        # to, so the download can't re-resolve to a blocked address after the check
-        # (DNS rebinding). Surface rejections through the native dialog too — this
-        # handler is normally launched from a browser with no visible console.
-        try:
-            pinned_ips = _validate_asset_url(asset_url)
-        except click.ClickException as e:
-            _show_error_dialog(e.message or "Invalid KE link")
-            raise
 
         # Compute the cache paths (under a hash of the asset URL so two assets that
         # share a basename don't collide). No filesystem writes happen yet — these are
@@ -119,7 +111,18 @@ class KEURLHandler(URLHandler):
             console.print("[dim]Set HCLI_KE_SKIP_CONFIRM=1 to skip this prompt.[/dim]")
             return
 
-        # Consent given (or explicit CLI): now it's safe to touch the filesystem.
+        # Consent given (or explicit CLI). Only NOW validate url= and resolve/pin the
+        # host — doing the DNS lookup earlier would let a passive, never-consented click
+        # beacon out to the attacker-controlled host. Pinning the resolved IP(s) still
+        # defeats DNS rebinding between this check and the fetch. Rejections surface via
+        # the native dialog (browser-launched: no visible console).
+        try:
+            pinned_ips = _validate_asset_url(asset_url)
+        except click.ClickException as e:
+            _show_error_dialog(e.message or "Invalid KE link")
+            raise
+
+        # Safe to touch the filesystem now.
         _cleanup_old_downloads()
         resource_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -394,11 +397,14 @@ def _download_file(
     ``HCLI_KE_MAX_DOWNLOAD_MB`` cap, and — even without that cap — refuses to fill the
     disk: it aborts if free space would drop below ``_MIN_FREE_BYTES``, so a malicious
     server can't stream until the disk is full after one approval. When an IP won't
-    accept a connection it tries the next validated IP. A partial file is removed on
-    failure.
+    accept a connection it tries the next validated IP.
+
+    Downloads to a temporary ``.part`` file and atomically renames on success, so a
+    failed re-download never destroys a previously-cached copy at *resource_path*.
     """
     max_bytes = ENV.HCLI_KE_MAX_DOWNLOAD_MB * 1024 * 1024 if ENV.HCLI_KE_MAX_DOWNLOAD_MB > 0 else None
     attempts = _pinned_attempts(pinned_ips)
+    tmp_path = resource_path.with_name(resource_path.name + ".part")
 
     for index, pinned_ip in enumerate(attempts):
         url, kwargs = _pinned_request_args(download_url, pinned_ip)
@@ -408,7 +414,7 @@ def _download_file(
                     raise click.ClickException(f"Download failed: HTTP {response.status_code}")
                 written = 0
                 next_space_check = 0
-                with open(resource_path, "wb") as f:
+                with open(tmp_path, "wb") as f:
                     for chunk in response.iter_bytes():
                         written += len(chunk)
                         if max_bytes is not None and written > max_bytes:
@@ -420,20 +426,22 @@ def _download_file(
                                 raise click.ClickException("Download aborted: insufficient free disk space")
                             next_space_check = written + _SPACE_CHECK_INTERVAL
                         f.write(chunk)
+            # Only now replace any existing cached copy — atomic on the same filesystem.
+            os.replace(tmp_path, resource_path)
             return
         except _RETRYABLE_CONNECT as e:
-            _unlink_quiet(resource_path)
+            _unlink_quiet(tmp_path)
             if index < len(attempts) - 1:
                 continue  # this IP wouldn't connect — try the next validated one
             raise click.ClickException(f"Download failed: {e}")
         except httpx.TimeoutException:
-            _unlink_quiet(resource_path)
+            _unlink_quiet(tmp_path)
             raise click.ClickException("Download timed out")
         except (httpx.RequestError, OSError) as e:
-            _unlink_quiet(resource_path)
+            _unlink_quiet(tmp_path)
             raise click.ClickException(f"Download failed: {e}")
         except click.ClickException:
-            _unlink_quiet(resource_path)
+            _unlink_quiet(tmp_path)
             raise
 
 

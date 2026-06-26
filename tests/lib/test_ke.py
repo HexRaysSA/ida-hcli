@@ -62,10 +62,15 @@ class TestMatches:
         parsed = urlparse("http://ke/test.i64/functions?url=http://attacker/x")
         assert KEURLHandler().matches(parsed) is False
 
-    def test_too_few_path_segments_not_detected(self):
-        # Documented shape is ida://ke/<idb>/<resource>; fewer than two segments isn't it.
-        parsed = urlparse("ida://ke/test.i64?url=http://attacker/x")
+    def test_no_path_segment_not_detected(self):
+        # No <idb> segment at all isn't a KE link.
+        parsed = urlparse("ida://ke/?url=http://attacker/x")
         assert KEURLHandler().matches(parsed) is False
+
+    def test_single_segment_open_only_link_detected(self):
+        # An open-only link with just the <idb> segment still routes to KE.
+        parsed = urlparse("ida://ke/test.i64?url=" + quote(ASSET_URL, safe=""))
+        assert KEURLHandler().matches(parsed) is True
 
 
 class TestDownloadUrl:
@@ -230,6 +235,29 @@ class TestDownloadFileDiskGuard:
             ke_url_handler._download_file(client, "https://h/a/download", dest, None)
 
         assert not dest.exists()  # partial file removed
+
+    def test_failed_redownload_preserves_cached_file(self, tmp_path):
+        # A re-download that fails must not destroy a previously-cached good copy:
+        # the download goes to a .part file and only atomically replaces on success.
+        from hcli.lib.ida.handler import ke_url_handler
+
+        dest = tmp_path / "cached.i64"
+        dest.write_bytes(b"GOOD CACHED COPY")
+
+        stream_response = MagicMock()
+        stream_response.status_code = 500  # transient server failure
+        cm = MagicMock()
+        cm.__enter__ = MagicMock(return_value=stream_response)
+        cm.__exit__ = MagicMock(return_value=False)
+        client = MagicMock()
+        client.stream.return_value = cm
+
+        with patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env, pytest.raises(click.ClickException):
+            mock_env.HCLI_KE_MAX_DOWNLOAD_MB = 0
+            ke_url_handler._download_file(client, "https://h/a/download", dest, None)
+
+        assert dest.read_bytes() == b"GOOD CACHED COPY"  # untouched
+        assert not (tmp_path / "cached.i64.part").exists()  # partial cleaned up
 
 
 class TestIdbNameFromPath:
@@ -595,12 +623,16 @@ class TestHandleKeUrl:
         with (
             patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env,
             patch("hcli.lib.ida.handler.ke_url_handler.time.sleep"),
+            patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo") as mock_gai,
         ):
-            _set_handler_env(mock_env, tmp_path, allow_private=True, skip_confirm=False)
+            # allow_private=False so a reached _validate_asset_url WOULD resolve — proving
+            # the decline path never gets there (no DNS beacon to the attacker host).
+            _set_handler_env(mock_env, tmp_path, allow_private=False, skip_confirm=False)
             KEURLHandler().handle(uri, parsed, no_launch=False, timeout=120.0, skip_analysis=False)
 
         mock_confirm.assert_called_once()
-        # No HTTP request, no cleanup, and no directory creation — zero FS side effects.
+        # No DNS lookup, no HTTP request, no cleanup, no directory creation.
+        mock_gai.assert_not_called()
         mock_client.stream.assert_not_called()
         mock_cleanup.assert_not_called()
         assert not (tmp_path / _ns(ASSET_URL)).exists()
