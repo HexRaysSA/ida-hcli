@@ -60,3 +60,39 @@ class TestWindowsRegistration:
         commands = [c.args[4] for c in fake_winreg.SetValueEx.call_args_list if "ida open" in str(c.args[4])]
         assert commands, "no ida open command was registered"
         assert commands[0].endswith('ida open -- "%1"'), commands[0]
+
+
+class TestPosixHandlerArtifacts:
+    """The macOS AppleScript and Linux desktop Exec= are the real registered artifacts;
+    assert each carries the `--` option terminator before the URL placeholder."""
+
+    def test_macos_applescript_has_separator(self):
+        from hcli.lib.ida.protocol import _macos_handler_applescript
+
+        script = _macos_handler_applescript(
+            "/path/hcli", "/home/u/Library/Logs/idb_handler.log", "/home/u/Library/Logs"
+        )
+        assert "ida open -- " in script
+        # and it ensures the log dir exists at click time so the redirect can't break
+        assert "mkdir -p" in script
+
+    def test_linux_desktop_exec_has_separator(self):
+        from hcli.lib.ida.protocol import _linux_desktop_entry
+
+        entry = _linux_desktop_entry("/path/hcli")
+        exec_line = next(ln for ln in entry.splitlines() if ln.startswith("Exec="))
+        assert exec_line.endswith("ida open -- %u"), exec_line
+
+    def test_linux_registration_writes_separator_to_desktop_file(self, tmp_path, monkeypatch):
+        # Real-artifact check: the written .desktop file must carry `-- %u`.
+        monkeypatch.setattr("hcli.lib.ida.protocol.Path.home", lambda: tmp_path)
+        monkeypatch.setattr("hcli.lib.ida.protocol.get_hcli_executable_path", lambda: "/path/hcli")
+        monkeypatch.setattr("hcli.lib.ida.protocol.subprocess.run", lambda *a, **k: MagicMock())
+
+        from hcli.lib.ida.protocol import setup_linux_protocol_handler
+
+        setup_linux_protocol_handler()
+
+        desktop = tmp_path / ".local" / "share" / "applications" / "hcli-idb-handler.desktop"
+        exec_line = next(ln for ln in desktop.read_text().splitlines() if ln.startswith("Exec="))
+        assert exec_line.endswith("ida open -- %u"), exec_line
