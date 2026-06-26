@@ -195,9 +195,11 @@ class IDAIPCClient:
         can't report it."""
         try:
             if sys.platform == "linux":
-                # struct ucred { pid_t pid; uid_t uid; gid_t gid; } — three ints.
-                creds = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
-                _pid, uid, _gid = struct.unpack("3i", creds)
+                # struct ucred { pid_t pid; uid_t uid; gid_t gid; } — pid is signed,
+                # uid/gid are UNSIGNED. Unpacking uid as signed would mismatch
+                # os.getuid() for uids >= 2**31 (large AD/LDAP/container ranges).
+                creds = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("iII"))
+                _pid, uid, _gid = struct.unpack("iII", creds)
                 return uid
             if sys.platform == "darwin":
                 # struct xucred { u_int cr_version; uid_t cr_uid; ... }; cr_uid is the

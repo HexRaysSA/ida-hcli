@@ -10,7 +10,7 @@ import sys
 import tempfile
 import threading
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -66,6 +66,17 @@ class TestPeerUidRealSocket:
         finally:
             a.close()
             b.close()
+
+    def test_linux_high_uid_unpacked_unsigned(self):
+        # SO_PEERCRED's uid is unsigned; a uid >= 2**31 must come back as itself, not a
+        # negative int (which would never equal os.getuid()).
+        import struct
+
+        high_uid = 2**31 + 7
+        sock = MagicMock()
+        sock.getsockopt.return_value = struct.pack("iII", 4242, high_uid, 0)
+        with patch("hcli.lib.ida.ipc.sys.platform", "linux"):
+            assert IDAIPCClient._peer_uid(sock) == high_uid
 
 
 class TestSendCommandEnforcesPeer:
