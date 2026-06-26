@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import socket
+import stat
 import sys
 from dataclasses import dataclass
 
@@ -88,6 +89,14 @@ class IDAIPCClient:
 
         for sock_path in glob.glob(socket_pattern):
             try:
+                # The socket lives in world-writable /tmp, so before trusting it as an
+                # IDA endpoint, verify it really is a socket we own. lstat (no symlink
+                # follow) rejects a planted symlink, and the uid check rejects a socket
+                # squatted by another local user to capture relayed ida:// links.
+                if not IDAIPCClient._is_own_socket(sock_path):
+                    logger.debug(f"Skipping foreign or non-socket IPC path: {sock_path}")
+                    continue
+
                 # Extract PID from socket name
                 basename = os.path.basename(sock_path)
                 pid_str = basename.replace(IDAIPCClient.SOCKET_PREFIX, "")
@@ -158,6 +167,20 @@ class IDAIPCClient:
             logger.debug(f"Windows pipe enumeration failed: {e}")
 
         return instances
+
+    @staticmethod
+    def _is_own_socket(sock_path: str) -> bool:
+        """True if *sock_path* is a Unix socket owned by the current user.
+
+        Uses lstat so a symlink is not followed (a planted symlink reports as a
+        symlink, not a socket, and is rejected). Guards against another local user
+        squatting a ``/tmp/ida_ipc_<pid>`` name to receive relayed ida:// links.
+        """
+        try:
+            st = os.lstat(sock_path)
+        except OSError:
+            return False
+        return stat.S_ISSOCK(st.st_mode) and st.st_uid == os.getuid()
 
     @staticmethod
     def _is_process_alive(pid: int) -> bool:
