@@ -115,9 +115,11 @@ class KEURLHandler(URLHandler):
             with httpx.Client(timeout=300.0) as client:
                 _download_metadata(client, asset_url, sidecar_path, pinned_ips)
                 _download_file(client, _download_url(asset_url), resource_path, pinned_ips)
-        except click.ClickException:
+        except click.ClickException as e:
             _dismiss_dialog(dialog)
-            _show_error_dialog("Download failed")
+            # Surface the specific reason (HTTP status, size limit, SSRF reject) in the
+            # native dialog — the handler is browser-launched with no visible console.
+            _show_error_dialog(e.message or "Download failed")
             raise
         except Exception as e:
             _dismiss_dialog(dialog)
@@ -318,6 +320,12 @@ def _download_url(asset_url: str) -> str:
 _METADATA_MAX_BYTES = 16 * 1024 * 1024
 
 
+# Failures that mean "this validated IP wouldn't accept a connection" — worth
+# retrying on the next pinned IP. Mid-stream resets, read timeouts, and non-200
+# responses are treated as terminal (a server that answered is "up").
+_RETRYABLE_CONNECT = (httpx.ConnectError, httpx.ConnectTimeout)
+
+
 def _pinned_attempts(pinned_ips: list[str] | None) -> list[str | None]:
     """The list of IPs to try in order, or ``[None]`` when pinning is disabled."""
     return list(pinned_ips) if pinned_ips else [None]
@@ -326,9 +334,14 @@ def _pinned_attempts(pinned_ips: list[str] | None) -> list[str | None]:
 def _download_metadata(
     client: httpx.Client, asset_url: str, sidecar_path: Path, pinned_ips: list[str] | None = None
 ) -> None:
-    """Download asset metadata and save as ``.ke.json`` sidecar (best-effort, bounded)."""
-    last_error: Exception | None = None
-    for pinned_ip in _pinned_attempts(pinned_ips):
+    """Download asset metadata and save as ``.ke.json`` sidecar (best-effort, bounded).
+
+    Tries each validated IP in turn when an IP won't accept a connection; any other
+    failure (non-200, read error, timeout) is reported as a warning — the sidecar is
+    optional, so a missing one never blocks the download.
+    """
+    attempts = _pinned_attempts(pinned_ips)
+    for index, pinned_ip in enumerate(attempts):
         url, kwargs = _pinned_request_args(asset_url, pinned_ip)
         try:
             with client.stream("GET", url, **kwargs) as response:
@@ -343,14 +356,13 @@ def _download_metadata(
                         return
                 sidecar_path.write_bytes(bytes(data))
                 return
-        except httpx.ConnectError as e:
-            last_error = e  # try the next validated IP
-            continue
+        except _RETRYABLE_CONNECT as e:
+            if index < len(attempts) - 1:
+                continue  # this IP wouldn't connect — try the next validated one
+            _print(f"[yellow]Warning: Metadata fetch failed: {e}[/yellow]")
         except (httpx.RequestError, httpx.TimeoutException) as e:
             _print(f"[yellow]Warning: Metadata fetch failed: {e}[/yellow]")
             return
-    if last_error is not None:
-        _print(f"[yellow]Warning: Metadata fetch failed: {last_error}[/yellow]")
 
 
 def _download_file(
@@ -359,13 +371,12 @@ def _download_file(
     """Stream the resource file to disk.
 
     Streams rather than buffering the whole body in memory, enforces the optional
-    ``HCLI_KE_MAX_DOWNLOAD_MB`` cap, and tries each validated IP in turn so a single
-    down address among several does not fail an otherwise-healthy host. A partial
-    file is removed on failure.
+    ``HCLI_KE_MAX_DOWNLOAD_MB`` cap, and — when an IP won't accept a connection —
+    tries the next validated IP so a single dead address doesn't fail a host that
+    has other healthy ones. A partial file is removed on failure.
     """
     max_bytes = ENV.HCLI_KE_MAX_DOWNLOAD_MB * 1024 * 1024 if ENV.HCLI_KE_MAX_DOWNLOAD_MB > 0 else None
     attempts = _pinned_attempts(pinned_ips)
-    last_connect_error: Exception | None = None
 
     for index, pinned_ip in enumerate(attempts):
         url, kwargs = _pinned_request_args(download_url, pinned_ip)
@@ -381,12 +392,10 @@ def _download_file(
                             raise click.ClickException(f"Download exceeded the {ENV.HCLI_KE_MAX_DOWNLOAD_MB} MB limit")
                         f.write(chunk)
             return
-        except httpx.ConnectError as e:
-            # Only a failure to connect is worth retrying on the next validated IP.
+        except _RETRYABLE_CONNECT as e:
             _unlink_quiet(resource_path)
-            last_connect_error = e
             if index < len(attempts) - 1:
-                continue
+                continue  # this IP wouldn't connect — try the next validated one
             raise click.ClickException(f"Download failed: {e}")
         except httpx.TimeoutException:
             _unlink_quiet(resource_path)
@@ -397,8 +406,6 @@ def _download_file(
         except click.ClickException:
             _unlink_quiet(resource_path)
             raise
-    # Unreachable in practice (the loop returns or raises), but keeps types honest.
-    raise click.ClickException(f"Download failed: {last_connect_error}")
 
 
 def _unlink_quiet(path: Path) -> None:

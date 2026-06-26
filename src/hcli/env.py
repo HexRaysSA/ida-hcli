@@ -11,6 +11,21 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in ("true", "yes", "on", "1")
 
 
+def _env_int(name: str, default: int) -> int:
+    """Parse an integer environment variable, falling back to *default* on a bad value.
+
+    Parsed at class-body eval and imported by the CLI entrypoint, so a malformed
+    value must not raise — that would brick every command, not just the feature.
+    """
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return default
+
+
 class ENV:
     """Environment configuration mirroring the Deno version."""
 
@@ -52,7 +67,7 @@ class ENV:
 
     # KE download settings
     HCLI_KE_DOWNLOADS_DIR: str | None = os.getenv("HCLI_KE_DOWNLOADS_DIR")
-    HCLI_KE_DOWNLOADS_RETENTION_DAYS: int = int(os.getenv("HCLI_KE_DOWNLOADS_RETENTION_DAYS", "3"))
+    HCLI_KE_DOWNLOADS_RETENTION_DAYS: int = _env_int("HCLI_KE_DOWNLOADS_RETENTION_DAYS", 3)
     # Allow KE deep links to download from private/loopback/link-local hosts. Off by
     # default so a clicked ida:// link cannot make hcli reach internal services; set
     # to true/yes/on/1 for self-hosted KE deployments on an internal network.
@@ -63,7 +78,7 @@ class ENV:
     HCLI_KE_SKIP_CONFIRM: bool = _env_bool("HCLI_KE_SKIP_CONFIRM")
     # Optional cap (in MB) on a single KE asset download; 0 means no limit. Downloads
     # always stream to disk regardless, so this only bounds total bytes written.
-    HCLI_KE_MAX_DOWNLOAD_MB: int = int(os.getenv("HCLI_KE_MAX_DOWNLOAD_MB", "0"))
+    HCLI_KE_MAX_DOWNLOAD_MB: int = _env_int("HCLI_KE_MAX_DOWNLOAD_MB", 0)
 
 
 # Constants

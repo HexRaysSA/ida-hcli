@@ -353,32 +353,35 @@ class TestCleanupOldDownloads:
             _cleanup_old_downloads()  # should not raise
 
 
-def _mock_httpx_client(content: bytes = b"file content", status: int = 200):
-    """Build a mock httpx client supporting both .get (metadata) and .stream (file)."""
+def _stream_cm(content: bytes, status: int = 200):
+    """A mock httpx streaming-response context manager yielding *content*."""
+    response = MagicMock()
+    response.status_code = status
+    response.iter_bytes.return_value = [content]
+    cm = MagicMock()
+    cm.__enter__ = MagicMock(return_value=response)
+    cm.__exit__ = MagicMock(return_value=False)
+    return cm
+
+
+def _mock_httpx_client(content: bytes = b"file content", meta_content: bytes = b'{"meta":true}', status: int = 200):
+    """A mock httpx client whose .stream yields the metadata body then the file body.
+
+    handle() streams metadata first (asset_url) then the file (<asset_url>/download),
+    so distinct bodies let tests verify each independently.
+    """
     mock_client = MagicMock()
-
-    meta_response = MagicMock()
-    meta_response.status_code = 200
-    meta_response.content = b"{}"
-    mock_client.get.return_value = meta_response
-
-    stream_response = MagicMock()
-    stream_response.status_code = status
-    stream_response.iter_bytes.return_value = [content]
-    stream_cm = MagicMock()
-    stream_cm.__enter__ = MagicMock(return_value=stream_response)
-    stream_cm.__exit__ = MagicMock(return_value=False)
-    mock_client.stream.return_value = stream_cm
+    mock_client.stream.side_effect = [_stream_cm(meta_content, 200), _stream_cm(content, status)]
     return mock_client
 
 
-def _set_handler_env(mock_env, tmp_path):
+def _set_handler_env(mock_env, tmp_path, *, allow_private=True, skip_confirm=True):
     """Populate the patched ENV with concrete (non-MagicMock) values the handler reads."""
     mock_env.HCLI_KE_DOWNLOADS_DIR = str(tmp_path)
     mock_env.HCLI_KE_DOWNLOADS_RETENTION_DAYS = 3
     mock_env.HCLI_KE_MAX_DOWNLOAD_MB = 0
-    mock_env.HCLI_KE_SKIP_CONFIRM = True
-    mock_env.HCLI_KE_ALLOW_PRIVATE_HOSTS = True
+    mock_env.HCLI_KE_SKIP_CONFIRM = skip_confirm
+    mock_env.HCLI_KE_ALLOW_PRIVATE_HOSTS = allow_private
 
 
 class TestHandleKeUrl:
@@ -403,11 +406,12 @@ class TestHandleKeUrl:
             _set_handler_env(mock_env, tmp_path)
             KEURLHandler().handle(uri, parsed, no_launch=True, timeout=120.0, skip_analysis=False)
 
-        # File and its .ke.json sidecar land under the url-hash namespace dir.
+        # File and its .ke.json sidecar land under the url-hash namespace dir, each
+        # with its own body (so a broken metadata path can't masquerade as the file).
         downloaded = tmp_path / _ns(ASSET_URL) / "test.i64"
-        assert downloaded.exists()
+        sidecar = tmp_path / _ns(ASSET_URL) / "test.i64.ke.json"
         assert downloaded.read_bytes() == b"file content"
-        assert (tmp_path / _ns(ASSET_URL) / "test.i64.ke.json").exists()
+        assert sidecar.read_bytes() == b'{"meta":true}'
 
     @patch("hcli.lib.ida.handler.ke_url_handler._show_download_dialog", return_value=None)
     @patch("hcli.lib.ida.handler.ke_url_handler._dismiss_dialog")
@@ -444,6 +448,56 @@ class TestHandleKeUrl:
         mock_ipc.send_open_ida_link.assert_called_once_with(
             "/tmp/ida_ipc_1234", "ida://ke/test.i64/functions?ea=0x1000&view=pseudocode"
         )
+
+    @patch("hcli.lib.ida.handler.ke_url_handler._confirm_open_dialog", return_value=True)
+    @patch("hcli.lib.ida.handler.ke_url_handler._show_download_dialog", return_value=None)
+    @patch("hcli.lib.ida.handler.ke_url_handler._dismiss_dialog")
+    @patch("hcli.lib.ida.handler.ke_url_handler._cleanup_old_downloads")
+    @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
+    @patch("hcli.lib.ida.handler.ke_url_handler.httpx.Client")
+    @patch("hcli.lib.ida.resolve.IDAIPCClient")
+    def test_default_path_pins_ip_and_confirms(
+        self, mock_ipc, mock_client_cls, mock_gai, mock_cleanup, mock_dismiss, mock_dialog, mock_confirm, tmp_path
+    ):
+        """Exercise the SECURITY-CRITICAL DEFAULT path: SSRF validation + IP pinning ON
+        and the confirm-before-open gate ON (not the relaxed test-only config)."""
+        from hcli.lib.ida.ipc import IDAInstance
+
+        # url= host resolves to a public IP, so the SSRF guard passes and pinning engages.
+        mock_gai.return_value = [(2, 1, 6, "", ("93.184.216.34", 443))]
+
+        running = IDAInstance(pid=1234, socket_path="/tmp/ida_ipc_1234", idb_name="test.i64", has_idb=True)
+        mock_ipc.discover_instances.return_value = [running]
+        mock_ipc.query_instance.return_value = running
+        mock_ipc.send_open_ida_link.return_value = (True, "OK")
+
+        mock_client = _mock_httpx_client(b"file content")
+        mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        uri = _ke_link("test.i64", "functions", ASSET_URL, nav="ea=0x1000")
+        parsed = urlparse(uri)
+
+        with (
+            patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env,
+            patch("hcli.lib.ida.handler.ke_url_handler.time.sleep"),
+            patch("hcli.lib.ida.resolve._print"),
+        ):
+            _set_handler_env(mock_env, tmp_path, allow_private=False, skip_confirm=False)
+            KEURLHandler().handle(uri, parsed, no_launch=False, timeout=120.0, skip_analysis=False)
+
+        # The confirm-before-open gate actually ran.
+        mock_confirm.assert_called_once()
+
+        # The file download connected to the validated IP literal, carrying the real
+        # host in the Host header and TLS SNI (the DNS-rebinding pin).
+        file_call = mock_client.stream.call_args_list[-1]
+        assert "93.184.216.34:8080" in file_call.args[1]
+        assert file_call.kwargs["headers"]["Host"] == "host:8080"
+        assert file_call.kwargs["extensions"]["sni_hostname"] == "host"
+
+        # And it still downloaded to the hashed dir.
+        assert (tmp_path / _ns(ASSET_URL) / "test.i64").read_bytes() == b"file content"
 
     @patch("hcli.lib.ida.handler.ke_url_handler._show_error_dialog")
     def test_missing_url_param_aborts(self, mock_error_dialog):
