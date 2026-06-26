@@ -1,0 +1,66 @@
+name: Security Review
+
+# Automatic AI security review on every PR to main. Advisory / non-blocking: it posts
+# its findings as a single PR comment and does not gate merge. To make it merge-blocking
+# later, add this job's check ("security-review") to the required status checks in the
+# branch-protection rule for `main` (see the PR description / repo docs).
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: security-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write # post the review comment
+  id-token: write
+
+jobs:
+  security-review:
+    name: security-review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the base..head diff is available
+
+      - name: Claude security review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # One sticky comment per PR (updated on each push) instead of a new comment each run.
+          use_sticky_comment: true
+          prompt: |
+            You are a senior security engineer reviewing this pull request
+            (#${{ github.event.pull_request.number }}) in ${{ github.repository }}.
+            Review ONLY the diff of this PR against its base branch — the newly
+            added/changed code — not the whole repository.
+
+            hcli registers an `ida://` protocol handler, so deep-link URLs are
+            attacker-reachable: treat parsed URL paths, query parameters, and any
+            `url=`-style values as fully untrusted input. Look hardest at changes under
+            `src/hcli/lib/ida/handler/` (the deep-link handlers), `src/hcli/lib/ida/protocol.py`
+            (handler registration), `src/hcli/lib/ida/ipc.py` (local IPC), and any
+            auth/credential, subprocess, download, or file-write code.
+
+            Report only HIGH/MEDIUM findings you are >80% confident are real and
+            exploitable: command/code injection, path traversal, SSRF (host/protocol
+            control), authn/authz bypass, insecure deserialization, hardcoded secrets,
+            unsafe subprocess/shell use, and unsafe handling of untrusted input.
+            Explicitly SKIP and do not report: denial-of-service / resource exhaustion,
+            secrets-at-rest, rate-limiting, pure style/quality, and purely theoretical
+            issues. Prefer missing a speculative issue over adding noise.
+
+            Post a single PR comment. For each finding include: `file:line`, severity
+            (HIGH/MEDIUM), category, a one-line description, a brief exploit scenario,
+            and a concrete fix. If you find no high-confidence issues, say so in one
+            line. This review is ADVISORY — it does not block merge; a human still
+            reviews the PR.
+          # Read-only review tools (no Edit/Write). To use a stronger model, append
+          # e.g. `--model <id>`; omitted here so the action's current default is used.
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr diff:*),Bash(gh pr view:*)"

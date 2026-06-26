@@ -241,4 +241,23 @@ The project uses modern Python packaging:
 - **rich-click** for enhanced CLI interfaces
 - **pytest** with asyncio support for testing
 
+## Security Review
+
+Before opening or merging a PR, run a security review of your changes and address (or
+explicitly justify) any findings — e.g. via the `/security-review` command in Claude
+Code. Focus on whether the diff introduces command/code injection, path traversal,
+SSRF (host/protocol control), auth bypass, insecure deserialization, hardcoded
+secrets, unsafe subprocess/shell use, or unsafe handling of untrusted input.
+
+`hcli` registers an `ida://` protocol handler, so deep-link URLs are
+**attacker-reachable** (any web page can launch them) — treat parsed URL paths, query
+parameters, and `url=`-style values as fully untrusted. Review these areas with extra
+care: `src/hcli/lib/ida/handler/` (deep-link handlers), `src/hcli/lib/ida/protocol.py`
+(handler registration), `src/hcli/lib/ida/ipc.py` (local IPC), and auth/credential,
+subprocess, download, or file-write code.
+
+An automatic AI security review also runs on every PR to `main`
+(`.github/workflows/security-review.yml`) and posts findings as a PR comment — triage
+them, don't ignore them. See `CLAUDE.md` for the same guidance.
+
 Always use `uv run <command>` instead of activating virtual environments manually.
