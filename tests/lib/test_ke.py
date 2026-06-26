@@ -100,6 +100,58 @@ class TestConfirmOpenDialog:
         ):
             assert _confirm_open_dialog("chall.i64", "ke.example.com") is False
 
+    def test_unknown_platform_proceeds_without_silent_failopen(self):
+        # A platform with no scriptable dialog proceeds (consent = the launcher click)
+        # but emits a notice rather than silently auto-opening.
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_SKIP_CONFIRM", False),
+            patch("hcli.lib.ida.handler.ke_url_handler.platform.system", return_value="FreeBSD"),
+            patch("hcli.lib.ida.handler.ke_url_handler.shutil.which", return_value=None),
+            patch("hcli.lib.ida.handler.ke_url_handler._print") as mock_print,
+        ):
+            assert _confirm_open_dialog("chall.i64", "ke.example.com") is True
+            assert mock_print.called  # user was told confirmation was skipped
+
+    def test_macos_dialog_error_fails_closed(self):
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_SKIP_CONFIRM", False),
+            patch("hcli.lib.ida.handler.ke_url_handler.platform.system", return_value="Darwin"),
+            patch("hcli.lib.ida.handler.ke_url_handler.subprocess.run", side_effect=OSError("no osascript")),
+        ):
+            assert _confirm_open_dialog("chall.i64", "ke.example.com") is False
+
+    def test_windows_dialog_error_fails_closed(self):
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_SKIP_CONFIRM", False),
+            patch("hcli.lib.ida.handler.ke_url_handler.platform.system", return_value="Windows"),
+            patch("hcli.lib.ida.handler.ke_url_handler.subprocess.run", side_effect=FileNotFoundError("no powershell")),
+        ):
+            assert _confirm_open_dialog("chall.i64", "ke.example.com") is False
+
+
+class TestDownloadMetadataCap:
+    def test_oversized_metadata_skips_sidecar(self, tmp_path):
+        # The metadata fetch is bounded independently of HCLI_KE_MAX_DOWNLOAD_MB so a
+        # huge attacker body cannot exhaust memory/disk via the .ke.json sidecar.
+        from hcli.lib.ida.handler import ke_url_handler
+
+        sidecar = tmp_path / "x.ke.json"
+        huge = b"A" * (ke_url_handler._METADATA_MAX_BYTES + 1)
+
+        stream_response = MagicMock()
+        stream_response.status_code = 200
+        stream_response.iter_bytes.return_value = [huge]
+        cm = MagicMock()
+        cm.__enter__ = MagicMock(return_value=stream_response)
+        cm.__exit__ = MagicMock(return_value=False)
+        client = MagicMock()
+        client.stream.return_value = cm
+
+        with patch("hcli.lib.ida.handler.ke_url_handler._print"):
+            ke_url_handler._download_metadata(client, "https://h/a", sidecar, None)
+
+        assert not sidecar.exists()  # refused to write the oversized body
+
 
 class TestIdbNameFromPath:
     def test_first_segment_is_the_idb(self):
@@ -186,7 +238,14 @@ class TestValidateAssetUrl:
     def test_returns_pinned_ip_for_public_host(self, mock_gai):
         mock_gai.return_value = _addrinfo("93.184.216.34")
         with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False):
-            assert _validate_asset_url("https://public.example/x") == "93.184.216.34"
+            assert _validate_asset_url("https://public.example/x") == ["93.184.216.34"]
+
+    @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
+    def test_returns_all_public_ips_deduped_for_failover(self, mock_gai):
+        # All validated IPs are returned (deduped) so the download can fail over.
+        mock_gai.return_value = _addrinfo("93.184.216.34", "93.184.216.35", "93.184.216.34")
+        with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False):
+            assert _validate_asset_url("https://public.example/x") == ["93.184.216.34", "93.184.216.35"]
 
     def test_returns_none_when_private_hosts_allowed(self):
         # Opt-out: no resolution, no pinning — preserves self-hosted/internal KE.

@@ -67,16 +67,23 @@ class KEURLHandler(URLHandler):
         params = dict(parse_qsl(parsed.query, keep_blank_values=True))
         asset_url = params.get("url", "")
         if not asset_url:
-            console.print("[red]Error: KE URL is missing the 'url' download parameter[/red]")
-            raise click.Abort()
-        # Validate and (when pinning is enabled) get the exact IP to connect to, so the
-        # download can't re-resolve to a blocked address after the check (DNS rebinding).
-        pinned_ip = _validate_asset_url(asset_url)
+            _reject("KE URL is missing the 'url' download parameter")
 
+        # Validate the idb segment FIRST (cheap, no network) so a malformed link does
+        # not trigger a DNS lookup of the attacker-controlled url= host.
         idb_name = _idb_name_from_path(parsed.path)
         if not idb_name:
-            console.print("[red]Error: KE URL has no valid <idb> path segment[/red]")
-            raise click.Abort()
+            _reject("KE URL has no valid <idb> path segment")
+
+        # Validate url= and (when pinning is enabled) get the validated IPs to connect
+        # to, so the download can't re-resolve to a blocked address after the check
+        # (DNS rebinding). Surface rejections through the native dialog too — this
+        # handler is normally launched from a browser with no visible console.
+        try:
+            pinned_ips = _validate_asset_url(asset_url)
+        except click.ClickException as e:
+            _show_error_dialog(e.message or "Invalid KE link")
+            raise
 
         # Cleanup old downloads (best-effort)
         _cleanup_old_downloads()
@@ -96,8 +103,7 @@ class KEURLHandler(URLHandler):
         except (ValueError, OSError):
             outside = True
         if outside:
-            console.print("[red]Error: refusing to write outside the downloads directory[/red]")
-            raise click.Abort()
+            _reject("refusing to write outside the downloads directory")
 
         resource_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -107,8 +113,8 @@ class KEURLHandler(URLHandler):
 
         try:
             with httpx.Client(timeout=300.0) as client:
-                _download_metadata(client, asset_url, sidecar_path, pinned_ip)
-                _download_file(client, _download_url(asset_url), resource_path, pinned_ip)
+                _download_metadata(client, asset_url, sidecar_path, pinned_ips)
+                _download_file(client, _download_url(asset_url), resource_path, pinned_ips)
         except click.ClickException:
             _dismiss_dialog(dialog)
             _show_error_dialog("Download failed")
@@ -131,6 +137,7 @@ class KEURLHandler(URLHandler):
         host = urlparse(asset_url).hostname or "an unknown host"
         if not _confirm_open_dialog(resource_path.name, host):
             console.print("[yellow]Cancelled — not opening in IDA.[/yellow]")
+            console.print("[dim]Set HCLI_KE_SKIP_CONFIRM=1 to skip this prompt.[/dim]")
             console.print(f"[green]Downloaded file: {resource_path}[/green]")
             return
 
@@ -151,6 +158,18 @@ class KEURLHandler(URLHandler):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _reject(message: str) -> None:
+    """Print and surface (via the native dialog) a rejection, then abort.
+
+    Used for the pre-download validation failures: this handler is normally
+    launched from a browser with no visible console, so the dialog is the only
+    feedback the user gets.
+    """
+    console.print(f"[red]Error: {message}[/red]")
+    _show_error_dialog(message)
+    raise click.Abort()
 
 
 def _default_downloads_dir() -> str:
@@ -198,17 +217,18 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     )
 
 
-def _validate_asset_url(asset_url: str) -> str | None:
-    """Validate ``url=`` and return the IP to pin the download connection to.
+def _validate_asset_url(asset_url: str) -> list[str] | None:
+    """Validate ``url=`` and return the IPs to pin the download connection to.
 
     KE links are attacker-reachable (any web page can launch ``ida://...``), so an
     unrestricted ``url=`` would let a page make hcli fetch arbitrary internal or
     loopback services. Allow only http(s), and — unless the operator opted into
-    private hosts — resolve the host once, reject non-public addresses, and return
-    the validated IP. The caller pins the connection to that IP so the host cannot
-    re-resolve to a blocked address between this check and the fetch (DNS rebinding).
+    private hosts — resolve the host once, reject if ANY resolved address is
+    non-public, and return ALL of the validated addresses. The caller connects only
+    to these IPs, so the host cannot re-resolve to a blocked address between this
+    check and the fetch (DNS rebinding), while still preserving multi-IP failover.
 
-    Returns the IP literal to connect to, or ``None`` when pinning is disabled
+    Returns the validated IP literals, or ``None`` when pinning is disabled
     (private hosts allowed), leaving normal hostname resolution in place.
     """
     try:
@@ -233,17 +253,18 @@ def _validate_asset_url(asset_url: str) -> str | None:
     except socket.gaierror as e:
         raise click.ClickException(f"Cannot resolve asset host: {e}")
 
-    pinned_ip: str | None = None
+    pinned_ips: list[str] = []
     for *_, sockaddr in infos:
         ip = ipaddress.ip_address(sockaddr[0])
         if _is_blocked_ip(ip):
             raise click.ClickException(f"Refusing to download from non-public address: {ip}")
-        if pinned_ip is None:
-            pinned_ip = str(ip)
+        ip_str = str(ip)
+        if ip_str not in pinned_ips:
+            pinned_ips.append(ip_str)
 
-    if pinned_ip is None:
+    if not pinned_ips:
         raise click.ClickException("Asset host did not resolve to any address")
-    return pinned_ip
+    return pinned_ips
 
 
 def _pinned_request_args(url: str, pinned_ip: str | None) -> tuple[str, dict]:
@@ -298,53 +319,95 @@ def _download_url(asset_url: str) -> str:
     return urlunparse(parsed._replace(path=new_path))
 
 
+# Hard ceiling on the metadata sidecar regardless of HCLI_KE_MAX_DOWNLOAD_MB: it is
+# small JSON, but the body comes from the attacker-controlled url= host, so bound it
+# so a huge response can't exhaust memory/disk via the (otherwise uncapped) sidecar.
+_METADATA_MAX_BYTES = 16 * 1024 * 1024
+
+
+def _pinned_attempts(pinned_ips: list[str] | None) -> list[str | None]:
+    """The list of IPs to try in order, or ``[None]`` when pinning is disabled."""
+    return list(pinned_ips) if pinned_ips else [None]
+
+
 def _download_metadata(
-    client: httpx.Client, asset_url: str, sidecar_path: Path, pinned_ip: str | None = None
+    client: httpx.Client, asset_url: str, sidecar_path: Path, pinned_ips: list[str] | None = None
 ) -> None:
-    """Download asset metadata and save as ``.ke.json`` sidecar."""
-    url, kwargs = _pinned_request_args(asset_url, pinned_ip)
-    try:
-        response = client.get(url, **kwargs)
-        if response.status_code == 200:
-            sidecar_path.write_bytes(response.content)
-        else:
-            _print(f"[yellow]Warning: Metadata fetch failed (HTTP {response.status_code})[/yellow]")
-    except (httpx.RequestError, httpx.TimeoutException) as e:
-        _print(f"[yellow]Warning: Metadata fetch failed: {e}[/yellow]")
+    """Download asset metadata and save as ``.ke.json`` sidecar (best-effort, bounded)."""
+    last_error: Exception | None = None
+    for pinned_ip in _pinned_attempts(pinned_ips):
+        url, kwargs = _pinned_request_args(asset_url, pinned_ip)
+        try:
+            with client.stream("GET", url, **kwargs) as response:
+                if response.status_code != 200:
+                    _print(f"[yellow]Warning: Metadata fetch failed (HTTP {response.status_code})[/yellow]")
+                    return
+                data = bytearray()
+                for chunk in response.iter_bytes():
+                    data += chunk
+                    if len(data) > _METADATA_MAX_BYTES:
+                        _print("[yellow]Warning: Metadata exceeded size limit; skipping sidecar[/yellow]")
+                        return
+                sidecar_path.write_bytes(bytes(data))
+                return
+        except httpx.ConnectError as e:
+            last_error = e  # try the next validated IP
+            continue
+        except (httpx.RequestError, httpx.TimeoutException) as e:
+            _print(f"[yellow]Warning: Metadata fetch failed: {e}[/yellow]")
+            return
+    if last_error is not None:
+        _print(f"[yellow]Warning: Metadata fetch failed: {last_error}[/yellow]")
 
 
 def _download_file(
-    client: httpx.Client, download_url: str, resource_path: Path, pinned_ip: str | None = None
+    client: httpx.Client, download_url: str, resource_path: Path, pinned_ips: list[str] | None = None
 ) -> None:
     """Stream the resource file to disk.
 
-    Streams rather than buffering the whole body in memory, and enforces the
-    optional ``HCLI_KE_MAX_DOWNLOAD_MB`` cap. A partial file is removed on failure.
+    Streams rather than buffering the whole body in memory, enforces the optional
+    ``HCLI_KE_MAX_DOWNLOAD_MB`` cap, and tries each validated IP in turn so a single
+    down address among several does not fail an otherwise-healthy host. A partial
+    file is removed on failure.
     """
-    url, kwargs = _pinned_request_args(download_url, pinned_ip)
     max_bytes = ENV.HCLI_KE_MAX_DOWNLOAD_MB * 1024 * 1024 if ENV.HCLI_KE_MAX_DOWNLOAD_MB > 0 else None
-    try:
-        with client.stream("GET", url, **kwargs) as response:
-            if response.status_code != 200:
-                raise click.ClickException(f"Download failed: HTTP {response.status_code}")
-            written = 0
-            with open(resource_path, "wb") as f:
-                for chunk in response.iter_bytes():
-                    written += len(chunk)
-                    if max_bytes is not None and written > max_bytes:
-                        raise click.ClickException(
-                            f"Download exceeded the {ENV.HCLI_KE_MAX_DOWNLOAD_MB} MB limit"
-                        )
-                    f.write(chunk)
-    except httpx.TimeoutException:
-        _unlink_quiet(resource_path)
-        raise click.ClickException("Download timed out")
-    except httpx.RequestError as e:
-        _unlink_quiet(resource_path)
-        raise click.ClickException(f"Download failed: {e}")
-    except click.ClickException:
-        _unlink_quiet(resource_path)
-        raise
+    attempts = _pinned_attempts(pinned_ips)
+    last_connect_error: Exception | None = None
+
+    for index, pinned_ip in enumerate(attempts):
+        url, kwargs = _pinned_request_args(download_url, pinned_ip)
+        try:
+            with client.stream("GET", url, **kwargs) as response:
+                if response.status_code != 200:
+                    raise click.ClickException(f"Download failed: HTTP {response.status_code}")
+                written = 0
+                with open(resource_path, "wb") as f:
+                    for chunk in response.iter_bytes():
+                        written += len(chunk)
+                        if max_bytes is not None and written > max_bytes:
+                            raise click.ClickException(
+                                f"Download exceeded the {ENV.HCLI_KE_MAX_DOWNLOAD_MB} MB limit"
+                            )
+                        f.write(chunk)
+            return
+        except httpx.ConnectError as e:
+            # Only a failure to connect is worth retrying on the next validated IP.
+            _unlink_quiet(resource_path)
+            last_connect_error = e
+            if index < len(attempts) - 1:
+                continue
+            raise click.ClickException(f"Download failed: {e}")
+        except httpx.TimeoutException:
+            _unlink_quiet(resource_path)
+            raise click.ClickException("Download timed out")
+        except (httpx.RequestError, OSError) as e:
+            _unlink_quiet(resource_path)
+            raise click.ClickException(f"Download failed: {e}")
+        except click.ClickException:
+            _unlink_quiet(resource_path)
+            raise
+    # Unreachable in practice (the loop returns or raises), but keeps types honest.
+    raise click.ClickException(f"Download failed: {last_connect_error}")
 
 
 def _unlink_quiet(path: Path) -> None:
@@ -357,34 +420,36 @@ def _unlink_quiet(path: Path) -> None:
 def _confirm_open_dialog(filename: str, host: str) -> bool:
     """Native yes/no confirmation before opening downloaded content in IDA.
 
-    Returns True if the user approved (or confirmation is suppressed via
-    ``HCLI_KE_SKIP_CONFIRM``). On macOS/Windows a dialog is always available, so an
-    error there fails closed (deny). Linux uses zenity/kdialog when present and
-    otherwise proceeds — the desktop launcher click is itself the user's consent.
+    Returns True only if the user approved (or confirmation is suppressed via
+    ``HCLI_KE_SKIP_CONFIRM``). macOS/Windows always have a dialog, so any error
+    there fails CLOSED (deny). Platforms without a guaranteed dialog (Linux and any
+    other) use zenity/kdialog when present and otherwise proceed — the desktop
+    launcher click is itself the user's consent, and failing closed would break the
+    feature where no scriptable prompt exists.
     """
     if ENV.HCLI_KE_SKIP_CONFIRM:
         return True
 
     system = platform.system().lower()
     prompt = f"Open downloaded IDB '{filename}' from {host} in IDA?"
-    try:
-        if system == "darwin":
-            env = {**os.environ, "KE_DLG_MSG": prompt}
-            result = subprocess.run(
+
+    if system == "darwin":
+        try:
+            return _run_confirm(
                 [
                     "osascript",
                     "-e",
                     'display dialog (system attribute "KE_DLG_MSG") with title "KE" '
                     'buttons {"Cancel", "Open"} default button "Open" cancel button "Cancel"',
                 ],
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                prompt,
             )
-            return result.returncode == 0  # osascript exits non-zero when Cancel is pressed
-        if system == "windows":
-            env = {**os.environ, "KE_DLG_MSG": prompt}
-            result = subprocess.run(
+        except Exception:
+            return False  # fail closed — a dialog is always available on macOS
+
+    if system == "windows":
+        try:
+            return _run_confirm(
                 [
                     "powershell",
                     "-WindowStyle",
@@ -394,24 +459,33 @@ def _confirm_open_dialog(filename: str, host: str) -> bool:
                     "if ([System.Windows.Forms.MessageBox]::Show("
                     '$env:KE_DLG_MSG, "KE", "YesNo", "Warning") -eq "Yes") { exit 0 } else { exit 1 }',
                 ],
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                prompt,
             )
-            return result.returncode == 0
-        if system == "linux":
-            for cmd in (
-                ["zenity", "--question", "--title=KE", f"--text={prompt}"],
-                ["kdialog", "--yesno", prompt, "--title", "KE"],
-            ):
-                if shutil.which(cmd[0]):
-                    return subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
-            _print("[yellow]No GUI prompt available (install zenity/kdialog to confirm); proceeding.[/yellow]")
-            return True
-    except Exception:
-        # Fail closed where a dialog is expected; don't hard-break Linux.
-        return system == "linux"
+        except Exception:
+            return False  # fail closed — a dialog is always available on Windows
+
+    # Linux and any other platform: best-effort GUI prompt; proceed if none works.
+    for cmd in (
+        ["zenity", "--question", "--title=KE", f"--text={prompt}"],
+        ["kdialog", "--yesno", prompt, "--title", "KE"],
+    ):
+        if shutil.which(cmd[0]):
+            try:
+                return subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+            except Exception:
+                break
+    _print("[yellow]No GUI prompt available (install zenity/kdialog to confirm); proceeding.[/yellow]")
     return True
+
+
+def _run_confirm(cmd: list[str], prompt: str) -> bool:
+    """Run a confirmation subprocess that returns exit 0 for "yes"/approve.
+
+    The prompt text is passed as data via the environment (read by the script as
+    ``system attribute``/``$env:``), never interpolated into interpreter source.
+    """
+    env = {**os.environ, "KE_DLG_MSG": prompt}
+    return subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
 
 def _cleanup_old_downloads() -> None:
