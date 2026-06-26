@@ -18,7 +18,7 @@ import json
 import logging
 import os
 import socket
-import stat
+import struct
 import sys
 from dataclasses import dataclass
 
@@ -89,14 +89,6 @@ class IDAIPCClient:
 
         for sock_path in glob.glob(socket_pattern):
             try:
-                # The socket lives in world-writable /tmp, so before trusting it as an
-                # IDA endpoint, verify it really is a socket we own. lstat (no symlink
-                # follow) rejects a planted symlink, and the uid check rejects a socket
-                # squatted by another local user to capture relayed ida:// links.
-                if not IDAIPCClient._is_own_socket(sock_path):
-                    logger.debug(f"Skipping foreign or non-socket IPC path: {sock_path}")
-                    continue
-
                 # Extract PID from socket name
                 basename = os.path.basename(sock_path)
                 pid_str = basename.replace(IDAIPCClient.SOCKET_PREFIX, "")
@@ -169,18 +161,44 @@ class IDAIPCClient:
         return instances
 
     @staticmethod
-    def _is_own_socket(sock_path: str) -> bool:
-        """True if *sock_path* is a Unix socket owned by the current user.
+    def _verify_peer_uid(sock: socket.socket) -> None:
+        """Reject a connected AF_UNIX peer that is owned by a different user.
 
-        Uses lstat so a symlink is not followed (a planted symlink reports as a
-        symlink, not a socket, and is rejected). Guards against another local user
-        squatting a ``/tmp/ida_ipc_<pid>`` name to receive relayed ida:// links.
+        The sockets live in world-writable ``/tmp`` (and Windows pipes in a shared
+        namespace), so another local user could squat the ``ida_ipc_<pid>`` name to
+        capture relayed ``ida://`` links or spoof IDA responses. Checking the peer's
+        credentials on the *connected* socket — rather than stat-ing the path before
+        connecting — closes the squat/rebind TOCTOU window and covers every caller
+        that funnels through ``_send_command``.
+
+        Best-effort: if the platform can't report peer credentials, the connection is
+        allowed (we don't break a working flow on an unsupported OS). Raises
+        ``IPCConnectionError`` when the peer uid is known and differs from ours.
         """
+        peer_uid = IDAIPCClient._peer_uid(sock)
+        if peer_uid is not None and peer_uid != os.getuid():
+            raise IPCConnectionError(f"refusing IPC peer owned by uid {peer_uid} (expected {os.getuid()})")
+
+    @staticmethod
+    def _peer_uid(sock: socket.socket) -> int | None:
+        """Return the uid of the process on the other end of a connected AF_UNIX
+        socket, or None if the platform can't report it."""
         try:
-            st = os.lstat(sock_path)
-        except OSError:
-            return False
-        return stat.S_ISSOCK(st.st_mode) and st.st_uid == os.getuid()
+            if sys.platform == "linux":
+                # struct ucred { pid_t pid; uid_t uid; gid_t gid; } — three ints.
+                creds = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
+                _pid, uid, _gid = struct.unpack("3i", creds)
+                return uid
+            if sys.platform == "darwin":
+                # struct xucred { u_int cr_version; uid_t cr_uid; ... }; cr_uid is the
+                # second 4-byte field. SOL_LOCAL=0, LOCAL_PEERCRED=0x001.
+                xucred = sock.getsockopt(0, 0x001, 128)
+                if len(xucred) >= 8:
+                    _version, uid = struct.unpack("II", xucred[:8])
+                    return uid
+        except OSError as e:
+            logger.debug(f"could not read IPC peer credentials: {e}")
+        return None
 
     @staticmethod
     def _is_process_alive(pid: int) -> bool:
@@ -316,6 +334,15 @@ class IDAIPCClient:
             raise IPCTimeoutError(f"Connection to {socket_path} timed out")
         except OSError as e:
             raise IPCConnectionError(f"Failed to connect to {socket_path}: {e}")
+
+        # Verify the connected peer belongs to us before sending the (possibly
+        # sensitive) command. Done here, on the live connection, so a squatter that
+        # rebinds the path after discovery cannot receive a relayed ida:// link.
+        try:
+            IDAIPCClient._verify_peer_uid(sock)
+        except IPCConnectionError:
+            sock.close()
+            raise
 
         try:
             data = json.dumps(command).encode("utf-8")
