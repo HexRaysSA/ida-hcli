@@ -45,6 +45,10 @@ class ENV:
     # KE download settings
     HCLI_KE_DOWNLOADS_DIR: str | None = os.getenv("HCLI_KE_DOWNLOADS_DIR")
     HCLI_KE_DOWNLOADS_RETENTION_DAYS: int = int(os.getenv("HCLI_KE_DOWNLOADS_RETENTION_DAYS", "3"))
+    # Allow KE deep links to download from private/loopback/link-local hosts. Off by
+    # default so a clicked ida:// link cannot make hcli reach internal services; set
+    # to 1/true/yes for self-hosted KE deployments on an internal network.
+    HCLI_KE_ALLOW_PRIVATE_HOSTS: bool = os.getenv("HCLI_KE_ALLOW_PRIVATE_HOSTS", "").lower() in ("1", "true", "yes")
 
 
 # Constants

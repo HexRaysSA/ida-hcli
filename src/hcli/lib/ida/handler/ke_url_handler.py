@@ -16,8 +16,11 @@ See the KE ``docs/deep-links.md``.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import logging
+import os
 import platform
+import socket
 import subprocess
 import time
 from pathlib import Path
@@ -61,10 +64,11 @@ class KEURLHandler(URLHandler):
         if not asset_url:
             console.print("[red]Error: KE URL is missing the 'url' download parameter[/red]")
             raise click.Abort()
+        _validate_asset_url(asset_url)
 
         idb_name = _idb_name_from_path(parsed.path)
         if not idb_name:
-            console.print("[red]Error: KE URL has no <idb> path segment[/red]")
+            console.print("[red]Error: KE URL has no valid <idb> path segment[/red]")
             raise click.Abort()
 
         # Cleanup old downloads (best-effort)
@@ -75,6 +79,14 @@ class KEURLHandler(URLHandler):
         downloads_dir = Path(ENV.HCLI_KE_DOWNLOADS_DIR or _default_downloads_dir())
         resource_path = downloads_dir / _ns(asset_url) / idb_name
         sidecar_path = resource_path.parent / f"{resource_path.name}.ke.json"
+
+        # Defense in depth: never write outside the downloads directory, even if
+        # idb_name somehow carried traversal/absolute-path components.
+        downloads_root = downloads_dir.resolve()
+        if not resource_path.resolve().is_relative_to(downloads_root):
+            console.print("[red]Error: refusing to write outside the downloads directory[/red]")
+            raise click.Abort()
+
         resource_path.parent.mkdir(parents=True, exist_ok=True)
 
         console.print(f"[blue]Downloading {idb_name} from KE...[/blue]")
@@ -127,9 +139,50 @@ def _default_downloads_dir() -> str:
 
 def _idb_name_from_path(path: str) -> str:
     """Return the ``<idb>`` segment (the first path segment) of an
-    ``ida://ke/<idb>/<resource>`` link — the IDB filename IDA reports."""
+    ``ida://ke/<idb>/<resource>`` link — the IDB filename IDA reports.
+
+    The decoded segment MUST be a bare filename. An attacker controls the deep
+    link and can percent-encode separators (``%2F``, ``%5C``) or ``..`` to smuggle
+    traversal/absolute paths that would escape the downloads directory once used
+    in a path join, so reject anything that isn't a plain filename here.
+    """
     segments = [seg for seg in path.split("/") if seg]
-    return unquote(segments[0]) if segments else ""
+    if not segments:
+        return ""
+    name = unquote(segments[0])
+    if "/" in name or "\\" in name or name in (".", ".."):
+        return ""
+    return name
+
+
+def _validate_asset_url(asset_url: str) -> None:
+    """Reject asset URLs that aren't safe to fetch from a clicked deep link.
+
+    KE links are attacker-reachable (any web page can launch ``ida://...``), so an
+    unrestricted ``url=`` would let a page make hcli fetch arbitrary internal or
+    loopback services. Allow only http(s), and block non-public address space
+    unless the operator opts in for an internal KE deployment.
+    """
+    parsed = urlparse(asset_url)
+    if parsed.scheme not in ("http", "https"):
+        raise click.ClickException(f"Refusing non-HTTP(S) asset URL: {parsed.scheme or 'missing'}://")
+
+    host = parsed.hostname
+    if not host:
+        raise click.ClickException("Asset URL has no host")
+
+    if ENV.HCLI_KE_ALLOW_PRIVATE_HOSTS:
+        return
+
+    try:
+        infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80))
+    except socket.gaierror as e:
+        raise click.ClickException(f"Cannot resolve asset host: {e}")
+
+    for *_, sockaddr in infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            raise click.ClickException(f"Refusing to download from non-public address: {ip}")
 
 
 def _ns(url: str) -> str:
@@ -201,19 +254,25 @@ def _cleanup_old_downloads() -> None:
 def _show_download_dialog(filename: str) -> subprocess.Popen[bytes] | None:
     """Show a platform-native dialog during download."""
     system = platform.system().lower()
+    # The filename comes from an attacker-reachable deep link, so pass it as data
+    # via the environment — never inline it into osascript/PowerShell source, where
+    # quotes/newlines would let it break out and execute arbitrary commands.
+    env = {**os.environ, "KE_DLG_FILE": filename}
     try:
         if system == "darwin":
             return subprocess.Popen(
                 [
                     "osascript",
                     "-e",
-                    f'display dialog "Downloading {filename}\\n\\nPlease wait..." '
-                    f'with title "KE" buttons {{}} giving up after 600',
+                    'display dialog ("Downloading " & (system attribute "KE_DLG_FILE") '
+                    '& "\\n\\nPlease wait...") with title "KE" buttons {} giving up after 600',
                 ],
+                env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
         if system == "linux":
+            # notify-send receives the name as a separate argv element — already safe.
             return subprocess.Popen(
                 ["notify-send", "-t", "0", "KE", f"Downloading {filename}..."],
                 stdout=subprocess.DEVNULL,
@@ -226,10 +285,11 @@ def _show_download_dialog(filename: str) -> subprocess.Popen[bytes] | None:
                     "-WindowStyle",
                     "Hidden",
                     "-Command",
-                    f"Add-Type -AssemblyName System.Windows.Forms; "
-                    f"[System.Windows.Forms.MessageBox]::Show("
-                    f'"Downloading {filename}...\\n\\nPlease wait...", "KE")',
+                    "Add-Type -AssemblyName System.Windows.Forms; "
+                    "[System.Windows.Forms.MessageBox]::Show("
+                    '"Downloading " + $env:KE_DLG_FILE + "...`n`nPlease wait...", "KE")',
                 ],
+                env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -252,14 +312,20 @@ def _dismiss_dialog(proc: subprocess.Popen[bytes] | None) -> None:
 def _show_error_dialog(message: str) -> None:
     """Show a platform-native error dialog (blocking)."""
     system = platform.system().lower()
+    # message may embed attacker-controlled text (e.g. a URL or server response in
+    # an exception), so pass it as data via the environment rather than inlining it
+    # into osascript/PowerShell source.
+    env = {**os.environ, "KE_DLG_MSG": message}
     try:
         if system == "darwin":
             subprocess.run(
                 [
                     "osascript",
                     "-e",
-                    f'display dialog "{message}" with title "KE" buttons {{"OK"}} default button "OK" with icon stop',
+                    'display dialog (system attribute "KE_DLG_MSG") with title "KE" '
+                    'buttons {"OK"} default button "OK" with icon stop',
                 ],
+                env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
@@ -278,10 +344,10 @@ def _show_error_dialog(message: str) -> None:
                     "-WindowStyle",
                     "Hidden",
                     "-Command",
-                    f"Add-Type -AssemblyName System.Windows.Forms; "
-                    f"[System.Windows.Forms.MessageBox]::Show("
-                    f'"{message}", "KE", "OK", "Error")',
+                    "Add-Type -AssemblyName System.Windows.Forms; "
+                    '[System.Windows.Forms.MessageBox]::Show($env:KE_DLG_MSG, "KE", "OK", "Error")',
                 ],
+                env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
