@@ -75,7 +75,12 @@ class TestPeerUidRealSocket:
         high_uid = 2**31 + 7
         sock = MagicMock()
         sock.getsockopt.return_value = struct.pack("iII", 4242, high_uid, 0)
-        with patch("hcli.lib.ida.ipc.sys.platform", "linux"):
+        # Force the Linux branch and stub SO_PEERCRED (absent on macOS CI runners,
+        # where the socket module has no such constant) so the test is portable.
+        with (
+            patch("hcli.lib.ida.ipc.sys.platform", "linux"),
+            patch.object(socket, "SO_PEERCRED", 17, create=True),
+        ):
             assert IDAIPCClient._peer_uid(sock) == high_uid
 
 
