@@ -340,6 +340,27 @@ class TestValidateAssetUrl:
             _validate_asset_url("http://cgnat.example/x")
 
     @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
+    def test_rejects_ipv4_mapped_ipv6_loopback(self, mock_gai):
+        # "::ffff:127.0.0.1" maps to loopback, but ipaddress.is_loopback/is_private
+        # don't flag the ::ffff:0:0/96 range before Python 3.11 — the guard must
+        # recurse into the embedded IPv4 so the bypass is blocked on every version.
+        mock_gai.return_value = _addrinfo("::ffff:127.0.0.1")
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False),
+            pytest.raises(click.ClickException, match="non-public"),
+        ):
+            _validate_asset_url("http://evil.example/x")
+
+    @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
+    def test_rejects_ipv4_mapped_ipv6_private(self, mock_gai):
+        mock_gai.return_value = _addrinfo("::ffff:169.254.169.254")
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False),
+            pytest.raises(click.ClickException, match="non-public"),
+        ):
+            _validate_asset_url("http://metadata.example/x")
+
+    @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
     def test_rejects_when_any_resolved_ip_is_private(self, mock_gai):
         # A host that returns one public + one private IP must be rejected (rebinding hedge).
         mock_gai.return_value = _addrinfo("93.184.216.34", "10.0.0.5")

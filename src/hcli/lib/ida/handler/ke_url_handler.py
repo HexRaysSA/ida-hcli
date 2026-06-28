@@ -217,7 +217,16 @@ _CGNAT_NET = ipaddress.ip_network("100.64.0.0/10")
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """True for addresses an attacker-supplied download must never reach."""
-    if ip.version == 4 and ip in _CGNAT_NET:
+    if isinstance(ip, ipaddress.IPv6Address):
+        # IPv6 forms that embed an IPv4 address (e.g. "::ffff:127.0.0.1") are NOT
+        # flagged by is_private/is_loopback on Python <= 3.10 — the ::ffff:0:0/96
+        # range was only classified in 3.11 — yet the OS connects them to the
+        # embedded IPv4 (so ::ffff:127.0.0.1 reaches loopback). Recurse on the
+        # embedded address so the SSRF guard holds on every supported Python.
+        embedded = ip.ipv4_mapped or ip.sixtofour
+        if embedded is not None:
+            return _is_blocked_ip(embedded)
+    elif ip in _CGNAT_NET:
         return True
     return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified
 
