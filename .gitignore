@@ -11,6 +11,8 @@ site/
 # Local
 scratch/
 *.sh
+# CI helper scripts are tracked despite the *.sh ignore above
+!.github/scripts/*.sh
 .claude
 NOTES.md
 CLAUDE.md
