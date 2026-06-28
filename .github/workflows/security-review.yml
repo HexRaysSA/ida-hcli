@@ -94,7 +94,7 @@ jobs:
           f="${{ github.workspace }}/security-review-report.md"
           # Fallback so there is always exactly one record, even if the review step failed.
           if [ ! -s "$f" ]; then
-            printf '## 🔒 Automated security review\n\n⚠️ The review step did not produce a report (it may have failed). Check the workflow logs.\n' > "$f"
+            printf '## 🔒 Automated security review\n\n⚠️ No security report was produced for this run. This is expected on PRs that modify the security-review workflow itself (the action only runs when the workflow matches `main`). Otherwise the review step may have failed — check the workflow logs.\n' > "$f"
           fi
           # Deterministic upsert: find OUR previous report comment (this bot + stable
           # header) and edit it in place; otherwise create one. Guarantees a single,
