@@ -16,6 +16,7 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write # post the review comment
+  issues: write # PR comments are posted via the issues comments API
   id-token: write
 
 jobs:
@@ -32,93 +33,78 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # One sticky comment per PR (updated on each push) instead of a new comment each run.
-          use_sticky_comment: true
           prompt: |
             You are a senior security engineer reviewing this pull request
             (#${{ github.event.pull_request.number }}) in ${{ github.repository }}.
-            Review ONLY the diff of this PR against its base branch — the newly
-            added/changed code — not the whole repository.
+            Review the DIFF of this PR — the added/changed code — for security
+            vulnerabilities across the WHOLE change. Do not limit yourself to any one
+            area or file.
 
-            Threat model. hcli is a desktop CLI that registers an `ida://` protocol
-            handler, so deep-link URLs are attacker-reachable (any web page can launch
-            them): treat parsed URL paths, query parameters, and any `url=`-style values
-            as fully untrusted input. It also downloads assets and hands them to IDA,
-            and talks to running IDA instances over local IPC (a same-user trust
-            boundary). Look hardest at changes under `src/hcli/lib/ida/handler/` (the
-            deep-link handlers), `src/hcli/lib/ida/protocol.py` (OS handler
-            registration), `src/hcli/lib/ida/ipc.py` (local IPC), and any
-            auth/credential, subprocess, download, or file-write code.
+            Context (background, not a restriction): hcli is a desktop CLI that
+            downloads and installs IDA, handles licenses/credentials, registers an
+            `ida://` protocol handler, and talks to local IDA instances over IPC. Treat
+            any externally or attacker-influenced input (deep-link URLs, downloaded
+            content, network responses, file contents) as untrusted.
 
-            Report HIGH/MEDIUM findings you are >80% confident are real and have a
-            concrete attack path. Consider these categories (not exhaustive):
-            - command/code/template injection; unsafe subprocess or shell use
-            - path traversal / arbitrary file write; insecure, predictable, or
-              world-writable file/socket/registry paths and permissions
-            - SSRF (attacker control of host or protocol), and DNS-rebinding/TOCTOU
-              around validate-then-fetch
-            - authn/authz bypass; fail-OPEN security logic (a check that is skipped or
-              defaults to "allow" on error/unknown platform)
-            - resource exhaustion driven by ATTACKER-CONTROLLED input (e.g. unbounded
-              download/read/write that can fill memory or disk) — this IS in scope here
-            - concretely-exploitable race conditions / TOCTOU
-            - insecure deserialization; eval/pickle/yaml on untrusted data
-            - hardcoded or leaked secrets; sensitive data (tokens, credentials, PII)
-              written to logs, error text, or dialogs
-            - weak crypto, bad randomness, or certificate-validation bypass
-            - supply-chain: newly added/changed dependencies, unpinned action/refs, or
-              install/postinstall hooks
+            Report HIGH/MEDIUM issues you are >80% confident are real and have a
+            concrete attack path. Categories to consider (not exhaustive): injection
+            (command/code/SQL/template) and unsafe subprocess/shell use; path traversal,
+            unsafe file/path handling, or insecure/world-writable permissions; SSRF and
+            DNS-rebinding/validate-then-fetch TOCTOU; auth/authorization bypass and
+            fail-OPEN logic (a check skipped or defaulting to "allow" on error); attacker
+            -driven resource exhaustion (unbounded download/read/write); insecure
+            deserialization (eval/pickle/yaml on untrusted data); hardcoded or logged
+            secrets / sensitive data; weak crypto, bad randomness, or
+            certificate-validation bypass; supply-chain (new/changed deps, unpinned
+            refs, install hooks).
 
             Noise control (important): prefer missing a speculative issue over adding
             noise. Do NOT report pure style/quality or non-security correctness bugs,
-            theoretical issues with no concrete attack path, or generic "best practice"
+            theoretical issues with no concrete attack path, or generic best-practice
             nits. Environment variables and CLI flags are trusted inputs (an attacker
             cannot set them), so do not build findings on controlling them.
 
-            You MUST post the report below as a PR comment — even when nothing is wrong
-            — so there is a visible record that the review ran and what it covered. Do
-            not rely on the action to post it; post it yourself with the GitHub CLI
-            (GITHUB_TOKEN is already in the environment):
-            - if you have already posted a report on this PR (a comment that starts with
-              "## 🔒 Automated security review"), UPDATE it:
-              `gh pr comment ${{ github.event.pull_request.number }} --edit-last --body "<report>"`
-            - otherwise create one:
-              `gh pr comment ${{ github.event.pull_request.number }} --body "<report>"`
-            Post exactly one comment, using this exact structure for `<report>`:
+            Do NOT post any PR comment. Instead, WRITE your report to the file
+            `${{ github.workspace }}/security-review-report.md` — a later workflow step
+            posts it. The file MUST start with the line `## 🔒 Automated security review`
+            and use exactly this lean structure:
 
             ## 🔒 Automated security review
-
-            **Verdict:** one line — either
-            `✅ Checked, all OK — no high-confidence security issues found.`
+            **Verdict:** one line — `✅ Checked, all OK — no high-confidence security issues found.`
             or `⚠️ N potential issue(s) found — see below.`
+            **Files reviewed:** comma-separated changed files you assessed, or "none security-relevant".
+            **Findings:** for each — `file:line` · SEVERITY (HIGH/MEDIUM) · category — one-line
+            description; brief exploit scenario; concrete fix. If none, write "None."
 
-            **Scope:** the diff of PR #${{ github.event.pull_request.number }}
-            (base…head) only.
-            **Files reviewed:** comma-separated changed files you assessed, or
-            "none security-relevant".
-
-            **Checked** — mark each category ✅ (reviewed, no concern), ⚠️ (finding
-            below), or — (n/a to this diff):
-            - Injection (command/code/template/shell)
-            - Path traversal / file write / insecure or world-writable paths & perms
-            - SSRF / DNS-rebinding / validate-then-fetch TOCTOU
-            - Authn/authz bypass / fail-open logic
-            - Attacker-driven resource exhaustion (memory/disk)
-            - Insecure deserialization (eval/pickle/yaml)
-            - Secrets / sensitive data in logs, errors, or dialogs
-            - Crypto / randomness / certificate validation
-            - Supply-chain (new/changed deps, unpinned refs, install hooks)
-
-            **Findings:** for each — `file:line` · SEVERITY (HIGH/MEDIUM) · category —
-            one-line description; brief exploit scenario; concrete fix. If none, write
-            "None."
-
-            **Notes / limitations:** scope caveats, anything not assessable from the
-            diff, and: "Advisory — does not block merge; a human still reviews this PR."
-          # Read-only analysis tools + the gh command used to post the report comment
-          # (automation mode does not auto-post the agent's prose, so it posts itself).
-          # To use a stronger model, append e.g. `--model <id>`; omitted so the action's
-          # current default is used.
+            _Advisory — does not block merge; a human still reviews this PR._
+          # Read-only analysis + Write (to produce the report file the next step posts).
+          # To use a stronger model, append e.g. `--model <id>`.
           claude_args: |
             --max-turns 25
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
+            --allowedTools "Read,Grep,Glob,Write,Bash(git diff:*),Bash(git log:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+
+      - name: Post or update the report comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          f="${{ github.workspace }}/security-review-report.md"
+          # Fallback so there is always exactly one record, even if the review step failed.
+          if [ ! -s "$f" ]; then
+            printf '## 🔒 Automated security review\n\n⚠️ No security report was produced for this run. This is expected on PRs that modify the security-review workflow itself (the action only runs when the workflow matches `main`). Otherwise the review step may have failed — check the workflow logs.\n' > "$f"
+          fi
+          # Deterministic upsert: find OUR previous report comment (this bot + stable
+          # header) and edit it in place; otherwise create one. Guarantees a single,
+          # self-updating comment across re-runs — no duplicates.
+          id=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
+                 --jq 'map(select(.user.login == "github-actions[bot]" and (.body | contains("Automated security review")))) | last | .id')
+          if [ -n "$id" ] && [ "$id" != "null" ]; then
+            jq -Rs '{body: .}' < "$f" | gh api -X PATCH "repos/$REPO/issues/comments/$id" --input - >/dev/null
+            echo "Updated existing review comment ($id)."
+          else
+            jq -Rs '{body: .}' < "$f" | gh api -X POST "repos/$REPO/issues/$PR/comments" --input - >/dev/null
+            echo "Created new review comment."
+          fi
