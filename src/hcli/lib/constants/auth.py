@@ -5,6 +5,8 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
+from hcli.env import ENV
+
 
 class CredentialType:
     """Authentication type constants."""
@@ -94,4 +96,4 @@ class CredentialsConfig(BaseModel):
 
 
 # Configuration keys
-CONFIG_CREDENTIALS = "credentials"
+CONFIG_CREDENTIALS = f"{ENV.HCLI_BINARY_NAME}.credentials"

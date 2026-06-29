@@ -38,10 +38,21 @@ class ConfigStore:
 
     def _migrate_config(self):
         """Migrate configuration if version changed."""
-        current_version = self.get_string("version", "0.0.0")
+        binary = ENV.HCLI_BINARY_NAME
+        version_key = f"{binary}.version"
+        current_version = self.get_string(version_key, "0.0.0")
         if current_version != ENV.HCLI_VERSION:
-            self.set_string("version", ENV.HCLI_VERSION)
+            self._migrate_legacy_keys(binary)
+            self._data[version_key] = ENV.HCLI_VERSION
             self._save_config()
+
+    def _migrate_legacy_keys(self, binary: str):
+        """Migrate unscoped config keys to per-binary namespaced keys."""
+        for old_key, suffix in [("credentials", "credentials"), ("login.email", "login.email")]:
+            new_key = f"{binary}.{suffix}"
+            if old_key in self._data and new_key not in self._data:
+                self._data[new_key] = self._data[old_key]
+                del self._data[old_key]
 
     def has(self, key: str) -> bool:
         """Check if key exists in configuration."""
