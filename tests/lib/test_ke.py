@@ -2,6 +2,7 @@
 
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from urllib.parse import quote, urlparse
 
@@ -487,6 +488,78 @@ def _stream_cm(content: bytes, status: int = 200):
     cm.__enter__ = MagicMock(return_value=response)
     cm.__exit__ = MagicMock(return_value=False)
     return cm
+
+
+def _redirect_cm(location: str, status: int = 302):
+    """A mock streaming-response context manager for a 3xx redirect to *location*."""
+    response = MagicMock()
+    response.status_code = status
+    response.headers = {"location": location}  # real dict so the "location" lookup works
+    cm = MagicMock()
+    cm.__enter__ = MagicMock(return_value=response)
+    cm.__exit__ = MagicMock(return_value=False)
+    return cm
+
+
+class TestDownloadRedirects:
+    """A 3xx (e.g. KE -> object storage) must be followed, but every hop re-checked
+    through the SSRF guard so it can't be steered to a private/loopback address."""
+
+    @patch("hcli.lib.ida.handler.ke_url_handler.shutil.disk_usage")
+    @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
+    def test_follows_redirect_to_public_host(self, mock_gai, mock_disk, tmp_path):
+        from hcli.lib.ida.handler import ke_url_handler
+
+        mock_gai.return_value = _addrinfo("93.184.216.34")  # redirect target resolves public
+        mock_disk.return_value = SimpleNamespace(total=0, used=0, free=10**12)
+        dest = tmp_path / "f.i64"
+        client = MagicMock()
+        client.stream.side_effect = [_redirect_cm("https://cdn.example/blob"), _stream_cm(b"REAL BODY", 200)]
+
+        with patch("hcli.lib.ida.handler.ke_url_handler.ENV") as env:
+            env.HCLI_KE_MAX_DOWNLOAD_MB = 0
+            env.HCLI_KE_ALLOW_PRIVATE_HOSTS = False
+            ke_url_handler._download_file(client, "https://host/a/download", dest, ["93.184.216.34"])
+
+        assert dest.read_bytes() == b"REAL BODY"
+
+    @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
+    def test_rejects_redirect_to_internal_host(self, mock_gai, tmp_path):
+        from hcli.lib.ida.handler import ke_url_handler
+
+        # The redirect target resolves to the cloud metadata service — must be blocked.
+        mock_gai.return_value = _addrinfo("169.254.169.254")
+        dest = tmp_path / "f.i64"
+        client = MagicMock()
+        client.stream.side_effect = [
+            _redirect_cm("http://evil.example/internal"),
+            _stream_cm(b"SHOULD NOT REACH", 200),
+        ]
+
+        with patch("hcli.lib.ida.handler.ke_url_handler.ENV") as env:
+            env.HCLI_KE_MAX_DOWNLOAD_MB = 0
+            env.HCLI_KE_ALLOW_PRIVATE_HOSTS = False
+            with pytest.raises(click.ClickException, match="non-public"):
+                ke_url_handler._download_file(client, "https://host/a/download", dest, ["93.184.216.34"])
+
+        assert not dest.exists()  # nothing written
+
+    @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
+    def test_aborts_on_redirect_loop(self, mock_gai, tmp_path):
+        from hcli.lib.ida.handler import ke_url_handler
+
+        mock_gai.return_value = _addrinfo("93.184.216.34")  # every hop is "public", just endless
+        dest = tmp_path / "f.i64"
+        client = MagicMock()
+        client.stream.side_effect = [
+            _redirect_cm("https://pub.example/x") for _ in range(ke_url_handler._MAX_REDIRECTS + 2)
+        ]
+
+        with patch("hcli.lib.ida.handler.ke_url_handler.ENV") as env:
+            env.HCLI_KE_MAX_DOWNLOAD_MB = 0
+            env.HCLI_KE_ALLOW_PRIVATE_HOSTS = False
+            with pytest.raises(click.ClickException, match="too many redirects"):
+                ke_url_handler._download_file(client, "https://host/a/download", dest, ["93.184.216.34"])
 
 
 def _mock_httpx_client(content: bytes = b"file content", meta_content: bytes = b'{"meta":true}', status: int = 200):

@@ -15,6 +15,7 @@ See the KE ``docs/deep-links.md``.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import ipaddress
 import json
@@ -355,46 +356,93 @@ def _pinned_attempts(pinned_ips: list[str] | None) -> list[str | None]:
     return list(pinned_ips) if pinned_ips else [None]
 
 
+# KE serves assets via a redirect (e.g. to object storage), so we must follow 3xx —
+# but httpx's own follow_redirects would connect straight to the Location host,
+# bypassing the SSRF pin. So we follow manually and re-validate/re-pin every hop.
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_MAX_REDIRECTS = 5
+
+
+def _connect_first_pinned(
+    client: httpx.Client, stack: contextlib.ExitStack, url: str, pinned_ips: list[str] | None
+) -> httpx.Response:
+    """Open a streaming GET, trying each validated IP in turn for failover.
+
+    The opened response is registered on *stack* so the caller controls when the
+    connection is released. Raises ClickException if no validated IP will connect.
+    """
+    attempts = _pinned_attempts(pinned_ips)
+    last_err: Exception | None = None
+    for pinned_ip in attempts:
+        req_url, kwargs = _pinned_request_args(url, pinned_ip)
+        try:
+            return stack.enter_context(client.stream("GET", req_url, **kwargs))
+        except _RETRYABLE_CONNECT as e:
+            last_err = e  # this IP wouldn't connect — try the next validated one
+    raise click.ClickException(f"Download failed: {last_err}")
+
+
+@contextlib.contextmanager
+def _open_validated_stream(client: httpx.Client, url: str, pinned_ips: list[str] | None):
+    """Stream a GET to *url*, following up to ``_MAX_REDIRECTS`` redirects safely.
+
+    Each redirect ``Location`` is resolved and re-checked through
+    :func:`_validate_asset_url` (SSRF guard + fresh IP pin) before the next hop, so a
+    3xx — from KE or anything in the chain — can never steer the fetch to a private,
+    loopback, or otherwise non-public address. Yields the final non-redirect response,
+    still open for streaming; the connection is released when the ``with`` block exits.
+    """
+    with contextlib.ExitStack() as stack:
+        for _hop in range(_MAX_REDIRECTS + 1):
+            response = _connect_first_pinned(client, stack, url, pinned_ips)
+            if response.status_code in _REDIRECT_STATUSES and "location" in response.headers:
+                target = str(httpx.URL(url).join(response.headers["location"]))
+                stack.close()  # release the redirect response before fetching the next hop
+                # Re-validate (and re-pin) the new target exactly like the original url=.
+                pinned_ips = _validate_asset_url(target)
+                url = target
+                continue
+            yield response
+            return
+        raise click.ClickException("Download failed: too many redirects")
+
+
 def _download_metadata(
     client: httpx.Client, asset_url: str, sidecar_path: Path, pinned_ips: list[str] | None = None
 ) -> None:
     """Download asset metadata and save as ``.ke.json`` sidecar (best-effort, bounded).
 
-    Tries each validated IP in turn when an IP won't accept a connection; any other
-    failure (non-200, read error, timeout) is reported as a warning — the sidecar is
-    optional, so a missing one never blocks the download.
+    Tries each validated IP in turn when an IP won't accept a connection and follows
+    redirects (re-validated per hop); any other failure (non-200, read error, timeout,
+    SSRF reject on a redirect) is reported as a warning — the sidecar is optional, so a
+    missing one never blocks the download.
     """
-    attempts = _pinned_attempts(pinned_ips)
-    for index, pinned_ip in enumerate(attempts):
-        url, kwargs = _pinned_request_args(asset_url, pinned_ip)
-        try:
-            with client.stream("GET", url, **kwargs) as response:
-                if response.status_code != 200:
-                    _print(f"[yellow]Warning: Metadata fetch failed (HTTP {response.status_code})[/yellow]")
-                    return
-                data = bytearray()
-                for chunk in response.iter_bytes():
-                    data += chunk
-                    if len(data) > _METADATA_MAX_BYTES:
-                        _print("[yellow]Warning: Metadata exceeded size limit; skipping sidecar[/yellow]")
-                        return
-                # The body is attacker-influenced; only persist it as the .ke.json
-                # sidecar if it's actually JSON, so the sidecar can't become an
-                # arbitrary-content write primitive.
-                try:
-                    json.loads(bytes(data))
-                except ValueError:
-                    _print("[yellow]Warning: Metadata is not valid JSON; skipping sidecar[/yellow]")
-                    return
-                sidecar_path.write_bytes(bytes(data))
+    try:
+        with _open_validated_stream(client, asset_url, pinned_ips) as response:
+            if response.status_code != 200:
+                _print(f"[yellow]Warning: Metadata fetch failed (HTTP {response.status_code})[/yellow]")
                 return
-        except _RETRYABLE_CONNECT as e:
-            if index < len(attempts) - 1:
-                continue  # this IP wouldn't connect — try the next validated one
-            _print(f"[yellow]Warning: Metadata fetch failed: {e}[/yellow]")
-        except (httpx.RequestError, httpx.TimeoutException) as e:
-            _print(f"[yellow]Warning: Metadata fetch failed: {e}[/yellow]")
-            return
+            data = bytearray()
+            for chunk in response.iter_bytes():
+                data += chunk
+                if len(data) > _METADATA_MAX_BYTES:
+                    _print("[yellow]Warning: Metadata exceeded size limit; skipping sidecar[/yellow]")
+                    return
+            # The body is attacker-influenced; only persist it as the .ke.json
+            # sidecar if it's actually JSON, so the sidecar can't become an
+            # arbitrary-content write primitive.
+            try:
+                json.loads(bytes(data))
+            except ValueError:
+                _print("[yellow]Warning: Metadata is not valid JSON; skipping sidecar[/yellow]")
+                return
+            sidecar_path.write_bytes(bytes(data))
+    except click.ClickException as e:
+        # Connect failure, too-many-redirects, or an SSRF reject on a redirect: the
+        # sidecar is best-effort, so warn rather than abort the whole download.
+        _print(f"[yellow]Warning: Metadata fetch failed: {e.message}[/yellow]")
+    except (httpx.RequestError, httpx.TimeoutException) as e:
+        _print(f"[yellow]Warning: Metadata fetch failed: {e}[/yellow]")
 
 
 def _download_file(
@@ -406,52 +454,46 @@ def _download_file(
     ``HCLI_KE_MAX_DOWNLOAD_MB`` cap, and — even without that cap — refuses to fill the
     disk: it aborts if free space would drop below ``_MIN_FREE_BYTES``, so a malicious
     server can't stream until the disk is full after one approval. When an IP won't
-    accept a connection it tries the next validated IP.
+    accept a connection it tries the next validated IP, and redirects are followed
+    (re-validated and re-pinned per hop).
 
     Downloads to a temporary ``.part`` file and atomically renames on success, so a
     failed re-download never destroys a previously-cached copy at *resource_path*.
     """
     max_bytes = ENV.HCLI_KE_MAX_DOWNLOAD_MB * 1024 * 1024 if ENV.HCLI_KE_MAX_DOWNLOAD_MB > 0 else None
-    attempts = _pinned_attempts(pinned_ips)
     tmp_path = resource_path.with_name(resource_path.name + ".part")
 
-    for index, pinned_ip in enumerate(attempts):
-        url, kwargs = _pinned_request_args(download_url, pinned_ip)
-        try:
-            with client.stream("GET", url, **kwargs) as response:
-                if response.status_code != 200:
-                    raise click.ClickException(f"Download failed: HTTP {response.status_code}")
-                written = 0
-                next_space_check = 0
-                with open(tmp_path, "wb") as f:
-                    for chunk in response.iter_bytes():
-                        written += len(chunk)
-                        if max_bytes is not None and written > max_bytes:
-                            raise click.ClickException(f"Download exceeded the {ENV.HCLI_KE_MAX_DOWNLOAD_MB} MB limit")
-                        # Periodically (and up front) ensure the download isn't filling
-                        # the disk — bounds disk use regardless of any configured cap.
-                        if written >= next_space_check:
-                            if shutil.disk_usage(resource_path.parent).free < _MIN_FREE_BYTES:
-                                raise click.ClickException("Download aborted: insufficient free disk space")
-                            next_space_check = written + _SPACE_CHECK_INTERVAL
-                        f.write(chunk)
-            # Only now replace any existing cached copy — atomic on the same filesystem.
-            os.replace(tmp_path, resource_path)
-            return
-        except _RETRYABLE_CONNECT as e:
-            _unlink_quiet(tmp_path)
-            if index < len(attempts) - 1:
-                continue  # this IP wouldn't connect — try the next validated one
-            raise click.ClickException(f"Download failed: {e}")
-        except httpx.TimeoutException:
-            _unlink_quiet(tmp_path)
-            raise click.ClickException("Download timed out")
-        except (httpx.RequestError, OSError) as e:
-            _unlink_quiet(tmp_path)
-            raise click.ClickException(f"Download failed: {e}")
-        except click.ClickException:
-            _unlink_quiet(tmp_path)
-            raise
+    try:
+        with _open_validated_stream(client, download_url, pinned_ips) as response:
+            if response.status_code != 200:
+                raise click.ClickException(f"Download failed: HTTP {response.status_code}")
+            written = 0
+            next_space_check = 0
+            with open(tmp_path, "wb") as f:
+                for chunk in response.iter_bytes():
+                    written += len(chunk)
+                    if max_bytes is not None and written > max_bytes:
+                        raise click.ClickException(f"Download exceeded the {ENV.HCLI_KE_MAX_DOWNLOAD_MB} MB limit")
+                    # Periodically (and up front) ensure the download isn't filling
+                    # the disk — bounds disk use regardless of any configured cap.
+                    if written >= next_space_check:
+                        if shutil.disk_usage(resource_path.parent).free < _MIN_FREE_BYTES:
+                            raise click.ClickException("Download aborted: insufficient free disk space")
+                        next_space_check = written + _SPACE_CHECK_INTERVAL
+                    f.write(chunk)
+        # Only now replace any existing cached copy — atomic on the same filesystem.
+        os.replace(tmp_path, resource_path)
+    except httpx.TimeoutException:
+        _unlink_quiet(tmp_path)
+        raise click.ClickException("Download timed out")
+    except (httpx.RequestError, OSError) as e:
+        _unlink_quiet(tmp_path)
+        raise click.ClickException(f"Download failed: {e}")
+    except click.ClickException:
+        # Non-200, size/disk limit, too-many-redirects, all pinned IPs unreachable, or
+        # an SSRF reject on a redirect — drop the partial and surface the reason.
+        _unlink_quiet(tmp_path)
+        raise
 
 
 def _unlink_quiet(path: Path) -> None:
