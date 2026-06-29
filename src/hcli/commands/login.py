@@ -4,6 +4,7 @@ import questionary
 import rich_click as click
 
 from hcli.commands.common import safe_ask_async
+from hcli.env import ENV
 from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command
 from hcli.lib.config import config_store
@@ -47,7 +48,7 @@ async def login(force: bool, name: str | None) -> None:
             return
 
     # Get the last used email for suggestions
-    current_email = config_store.get_string("login.email", "")
+    current_email = config_store.get_string(f"{ENV.HCLI_BINARY_NAME}.login.email", "")
 
     # Choose authentication method
     choices = ["Google OAuth", "Email (OTP)"]
@@ -74,7 +75,7 @@ async def login(force: bool, name: str | None) -> None:
 
             source = auth_service.verify_otp(email, otp, name=name)
             if source:
-                config_store.set_string("login.email", email)
+                config_store.set_string(f"{ENV.HCLI_BINARY_NAME}.login.email", email)
                 console.print("[green]Login successful![/green]")
             else:
                 console.print("[red]Login failed. Invalid OTP.[/red]")
