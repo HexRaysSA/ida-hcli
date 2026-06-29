@@ -13,6 +13,42 @@ from hcli.lib.util.io import get_hcli_executable_path
 
 PROTOCOL = "ida"
 
+# Strip PYTHON* vars first: the requesting app (e.g. IDA running its own Python) leaks
+# PYTHONHOME into the handler's environment, which would make hcli's pinned interpreter
+# load the wrong stdlib and abort before it runs. env -u clears them.
+_PY_ENV_STRIP = "env -u PYTHONHOME -u PYTHONPATH -u PYTHONEXECUTABLE -u PYTHONSTARTUP"
+
+
+def _macos_handler_applescript(hcli_path: str, log_file: str, log_dir: str) -> str:
+    """Build the AppleScript handler body.
+
+    ``ida open -- <url>``: the ``--`` stops the URL (or anything that decodes from it)
+    from being parsed as an option to the open command. The handler ``mkdir -p``s the
+    log dir at click time so a removed/uncreatable dir can't break the redirect.
+    """
+    return f'''
+on open location this_URL
+    set logFile to "{log_file}"
+    set logDir to "{log_dir}"
+    do shell script "/bin/mkdir -p " & quoted form of logDir & " ; /bin/zsh -l -c " & quoted form of ("{_PY_ENV_STRIP} {hcli_path} ida open -- " & quoted form of this_URL) & " >> " & quoted form of logFile & " 2>&1"
+end open location
+
+on run
+    -- This handler is called when the app is launched directly
+end run
+'''
+
+
+def _linux_desktop_entry(hcli_path: str) -> str:
+    """Build the .desktop entry. ``-- %u`` keeps the URL from being parsed as an option."""
+    return f"""[Desktop Entry]
+Name=HCLI IDB Link Handler
+Exec={_PY_ENV_STRIP} {hcli_path} ida open -- %u
+Type=Application
+NoDisplay=true
+MimeType=x-scheme-handler/{PROTOCOL};
+"""
+
 
 def setup_macos_protocol_handler() -> None:
     """Set up protocol handler for macOS using AppleScript and plist modification."""
@@ -25,18 +61,20 @@ def setup_macos_protocol_handler() -> None:
         # Python 3.13) leaks PYTHONHOME into the handler's environment, which makes
         # hcli's pinned interpreter load the wrong stdlib and abort ("No module named
         # 'encodings'") before it runs. env -u clears them so hcli uses its own Python.
-        log_file = "/tmp/idb_handler.log"
-        py_env_strip = "env -u PYTHONHOME -u PYTHONPATH -u PYTHONEXECUTABLE -u PYTHONSTARTUP"
-        applescript_content = f'''
-on open location this_URL
-    set logFile to "{log_file}"
-    do shell script "/bin/zsh -l -c " & quoted form of ("{py_env_strip} {hcli_path} ida open " & quoted form of this_URL) & " >> " & quoted form of logFile & " 2>&1"
-end open location
-
-on run
-    -- This handler is called when the app is launched directly
-end run
-'''
+        # Log to a per-user, non-world-writable location. A fixed /tmp path is a
+        # classic symlink-write target on shared machines (another user pre-plants a
+        # symlink and the handler's ">>" appends into a file they chose), and the log
+        # records full ida:// URLs.
+        log_dir = Path.home() / "Library" / "Logs"
+        # Best-effort at registration; the handler also `mkdir -p`s at click time, so a
+        # locked-down home (or the dir being removed later) can't fail registration or
+        # break the redirect.
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        log_file = str(log_dir / "idb_handler.log")
+        applescript_content = _macos_handler_applescript(hcli_path, log_file, str(log_dir))
 
         # Create temporary directory for the AppleScript
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -131,10 +169,15 @@ def setup_windows_protocol_handler() -> None:
         # `env -u` on Windows. ShellExecute/CreateProcess passes argv verbatim, so invoke
         # the interpreter directly with -E (ignore all PYTHON* env vars). Frozen builds
         # embed their own runtime and are immune, so run them as-is.
+        # Use a "--" separator before %1: Windows substitutes the raw URL into the
+        # command line, and a stray quote in the URL could otherwise append extra
+        # argv tokens parsed as options to `ida open`. After "--" click treats the
+        # URL strictly as the positional argument; injected tokens become surplus
+        # positionals and are rejected rather than interpreted.
         if getattr(sys, "frozen", False):
-            command = f'"{hcli_path}" ida open "%1"'
+            command = f'"{hcli_path}" ida open -- "%1"'
         else:
-            command = f'"{sys.executable}" -E -m hcli.main ida open "%1"'
+            command = f'"{sys.executable}" -E -m hcli.main ida open -- "%1"'
         reg_key = rf"SOFTWARE\Classes\{PROTOCOL}"
 
         with winreg.CreateKey(HKEY_CURRENT_USER, reg_key) as key:  # type: ignore[attr-defined]
@@ -158,8 +201,8 @@ def setup_windows_protocol_handler() -> None:
     except ImportError:
         console.print("[red]winreg module not available (not on Windows?)[/red]")
         raise
-    except Exception:
-        console.print("[red]Error setting up Windows protocol handler: {e}[/red]")
+    except Exception as e:
+        console.print(f"[red]Error setting up Windows protocol handler: {e}[/red]")
         raise
 
 
@@ -172,19 +215,8 @@ def setup_linux_protocol_handler() -> None:
         applications_dir = Path.home() / ".local" / "share" / "applications"
         applications_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create desktop entry for ida:// protocol.
-        # Strip PYTHON* first (via env -u): the launching app (e.g. IDA running its own
-        # Python) can leak PYTHONHOME into the handler's environment, which makes hcli's
-        # interpreter load the wrong stdlib and abort before it runs. The desktop
-        # launcher passes %u as a literal argv, so no shell mangles the URL here.
-        py_env_strip = "env -u PYTHONHOME -u PYTHONPATH -u PYTHONEXECUTABLE -u PYTHONSTARTUP"
-        desktop_content = f"""[Desktop Entry]
-Name=HCLI IDB Link Handler
-Exec={py_env_strip} {hcli_path} ida open %u
-Type=Application
-NoDisplay=true
-MimeType=x-scheme-handler/{PROTOCOL};
-"""
+        # The desktop launcher passes %u as a literal argv, so no shell mangles the URL.
+        desktop_content = _linux_desktop_entry(hcli_path)
 
         desktop_path = applications_dir / "hcli-idb-handler.desktop"
         desktop_path.write_text(desktop_content)
