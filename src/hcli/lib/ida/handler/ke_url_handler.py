@@ -124,7 +124,7 @@ class KEURLHandler(URLHandler):
             raise
 
         # Safe to touch the filesystem now.
-        _cleanup_old_downloads()
+        _cleanup_old_downloads(downloads_dir)
         resource_path.parent.mkdir(parents=True, exist_ok=True)
 
         console.print(f"[blue]Downloading {idb_name} from KE...[/blue]")
@@ -215,10 +215,17 @@ def _idb_name_from_path(path: str) -> str:
 # ipaddress is_* properties, but must be treated as non-public for SSRF.
 _CGNAT_NET = ipaddress.ip_network("100.64.0.0/10")
 
+# RFC 4380 Teredo prefix. A Teredo address embeds a server/client IPv4 and the OS can
+# tunnel to it, but is_reserved/is_private don't classify the whole 2001::/32 range
+# before Python 3.11. Block the entire prefix — no public asset is served from it.
+_TEREDO_NET = ipaddress.ip_network("2001::/32")
+
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """True for addresses an attacker-supplied download must never reach."""
     if isinstance(ip, ipaddress.IPv6Address):
+        if ip in _TEREDO_NET:
+            return True
         # IPv6 forms that embed an IPv4 address (e.g. "::ffff:127.0.0.1") are NOT
         # flagged by is_private/is_loopback on Python <= 3.10 — the ::ffff:0:0/96
         # range was only classified in 3.11 — yet the OS connects them to the
@@ -441,7 +448,9 @@ def _download_metadata(
         # Connect failure, too-many-redirects, or an SSRF reject on a redirect: the
         # sidecar is best-effort, so warn rather than abort the whole download.
         _print(f"[yellow]Warning: Metadata fetch failed: {e.message}[/yellow]")
-    except (httpx.RequestError, httpx.TimeoutException) as e:
+    except (httpx.RequestError, httpx.TimeoutException, OSError) as e:
+        # OSError covers a failed sidecar write (ENOSPC, permissions, path length):
+        # the sidecar is best-effort, so it must never abort the actual IDB download.
         _print(f"[yellow]Warning: Metadata fetch failed: {e}[/yellow]")
 
 
@@ -503,6 +512,16 @@ def _unlink_quiet(path: Path) -> None:
         pass
 
 
+def _escape_dialog_markup(text: str) -> str:
+    """Neutralize Pango (zenity) / Qt rich-text (kdialog) markup in dialog text.
+
+    Escapes the three markup-significant characters so attacker-controlled values
+    embedded in a prompt render literally instead of as styled markup. ``&`` must be
+    replaced first so the introduced entities are not themselves re-escaped.
+    """
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def _confirm_open_dialog(filename: str, host: str) -> bool:
     """Native yes/no confirmation before opening downloaded content in IDA.
 
@@ -516,7 +535,10 @@ def _confirm_open_dialog(filename: str, host: str) -> bool:
         return True
 
     system = platform.system().lower()
-    prompt = f"Download and open IDB '{filename}' from {host} in IDA?"
+    # The download follows redirects (KE typically redirects to object storage), so the
+    # bytes may ultimately come from a different host than this one. Say so rather than
+    # implying {host} is the sole source — each hop is still SSRF-re-validated.
+    prompt = f"Download and open IDB '{filename}' from {host} (or where it redirects) in IDA?"
 
     if system == "darwin":
         try:
@@ -553,9 +575,15 @@ def _confirm_open_dialog(filename: str, host: str) -> bool:
     # available (or it errors), fail CLOSED — we cannot get consent, so we must not
     # open. The file is left on disk; the user can open it manually or set
     # HCLI_KE_SKIP_CONFIRM=1 for one-click flows.
+    #
+    # zenity renders --text as Pango markup and kdialog renders Qt rich text, so the
+    # attacker-controlled host/filename in the prompt must be escaped — otherwise a
+    # url= host like "evil.com<span ...>" injects styled text / fake labels into the
+    # consent dialog. (macOS/Windows above pass the prompt via env as plain text.)
+    safe_prompt = _escape_dialog_markup(prompt)
     for cmd in (
-        ["zenity", "--question", "--title=KE", f"--text={prompt}"],
-        ["kdialog", "--yesno", prompt, "--title", "KE"],
+        ["zenity", "--question", "--title=KE", f"--text={safe_prompt}"],
+        ["kdialog", "--yesno", safe_prompt, "--title", "KE"],
     ):
         if shutil.which(cmd[0]):
             try:
@@ -581,23 +609,22 @@ def _run_confirm(cmd: list[str], prompt: str) -> bool:
     )
 
 
-def _cleanup_old_downloads() -> None:
+def _cleanup_old_downloads(downloads_dir: Path) -> None:
     """Clean up downloads older than retention period (best-effort)."""
-    downloads_dir = Path(ENV.HCLI_KE_DOWNLOADS_DIR or _default_downloads_dir())
     if not downloads_dir.exists():
         return
 
     cutoff_time = time.time() - (ENV.HCLI_KE_DOWNLOADS_RETENTION_DAYS * 24 * 60 * 60)
 
     try:
-        for file_path in downloads_dir.rglob("*"):
-            if file_path.is_file() and file_path.stat().st_mtime < cutoff_time:
-                file_path.unlink()
-
-        # Remove empty directories
-        for dir_path in sorted(downloads_dir.rglob("*"), reverse=True):
-            if dir_path.is_dir() and not any(dir_path.iterdir()):
-                dir_path.rmdir()
+        # Walk the tree once; deepest paths first so directories are emptied bottom-up.
+        entries = sorted(downloads_dir.rglob("*"), reverse=True)
+        for path in entries:
+            if path.is_file() and path.stat().st_mtime < cutoff_time:
+                path.unlink()
+        for path in entries:
+            if path.is_dir() and not any(path.iterdir()):
+                path.rmdir()
     except Exception:
         pass
 

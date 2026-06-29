@@ -78,7 +78,9 @@ class ENV:
     HCLI_KE_SKIP_CONFIRM: bool = _env_bool("HCLI_KE_SKIP_CONFIRM")
     # Optional cap (in MB) on a single KE asset download; 0 means no limit. Downloads
     # always stream to disk regardless, so this only bounds total bytes written.
-    HCLI_KE_MAX_DOWNLOAD_MB: int = _env_int("HCLI_KE_MAX_DOWNLOAD_MB", 0)
+    # Clamp negatives to 0: a misconfigured "-1" must not silently disable the cap
+    # (the consumer's `> 0` test would otherwise read a negative value as "no limit").
+    HCLI_KE_MAX_DOWNLOAD_MB: int = max(0, _env_int("HCLI_KE_MAX_DOWNLOAD_MB", 0))
 
 
 # Constants

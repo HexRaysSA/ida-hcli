@@ -16,6 +16,7 @@ from hcli.lib.ida.handler.ke_url_handler import (
     _confirm_open_dialog,
     _default_downloads_dir,
     _download_url,
+    _escape_dialog_markup,
     _has_nav_params,
     _idb_name_from_path,
     _ns,
@@ -145,6 +146,36 @@ class TestConfirmOpenDialog:
             patch("hcli.lib.ida.handler.ke_url_handler.subprocess.run", side_effect=FileNotFoundError("no powershell")),
         ):
             assert _confirm_open_dialog("chall.i64", "ke.example.com") is False
+
+
+class TestConfirmDialogMarkupEscaping:
+    """zenity renders --text as Pango markup and kdialog renders Qt rich text, so the
+    attacker-controlled host/filename in the consent prompt must be escaped."""
+
+    def test_escape_helper_neutralizes_markup(self):
+        assert _escape_dialog_markup("a<b>&'c") == "a&lt;b&gt;&amp;'c"
+
+    def test_linux_confirm_escapes_attacker_host_and_filename(self):
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            return SimpleNamespace(returncode=0)
+
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_SKIP_CONFIRM", False),
+            patch("hcli.lib.ida.handler.ke_url_handler.platform.system", return_value="Linux"),
+            patch(
+                "hcli.lib.ida.handler.ke_url_handler.shutil.which",
+                side_effect=lambda c: "/usr/bin/zenity" if c == "zenity" else None,
+            ),
+            patch("hcli.lib.ida.handler.ke_url_handler.subprocess.run", side_effect=fake_run),
+        ):
+            _confirm_open_dialog("evil<b>.i64", "evil.com<span foreground='red'>SAFE</span>")
+
+        text_arg = next(a for a in captured["cmd"] if a.startswith("--text="))
+        assert "<span" not in text_arg and "<b>" not in text_arg  # raw markup neutralized
+        assert "&lt;span" in text_arg and "&lt;b&gt;" in text_arg  # escaped form present
 
 
 class TestDownloadMetadataCap:
@@ -362,6 +393,18 @@ class TestValidateAssetUrl:
             _validate_asset_url("http://metadata.example/x")
 
     @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
+    def test_rejects_teredo(self, mock_gai):
+        # Teredo (2001::/32) can tunnel to an embedded IPv4 the OS will reach, and its
+        # is_reserved/is_private classification is incomplete before 3.11 — block the
+        # whole prefix. 2001:0:7f00:0001:: embeds server IPv4 127.0.0.1.
+        mock_gai.return_value = _addrinfo("2001:0:7f00:0001::")
+        with (
+            patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False),
+            pytest.raises(click.ClickException, match="non-public"),
+        ):
+            _validate_asset_url("http://teredo.example/x")
+
+    @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
     def test_rejects_when_any_resolved_ip_is_private(self, mock_gai):
         # A host that returns one public + one private IP must be rejected (rebinding hedge).
         mock_gai.return_value = _addrinfo("93.184.216.34", "10.0.0.5")
@@ -466,17 +509,16 @@ class TestCleanupOldDownloads:
         new_file.write_text("new")
 
         with patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env:
-            mock_env.HCLI_KE_DOWNLOADS_DIR = str(tmp_path)
             mock_env.HCLI_KE_DOWNLOADS_RETENTION_DAYS = 3
-            _cleanup_old_downloads()
+            _cleanup_old_downloads(tmp_path)
 
         assert not old_file.exists()
         assert new_file.exists()
 
     def test_cleanup_nonexistent_dir(self, tmp_path):
         with patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env:
-            mock_env.HCLI_KE_DOWNLOADS_DIR = str(tmp_path / "nonexistent")
-            _cleanup_old_downloads()  # should not raise
+            mock_env.HCLI_KE_DOWNLOADS_RETENTION_DAYS = 3
+            _cleanup_old_downloads(tmp_path / "nonexistent")  # should not raise
 
 
 def _stream_cm(content: bytes, status: int = 200):
