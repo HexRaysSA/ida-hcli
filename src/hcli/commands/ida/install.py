@@ -215,6 +215,7 @@ async def install(
                         console.print("[grey69]Updated idalib default in ida-config.json:[/grey69]")
                         console.print(f"[grey69]  default install path: {existing}[/grey69]")
                         console.print(f"[grey69]                     -> {new}[/grey69]")
+                    console.print("[green]idalib activated[/green] — 'import idapro' will use this installation.")
                 else:
                     console.print(
                         "[grey69]Left idalib default unchanged; installed IDA does not include idalib[/grey69]"
