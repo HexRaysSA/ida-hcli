@@ -5,7 +5,6 @@ import rich_click as click
 
 from hcli.commands.common import safe_ask_async
 from hcli.lib.api.keys import keys
-from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command, require_auth
 from hcli.lib.console import console
 
@@ -40,35 +39,6 @@ async def create(name: str | None) -> None:
         console.print(f"[blue]Creating API key '[bold]{key_name}[/bold]'...[/blue]")
         token = await keys.create_key(key_name)
         console.print(f"[green]API key created:[/green] [bold]{token}[/bold]")
-
-        # Ask if user wants to install this key for hcli
-        if await safe_ask_async(questionary.confirm("Do you want to use this key for hcli?")):
-            auth_service = get_auth_service()
-            auth_service.init()
-
-            console.print("[blue]Installing API key as credentials...[/blue]")
-            source = await auth_service.add_api_key_credentials(key_name, token)
-
-            if source:
-                sources_count_before = len(auth_service.list_credentials()) - 1
-
-                if sources_count_before == 0:
-                    # First credentials - simplified message
-                    console.print(f"[green]API key credentials installed for {source.email}[/green]")
-                else:
-                    # Additional credentials - detailed message
-                    console.print(f"[green]API key credentials '{source.name}' created successfully![/green]")
-                    console.print(f"Email: {source.email}")
-
-                    # Ask if user wants to set as default
-                    set_default = await safe_ask_async(
-                        questionary.confirm(f"Set '{source.name}' as the default credentials?", default=True)
-                    )
-                    if set_default:
-                        auth_service.set_default_credentials(source.name)
-                        console.print(f"[green]'{source.name}' set as default credentials.[/green]")
-            else:
-                console.print("[red]Failed to create credentials. The API key may be invalid.[/red]")
 
     except Exception as e:
         console.print(f"[red]Failed to create API key: {e}[/red]")
