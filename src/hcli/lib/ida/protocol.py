@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -9,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 from hcli.lib.console import console
-from hcli.lib.util.io import get_hcli_executable_path
+from hcli.lib.util.io import get_hcli_command
 
 PROTOCOL = "ida"
 
@@ -19,18 +20,21 @@ PROTOCOL = "ida"
 _PY_ENV_STRIP = "env -u PYTHONHOME -u PYTHONPATH -u PYTHONEXECUTABLE -u PYTHONSTARTUP"
 
 
-def _macos_handler_applescript(hcli_path: str, log_file: str, log_dir: str) -> str:
+def _macos_handler_applescript(hcli_cmd: str, log_file: str, log_dir: str) -> str:
     """Build the AppleScript handler body.
 
-    ``ida open -- <url>``: the ``--`` stops the URL (or anything that decodes from it)
-    from being parsed as an option to the open command. The handler ``mkdir -p``s the
-    log dir at click time so a removed/uncreatable dir can't break the redirect.
+    ``hcli_cmd`` is the hcli invocation already rendered as a POSIX shell fragment
+    (``shlex.join`` of the argv) — its tokens are individually quoted, so a spaced
+    install path survives the zsh ``-c`` parse as one word. ``ida open -- <url>``:
+    the ``--`` stops the URL (or anything that decodes from it) from being parsed as
+    an option to the open command. The handler ``mkdir -p``s the log dir at click
+    time so a removed/uncreatable dir can't break the redirect.
     """
     return f'''
 on open location this_URL
     set logFile to "{log_file}"
     set logDir to "{log_dir}"
-    do shell script "/bin/mkdir -p " & quoted form of logDir & " ; /bin/zsh -l -c " & quoted form of ("{_PY_ENV_STRIP} {hcli_path} ida open -- " & quoted form of this_URL) & " >> " & quoted form of logFile & " 2>&1"
+    do shell script "/bin/mkdir -p " & quoted form of logDir & " ; /bin/zsh -l -c " & quoted form of ("{_PY_ENV_STRIP} {hcli_cmd} ida open -- " & quoted form of this_URL) & " >> " & quoted form of logFile & " 2>&1"
 end open location
 
 on run
@@ -39,11 +43,17 @@ end run
 '''
 
 
-def _linux_desktop_entry(hcli_path: str) -> str:
-    """Build the .desktop entry. ``-- %u`` keeps the URL from being parsed as an option."""
+def _linux_desktop_entry(hcli_cmd: str) -> str:
+    """Build the .desktop entry.
+
+    ``hcli_cmd`` is the hcli invocation already rendered as a shell fragment
+    (``shlex.join`` of the argv), so a spaced install path stays a single token when
+    the desktop environment parses ``Exec=``. ``-- %u`` keeps the URL from being
+    parsed as an option.
+    """
     return f"""[Desktop Entry]
 Name=HCLI IDB Link Handler
-Exec={_PY_ENV_STRIP} {hcli_path} ida open -- %u
+Exec={_PY_ENV_STRIP} {hcli_cmd} ida open -- %u
 Type=Application
 NoDisplay=true
 MimeType=x-scheme-handler/{PROTOCOL};
@@ -53,7 +63,9 @@ MimeType=x-scheme-handler/{PROTOCOL};
 def setup_macos_protocol_handler() -> None:
     """Set up protocol handler for macOS using AppleScript and plist modification."""
     try:
-        hcli_path = get_hcli_executable_path()
+        # shlex.join quotes each argv token for the zsh -c parse, so a spaced
+        # install path stays one word instead of being split into bogus arguments.
+        hcli_cmd = shlex.join(get_hcli_command())
 
         # Create AppleScript application that handles ida:// URLs
         # Use login shell (-l) to get full user environment, avoiding sandbox restrictions.
@@ -74,7 +86,7 @@ def setup_macos_protocol_handler() -> None:
         except OSError:
             pass
         log_file = str(log_dir / "idb_handler.log")
-        applescript_content = _macos_handler_applescript(hcli_path, log_file, str(log_dir))
+        applescript_content = _macos_handler_applescript(hcli_cmd, log_file, str(log_dir))
 
         # Create temporary directory for the AppleScript
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -159,7 +171,7 @@ def setup_windows_protocol_handler() -> None:
         import winreg  # type: ignore[import-untyped]
         from winreg import HKEY_CURRENT_USER, REG_SZ  # type: ignore[import-untyped,attr-defined]
 
-        hcli_path = get_hcli_executable_path()
+        hcli_argv = get_hcli_command()
 
         # Register ida:// protocol.
         # A PYTHONHOME/PYTHONPATH leaked by the launching app (e.g. IDA running its own
@@ -169,13 +181,17 @@ def setup_windows_protocol_handler() -> None:
         # `env -u` on Windows. ShellExecute/CreateProcess passes argv verbatim, so invoke
         # the interpreter directly with -E (ignore all PYTHON* env vars). Frozen builds
         # embed their own runtime and are immune, so run them as-is.
+        # Build the command with subprocess.list2cmdline: it applies the exact
+        # CommandLineToArgvW quoting Windows uses to split this REG_SZ back into argv,
+        # so a spaced install path stays a single argument.
         # Use a "--" separator before %1: Windows substitutes the raw URL into the
         # command line, and a stray quote in the URL could otherwise append extra
         # argv tokens parsed as options to `ida open`. After "--" click treats the
         # URL strictly as the positional argument; injected tokens become surplus
-        # positionals and are rejected rather than interpreted.
+        # positionals and are rejected rather than interpreted. "%1" stays a literal
+        # placeholder (we quote it ourselves so a spaced URL arrives as one argument).
         if getattr(sys, "frozen", False):
-            command = f'"{hcli_path}" ida open -- "%1"'
+            command = subprocess.list2cmdline([*hcli_argv, "ida", "open", "--"]) + ' "%1"'
         else:
             command = f'"{sys.executable}" -E -m hcli.main ida open -- "%1"'
         reg_key = rf"SOFTWARE\Classes\{PROTOCOL}"
@@ -184,8 +200,9 @@ def setup_windows_protocol_handler() -> None:
             winreg.SetValueEx(key, "", 0, REG_SZ, f"URL:{PROTOCOL.upper()} Protocol")  # type: ignore[attr-defined]
             winreg.SetValueEx(key, "URL Protocol", 0, REG_SZ, "")  # type: ignore[attr-defined]
 
+        # Icon comes from the launcher executable (argv[0]); quote it for spaced paths.
         with winreg.CreateKey(HKEY_CURRENT_USER, rf"{reg_key}\DefaultIcon") as key:  # type: ignore[attr-defined]
-            winreg.SetValueEx(key, "", 0, REG_SZ, f"{hcli_path},1")  # type: ignore[attr-defined]
+            winreg.SetValueEx(key, "", 0, REG_SZ, f'"{hcli_argv[0]}",1')  # type: ignore[attr-defined]
 
         with winreg.CreateKey(HKEY_CURRENT_USER, rf"{reg_key}\shell") as key:  # type: ignore[attr-defined]
             pass
@@ -209,14 +226,16 @@ def setup_windows_protocol_handler() -> None:
 def setup_linux_protocol_handler() -> None:
     """Set up protocol handler for Linux using desktop entry and xdg-mime."""
     try:
-        hcli_path = get_hcli_executable_path()
+        # shlex.join quotes each argv token so a spaced install path stays one word
+        # when the desktop environment parses the Exec= line.
+        hcli_cmd = shlex.join(get_hcli_command())
 
         # Write to applications directory
         applications_dir = Path.home() / ".local" / "share" / "applications"
         applications_dir.mkdir(parents=True, exist_ok=True)
 
         # The desktop launcher passes %u as a literal argv, so no shell mangles the URL.
-        desktop_content = _linux_desktop_entry(hcli_path)
+        desktop_content = _linux_desktop_entry(hcli_cmd)
 
         desktop_path = applications_dir / "hcli-idb-handler.desktop"
         desktop_path.write_text(desktop_content)
