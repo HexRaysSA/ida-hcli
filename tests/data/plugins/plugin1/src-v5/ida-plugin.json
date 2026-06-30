@@ -58,6 +58,16 @@
         "name": "key 5",
         "documentation": "a setting that is not prompted during installation",
         "prompt": false
+      },
+
+      {
+        "key": "key6",
+        "type": "string",
+        "required": false,
+        "default": "secret-default",
+        "name": "key 6",
+        "documentation": "a secret setting like an API token",
+        "secret": true
       }
     ]
   }

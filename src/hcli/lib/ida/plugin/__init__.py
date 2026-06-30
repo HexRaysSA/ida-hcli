@@ -273,6 +273,15 @@ class PluginSettingDescriptor(BaseModel):
         ),
     )
 
+    secret: bool = Field(
+        default=False,
+        description=(
+            "Whether the setting contains a secret value such as an API token. "
+            "When true, the input is masked during prompting and the value is "
+            "redacted in `config list` output."
+        ),
+    )
+
     @field_validator("choices", mode="before")
     @classmethod
     def validate_choices_not_empty(cls, v: list[str] | tuple[str, ...] | None) -> tuple[str, ...] | None:
@@ -291,6 +300,8 @@ class PluginSettingDescriptor(BaseModel):
                 raise ValueError(f"validation_pattern is only supported for string settings, not boolean: {self.key}")
             if self.choices is not None:
                 raise ValueError(f"choices is only supported for string settings, not boolean: {self.key}")
+            if self.secret:
+                raise ValueError(f"secret is only supported for string settings, not boolean: {self.key}")
 
         if self.validation_pattern is not None and self.choices is not None:
             raise ValueError(f"validation_pattern and choices are mutually exclusive: {self.key}")

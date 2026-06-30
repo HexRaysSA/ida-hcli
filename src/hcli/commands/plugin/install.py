@@ -329,12 +329,17 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                                     return validate_func
 
                                 default_str = str(setting.default) if setting.default is not None else ""
-                                question = questionary.text(
-                                    # TODO: descr.documentation
-                                    message=setting.name,
-                                    default=default_str,
-                                    validate=make_validator(setting),
-                                )
+                                if setting.secret:
+                                    question = questionary.password(
+                                        message=setting.name,
+                                        validate=make_validator(setting),
+                                    )
+                                else:
+                                    question = questionary.text(
+                                        message=setting.name,
+                                        default=default_str,
+                                        validate=make_validator(setting),
+                                    )
                             questions[setting.key] = question
 
                         answers = questionary.form(**questions).ask()

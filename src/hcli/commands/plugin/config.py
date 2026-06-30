@@ -114,8 +114,11 @@ def list(ctx) -> None:
         for setting in metadata.plugin.settings:
             try:
                 value = get_plugin_setting(plugin_name, setting.key)
-                value_str = "true" if value is True else ("false" if value is False else str(value))
-                if setting.default is not None and value == setting.default:
+                if setting.secret:
+                    value_str = "********"
+                else:
+                    value_str = "true" if value is True else ("false" if value is False else str(value))
+                if not setting.secret and setting.default is not None and value == setting.default:
                     value_str = f"{value_str} [grey69](default)[/grey69]"
             except KeyError:
                 value_str = "[grey69]<not set>[/grey69]"
