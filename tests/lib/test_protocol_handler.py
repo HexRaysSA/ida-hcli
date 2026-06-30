@@ -86,7 +86,7 @@ class TestPosixHandlerArtifacts:
     def test_linux_registration_writes_separator_to_desktop_file(self, tmp_path, monkeypatch):
         # Real-artifact check: the written .desktop file must carry `-- %u`.
         monkeypatch.setattr("hcli.lib.ida.protocol.Path.home", lambda: tmp_path)
-        monkeypatch.setattr("hcli.lib.ida.protocol.get_hcli_executable_path", lambda: "/path/hcli")
+        monkeypatch.setattr("hcli.lib.ida.protocol.get_hcli_command", lambda: ["/path/hcli"])
         monkeypatch.setattr("hcli.lib.ida.protocol.subprocess.run", lambda *a, **k: MagicMock())
 
         from hcli.lib.ida.protocol import setup_linux_protocol_handler
