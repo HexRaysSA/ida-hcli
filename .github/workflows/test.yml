@@ -339,6 +339,15 @@ jobs:
         run: |
           uv sync --no-sources --extra dev --extra test
 
+      - name: Clean stale IDA install (macOS runners occasionally retain state)
+        if: ${{ startsWith(matrix.os_ida.os, 'macos') }}
+        shell: bash
+        run: |
+          if [[ -d "${{ matrix.os_ida.default_path }}" ]]; then
+            echo "Removing stale installation: ${{ matrix.os_ida.default_path }}"
+            rm -rf "${{ matrix.os_ida.default_path }}"
+          fi
+
       - name: Install IDA ${{ matrix.os_ida.ida_version }} (default location)
         shell: bash
         run: |
