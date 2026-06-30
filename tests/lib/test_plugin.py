@@ -254,3 +254,36 @@ def test_parse_plugin_version_comparison():
     assert v1 < v3
     assert v3 > v1
     assert v2 > v1
+
+
+def test_setting_secret_defaults_to_false():
+    setting = PluginSettingDescriptor(
+        key="test",
+        type="string",
+        required=True,
+        name="Test Setting",
+    )
+    assert setting.secret is False
+
+
+def test_setting_secret_true():
+    setting = PluginSettingDescriptor(
+        key="api_key",
+        type="string",
+        required=True,
+        name="API Key",
+        secret=True,
+    )
+    assert setting.secret is True
+
+
+def test_setting_secret_not_allowed_for_boolean():
+    with pytest.raises(ValueError, match="secret is only supported for string settings"):
+        PluginSettingDescriptor(
+            key="test",
+            type="boolean",
+            required=False,
+            default=False,
+            name="Test Setting",
+            secret=True,
+        )
