@@ -18,6 +18,8 @@ from hcli.lib.ida.plugin.install import (
 )
 from hcli.lib.ida.plugin.settings import del_plugin_setting, get_plugin_setting, parse_setting_value, set_plugin_setting
 
+from ._prompt import prompt_plugin_settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -135,6 +137,52 @@ def list(ctx) -> None:
             table.add_row(setting.key, value_str, description)
 
         console.print(table)
+
+    except Exception as e:
+        logger.debug("error: %s", e, exc_info=True)
+        console.print(f"[red]Error[/red]: {e}")
+        raise click.Abort()
+
+
+@config.command()
+@click.pass_context
+def setup(ctx) -> None:
+    """Interactively re-configure all plugin settings."""
+    plugin_name = ctx.obj["config_plugin_name"]
+    try:
+        plugin_name = resolve_config_plugin_name(plugin_name)
+        plugin_path = resolve_installed_plugin_directory(plugin_name)
+        metadata = get_metadata_from_plugin_directory(plugin_path)
+
+        if not metadata.plugin.settings:
+            console.print(f"[grey69]No settings defined for {plugin_name}[/grey69]")
+            return
+
+        promptable = [s for s in metadata.plugin.settings if s.prompt]
+        if not promptable:
+            console.print(f"[grey69]No interactive settings for {plugin_name}[/grey69]")
+            return
+
+        if not console.is_interactive:
+            console.print("[red]Error[/red]: setup requires an interactive terminal")
+            raise click.Abort()
+
+        existing_config = get_ida_config()
+        existing_values: dict[str, str | bool] = {}
+        if plugin_name in existing_config.plugins:
+            existing_values = dict(existing_config.plugins[plugin_name].settings)
+
+        answers = prompt_plugin_settings(metadata.plugin.settings, existing_values)
+        if answers is None:
+            raise click.Abort()
+
+        for key, answer in answers.items():
+            descr = metadata.plugin.get_setting(key)
+            if descr.default == answer:
+                continue
+            set_plugin_setting(plugin_name, key, answer)
+
+        console.print(f"[green]Configured[/green] {plugin_name}")
 
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)

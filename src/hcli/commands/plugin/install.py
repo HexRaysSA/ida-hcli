@@ -7,7 +7,6 @@ import logging
 from pathlib import Path
 
 import httpx
-import questionary
 import rich.status
 import rich_click as click
 
@@ -19,6 +18,7 @@ from hcli.lib.ida import (
     explain_missing_current_installation_directory,
     find_current_ida_platform,
     find_current_ida_version,
+    get_ida_config,
 )
 from hcli.lib.ida.plugin import (
     get_metadata_from_plugin_archive,
@@ -49,6 +49,8 @@ from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
 from hcli.lib.ida.plugin.settings import has_plugin_setting, parse_setting_value, set_plugin_setting
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, detect_current_python_version, merge_bundle_pip_options
+
+from ._prompt import prompt_plugin_settings
 
 logger = logging.getLogger(__name__)
 
@@ -280,69 +282,17 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                             f"plugin requires configuration but console is not interactive. Please provide settings via command line: {setting_names}"
                         )
 
-                    # Only the not-already-set, prompt-eligible settings get a
-                    # questionary form. If everything is either already set or
-                    # opted out via prompt: false, skip the heading + form so
-                    # the user doesn't see a misleading "configure N settings:"
-                    # banner with no questions underneath.
-                    promptable_settings = [
-                        s for s in metadata.plugin.settings if not has_plugin_setting(plugin_name, s.key) and s.prompt
-                    ]
+                    if console.is_interactive:
+                        existing_config = get_ida_config()
+                        existing_values: dict[str, str | bool] = {}
+                        if plugin_name in existing_config.plugins:
+                            existing_values = dict(existing_config.plugins[plugin_name].settings)
 
-                    if not promptable_settings:
-                        answers: dict = {}
+                        answers = prompt_plugin_settings(metadata.plugin.settings, existing_values)
+                        if answers is None:
+                            raise click.Abort()
                     else:
-                        plural = "s" if len(promptable_settings) != 1 else ""
-                        console.print(f"configure {len(promptable_settings)} setting{plural}:")
-                        questions: dict[str, questionary.Question] = {}
-                        for setting in promptable_settings:
-                            if setting.type == "boolean":
-                                default_bool = setting.default if isinstance(setting.default, bool) else False
-                                question = questionary.confirm(
-                                    message=setting.name,
-                                    default=default_bool,
-                                )
-                            elif setting.choices:
-                                default_str = (
-                                    str(setting.default) if setting.default is not None else setting.choices[0]
-                                )
-                                question = questionary.select(
-                                    message=setting.name,
-                                    choices=setting.choices,
-                                    default=default_str,
-                                )
-                            else:
-
-                                def make_validator(s):
-                                    def validate_func(value: str):
-                                        if not s.required and not value:
-                                            return True
-                                        if s.required and not value:
-                                            return "This field is required"
-                                        try:
-                                            parsed = parse_setting_value(s, value)
-                                            s.validate_value(parsed)
-                                            return True
-                                        except ValueError as e:
-                                            return str(e)
-
-                                    return validate_func
-
-                                default_str = str(setting.default) if setting.default is not None else ""
-                                if setting.secret:
-                                    question = questionary.password(
-                                        message=setting.name,
-                                        validate=make_validator(setting),
-                                    )
-                                else:
-                                    question = questionary.text(
-                                        message=setting.name,
-                                        default=default_str,
-                                        validate=make_validator(setting),
-                                    )
-                            questions[setting.key] = question
-
-                        answers = questionary.form(**questions).ask()
+                        answers = {}
 
                     for key, answer in answers.items():
                         descr = metadata.plugin.get_setting(key)
