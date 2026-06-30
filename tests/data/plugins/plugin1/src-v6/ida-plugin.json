@@ -1,0 +1,34 @@
+{
+  "IDAMetadataDescriptorVersion": 1,
+  "plugin": {
+    "name": "plugin1",
+    "version": "6.0.0",
+    "entryPoint": "plugin1.py",
+    "description": "an IDAPython source plugin",
+    "urls": {
+      "repository": "https://github.com/HexRaysSA/ida-hcli"
+    },
+    "authors": [{
+      "name": "Willi Ballenthin",
+      "email": "wballenthin@hex-rays.com"
+    }],
+    "settings": [
+      {
+        "key": "key1",
+        "type": "string",
+        "required": false,
+        "default": "default-1",
+        "name": "key 1",
+        "documentation": "the value for key 1"
+      },
+      {
+        "key": "key2",
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "name": "key 2",
+        "documentation": "the value for key 2"
+      }
+    ]
+  }
+}

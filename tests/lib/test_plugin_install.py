@@ -149,12 +149,12 @@ def test_plugin_all(virtual_ida_environment_with_venv):
         # plugin1    4.0.0    https://github.com/HexRaysSA/ida-hcli
         # zydisinfo  1.0.0    https://github.com/HexRaysSA/ida-hcli
         p = run_hcli(f"plugin --repo {repo_path.absolute()} search")
-        assert row_contains("plugin1", "5.0.0", "https://github.com/HexRaysSA/ida-hcli")(p.stdout)
+        assert row_contains("plugin1", "6.0.0", "https://github.com/HexRaysSA/ida-hcli")(p.stdout)
         assert row_contains("zydisinfo", "1.0.0", "https://github.com/HexRaysSA/ida-hcli")(p.stdout)
 
         p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydis")
         assert row_contains("zydisinfo", "1.0.0", "https://github.com/HexRaysSA/ida-hcli")(p.stdout)
-        assert not row_contains("plugin1", "5.0.0")(p.stdout)
+        assert not row_contains("plugin1", "6.0.0")(p.stdout)
 
         p = run_hcli(f"plugin --repo {repo_path.absolute()} search zydisinfo")
         assert "name: zydisinfo" in p.stdout
@@ -182,7 +182,7 @@ def test_plugin_all(virtual_ida_environment_with_venv):
         assert "Installed plugin: plugin1==1.0.0\n" == p.stdout
 
         p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
-        assert row_contains("plugin1", "1.0.0", "upgradable to 5.0.0")(p.stdout)
+        assert row_contains("plugin1", "1.0.0", "upgradable to 6.0.0")(p.stdout)
 
         p = run_hcli(f"plugin --repo {repo_path.absolute()} upgrade plugin1==2.0.0")
         assert "Installed plugin: plugin1==2.0.0\n" == p.stdout
@@ -198,7 +198,7 @@ def test_plugin_all(virtual_ida_environment_with_venv):
         # TODO: upgrade all
 
         p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
-        assert row_contains("plugin1", "2.0.0", "upgradable to 5.0.0")(p.stdout)
+        assert row_contains("plugin1", "2.0.0", "upgradable to 6.0.0")(p.stdout)
 
         p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall plugin1")
         assert "Uninstalled plugin: plugin1\n" == p.stdout

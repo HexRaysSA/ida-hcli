@@ -134,3 +134,21 @@ def test_plugin_settings_integration(virtual_ida_environment_with_venv):
         p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 list")
         assert "key4" in p.stdout and "option-a (default)" in p.stdout and "the value for key 4" in p.stdout
         assert "key5" in p.stdout and "hidden-default (default)" in p.stdout
+
+        _ = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} uninstall plugin1")
+
+
+def test_plugin_settings_default_without_prompt(virtual_ida_environment_with_venv):
+    """In non-interactive mode, settings that have defaults should not require prompting or --config."""
+    idausr = Path(os.environ["HCLI_IDAUSR"])
+    install_this_package_in_venv(idausr / "venv")
+
+    with temp_env_var("TERM", "dumb"), temp_env_var("COLUMNS", "80"):
+        # plugin1==6.0.0 has only optional settings with defaults, so it should
+        # install successfully in non-interactive mode without any --config flags.
+        p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} install plugin1==6.0.0")
+        assert "Installed plugin: plugin1==6.0.0\n" == p.stdout
+
+        p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 list")
+        assert "key1" in p.stdout and "default-1 (default)" in p.stdout
+        assert "key2" in p.stdout and "false (default)" in p.stdout

@@ -285,8 +285,13 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                     # opted out via prompt: false, skip the heading + form so
                     # the user doesn't see a misleading "configure N settings:"
                     # banner with no questions underneath.
+                    # In non-interactive mode, never prompt — settings with
+                    # defaults will fall back to their defaults, and required
+                    # settings without defaults were already caught above.
                     promptable_settings = [
-                        s for s in metadata.plugin.settings if not has_plugin_setting(plugin_name, s.key) and s.prompt
+                        s
+                        for s in metadata.plugin.settings
+                        if not has_plugin_setting(plugin_name, s.key) and s.prompt and console.is_interactive
                     ]
 
                     if not promptable_settings:
