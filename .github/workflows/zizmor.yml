@@ -1,0 +1,48 @@
+name: GitHub Actions Security Analysis with zizmor
+
+on:
+  push:
+    branches: [main, "plugin-manager"]
+    paths:
+      - ".github/dependabot.yml"
+      - ".github/dependabot.yaml"
+      - ".github/workflows/**"
+      - "**/action.yml"
+      - "**/action.yaml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/dependabot.yml"
+      - ".github/dependabot.yaml"
+      - ".github/workflows/**"
+      - "**/action.yml"
+      - "**/action.yaml"
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: zizmor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zizmor:
+    name: Audit GitHub Actions
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@b1d7e1fb5de872772f31590499237e7cce841e8e # v0.5.3
+        with:
+          inputs: .
+          persona: regular
+          advanced-security: false

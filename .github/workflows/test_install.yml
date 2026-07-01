@@ -22,13 +22,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Install hcli (Unix)
         if: runner.os != 'Windows'
         run: |
           curl -LsSf https://hcli.docs.hex-rays.com/install | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install hcli (Windows)
         if: runner.os == 'Windows'
