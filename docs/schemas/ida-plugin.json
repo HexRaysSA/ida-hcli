@@ -391,6 +391,12 @@
           "description": "Whether to prompt the user for this setting during installation. Set to false to use the default value without prompting.",
           "title": "Prompt",
           "type": "boolean"
+        },
+        "secret": {
+          "default": false,
+          "description": "Whether the setting contains a secret value such as an API token. When true, the input is masked during prompting and the value is redacted in `config list` output.",
+          "title": "Secret",
+          "type": "boolean"
         }
       },
       "required": [
