@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from hcli.env import ENV
 from hcli.lib.ida.version import parse_version_from_ida_binary
 from hcli.lib.util.io import NoSpaceError, check_free_space, get_os
+from hcli.lib.venv import resolve_user_virtual_env
 
 logger = logging.getLogger(__name__)
 
@@ -1057,9 +1058,28 @@ def _run_ida_batch_script(idat_path: Path, src: str, env: dict[str, str] | None 
 
 
 def _clean_env_for_idat() -> dict[str, str]:
+    # When HCLI runs under `uv run --with ida-hcli`, uv replaces `$VIRTUAL_ENV`
+    #  with its own ephemeral virtual environment.
+    # So, we try to resolve the *real* virtual environment, if possible.
+    user_venv = resolve_user_virtual_env()
+
     env = os.environ.copy()
     for key in ("VIRTUAL_ENV", "PYTHONHOME", "PYTHONPATH", "PATH"):
         env.pop(key, None)
+
+    if user_venv is not None:
+        # we pass this along so idat can recognize the current virtualenv
+        # if VIRTUAL_ENV is set, such as users that run HCLI and IDA with
+        # a virtualenv activated.
+        #
+        # note that there can be false positives here:
+        # if the user runs HCLI when a venv is activated,
+        # but its not the venv that IDA would use,
+        # then it may install plugin dependencies into it.
+        #
+        # we don't have a good way of differentiating IDA's venv from a random venv.
+        env["VIRTUAL_ENV"] = str(user_venv)
+
     return env
 
 

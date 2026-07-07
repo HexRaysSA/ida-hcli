@@ -30,6 +30,7 @@ from hcli.lib.ida.python import (
     detect_current_python_version,
     find_current_python_executable,
 )
+from hcli.lib.venv import find_candidate_virtual_envs, is_uv_cache_virtual_env, resolve_user_virtual_env
 
 
 def _path(p: object) -> str:
@@ -131,7 +132,26 @@ def explain_environment() -> None:
 
     # --- Python detection ---
 
-    console.print("[bold]Python executable[/bold]")
+    console.print("[bold]Python environment[/bold]")
+
+    process_virtual_env = os.environ.get("VIRTUAL_ENV")
+    is_uv_cache = process_virtual_env is not None and is_uv_cache_virtual_env(process_virtual_env)
+    if process_virtual_env and is_uv_cache:
+        _kv("$VIRTUAL_ENV", f"{_path(process_virtual_env)}  [dim](uv cache)[/dim]")
+    elif process_virtual_env:
+        _kv("$VIRTUAL_ENV", _path(process_virtual_env))
+    else:
+        _kv("$VIRTUAL_ENV", "not set")
+
+    user_venv = resolve_user_virtual_env()
+    if user_venv:
+        _kv("user virtualenv", _path(user_venv), "resolved from $PATH")
+
+    path_venvs = find_candidate_virtual_envs()
+    non_uv_candidates = [c for c in path_venvs if not is_uv_cache_virtual_env(c.path)]
+    if non_uv_candidates:
+        for candidate in non_uv_candidates:
+            _kv("  candidate venv", f"{_path(candidate.path)}  [dim](via {candidate.source})[/dim]")
 
     info: dict | None = None
     env_python = os.environ.get("HCLI_CURRENT_IDA_PYTHON_EXE") or ENV.HCLI_CURRENT_IDA_PYTHON_EXE
@@ -188,7 +208,7 @@ def explain_environment() -> None:
 
     try:
         python_exe = find_current_python_executable()
-        _kv("python exe", _path(python_exe))
+        _kv("final python exe", _path(python_exe))
 
         result = subprocess.run(
             [str(python_exe), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
@@ -212,12 +232,36 @@ def explain_environment() -> None:
         _err("final version", f"{type(e).__name__}: {e}")
 
     console.print()
-    active_venv = os.environ.get("VIRTUAL_ENV")
-    if active_venv:
+    is_hcli_own_venv = process_virtual_env and os.path.normcase(
+        os.path.abspath(process_virtual_env)
+    ) == os.path.normcase(os.path.abspath(sys.prefix))
+
+    if is_uv_cache and user_venv:
         console.print(
-            f"[dim]Note: the active virtualenv ({escape(active_venv)}) "
+            f"[dim]Note: $VIRTUAL_ENV is a uv cache overlay. Resolved user virtualenv: {escape(str(user_venv))}[/dim]",
+            highlight=False,
+        )
+        console.print()
+    elif is_uv_cache:
+        console.print(
+            "[dim]Note: $VIRTUAL_ENV is a uv cache overlay, not your virtualenv. "
+            "No user virtualenvs were found on $PATH.[/dim]",
+            highlight=False,
+        )
+        console.print()
+    elif process_virtual_env and is_hcli_own_venv:
+        console.print(
+            f"[dim]Note: $VIRTUAL_ENV ({escape(process_virtual_env)}) "
             f"is the hcli process environment, not the IDA Python environment. "
             f"It is not used for plugin installation.[/dim]",
+            highlight=False,
+        )
+        console.print()
+    elif process_virtual_env and not ida_venv:
+        console.print(
+            f"[dim]Note: $VIRTUAL_ENV is set ({escape(process_virtual_env)}) "
+            f"but was not detected inside IDA. "
+            f"To use this virtualenv with IDA, activate it via idapythonrc.py.[/dim]",
             highlight=False,
         )
         console.print()
@@ -228,5 +272,5 @@ def explain_environment() -> None:
             "https://community.hex-rays.com/t/using-a-virtualenv-for-idapython/261/5[/dim]",
             highlight=False,
         )
-    if not active_venv and not ida_venv:
+    if not user_venv and not is_uv_cache and not ida_venv:
         console.print("[dim]To change IDA's Python, use idapyswitch to point at a different interpreter.[/dim]")
