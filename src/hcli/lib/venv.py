@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 def _parse_pyvenv_cfg(path: Path) -> dict[str, str]:
     """
-    fetch key-value pairs from a pyenv.cfg file, such as found in uv-created
+    Fetch key-value pairs from a pyvenv.cfg file, such as found in uv-created
     virtual environments.
     """
     result: dict[str, str] = {}
