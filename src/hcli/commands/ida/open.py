@@ -69,6 +69,7 @@ def open_ida_link(uri: str | None, list_instances: bool, no_launch: bool, timeou
         ida://malwares/trojan1.i64/functions?rva=0x1000  (named source)
         ida://malwares/trojan1.i64  (named source, resource defaults to functions)
         ida:///myfile.i64/functions?rva=0x1000  (relative: searches all sources)
+        ida:///myfile.i64  (relative, resource defaults to functions)
         ida:///myfile.i64/addresses?rva=0x0  (open IDB and position at beginning)
         ida:///functions?rva=0x1000  (relative: sent to the only running instance)
 

@@ -29,11 +29,6 @@ class TestUrlValidation:
         with pytest.raises(click.Abort):
             handler.handle("ida://host", urlparse("ida://host"), False, 120.0, False)
 
-    def test_rejects_single_segment_no_query(self):
-        handler = DefaultURLHandler()
-        with pytest.raises(click.Abort):
-            handler.handle("ida:///file.i64", urlparse("ida:///file.i64"), False, 120.0, False)
-
 
 class TestRelativeUrl:
     @patch("hcli.lib.ida.handler.default_url_handler.IDAIPCClient")

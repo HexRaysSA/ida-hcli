@@ -18,10 +18,11 @@ console = Console()
 class DefaultURLHandler(URLHandler):
     """Handler for standard ida:// URLs.
 
-    Covers named-source URLs (``ida://source/file.i64/...``, where the
-    resource defaults to ``functions`` when omitted) and relative URLs
-    (``ida:///functions?rva=...``).  Matches any ``ida://`` URL, so it
-    acts as a catch-all when placed last in the registry.
+    Covers named-source URLs (``ida://source/file.i64/...``) and relative
+    URLs (``ida:///file.i64/...``, ``ida:///functions?rva=...``).  When a
+    URL names only an IDB (no resource), the resource defaults to
+    ``functions``.  Matches any ``ida://`` URL, so it acts as a catch-all
+    when placed last in the registry.
     """
 
     def matches(self, parsed: ParseResult) -> bool:
@@ -39,15 +40,17 @@ class DefaultURLHandler(URLHandler):
         source_name = parsed.hostname or ""
         path_segments = [s for s in parsed.path.split("/") if s]
 
-        # ida://<source>/<idb-name> with no resource — default to the functions view
-        if parsed.scheme == "ida" and source_name and len(path_segments) == 1 and not parsed.query:
+        # ida://<source>/<idb-name> or ida:///<idb-name> with no resource — default to
+        # the functions view.  A single segment with a query stays a relative resource
+        # (e.g. ida:///functions?rva=0x0).
+        if parsed.scheme == "ida" and len(path_segments) == 1 and not parsed.query:
             uri = uri.rstrip("/") + "/functions"
             path_segments.append("functions")
 
         if parsed.scheme != "ida" or (len(path_segments) <= 1 and not parsed.query):
             console.print(f"[red]Error: Unsupported ida:// URL: {uri}[/red]")
             console.print(
-                "[yellow]Examples: ida://{source}/{idb-name},"
+                "[yellow]Examples: ida://{source}/{idb-name}, ida:///{idb-name},"
                 " ida:///{idb-name}/{resource}?rva=0x0"
                 " (e.g. ida:///example.i64/functions?rva=0x0)[/yellow]"
             )
