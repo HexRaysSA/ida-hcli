@@ -18,9 +18,10 @@ console = Console()
 class DefaultURLHandler(URLHandler):
     """Handler for standard ida:// URLs.
 
-    Covers named-source URLs (``ida://source/file.i64/...``) and
-    relative URLs (``ida:///functions?rva=...``).  Matches any ``ida://``
-    URL, so it acts as a catch-all when placed last in the registry.
+    Covers named-source URLs (``ida://source/file.i64/...``, where the
+    resource defaults to ``functions`` when omitted) and relative URLs
+    (``ida:///functions?rva=...``).  Matches any ``ida://`` URL, so it
+    acts as a catch-all when placed last in the registry.
     """
 
     def matches(self, parsed: ParseResult) -> bool:
@@ -34,15 +35,21 @@ class DefaultURLHandler(URLHandler):
         timeout: float,
         skip_analysis: bool,
     ) -> None:
-        # URL format: ida://<source>/<idb-name>/<resource>?<params>
+        # URL format: ida://<source>/<idb-name>[/<resource>]?<params>
         source_name = parsed.hostname or ""
         path_segments = [s for s in parsed.path.split("/") if s]
+
+        # ida://<source>/<idb-name> with no resource — default to the functions view
+        if parsed.scheme == "ida" and source_name and len(path_segments) == 1 and not parsed.query:
+            uri = uri.rstrip("/") + "/functions"
+            path_segments.append("functions")
 
         if parsed.scheme != "ida" or (len(path_segments) <= 1 and not parsed.query):
             console.print(f"[red]Error: Unsupported ida:// URL: {uri}[/red]")
             console.print(
-                "[yellow]Example: ida:///{idb-name}/{resource}?rva=0x0,"
-                " e.g. ida:///example.i64/functions?rva=0x0[/yellow]"
+                "[yellow]Examples: ida://{source}/{idb-name},"
+                " ida:///{idb-name}/{resource}?rva=0x0"
+                " (e.g. ida:///example.i64/functions?rva=0x0)[/yellow]"
             )
             raise click.Abort()
 
