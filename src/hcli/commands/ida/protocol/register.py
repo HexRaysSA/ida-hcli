@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import platform
+import shlex
 
 import rich_click as click
 
@@ -16,7 +17,7 @@ from hcli.lib.ida import (
     select_default_ida_instance,
 )
 from hcli.lib.ida.protocol import register_protocol_handler
-from hcli.lib.util.io import get_hcli_executable_path
+from hcli.lib.util.io import get_hcli_command
 
 
 @click.command(name="register")
@@ -40,8 +41,8 @@ async def register(force: bool = False) -> None:
     console.print(f"[blue]Setting up hcli protocol handlers for {current_platform}...[/blue]")
 
     try:
-        hcli_path = get_hcli_executable_path()
-        console.print(f"[dim]Using hcli executable: {hcli_path}[/dim]")
+        hcli_cmd = shlex.join(get_hcli_command())
+        console.print(f"[dim]Using hcli command: {hcli_cmd}[/dim]")
 
         register_protocol_handler()
 

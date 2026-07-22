@@ -107,26 +107,34 @@ def get_binary_name() -> str:
         return ENV.HCLI_BINARY_NAME
 
 
-def get_hcli_executable_path() -> str:
-    """Get the path to the hcli executable."""
-    # Check if we're running from a frozen binary
-    if getattr(sys, "frozen", False):
-        return sys.executable
+def get_hcli_command() -> list[str]:
+    """Return the argv tokens that invoke hcli.
 
-    # Check if hcli is in PATH
+    The result is an *unquoted* list of arguments (executable first), e.g.
+    ``["/usr/bin/hcli"]`` or ``["/usr/bin/uv", "run", "hcli"]``. Callers that need a
+    single command string must render it with quoting appropriate for the target
+    (``subprocess.list2cmdline`` for a Windows command line, ``shlex.join`` for a
+    POSIX shell or a macOS/Linux URL-handler template) — never by concatenating the
+    tokens raw, which would word-split install paths that contain spaces.
+    """
+    # Running from a frozen binary: sys.executable is the hcli executable itself.
+    if getattr(sys, "frozen", False):
+        return [sys.executable]
+
+    # hcli on PATH.
     hcli_path = shutil.which("hcli")
     if hcli_path:
-        return hcli_path
+        return [hcli_path]
 
-    # Check if uv is available (development environment)
+    # Development environment: run via uv.
     uv_path = shutil.which("uv")
     if uv_path:
-        return f'"{uv_path}" run hcli'
+        return [uv_path, "run", "hcli"]
 
-    # Fallback to python -m hcli
+    # Fallback: run the module with the active interpreter.
     python_path = shutil.which("python") or shutil.which("python3")
     if python_path:
-        return f'"{python_path}" -m hcli'
+        return [python_path, "-m", "hcli"]
 
     raise RuntimeError("Could not find hcli executable")
 
