@@ -336,6 +336,7 @@ def update_asset(repo: GitHubRepo, asset: ReleaseAsset, binary_path: Path) -> No
         tmp_path = tmp_dir_path / asset.name
         tmp_path.chmod(original_mode)
 
+        # Rename the running binary aside to avoid ETXTBSY on Linux cross-filesystem moves.
         backup_path = binary_path.with_suffix(binary_path.suffix + ".old")
         if backup_path.exists():
             backup_path.unlink()
