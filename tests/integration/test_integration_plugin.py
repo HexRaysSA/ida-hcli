@@ -8,9 +8,13 @@ import pytest
 
 @pytest.mark.integration
 class TestPluginCommands:
+    def test_plugin_list(self, cli_tester):
+        success, _output = cli_tester.run_command("uv run hcli plugin list")
+        assert success is not None, "plugin list command should run"
+
     def test_plugin_status(self, cli_tester):
         success, _output = cli_tester.run_command("uv run hcli plugin status")
-        assert success is not None, "plugin status command should run"
+        assert success is not None, "plugin status command should run (backwards compatible)"
 
     def test_plugin_search_empty(self, cli_tester):
         success, _output = cli_tester.run_command("uv run hcli plugin search")

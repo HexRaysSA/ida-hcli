@@ -24,7 +24,7 @@ from .lint import lint_plugin_directory
 from .repo import repo
 from .schema import schema
 from .search import search_plugins
-from .status import get_plugin_status
+from .status import list_plugins
 from .uninstall import uninstall_plugin
 from .upgrade import upgrade_plugin
 
@@ -166,7 +166,17 @@ def plugin(
         raise click.Abort()
 
 
-plugin.add_command(get_plugin_status, name="status")
+plugin.add_command(list_plugins, name="list")
+
+
+@click.command(name="status", hidden=True)
+@click.pass_context
+def _list_plugins_alias(ctx) -> None:
+    """Show installed plugins and their upgrade status (alias for 'list')."""
+    ctx.forward(list_plugins)
+
+
+plugin.add_command(_list_plugins_alias)
 plugin.add_command(search_plugins, name="search")
 plugin.add_command(install_plugin, name="install")
 plugin.add_command(lint_plugin_directory, name="lint")
