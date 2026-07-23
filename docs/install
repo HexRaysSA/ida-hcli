@@ -115,7 +115,9 @@ ENVIRONMENT VARIABLES:
     HCLI_NO_MODIFY_PATH=1    Don't modify PATH
     HCLI_INSTALL_DIR=DIR     Force installation directory
     HCLI_VERSION=VERSION     Install specific version instead of latest production release
-    HCLI_GITHUB_TOKEN=TOKEN  GitHub token for authenticated downloads
+    HCLI_GITHUB_TOKEN=TOKEN  GitHub token for API requests (avoids rate limits
+                             during version discovery; does not enable downloads
+                             from private repositories)
     HCLI_GITHUB_REPO=REPO    Override GitHub repository (default: HexRaysSA/ida-hcli)
 
 EOF
@@ -128,8 +130,10 @@ say() {
 }
 
 say_verbose() {
+    # Write to stderr: several callers run inside command substitution,
+    # and stdout output would corrupt the captured value.
     if [ "$PRINT_VERBOSE" = "1" ]; then
-        echo "$1"
+        echo "$1" >&2
     fi
 }
 
@@ -286,9 +290,8 @@ get_binary_name() {
         Linux:x86_64) echo "${APP_NAME}" ;;
         Linux:aarch64) echo "${APP_NAME}" ;;
         Darwin:arm64) echo "${APP_NAME}" ;;
-        Darwin:x86_64) echo "${APP_NAME}" ;;
         *)
-            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Linux:aarch64, Darwin:arm64, Darwin:x86_64"
+            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Linux:aarch64, Darwin:arm64"
             ;;
     esac
 }
@@ -298,9 +301,8 @@ get_platform_name() {
         Linux:x86_64) echo "linux" ;;
         Linux:aarch64) echo "linux" ;;
         Darwin:arm64) echo "mac" ;;
-        Darwin:x86_64) echo "mac" ;;
         *)
-            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Linux:aarch64, Darwin:arm64, Darwin:x86_64"
+            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Linux:aarch64, Darwin:arm64"
             ;;
     esac
 }
