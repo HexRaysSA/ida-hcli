@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -16,13 +17,21 @@ from fixtures import (
     temp_env_var,
 )
 
-from hcli.lib.ida.plugin.exceptions import PluginVersionDowngradeError
+from hcli.lib.ida.plugin.exceptions import (
+    BrokenPluginInstallationError,
+    PluginAlreadyInstalledError,
+    PluginInUseError,
+    PluginNotInstalledError,
+    PluginVersionDowngradeError,
+)
 from hcli.lib.ida.plugin.install import (
     extract_zip_subdirectory_to,
     get_installed_plugins,
     get_plugin_directory,
+    get_trash_directory,
     install_plugin_archive,
     is_plugin_installed,
+    sweep_trash,
     uninstall_plugin,
     upgrade_plugin_archive,
     validate_archive_entry,
@@ -271,7 +280,9 @@ def test_extract_zip_subdirectory_to_posix_paths():
     subdirectory = Path("repo-main/plugin")
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        destination = Path(temp_dir) / "myplugin"
+        # nested like $IDAUSR/plugins/<name> so staging lands within temp_dir
+        destination = Path(temp_dir) / "plugins" / "myplugin"
+        destination.parent.mkdir()
         extract_zip_subdirectory_to(zip_data, subdirectory, destination)
 
         assert destination.exists()
@@ -339,6 +350,155 @@ class TestValidateArchiveEntry:
         subdirectory = Path("plugin")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            destination = Path(temp_dir) / "myplugin"
+            # nested like $IDAUSR/plugins/<name> so staging lands within temp_dir
+            destination = Path(temp_dir) / "plugins" / "myplugin"
+            destination.parent.mkdir()
             with pytest.raises(ValueError, match="Path traversal"):
                 extract_zip_subdirectory_to(zip_data, subdirectory, destination)
+
+
+def test_install_already_installed(virtual_ida_environment):
+    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
+
+    install_plugin_archive(buf, "plugin1")
+    with pytest.raises(PluginAlreadyInstalledError):
+        install_plugin_archive(buf, "plugin1")
+
+
+def test_uninstall_not_installed(virtual_ida_environment):
+    with pytest.raises(PluginNotInstalledError):
+        uninstall_plugin("plugin1")
+
+
+def break_installed_plugin(name: str) -> Path:
+    """Simulate an interrupted uninstall (issue #228): the manifest is gone
+    but other plugin files remain, so the directory is not a valid
+    installation yet still blocks the name.
+    """
+    plugin_dir = get_plugin_directory(name)
+    (plugin_dir / "ida-plugin.json").unlink()
+    return plugin_dir
+
+
+def test_uninstall_broken_plugin_directory(virtual_ida_environment):
+    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
+    install_plugin_archive(buf, "plugin1")
+
+    plugin_dir = break_installed_plugin("plugin1")
+    assert not is_plugin_installed("plugin1")
+
+    # must remove the remnants rather than raise PluginNotInstalledError
+    uninstall_plugin("plugin1")
+    assert not plugin_dir.exists()
+
+
+def test_install_over_broken_plugin_directory(virtual_ida_environment):
+    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
+    install_plugin_archive(buf, "plugin1")
+
+    break_installed_plugin("plugin1")
+
+    # install must distinguish remnants from a working installation,
+    # and the suggested recovery (uninstall, then install) must work
+    with pytest.raises(BrokenPluginInstallationError):
+        install_plugin_archive(buf, "plugin1")
+
+    uninstall_plugin("plugin1")
+    install_plugin_archive(buf, "plugin1")
+    assert is_plugin_installed("plugin1")
+
+
+def test_trash_directory_not_scanned(virtual_ida_environment):
+    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
+    install_plugin_archive(buf, "plugin1")
+
+    # a trashed copy retains its manifest but must not count as installed
+    trash_dir = get_trash_directory()
+    trash_dir.mkdir(exist_ok=True)
+    os.rename(get_plugin_directory("plugin1"), trash_dir / "plugin1-cafe0123")
+
+    assert not is_plugin_installed("plugin1")
+    assert get_installed_plugins() == []
+
+
+def test_sweep_trash(virtual_ida_environment):
+    trash_dir = get_trash_directory()
+    trash_dir.mkdir(exist_ok=True)
+    (trash_dir / "plugin1-deadbeef").mkdir()
+    (trash_dir / "plugin1-deadbeef" / "plugin1.py").write_text("# leftover")
+    (trash_dir / "plugin2.staging-deadbeef").mkdir()
+
+    sweep_trash()
+    assert list(trash_dir.iterdir()) == []
+
+
+def test_sweep_trash_without_trash_directory(virtual_ida_environment):
+    assert not get_trash_directory().exists()
+    sweep_trash()
+
+
+def append_path_traversal_entry(zip_data: bytes, prefix: str) -> bytes:
+    """Append a malicious entry so extraction fails after validation of the
+    metadata has already passed -- forcing failure mid-upgrade.
+    """
+    buf = io.BytesIO(zip_data)
+    with zipfile.ZipFile(buf, "a") as zf:
+        zf.writestr(f"{prefix}/../evil.txt", "malicious content")
+    return buf.getvalue()
+
+
+def test_upgrade_failure_rolls_back(virtual_ida_environment):
+    v1 = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
+    v2 = (PLUGINS_DIR / "plugin1" / "plugin1-v2.0.0.zip").read_bytes()
+
+    install_plugin_archive(v1, "plugin1")
+
+    corrupt_v2 = append_path_traversal_entry(v2, "src-v2")
+    with pytest.raises(ValueError, match="Path traversal"):
+        upgrade_plugin_archive(corrupt_v2, "plugin1")
+
+    # the failed upgrade must restore the previous version
+    assert ("plugin1", "1.0.0") in get_installed_plugins()
+
+    # and must not leave state that blocks a later, good upgrade
+    upgrade_plugin_archive(v2, "plugin1")
+    assert ("plugin1", "2.0.0") in get_installed_plugins()
+
+
+def test_failed_extraction_leaves_no_partial_destination():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("plugin/ida-plugin.json", '{"test": true}')
+        zf.writestr("plugin/../../../tmp/evil.txt", "malicious content")
+    zip_data = buf.getvalue()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # nested like $IDAUSR/plugins/<name> so staging lands within temp_dir
+        destination = Path(temp_dir) / "plugins" / "myplugin"
+        destination.parent.mkdir()
+        with pytest.raises(ValueError, match="Path traversal"):
+            extract_zip_subdirectory_to(zip_data, Path("plugin"), destination)
+
+        assert not destination.exists()
+        assert list(get_trash_directory(destination.parent).iterdir()) == []
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="file locking semantics are Windows-specific")
+def test_uninstall_while_file_in_use_is_atomic(virtual_ida_environment):
+    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
+    install_plugin_archive(buf, "plugin1")
+    plugin_dir = get_plugin_directory("plugin1")
+
+    # Python opens files without FILE_SHARE_DELETE, so while this handle is
+    # held, renaming the plugin directory fails just like when a running IDA
+    # has the plugin loaded.
+    with (plugin_dir / "plugin1.py").open("rb"):
+        with pytest.raises(PluginInUseError):
+            uninstall_plugin("plugin1")
+
+        # nothing was modified: still a fully valid installation
+        assert is_plugin_installed("plugin1")
+        assert (plugin_dir / "ida-plugin.json").exists()
+
+    uninstall_plugin("plugin1")
+    assert not is_plugin_installed("plugin1")

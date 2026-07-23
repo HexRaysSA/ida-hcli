@@ -19,7 +19,7 @@ from hcli.lib.ida import (
 from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
 from hcli.lib.ida.plugin.bundle import bundle_dependency_source
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
-from hcli.lib.ida.plugin.install import find_installed_plugin, upgrade_plugin_archive
+from hcli.lib.ida.plugin.install import find_installed_plugin, sweep_trash, upgrade_plugin_archive
 from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
@@ -42,6 +42,8 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
     pip_options: PipOptions = ctx.obj.get("pip_options", PIP_OPTIONS_DEFAULT)
     plugin_spec = plugin
     try:
+        sweep_trash()
+
         current_ida_platform = find_current_ida_platform()
         current_ida_version = find_current_ida_version()
 
