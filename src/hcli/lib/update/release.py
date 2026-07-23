@@ -5,7 +5,6 @@ import json
 import logging
 import re
 import shutil
-import sys
 import tempfile
 import typing
 from collections.abc import Callable
@@ -337,25 +336,22 @@ def update_asset(repo: GitHubRepo, asset: ReleaseAsset, binary_path: Path) -> No
         tmp_path = tmp_dir_path / asset.name
         tmp_path.chmod(original_mode)
 
-        # On Windows the running binary can't be overwritten in place, so we rename it aside first.
-        if sys.platform == "win32":
-            backup_path = binary_path.with_suffix(binary_path.suffix + ".old")
-            if backup_path.exists():
-                backup_path.unlink()
-            shutil.move(str(binary_path), str(backup_path))
-            try:
-                shutil.move(str(tmp_path), str(binary_path))
-            except Exception:
-                # Restore the backup so the user isn't left without a runnable binary.
-                if backup_path.exists() and not binary_path.exists():
-                    shutil.move(str(backup_path), str(binary_path))
-                raise
-            try:
-                backup_path.unlink()
-            except OSError:
-                # The old binary may still be locked by the running process; Windows will free it later.
-                pass
-        else:
-            shutil.move(tmp_path, binary_path)
+        # shutil.move across filesystems (e.g. /tmp -> ~/.local/bin) falls back to
+        # copy-then-delete, which fails with ETXTBSY when the destination is a running
+        # executable. Renaming the binary aside first avoids writing to the active inode.
+        backup_path = binary_path.with_suffix(binary_path.suffix + ".old")
+        if backup_path.exists():
+            backup_path.unlink()
+        shutil.move(str(binary_path), str(backup_path))
+        try:
+            shutil.move(str(tmp_path), str(binary_path))
+        except Exception:
+            if backup_path.exists() and not binary_path.exists():
+                shutil.move(str(backup_path), str(binary_path))
+            raise
+        try:
+            backup_path.unlink()
+        except OSError:
+            pass
 
     logging.info(f"Successfully updated binary: {binary_path}")
