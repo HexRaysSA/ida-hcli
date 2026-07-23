@@ -85,8 +85,8 @@ def plugin(
     # fix #190: stale stdout/err handles due to click pytest integration
     hcli.lib.console._sync_console_streams()
 
-    # `schema` doesn't touch any plugin repository or IDA install, so skip the setup.
-    if ctx.invoked_subcommand in ("schema", "explain-environment"):
+    # These subcommands don't touch the plugin repository, so skip the setup.
+    if ctx.invoked_subcommand in ("schema", "explain-environment", "uninstall", "config", "lint"):
         return
 
     plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo
