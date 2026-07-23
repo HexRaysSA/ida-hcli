@@ -17,12 +17,6 @@ on:
           # - release-major
         default: 'dev'
 
-permissions:
-  contents: write
-  pages: write
-  id-token: write
-  actions: write
-
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -38,6 +32,9 @@ jobs:
   publish:
     name: Publish PyPi Package
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
@@ -47,6 +44,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Python with uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -64,33 +62,36 @@ jobs:
         id: version
         run: |
           CURRENT_VERSION=$(uv run task current-version | tail -1)
-          case "${{ github.event.inputs.release_type }}" in
+          case "$RELEASE_TYPE" in
             "dev")
               if [[ "$CURRENT_VERSION" == *dev* ]]; then
                 uv run task dev-patch
               else
                 uv run task dev-start
               fi
-              echo "is_release=false" >> $GITHUB_OUTPUT
+              echo "is_release=false" >> "$GITHUB_OUTPUT"
               ;;
             "release-major"|"release-minor")
-              uv run task ${{ github.event.inputs.release_type }}
-              echo "is_release=true" >> $GITHUB_OUTPUT
+              uv run task "$RELEASE_TYPE"
+              echo "is_release=true" >> "$GITHUB_OUTPUT"
               ;;
             "release-patch")
               # Remove local dev tags to ensure patch increments from last stable release
-              git tag -d $(git tag -l | grep -E "dev") 2>/dev/null || true
+              while IFS= read -r tag; do
+                git tag -d "$tag" 2>/dev/null || true
+              done < <(git tag -l "*dev*")
               uv run task release-patch
-              echo "is_release=true" >> $GITHUB_OUTPUT
+              echo "is_release=true" >> "$GITHUB_OUTPUT"
               ;;
           esac
 
           VERSION=$(uv run task current-version | tail -1)
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Created version: ${VERSION}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TYPE: ${{ github.event.inputs.release_type }}
 
       - name: Publish to PyPi
         run: uv publish
@@ -99,6 +100,8 @@ jobs:
     name: Build Binaries
     runs-on: ${{ matrix.os }}
     needs: publish
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -113,6 +116,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.publish.outputs.tag }}
+          persist-credentials: false
 
       - name: Setup Python with uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -128,7 +132,10 @@ jobs:
 
       - name: Set ARTIFACT_NAME
         shell: bash
-        run: echo "ARTIFACT_NAME=${{ matrix.artifact-name }}-${{ needs.publish.outputs.version }}" >> $GITHUB_ENV
+        run: echo "ARTIFACT_NAME=${ARTIFACT_PREFIX}-${VERSION}" >> "$GITHUB_ENV"
+        env:
+          ARTIFACT_PREFIX: ${{ matrix.artifact-name }}
+          VERSION: ${{ needs.publish.outputs.version }}
 
       - name: Build binary
         run: uv run --no-sources --with pyinstaller pyinstaller hcli.spec
@@ -146,20 +153,26 @@ jobs:
     name: Trigger Internal Builds
     runs-on: ubuntu-latest
     needs: publish
+    permissions:
+      contents: read
     steps:
       - name: Trigger ida-hcli-internal build
         run: |
           gh workflow run release.yml \
             --repo HexRaysSA/ida-hcli-internal \
             --ref main \
-            --field release_type="${{ github.event.inputs.release_type }}"
+            --field release_type="$RELEASE_TYPE"
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          RELEASE_TYPE: ${{ github.event.inputs.release_type }}
 
   release:
     name: Create GitHub Release
     needs: [publish, binary]
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -168,23 +181,31 @@ jobs:
           merge-multiple: true
 
       - name: Create/Update GitHub Release with binaries
-        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
-        with:
-          allowUpdates: true
-          artifacts: "dist/*"
-          omitBodyDuringUpdate: true
-          replacesArtifacts: false
-          tag: ${{ needs.publish.outputs.tag }}
-          makeLatest: true
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --latest
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --latest --title "$TAG"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.publish.outputs.tag }}
 
   docs:
     name: Build Documentation
     needs: [publish, release]
     runs-on: ubuntu-latest
     if: needs.publish.outputs.is_release == 'true'
+    permissions:
+      contents: read
+      pages: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Python with uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -215,8 +236,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: docs
+    needs: [publish, docs]
     if: needs.publish.outputs.is_release == 'true'
+    permissions:
+      pages: write
+      id-token: write
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

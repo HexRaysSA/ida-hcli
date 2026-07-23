@@ -5,7 +5,8 @@ on:
     types: [published]
   workflow_dispatch:
 
-permissions: read-all
+permissions:
+  contents: read
 
 concurrency:
   group: test-install-${{ github.ref }}
@@ -23,12 +24,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install hcli (Unix)
         if: runner.os != 'Windows'
         run: |
           curl -LsSf https://hcli.docs.hex-rays.com/install | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install hcli (Windows)
         if: runner.os == 'Windows'
