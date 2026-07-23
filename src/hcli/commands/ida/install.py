@@ -24,6 +24,7 @@ from hcli.lib.ida import (
     get_license_dir,
     install_ida,
     install_license,
+    is_ida_dir,
     is_idalib_capable_installation,
 )
 from hcli.lib.util.io import get_os
@@ -106,6 +107,21 @@ async def install(
                 install_dir_path = get_default_ida_install_directory(version)
             else:
                 install_dir_path = Path(install_dir).expanduser().resolve()
+
+            if install_dir_path.exists():
+                if is_ida_dir(install_dir_path):
+                    instance_name = generate_instance_name(install_dir_path)
+                    console.print(
+                        f"\n[yellow]IDA is already installed at {install_dir_path}[/yellow]\n\n"
+                        f"  To set it as the default: [bold]hcli ida switch {instance_name}[/bold]\n"
+                        f"  To reinstall, first remove it: [bold]hcli ida remove {instance_name}[/bold]\n"
+                    )
+                else:
+                    console.print(
+                        f"\n[red]Directory already exists: {install_dir_path}[/red]\n"
+                        "Please remove it first or choose a different location with [bold]--install-dir[/bold].\n"
+                    )
+                return
 
             # prominent warning for #99: idat from IDA 9.2 on Linux fails to start if the path contains a space.
             #
