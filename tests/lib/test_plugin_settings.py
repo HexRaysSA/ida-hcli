@@ -135,3 +135,20 @@ def test_plugin_settings_integration(virtual_ida_environment_with_venv):
         assert "key4" in p.stdout and "option-a (default)" in p.stdout and "the value for key 4" in p.stdout
         assert "key5" in p.stdout and "hidden-default (default)" in p.stdout
         assert "key6" in p.stdout and "********" in p.stdout and "secret-default" not in p.stdout
+
+        _ = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} uninstall plugin1")
+
+
+def test_plugin_with_falsy_default_installs_noninteractive(virtual_ida_environment_with_venv):
+    """A required boolean setting with default=false should not block non-interactive install."""
+    idausr = Path(os.environ["HCLI_IDAUSR"])
+    install_this_package_in_venv(idausr / "venv")
+
+    with temp_env_var("TERM", "dumb"), temp_env_var("COLUMNS", "80"):
+        p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} install plugin1==6.0.0")
+        assert "Installed plugin: plugin1==6.0.0\n" == p.stdout
+
+        p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} config plugin1 list")
+        assert "enabled" in p.stdout and "false (default)" in p.stdout
+
+        _ = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} uninstall plugin1")

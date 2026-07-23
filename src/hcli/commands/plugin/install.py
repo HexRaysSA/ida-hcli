@@ -273,7 +273,7 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                     needed_settings = [
                         s
                         for s in metadata.plugin.settings
-                        if not has_plugin_setting(plugin_name, s.key) and (s.required and not s.default)
+                        if not has_plugin_setting(plugin_name, s.key) and s.required and s.default is None
                     ]
 
                     if needed_settings and not console.is_interactive:
