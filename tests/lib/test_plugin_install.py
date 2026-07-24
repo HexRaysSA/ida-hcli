@@ -408,6 +408,22 @@ def test_install_over_broken_plugin_directory(virtual_ida_environment):
     assert is_plugin_installed("plugin1")
 
 
+def test_uninstall_file_squatting_on_plugin_name(virtual_ida_environment):
+    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
+    squatter = get_plugin_directory("plugin1")
+    squatter.write_text("not a plugin")
+
+    with pytest.raises(BrokenPluginInstallationError):
+        install_plugin_archive(buf, "plugin1")
+
+    # the suggested recovery (uninstall, then install) must work for files too
+    uninstall_plugin("plugin1")
+    assert not squatter.exists()
+
+    install_plugin_archive(buf, "plugin1")
+    assert is_plugin_installed("plugin1")
+
+
 def test_trash_directory_not_scanned(virtual_ida_environment):
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
     install_plugin_archive(buf, "plugin1")

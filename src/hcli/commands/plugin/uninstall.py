@@ -8,8 +8,7 @@ import rich_click as click
 
 from hcli.lib.console import console
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
-from hcli.lib.ida.plugin.install import sweep_trash
-from hcli.lib.ida.plugin.install import uninstall_plugin as uninstall_plugin_impl
+from hcli.lib.ida.plugin.install import sweep_trash, uninstall_plugin as uninstall_plugin_impl
 
 logger = logging.getLogger(__name__)
 

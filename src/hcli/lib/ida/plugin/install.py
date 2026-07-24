@@ -103,10 +103,15 @@ TRASH_DIR_NAME = ".plugins-trash"
 
 
 def get_trash_directory(plugins_dir: Path | None = None) -> Path:
-    """$IDAUSR/.plugins-trash (or .plugins-trash next to the given directory)"""
+    """$IDAUSR/.plugins-trash (or .plugins-trash next to the given directory)
+
+    The plugins directory is resolved first so that when it is a symlink to
+    another filesystem, the trash lands next to the real directory and moves
+    in and out remain same-filesystem renames.
+    """
     if plugins_dir is None:
         plugins_dir = get_plugins_directory()
-    return plugins_dir.parent / TRASH_DIR_NAME
+    return plugins_dir.resolve().parent / TRASH_DIR_NAME
 
 
 def is_file_in_use_error(e: OSError) -> bool:
@@ -122,19 +127,22 @@ def is_file_in_use_error(e: OSError) -> bool:
     return e.errno in (errno.EACCES, errno.EPERM, errno.EBUSY, errno.ETXTBSY)
 
 
-def move_plugin_directory_to_trash(path: Path) -> Path:
+def move_plugin_directory_to_trash(path: Path, label: str = "") -> Path:
     """Atomically rename a plugin directory into the trash area.
 
     Either the whole directory moves or nothing changes: when a file inside is
     locked (e.g. a plugin DLL loaded by a running IDA on Windows), the rename
     fails without modifying the installation.
 
+    The optional label is included in the trashed name (e.g. ".rollback") so
+    a human inspecting the trash can tell what a leftover was.
+
     Raises:
         PluginInUseError: when the rename fails because files are in use.
     """
     trash_dir = get_trash_directory(path.parent)
     trash_dir.mkdir(exist_ok=True)
-    destination = trash_dir / f"{path.name}-{uuid.uuid4().hex[:8]}"
+    destination = trash_dir / f"{path.name}{label}-{uuid.uuid4().hex[:8]}"
     try:
         os.rename(path, destination)
     except OSError as e:
@@ -943,28 +951,29 @@ def validate_can_uninstall_plugin(name: str) -> None:
 
 
 def _uninstall_broken_plugin_directory(name: str) -> None:
-    """Remove a plugins/<name> directory that is not a valid installation.
+    """Remove a plugins/<name> entry that is not a valid installation.
 
     Remnants of an interrupted uninstall (e.g. rmtree failed partway because a
     running IDA held a DLL open, issue #228) don't count as installed, but the
-    directory blocks reinstallation. The user asked for this name to be gone,
-    so remove whatever is squatting on it.
+    entry blocks reinstallation. The user asked for this name to be gone, so
+    remove whatever is squatting on it: a broken directory, a stale symlink,
+    or even a plain file.
 
     Raises:
-        PluginNotInstalledError: If no matching directory exists at all
+        PluginNotInstalledError: If no matching entry exists at all
         PluginInUseError: If files are in use; nothing is modified
     """
     plugins_dir = get_plugins_directory()
     for child in plugins_dir.iterdir():
         if child.name.lower() != name.lower():
             continue
-        if not (child.is_dir() or child.is_symlink()):
-            continue
 
         logger.warning("removing remnants of a broken plugin installation: %s", child)
         if child.is_symlink():
             child.unlink()
-            _remove_editable_pth_file(name)
+            _remove_editable_pth_file(child.name)
+        elif child.is_file():
+            child.unlink()
         else:
             remove_plugin_directory(child)
         return
@@ -1099,17 +1108,9 @@ def upgrade_plugin_archive(
     # Checkpoint: atomically move the current install into the trash area
     # before writing anything. When plugin files are locked (e.g. loaded by a
     # running IDA on Windows), this fails without modifying the installation.
-    # The unique suffix means a stale rollback from an interrupted upgrade
+    # The unique trash name means a stale rollback from an interrupted upgrade
     # never blocks this one; the sweep removes such leftovers later.
-    trash_dir = get_trash_directory(plugin_path.parent)
-    trash_dir.mkdir(exist_ok=True)
-    rollback_path = trash_dir / f"{metadata.plugin.name}.rollback-{uuid.uuid4().hex[:8]}"
-    try:
-        os.rename(plugin_path, rollback_path)
-    except OSError as e:
-        if is_file_in_use_error(e):
-            raise PluginInUseError(metadata.plugin.name, plugin_path) from e
-        raise
+    rollback_path = move_plugin_directory_to_trash(plugin_path, label=".rollback")
 
     try:
         install_plugin_archive(zip_data, name, no_build_isolation=no_build_isolation, pip_options=pip_options)
@@ -1120,7 +1121,10 @@ def upgrade_plugin_archive(
         logger.debug("rolling back to prior version")
         shutil.rmtree(plugin_path, ignore_errors=True)
         if plugin_path.exists():
-            logger.error("could not remove partial upgrade; previous version preserved at %s", rollback_path)
+            logger.error(
+                "could not restore previous version: partial upgrade remains at %s; uninstall and reinstall",
+                plugin_path,
+            )
         else:
             os.rename(rollback_path, plugin_path)
         raise
