@@ -26,7 +26,7 @@ current version: 9.2
 ❯ hcli plugin install hint-calls
 Installed plugin: hint-calls==0.1.3
 
-❯ hcli plugin status
+❯ hcli plugin list
  oplog                               0.1.3
  hint-calls                          0.1.3
  (incompatible) yarka                0.7.0  found at: $IDAPLUGINS/yarka/
@@ -56,7 +56,7 @@ You'll want to know the HCLI commands:
 ❯ hcli plugin search 
 ❯ hcli plugin search [keyword or plugin-name]
 ❯ hcli plugin install <plugin-name>
-❯ hcli plugin status
+❯ hcli plugin list
 ❯ hcli plugin upgrade <plugin-name>
 ❯ hcli plugin uninstall <plugin-name>
 ```

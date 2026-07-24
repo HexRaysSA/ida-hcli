@@ -64,7 +64,7 @@ $ hcli commands
 │ hcli plugin lint          │ Lint an IDA plugin directory, archive (.zip file), or HTTPS URL. │
 │ hcli plugin repo snapshot │ Create a snapshot of the repository.                             │
 │ hcli plugin search        │ No description available                                         │
-│ hcli plugin status        │ No description available                                         │
+│ hcli plugin list          │ No description available                                         │
 │ hcli plugin uninstall     │ No description available                                         │
 │ hcli plugin upgrade       │ No description available                                         │
 │ hcli share delete         │ Delete shared file by code.                                      │
@@ -314,7 +314,7 @@ If two repository plugins share the same bare name, HCLI will ask you to qualify
 $ hcli plugin install ipyida
 Installed plugin: ipyida==2.3
 
-$ hcli plugin status
+$ hcli plugin list
  ida-settings-editor   1.0.1       upgradable to 1.0.2
  zydisinfo             1.0         upgradable to 1.1
  plugin1               5.0.0       not found in repository

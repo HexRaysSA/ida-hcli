@@ -214,7 +214,7 @@ Installing Python dependencies: requests>=2.28.0, pydantic>=2.0
 Check that the plugin is installed:
 
 ```bash
-hcli plugin status
+hcli plugin list
 ```
 
 Output should include your plugin:
