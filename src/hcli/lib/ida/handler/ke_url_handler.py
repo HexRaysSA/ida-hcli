@@ -546,8 +546,10 @@ def _confirm_open_dialog(filename: str, host: str) -> bool:
                 [
                     "osascript",
                     "-e",
-                    'display dialog (system attribute "KE_DLG_MSG") with title "KE" '
-                    'buttons {"Cancel", "Open"} default button "Open" cancel button "Cancel"',
+                    (
+                        'display dialog (system attribute "KE_DLG_MSG") with title "KE" '
+                        'buttons {"Cancel", "Open"} default button "Open" cancel button "Cancel"'
+                    ),
                 ],
                 prompt,
             )
@@ -562,9 +564,11 @@ def _confirm_open_dialog(filename: str, host: str) -> bool:
                     "-WindowStyle",
                     "Hidden",
                     "-Command",
-                    "Add-Type -AssemblyName System.Windows.Forms; "
-                    "if ([System.Windows.Forms.MessageBox]::Show("
-                    '$env:KE_DLG_MSG, "KE", "YesNo", "Warning") -eq "Yes") { exit 0 } else { exit 1 }',
+                    (
+                        "Add-Type -AssemblyName System.Windows.Forms; "
+                        "if ([System.Windows.Forms.MessageBox]::Show("
+                        '$env:KE_DLG_MSG, "KE", "YesNo", "Warning") -eq "Yes") { exit 0 } else { exit 1 }'
+                    ),
                 ],
                 prompt,
             )
@@ -642,8 +646,10 @@ def _show_download_dialog(filename: str) -> subprocess.Popen[bytes] | None:
                 [
                     "osascript",
                     "-e",
-                    'display dialog ("Downloading " & (system attribute "KE_DLG_FILE") '
-                    '& "\\n\\nPlease wait...") with title "KE" buttons {} giving up after 600',
+                    (
+                        'display dialog ("Downloading " & (system attribute "KE_DLG_FILE") '
+                        '& "\\n\\nPlease wait...") with title "KE" buttons {} giving up after 600'
+                    ),
                 ],
                 env=env,
                 stdout=subprocess.DEVNULL,
@@ -663,9 +669,11 @@ def _show_download_dialog(filename: str) -> subprocess.Popen[bytes] | None:
                     "-WindowStyle",
                     "Hidden",
                     "-Command",
-                    "Add-Type -AssemblyName System.Windows.Forms; "
-                    "[System.Windows.Forms.MessageBox]::Show("
-                    '"Downloading " + $env:KE_DLG_FILE + "...`n`nPlease wait...", "KE")',
+                    (
+                        "Add-Type -AssemblyName System.Windows.Forms; "
+                        "[System.Windows.Forms.MessageBox]::Show("
+                        '"Downloading " + $env:KE_DLG_FILE + "...`n`nPlease wait...", "KE")'
+                    ),
                 ],
                 env=env,
                 stdout=subprocess.DEVNULL,
@@ -700,8 +708,10 @@ def _show_error_dialog(message: str) -> None:
                 [
                     "osascript",
                     "-e",
-                    'display dialog (system attribute "KE_DLG_MSG") with title "KE" '
-                    'buttons {"OK"} default button "OK" with icon stop',
+                    (
+                        'display dialog (system attribute "KE_DLG_MSG") with title "KE" '
+                        'buttons {"OK"} default button "OK" with icon stop'
+                    ),
                 ],
                 env=env,
                 stdout=subprocess.DEVNULL,
@@ -722,8 +732,10 @@ def _show_error_dialog(message: str) -> None:
                     "-WindowStyle",
                     "Hidden",
                     "-Command",
-                    "Add-Type -AssemblyName System.Windows.Forms; "
-                    '[System.Windows.Forms.MessageBox]::Show($env:KE_DLG_MSG, "KE", "OK", "Error")',
+                    (
+                        "Add-Type -AssemblyName System.Windows.Forms; "
+                        '[System.Windows.Forms.MessageBox]::Show($env:KE_DLG_MSG, "KE", "OK", "Error")'
+                    ),
                 ],
                 env=env,
                 stdout=subprocess.DEVNULL,
