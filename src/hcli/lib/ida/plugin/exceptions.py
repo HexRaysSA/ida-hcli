@@ -84,6 +84,29 @@ class InvalidPluginNameError(PluginInstallationError):
         super().__init__(f"Invalid plugin name '{name}': {reason}")
 
 
+class PluginInUseError(PluginInstallationError):
+    """Plugin files are locked by another process (typically a running IDA)."""
+
+    def __init__(self, name: str, path: Path):
+        self.name = name
+        self.path = path
+        super().__init__(
+            f"Cannot modify plugin '{name}': files at {path} are in use (is IDA running?). Close IDA and try again."
+        )
+
+
+class BrokenPluginInstallationError(PluginInstallationError):
+    """Plugin directory exists but does not contain a working installation."""
+
+    def __init__(self, name: str, path: Path):
+        self.name = name
+        self.path = path
+        super().__init__(
+            f"Found remnants of a broken installation of '{name}' at {path}. "
+            f"Run '{ENV.HCLI_BINARY_NAME} plugin uninstall {name}' to remove them, then retry."
+        )
+
+
 class PluginNotInstalledError(Exception):
     """Plugin is not installed."""
 

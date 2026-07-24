@@ -1,10 +1,11 @@
 import errno
 import io
 import logging
+import os
 import pathlib
 import shutil
 import subprocess
-import tempfile
+import uuid
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,12 +33,14 @@ from hcli.lib.ida.plugin import (
     validate_path,
 )
 from hcli.lib.ida.plugin.exceptions import (
+    BrokenPluginInstallationError,
     DependencyInstallationError,
     IDAVersionIncompatibleError,
     InvalidPluginNameError,
     PipNotAvailableError,
     PlatformIncompatibleError,
     PluginAlreadyInstalledError,
+    PluginInUseError,
     PluginNotInstalledError,
     PluginVersionDowngradeError,
 )
@@ -90,6 +93,108 @@ def get_plugin_directory(name: str) -> Path:
     plugins_dir = get_plugins_directory()
     validate_path_component(name)
     return plugins_dir / name
+
+
+# Trash/staging area next to the plugins directory. Because it (normally)
+# lives on the same filesystem as the plugin directories, moves in and out are
+# atomic renames on all platforms. It sits outside $IDAUSR/plugins, so neither
+# IDA's plugin scan nor our own enumeration ever sees its contents.
+TRASH_DIR_NAME = ".plugins-trash"
+
+
+def get_trash_directory(plugins_dir: Path | None = None) -> Path:
+    """$IDAUSR/.plugins-trash (or .plugins-trash next to the given directory)
+
+    The plugins directory is resolved first so that when it is a symlink to
+    another filesystem, the trash lands next to the real directory and moves
+    in and out remain same-filesystem renames.
+    """
+    if plugins_dir is None:
+        plugins_dir = get_plugins_directory()
+    return plugins_dir.resolve().parent / TRASH_DIR_NAME
+
+
+def is_file_in_use_error(e: OSError) -> bool:
+    """Does this error indicate a file locked by another process?
+
+    On Windows, deleting a DLL mapped by a running process fails with
+    ERROR_ACCESS_DENIED, and renaming any ancestor directory of an open file
+    fails the same way. POSIX doesn't lock mapped files like this, but
+    EBUSY/ETXTBSY can surface in similar situations.
+    """
+    if getattr(e, "winerror", None) in (5, 32):  # ACCESS_DENIED, SHARING_VIOLATION
+        return True
+    return e.errno in (errno.EACCES, errno.EPERM, errno.EBUSY, errno.ETXTBSY)
+
+
+def move_plugin_directory_to_trash(path: Path, label: str = "") -> Path:
+    """Atomically rename a plugin directory into the trash area.
+
+    Either the whole directory moves or nothing changes: when a file inside is
+    locked (e.g. a plugin DLL loaded by a running IDA on Windows), the rename
+    fails without modifying the installation.
+
+    The optional label is included in the trashed name (e.g. ".rollback") so
+    a human inspecting the trash can tell what a leftover was.
+
+    Raises:
+        PluginInUseError: when the rename fails because files are in use.
+    """
+    trash_dir = get_trash_directory(path.parent)
+    trash_dir.mkdir(exist_ok=True)
+    destination = trash_dir / f"{path.name}{label}-{uuid.uuid4().hex[:8]}"
+    try:
+        os.rename(path, destination)
+    except OSError as e:
+        if is_file_in_use_error(e):
+            raise PluginInUseError(path.name, path) from e
+        raise
+    return destination
+
+
+def remove_plugin_directory(path: Path) -> None:
+    """Remove a plugin directory transactionally.
+
+    First atomically rename the directory into the trash area, then delete the
+    trashed copy. If deletion fails, the plugin is already logically removed;
+    the leftover is swept by a later plugin command.
+
+    Raises:
+        PluginInUseError: when files are in use; the installation is untouched.
+    """
+    trashed = move_plugin_directory_to_trash(path)
+    try:
+        shutil.rmtree(trashed)
+    except OSError as e:
+        logger.debug("could not delete trashed directory %s: %s (leaving for later sweep)", trashed, e)
+
+
+def sweep_trash() -> None:
+    """Best-effort cleanup of leftovers in the trash area.
+
+    Leftovers accumulate from interrupted operations: partially deleted
+    uninstalls, staging directories, stale upgrade rollbacks. Call this only
+    between plugin operations, never while one is in flight: an active upgrade
+    keeps its rollback copy in the trash.
+    """
+    try:
+        trash_dir = get_trash_directory()
+        if not trash_dir.is_dir():
+            return
+        entries = list(trash_dir.iterdir())
+    except Exception as e:
+        logger.debug("could not enumerate trash directory: %s", e)
+        return
+
+    for entry in entries:
+        logger.debug("sweeping trash: %s", entry)
+        try:
+            if entry.is_dir() and not entry.is_symlink():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
+        except OSError as e:
+            logger.debug("could not sweep %s: %s", entry, e)
 
 
 def get_metadata_from_plugin_directory(plugin_path: Path) -> IDAMetadataDescriptor:
@@ -147,6 +252,26 @@ def validate_metadata_in_plugin_directory(plugin_path: Path):
         if not logo_path.exists():
             logger.debug(f"Logo file not found in directory: '{metadata.plugin.logo_path}'")
             raise ValueError(f"Logo file not found in directory: '{metadata.plugin.logo_path}'")
+
+
+def is_valid_plugin_directory(path: Path) -> bool:
+    """Does the path hold a well-formed installed plugin?
+
+    Mirrors the criteria of ``get_installed_plugin_records``: the manifest
+    parses, referenced files exist, and the plugin name matches the directory
+    name. A directory that fails this is debris, e.g. remnants of an
+    interrupted uninstall (issue #228).
+    """
+    if not (path / "ida-plugin.json").exists():
+        return False
+
+    try:
+        validate_metadata_in_plugin_directory(path)
+        metadata = get_metadata_from_plugin_directory(path)
+    except ValueError:
+        return False
+
+    return metadata.plugin.name == path.name
 
 
 @dataclass(frozen=True)
@@ -394,6 +519,7 @@ def validate_can_install_plugin(
     Raises:
         InvalidPluginNameError: If plugin name is invalid
         PluginAlreadyInstalledError: If plugin is already installed
+        BrokenPluginInstallationError: If remnants of a broken installation are in the way
         PlatformIncompatibleError: If current platform is not supported
         IDAVersionIncompatibleError: If current IDA version is not supported
         PipNotAvailableError: If pip is not available (when dependencies are needed)
@@ -406,9 +532,20 @@ def validate_can_install_plugin(
         logger.error(f"Can't install plugin: {e!s}")
         raise InvalidPluginNameError(name, str(e)) from e
 
-    if destination_path.exists():
-        logger.warning(f"Plugin directory already exists: {destination_path}")
-        raise PluginAlreadyInstalledError(name, destination_path)
+    # is_symlink() is checked in addition to exists() so a broken symlink
+    # (dangling editable install) is reported rather than tripping up
+    # extraction later.
+    if destination_path.exists() or destination_path.is_symlink():
+        if is_valid_plugin_directory(destination_path):
+            logger.warning(f"Plugin directory already exists: {destination_path}")
+            raise PluginAlreadyInstalledError(name, destination_path)
+
+        # The directory exists but doesn't hold a working plugin: remnants of
+        # an interrupted install/uninstall (issue #228). Point the user at
+        # uninstall, which knows how to remove broken directories, rather than
+        # silently deleting data on the install path.
+        logger.warning(f"Broken plugin directory: {destination_path}")
+        raise BrokenPluginInstallationError(name, destination_path)
 
     platforms = metadata.plugin.platforms
     if current_platform not in platforms:
@@ -488,10 +625,18 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
         else:
             plugin_dir_prefix = subdirectory.as_posix() + "/"
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir) / destination.name
-            temp_path.mkdir()
+        # Stage in the trash area beside the destination's plugins directory
+        # rather than in the system temp dir: (normally) the same filesystem,
+        # so the final rename is atomic on all platforms and the fully-formed
+        # plugin directory appears all at once. An interrupted install never
+        # leaves a partial destination, and abandoned staging directories are
+        # swept by later plugin commands.
+        staging_root = get_trash_directory(destination.parent)
+        staging_root.mkdir(parents=True, exist_ok=True)
+        temp_path = staging_root / f"{destination.name}.staging-{uuid.uuid4().hex[:8]}"
+        temp_path.mkdir()
 
+        try:
             # do validation pass before extracting any content to prevent any half-extracted content
             for file_info in zip_file.infolist():
                 if not should_extract_plugin_archive_path(plugin_dir_prefix, file_info):
@@ -518,18 +663,14 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
                             shutil.copyfileobj(source_file, target_file)
                     except OSError as e:
                         if e.errno == errno.ENOSPC:
-                            shutil.rmtree(temp_path, ignore_errors=True)
                             raise NoSpaceError(target_path.parent) from e
                         raise
 
             logger.debug("creating plugin directory: %s", destination)
-            # `move` rather than `rename` to support cross-filesystem operations
-            try:
-                shutil.move(temp_path, destination)
-            except OSError as e:
-                if e.errno == errno.ENOSPC:
-                    raise NoSpaceError(destination.parent) from e
-                raise
+            os.rename(temp_path, destination)
+        except BaseException:
+            shutil.rmtree(temp_path, ignore_errors=True)
+            raise
 
 
 def _install_plugin_archive(
@@ -730,7 +871,7 @@ def install_plugin_directory_editable(source_dir: Path, name: str, no_build_isol
     if destination_path.is_symlink() or destination_path.is_file():
         destination_path.unlink()
     elif destination_path.exists():
-        shutil.rmtree(destination_path)
+        remove_plugin_directory(destination_path)
 
     try:
         destination_path.symlink_to(source_dir, target_is_directory=True)
@@ -809,10 +950,55 @@ def validate_can_uninstall_plugin(name: str) -> None:
     find_installed_plugin(name)
 
 
-def uninstall_plugin(name: str):
-    # NOTE: keep this in sync with upgrade (checkpoint/rollback) which has an inlined copy.
+def _uninstall_broken_plugin_directory(name: str) -> None:
+    """Remove a plugins/<name> entry that is not a valid installation.
 
-    record = find_installed_plugin(name)
+    Remnants of an interrupted uninstall (e.g. rmtree failed partway because a
+    running IDA held a DLL open, issue #228) don't count as installed, but the
+    entry blocks reinstallation. The user asked for this name to be gone, so
+    remove whatever is squatting on it: a broken directory, a stale symlink,
+    or even a plain file.
+
+    Raises:
+        PluginNotInstalledError: If no matching entry exists at all
+        PluginInUseError: If files are in use; nothing is modified
+    """
+    plugins_dir = get_plugins_directory()
+    for child in plugins_dir.iterdir():
+        if child.name.lower() != name.lower():
+            continue
+
+        logger.warning("removing remnants of a broken plugin installation: %s", child)
+        if child.is_symlink():
+            child.unlink()
+            _remove_editable_pth_file(child.name)
+        elif child.is_file():
+            child.unlink()
+        else:
+            remove_plugin_directory(child)
+        return
+
+    raise PluginNotInstalledError(name)
+
+
+def uninstall_plugin(name: str):
+    """Remove an installed plugin.
+
+    Transactional: the plugin directory is first atomically renamed into the
+    trash area, then deleted. When plugin files are locked (e.g. loaded by a
+    running IDA on Windows), the rename fails without modifying anything.
+
+    Raises:
+        PluginNotInstalledError: If plugin is not installed
+        PluginInUseError: If plugin files are in use; the installation is untouched
+    """
+    try:
+        record = find_installed_plugin(name)
+    except PluginNotInstalledError:
+        # a directory may exist without being a valid installation (issue #228)
+        _uninstall_broken_plugin_directory(name)
+        return
+
     logger.info("uninstalling plugin: %s (%s)", record.name, record.version)
 
     # note that the pythonDependencies of the plugin aren't pruned.
@@ -830,7 +1016,7 @@ def uninstall_plugin(name: str):
         # to expose a src-layout package. Best-effort cleanup.
         _remove_editable_pth_file(record.name)
     else:
-        shutil.rmtree(record.path)
+        remove_plugin_directory(record.path)
 
 
 def is_plugin_installed(name: str) -> bool:
@@ -919,18 +1105,31 @@ def upgrade_plugin_archive(
             metadata.plugin.name, existing_metadata.plugin.version, metadata.plugin.version
         )
 
-    rollback_path = plugin_path.parent / (metadata.plugin.name + ".rollback")
-    if rollback_path.exists():
-        raise RuntimeError("rollback path already exists for some reason")
-    shutil.move(plugin_path, rollback_path)
+    # Checkpoint: atomically move the current install into the trash area
+    # before writing anything. When plugin files are locked (e.g. loaded by a
+    # running IDA on Windows), this fails without modifying the installation.
+    # The unique trash name means a stale rollback from an interrupted upgrade
+    # never blocks this one; the sweep removes such leftovers later.
+    rollback_path = move_plugin_directory_to_trash(plugin_path, label=".rollback")
 
     try:
         install_plugin_archive(zip_data, name, no_build_isolation=no_build_isolation, pip_options=pip_options)
     except Exception as e:
+        # note that Python dependencies installed before the failure aren't
+        # rolled back; they're upgraded in place and left as-is.
         logger.debug("error during upgrade: install: %s", e)
         logger.debug("rolling back to prior version")
         shutil.rmtree(plugin_path, ignore_errors=True)
-        shutil.move(rollback_path, plugin_path)
+        if plugin_path.exists():
+            logger.error(
+                "could not restore previous version: partial upgrade remains at %s; uninstall and reinstall",
+                plugin_path,
+            )
+        else:
+            os.rename(rollback_path, plugin_path)
         raise
     else:
-        shutil.rmtree(rollback_path)
+        try:
+            shutil.rmtree(rollback_path)
+        except OSError as e:
+            logger.debug("could not delete rollback copy %s: %s (leaving for later sweep)", rollback_path, e)

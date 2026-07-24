@@ -36,6 +36,7 @@ from hcli.lib.ida.plugin.install import (
     install_plugin_archive,
     install_plugin_directory_editable,
     pack_plugin_directory_to_zip,
+    sweep_trash,
     uninstall_plugin,
 )
 from hcli.lib.ida.plugin.reference import (
@@ -79,6 +80,8 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
     plugin_repo_obj = ctx.obj.get("plugin_repo")
     plugin_spec = plugin
     try:
+        sweep_trash()
+
         with rich.status.Status("collecting environment", console=stderr_console):
             current_ida_platform = find_current_ida_platform()
             current_ida_version = find_current_ida_version()
