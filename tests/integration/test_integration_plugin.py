@@ -12,6 +12,10 @@ class TestPluginCommands:
         success, _output = cli_tester.run_command("uv run hcli plugin status")
         assert success is not None, "plugin status command should run"
 
+    def test_plugin_list(self, cli_tester):
+        success, _output = cli_tester.run_command("uv run hcli plugin list")
+        assert success is not None, "plugin list command should run (alias for status)"
+
     def test_plugin_search_empty(self, cli_tester):
         success, _output = cli_tester.run_command("uv run hcli plugin search")
         assert success is not None, "`plugin search` command should run"

@@ -167,6 +167,16 @@ def plugin(
 
 
 plugin.add_command(get_plugin_status, name="status")
+
+
+@click.command(name="list", hidden=True)
+@click.pass_context
+def _plugin_status_alias(ctx) -> None:
+    """Show installed plugins and their upgrade status (alias for 'status')."""
+    ctx.forward(get_plugin_status)
+
+
+plugin.add_command(_plugin_status_alias)
 plugin.add_command(search_plugins, name="search")
 plugin.add_command(install_plugin, name="install")
 plugin.add_command(lint_plugin_directory, name="lint")
