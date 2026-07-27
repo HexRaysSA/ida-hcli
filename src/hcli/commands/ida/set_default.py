@@ -10,6 +10,8 @@ from hcli.lib.ida import (
     find_standard_installations,
     get_ida_config_path,
     is_ida_dir,
+    register_ida_installation,
+    synchronize_idalib_installation_with_hcli,
 )
 
 
@@ -23,6 +25,7 @@ def set_default_ida(path: Path | None) -> None:
     config_path = get_ida_config_path()
 
     if path is None:
+        synchronize_idalib_installation_with_hcli()
         if not config_path.exists():
             console.print("[yellow]No default IDA installation set.[/yellow]")
         else:
@@ -60,6 +63,7 @@ def set_default_ida(path: Path | None) -> None:
             json.dumps({"Paths": {"ida-install-dir": str(install_dir.absolute())}}), encoding="utf-8"
         )
         console.print("[grey69]Wrote default ida-config.json[/grey69]")
+        register_ida_installation(install_dir, make_default=True)
         console.print(f"[green]Set default IDA installation: {install_dir.absolute()}[/green]")
     else:
         doc = json.loads(config_path.read_text(encoding="utf-8"))
@@ -69,6 +73,7 @@ def set_default_ida(path: Path | None) -> None:
         new = str(install_dir.absolute())
         doc["Paths"]["ida-install-dir"] = new
         _ = config_path.write_text(json.dumps(doc), encoding="utf-8")
+        register_ida_installation(install_dir, make_default=True)
         console.print("[grey69]Updated ida-config.json:[/grey69]")
         console.print(f"[grey69]  default install path: {existing}[/grey69]")
         console.print(f"[grey69]                     -> {new}[/grey69]")

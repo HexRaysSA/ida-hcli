@@ -29,6 +29,7 @@ from hcli.lib.ida import (
     parse_version_from_ida_pro_py,
     parse_version_from_windows_registry,
     select_default_ida_instance,
+    synchronize_idalib_installation_with_hcli,
 )
 from hcli.lib.ida.version import normalize_ida_binary_version, parse_version_from_ida_binary
 
@@ -51,6 +52,108 @@ def test_find_current_ida_install_directory():
     assert isinstance(result, Path)
     assert result.exists()
     assert result.is_dir()
+
+
+class _FakeConfigStore:
+    def __init__(self, instances, default):
+        self.data = {
+            "ida.instances": dict(instances),
+            "ida.default": default,
+        }
+
+    def get_string(self, key, default=""):
+        return self.data.get(key, default)
+
+    def get_object(self, key, default=None):
+        return self.data.get(key, default)
+
+    def set_string(self, key, value):
+        self.data[key] = value
+
+    def set_object(self, key, value):
+        self.data[key] = value
+
+
+def test_syncs_native_installer_idalib_path_to_hcli_default(monkeypatch, tmp_path):
+    ida93 = tmp_path / "IDA Professional 9.3"
+    ida94 = tmp_path / "IDA Professional 9.4"
+    ida93.mkdir()
+    ida94.mkdir()
+    store = _FakeConfigStore({"ida-pro-9.3": str(ida93)}, "ida-pro-9.3")
+    selected = [ida94]
+
+    monkeypatch.setattr("hcli.lib.config.config_store", store)
+    monkeypatch.setattr(
+        "hcli.lib.ida.get_ida_config",
+        lambda: types.SimpleNamespace(
+            paths=types.SimpleNamespace(installation_directory=selected[0])
+        ),
+    )
+    monkeypatch.setattr("hcli.lib.ida.is_ida_dir", lambda _path: True)
+    monkeypatch.setattr(
+        "hcli.lib.ida.is_idalib_capable_installation", lambda _path: True
+    )
+
+    assert synchronize_idalib_installation_with_hcli() == ida94
+    assert store.data["ida.instances"]["ida-pro-9.4"] == str(ida94)
+    assert store.data["ida.default"] == "ida-pro-9.4"
+    assert find_current_ida_install_directory() == ida94
+
+    # Reconciliation is edge-triggered. An explicit later registry change must
+    # not be undone until the native installer selects a different path.
+    del store.data["ida.instances"]["ida-pro-9.4"]
+    store.data["ida.default"] = "ida-pro-9.3"
+    assert synchronize_idalib_installation_with_hcli() == ida94
+    assert "ida-pro-9.4" not in store.data["ida.instances"]
+    assert store.data["ida.default"] == "ida-pro-9.3"
+
+    ida95 = tmp_path / "IDA Professional 9.5"
+    ida95.mkdir()
+    selected[0] = ida95
+    assert synchronize_idalib_installation_with_hcli() == ida95
+    assert store.data["ida.instances"]["ida-pro-9.5"] == str(ida95)
+    assert store.data["ida.default"] == "ida-pro-9.5"
+
+
+def test_malformed_idalib_config_preserves_hcli_default(monkeypatch, tmp_path):
+    ida94 = tmp_path / "IDA Professional 9.4"
+    ida94.mkdir()
+    store = _FakeConfigStore({"ida-pro-9.4": str(ida94)}, "ida-pro-9.4")
+
+    monkeypatch.setattr("hcli.lib.config.config_store", store)
+    monkeypatch.setattr(
+        "hcli.lib.ida.get_ida_config",
+        lambda: (_ for _ in ()).throw(ValueError("invalid config")),
+    )
+    monkeypatch.setattr("hcli.lib.ida.is_ida_dir", lambda _path: True)
+
+    assert find_current_ida_install_directory() == ida94
+    assert store.data["ida.default"] == "ida-pro-9.4"
+
+
+def test_sync_preserves_non_idalib_hcli_default(monkeypatch, tmp_path):
+    gui_only = tmp_path / "IDA Free 9.4"
+    idalib = tmp_path / "IDA Professional 9.4"
+    gui_only.mkdir()
+    idalib.mkdir()
+    store = _FakeConfigStore({"ida-free-9.4": str(gui_only)}, "ida-free-9.4")
+
+    monkeypatch.setattr("hcli.lib.config.config_store", store)
+    monkeypatch.setattr(
+        "hcli.lib.ida.get_ida_config",
+        lambda: types.SimpleNamespace(
+            paths=types.SimpleNamespace(installation_directory=idalib)
+        ),
+    )
+    monkeypatch.setattr("hcli.lib.ida.is_ida_dir", lambda _path: True)
+    monkeypatch.setattr(
+        "hcli.lib.ida.is_idalib_capable_installation",
+        lambda path: Path(path) == idalib,
+    )
+
+    assert synchronize_idalib_installation_with_hcli() == idalib
+    assert store.data["ida.instances"]["ida-pro-9.4"] == str(idalib)
+    assert store.data["ida.default"] == "ida-free-9.4"
 
 
 def has_idat():

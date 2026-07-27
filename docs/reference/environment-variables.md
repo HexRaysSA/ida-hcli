@@ -66,11 +66,15 @@ The following envrionment variables can be used to override system/version/confi
 | HCLI_CURRENT_IDA_VERSION     | auto-detected                                | Override IDA version (e.g., "9.1", "9.2")                     |
 | HCLI_CURRENT_IDA_PYTHON_EXE  | auto-detected                                | Override Python executable path for IDA Pro                   |
 
-In particular, if you haven't registered a default IDA installation, such as with:
-- `hcli ida install ... --set-default`, or
-- `hcli ida set-default /path/to/ida`
+Native IDA installers register the active idalib installation in
+`$IDAUSR/ida-config.json`. HCLI automatically imports that installation into
+its multi-installation registry and selects it when the existing HCLI default
+is also idalib-capable. This keeps plugin management aligned with a newly
+installed IDA while preserving an intentionally selected GUI-only default.
 
-then you may need to set `HCLI_CURRENT_IDA_INSTALL_DIR` when using the plugin manager, so that HCLI can find IDA and its resources.
+You can select another registered installation with `hcli ida switch`. If no
+installation is registered or configured, set `HCLI_CURRENT_IDA_INSTALL_DIR`
+when using the plugin manager so HCLI can find IDA and its resources.
 
 
 ## Cache & Storage
