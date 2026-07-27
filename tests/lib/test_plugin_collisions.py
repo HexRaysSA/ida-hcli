@@ -321,6 +321,8 @@ def test_install_ambiguous_bare_name_fails(tmp_path, virtual_ida_environment):
     assert "plugin name 'shared' is ambiguous" in result.output
     assert "shared@https://github.com/org-a/shared" in result.output
     assert "shared@https://github.com/org-b/shared" in result.output
+    # the abort must not be reported a second time as an empty error
+    assert "Error: \n" not in result.output
 
 
 def test_install_qualified_name_succeeds(tmp_path, virtual_ida_environment):

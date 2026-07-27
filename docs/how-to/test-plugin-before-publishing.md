@@ -269,7 +269,8 @@ hcli plugin install /path/to/your-plugin
 
 # Repeat for IDA 9.2
 export HCLI_CURRENT_IDA_INSTALL_DIR="/Applications/IDA Professional 9.2.app"
-hcli plugin install /path/to/your-plugin --force
+hcli plugin uninstall my-awesome-plugin
+hcli plugin install /path/to/your-plugin
 
 # Test in IDA 9.2
 /Applications/IDA\ Professional\ 9.2.app/Contents/MacOS/ida64

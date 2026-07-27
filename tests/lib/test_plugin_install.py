@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 from fixtures import *
 from fixtures import (
     PLUGINS_DIR,
@@ -17,8 +18,12 @@ from fixtures import (
     temp_env_var,
 )
 
+from hcli.commands.plugin import plugin as plugin_group
+from hcli.lib.ida.plugin import ALL_PLATFORMS
 from hcli.lib.ida.plugin.exceptions import (
     BrokenPluginInstallationError,
+    IDAVersionIncompatibleError,
+    PlatformIncompatibleError,
     PluginAlreadyInstalledError,
     PluginInUseError,
     PluginNotInstalledError,
@@ -36,6 +41,7 @@ from hcli.lib.ida.plugin.install import (
     upgrade_plugin_archive,
     validate_archive_entry,
 )
+from hcli.lib.ida.plugin.repo.fs import FileSystemPluginRepo
 from hcli.lib.ida.python import pip_freeze
 
 logger = logging.getLogger(__name__)
@@ -497,6 +503,114 @@ def test_failed_extraction_leaves_no_partial_destination():
 
         assert not destination.exists()
         assert list(get_trash_directory(destination.parent).iterdir()) == []
+
+
+def rewrite_plugin_metadata(zip_data: bytes, **fields) -> bytes:
+    """Return a copy of a plugin archive with `plugin` metadata fields replaced.
+
+    Lets a test synthesize an archive that doesn't support the current
+    environment without shipping another fixture zip.
+    """
+    buf = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(zip_data)) as src, zipfile.ZipFile(buf, "w") as dst:
+        for item in src.infolist():
+            data = src.read(item.filename)
+            if item.filename.endswith("ida-plugin.json"):
+                doc = json.loads(data)
+                doc["plugin"].update(fields)
+                data = json.dumps(doc, indent=2).encode("utf-8")
+            dst.writestr(item, data)
+    return buf.getvalue()
+
+
+def get_foreign_platform() -> str:
+    """A platform that isn't the one the test environment claims to run."""
+    current = os.environ["HCLI_CURRENT_IDA_PLATFORM"]
+    return next(platform for platform in sorted(ALL_PLATFORMS) if platform != current)
+
+
+def test_install_incompatible_ida_version(virtual_ida_environment):
+    # the fixture environment reports IDA 9.1
+    buf = rewrite_plugin_metadata((PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes(), idaVersions=["9.0"])
+
+    with pytest.raises(IDAVersionIncompatibleError):
+        install_plugin_archive(buf, "plugin1")
+    assert not is_plugin_installed("plugin1")
+
+    install_plugin_archive(buf, "plugin1", allow_incompatible=True)
+    assert ("plugin1", "1.0.0") in get_installed_plugins()
+
+
+def test_install_incompatible_platform(virtual_ida_environment):
+    buf = rewrite_plugin_metadata(
+        (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes(), platforms=[get_foreign_platform()]
+    )
+
+    with pytest.raises(PlatformIncompatibleError):
+        install_plugin_archive(buf, "plugin1")
+    assert not is_plugin_installed("plugin1")
+
+    install_plugin_archive(buf, "plugin1", allow_incompatible=True)
+    assert ("plugin1", "1.0.0") in get_installed_plugins()
+
+
+def test_install_compatible_plugin_is_unaffected_by_allow_incompatible(virtual_ida_environment):
+    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
+
+    install_plugin_archive(buf, "plugin1", allow_incompatible=True)
+    assert ("plugin1", "1.0.0") in get_installed_plugins()
+
+
+def build_incompatible_repo(tmp_path: Path) -> Path:
+    """A repository directory holding one plugin that supports neither the
+    current IDA version nor the current platform."""
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    buf = rewrite_plugin_metadata(
+        (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes(),
+        idaVersions=["9.0"],
+        platforms=[get_foreign_platform()],
+    )
+    (repo_dir / "plugin1-v1.0.0.zip").write_bytes(buf)
+    return repo_dir
+
+
+def test_repo_lookup_allowing_incompatible_falls_back(virtual_ida_environment, tmp_path):
+    repo = FileSystemPluginRepo(build_incompatible_repo(tmp_path))
+    current_platform = os.environ["HCLI_CURRENT_IDA_PLATFORM"]
+
+    with pytest.raises(KeyError):
+        repo.find_compatible_plugin_from_spec("plugin1", current_platform, "9.1")
+
+    location = repo.find_plugin_from_spec_allowing_incompatible("plugin1", current_platform, "9.1")
+    assert location.metadata.plugin.version == "1.0.0"
+
+
+def test_repo_lookup_allowing_incompatible_prefers_compatible_archive(virtual_ida_environment, tmp_path):
+    repo_dir = build_incompatible_repo(tmp_path)
+    # a second, fully compatible version the relaxed lookup must prefer
+    (repo_dir / "plugin1-v2.0.0.zip").write_bytes((PLUGINS_DIR / "plugin1" / "plugin1-v2.0.0.zip").read_bytes())
+    repo = FileSystemPluginRepo(repo_dir)
+
+    location = repo.find_plugin_from_spec_allowing_incompatible(
+        "plugin1", os.environ["HCLI_CURRENT_IDA_PLATFORM"], "9.1"
+    )
+    assert location.metadata.plugin.version == "2.0.0"
+
+
+def test_cli_install_incompatible_plugin(virtual_ida_environment, tmp_path):
+    repo_dir = build_incompatible_repo(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "install", "plugin1"], obj={})
+    assert result.exit_code != 0
+    assert not is_plugin_installed("plugin1")
+    # the error must point at the flag that unblocks it
+    assert "--allow-incompatible" in result.output
+
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "install", "-I", "plugin1"], obj={})
+    assert result.exit_code == 0, result.output
+    assert is_plugin_installed("plugin1")
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="file locking semantics are Windows-specific")

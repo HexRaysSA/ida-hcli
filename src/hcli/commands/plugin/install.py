@@ -27,7 +27,9 @@ from hcli.lib.ida.plugin import (
 from hcli.lib.ida.plugin.bundle import bundle_dependency_source
 from hcli.lib.ida.plugin.exceptions import (
     AmbiguousPluginReferenceError,
+    IDAVersionIncompatibleError,
     InstalledPluginNameConflictError,
+    PlatformIncompatibleError,
     PluginNotInstalledError,
 )
 from hcli.lib.ida.plugin.install import (
@@ -56,6 +58,20 @@ from ._prompt import prompt_plugin_settings
 logger = logging.getLogger(__name__)
 
 
+def repo_has_incompatible_plugin(plugin_repo: BasePluginRepo, bare_spec: str, host: str | None) -> bool:
+    """Is this plugin in the repository, but only as archives that don't
+    support the current environment?
+
+    Used to tell "no such plugin" apart from "nothing built for your IDA",
+    so the latter can point at --allow-incompatible.
+    """
+    try:
+        plugin_repo.find_plugin_from_spec(bare_spec, None, None, host=host)
+    except (KeyError, AmbiguousPluginReferenceError):
+        return False
+    return True
+
+
 @click.command()
 @click.pass_context
 @click.argument("plugin")
@@ -67,6 +83,14 @@ logger = logging.getLogger(__name__)
     help="Install a local plugin directory by symlinking it into $IDAUSR/plugins/. "
     "Edits to the source tree take effect immediately on the next plugin reload.",
 )
+@click.option(
+    "-I",
+    "--allow-incompatible",
+    is_flag=True,
+    default=False,
+    help="Install even if the plugin doesn't support this IDA version or platform. "
+    "The plugin may fail to load or crash IDA.",
+)
 @click.option("--config", multiple=True, help="Configuration setting in key=value format (use true/false for booleans)")
 @click.option(
     "--no-build-isolation",
@@ -74,7 +98,14 @@ logger = logging.getLogger(__name__)
     default=False,
     help="Disable pip build isolation when installing Python dependencies",
 )
-def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no_build_isolation: bool) -> None:
+def install_plugin(
+    ctx,
+    plugin: str,
+    editable: bool,
+    allow_incompatible: bool,
+    config: tuple[str, ...],
+    no_build_isolation: bool,
+) -> None:
     """Install a plugin from a repository, local directory, local .zip file, or URL."""
     pip_options: PipOptions = ctx.obj.get("pip_options", PIP_OPTIONS_DEFAULT)
     plugin_repo_obj = ctx.obj.get("plugin_repo")
@@ -179,9 +210,17 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
             bare_spec = ref.name + ref.version_spec
             try:
                 with rich.status.Status("fetching plugin", console=stderr_console):
-                    plugin_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
-                        bare_spec, current_ida_platform, current_ida_version, host=ref.host
-                    )
+                    if allow_incompatible:
+                        # Fall back to an archive that doesn't support this
+                        # environment when the repository has no compatible one;
+                        # the mismatch is reported at validation time below.
+                        plugin_name, buf = plugin_repo.fetch_plugin_from_spec_allowing_incompatible(
+                            bare_spec, current_ida_platform, current_ida_version, host=ref.host
+                        )
+                    else:
+                        plugin_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
+                            bare_spec, current_ida_platform, current_ida_version, host=ref.host
+                        )
             except AmbiguousPluginReferenceError as e:
                 if ref.version_spec and not e.version_spec:
                     e = AmbiguousPluginReferenceError(e.name, e.candidates, ref.version_spec)
@@ -189,6 +228,20 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                 console.print("Choose one of:")
                 for candidate_ref in e.candidate_refs:
                     console.print(f"  {format_qualified_plugin_reference(candidate_ref)}")
+                raise click.Abort()
+            except KeyError:
+                # The repository may carry the plugin with no archive for this
+                # environment. Say so, rather than claiming it isn't there at all.
+                if not repo_has_incompatible_plugin(plugin_repo, bare_spec, ref.host):
+                    raise
+                console.print(
+                    f"[red]Error[/red]: no version of '{bare_spec}' supports"
+                    f" IDA {current_ida_version} on {current_ida_platform}"
+                )
+                console.print(
+                    "Use [blue]--allow-incompatible[/blue] (-I) to install it anyway."
+                    " The plugin may fail to load or crash IDA."
+                )
                 raise click.Abort()
 
         if not editable:
@@ -227,7 +280,12 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                 descr.validate_value(parsed_value)
 
         if editable:
-            install_plugin_directory_editable(source_dir, plugin_name, no_build_isolation=no_build_isolation)
+            install_plugin_directory_editable(
+                source_dir,
+                plugin_name,
+                no_build_isolation=no_build_isolation,
+                allow_incompatible=allow_incompatible,
+            )
         else:
             assert buf is not None
             effective_pip_options = pip_options
@@ -248,12 +306,22 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                     if no_build_isolation:
                         effective_pip_options = dataclasses.replace(effective_pip_options, no_build_isolation=True)
                     with rich.status.Status("installing plugin", console=stderr_console):
-                        install_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
+                        install_plugin_archive(
+                            buf,
+                            plugin_name,
+                            pip_options=effective_pip_options,
+                            allow_incompatible=allow_incompatible,
+                        )
             else:
                 if no_build_isolation:
                     effective_pip_options = dataclasses.replace(effective_pip_options, no_build_isolation=True)
                 with rich.status.Status("installing plugin", console=stderr_console):
-                    install_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
+                    install_plugin_archive(
+                        buf,
+                        plugin_name,
+                        pip_options=effective_pip_options,
+                        allow_incompatible=allow_incompatible,
+                    )
 
         try:
             if metadata.plugin.settings:
@@ -312,12 +380,24 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
 
         suffix = " [yellow](editable)[/yellow]" if editable else ""
         console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}{suffix}")
+    except click.Abort:
+        # An inner handler already explained itself and aborted; without this
+        # the catch-all below reports it again as an empty "Error: ".
+        raise
+
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
         raise click.Abort()
 
     except FailedToDetectIDAVersion:
         explain_failed_to_detect_ida_version(console)
+        raise click.Abort()
+
+    except (PlatformIncompatibleError, IDAVersionIncompatibleError) as e:
+        console.print(f"[red]Error[/red]: {e}")
+        console.print(
+            "Use [blue]--allow-incompatible[/blue] (-I) to install it anyway. The plugin may fail to load or crash IDA."
+        )
         raise click.Abort()
 
     except InstalledPluginNameConflictError as e:

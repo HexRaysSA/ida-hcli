@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import uuid
 import zipfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -452,6 +453,26 @@ def get_installed_legacy_plugins() -> list[Path]:
     return installed_plugins
 
 
+def warn_incompatible_platform(current_platform: str, supported: Sequence[str]) -> None:
+    """Report a platform mismatch that the caller has chosen to install through."""
+    # debug, not warning: the console message below is the user-facing report,
+    # and without HCLI_DEBUG a warning record prints again unformatted.
+    logger.debug("Current platform not supported: %s", current_platform)
+    stderr_console.print(
+        f"[yellow]warning[/yellow]: plugin does not support platform '{current_platform}'"
+        f" (supported: {', '.join(sorted(supported))}); installing anyway"
+    )
+
+
+def warn_incompatible_ida_version(current_version: str, supported: Sequence[str]) -> None:
+    """Report an IDA version mismatch that the caller has chosen to install through."""
+    logger.debug("Current IDA version not supported: %s", current_version)
+    stderr_console.print(
+        f"[yellow]warning[/yellow]: plugin does not support IDA version '{current_version}'"
+        f" (supported: {', '.join(supported)}); installing anyway"
+    )
+
+
 def validate_can_install_python_dependencies(
     zip_data: bytes,
     metadata: IDAMetadataDescriptor,
@@ -510,8 +531,13 @@ def validate_can_install_plugin(
     current_version: str,
     no_build_isolation: bool = False,
     pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    allow_incompatible: bool = False,
 ) -> Path | None:
     """Verify plugin can be installed.
+
+    Args:
+        allow_incompatible: warn instead of raising when the plugin doesn't
+            declare support for the current platform or IDA version.
 
     Returns:
         The Python executable path if pip dependencies were validated, None otherwise.
@@ -520,8 +546,8 @@ def validate_can_install_plugin(
         InvalidPluginNameError: If plugin name is invalid
         PluginAlreadyInstalledError: If plugin is already installed
         BrokenPluginInstallationError: If remnants of a broken installation are in the way
-        PlatformIncompatibleError: If current platform is not supported
-        IDAVersionIncompatibleError: If current IDA version is not supported
+        PlatformIncompatibleError: If current platform is not supported (unless allow_incompatible)
+        IDAVersionIncompatibleError: If current IDA version is not supported (unless allow_incompatible)
         PipNotAvailableError: If pip is not available (when dependencies are needed)
         DependencyInstallationError: If dependencies cannot be installed
     """
@@ -549,12 +575,16 @@ def validate_can_install_plugin(
 
     platforms = metadata.plugin.platforms
     if current_platform not in platforms:
-        logger.warning(f"Current platform not supported: {current_platform}")
-        raise PlatformIncompatibleError(current_platform, platforms)
+        if not allow_incompatible:
+            logger.warning(f"Current platform not supported: {current_platform}")
+            raise PlatformIncompatibleError(current_platform, platforms)
+        warn_incompatible_platform(current_platform, platforms)
 
     if metadata.plugin.ida_versions and not is_ida_version_compatible(current_version, metadata.plugin.ida_versions):
-        logger.warning(f"Current IDA version not supported: {current_version}")
-        raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
+        if not allow_incompatible:
+            logger.warning(f"Current IDA version not supported: {current_version}")
+            raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
+        warn_incompatible_ida_version(current_version, metadata.plugin.ida_versions)
 
     return validate_can_install_python_dependencies(
         zip_data, metadata, no_build_isolation=no_build_isolation, pip_options=pip_options
@@ -678,6 +708,7 @@ def _install_plugin_archive(
     name: str,
     no_build_isolation: bool = False,
     pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    allow_incompatible: bool = False,
 ):
     path, metadata = get_metadata_from_plugin_archive(zip_data, name)
     validate_metadata_in_plugin_archive(zip_data, path, metadata)
@@ -695,6 +726,7 @@ def _install_plugin_archive(
         current_version,
         no_build_isolation=no_build_isolation,
         pip_options=pip_options,
+        allow_incompatible=allow_incompatible,
     )
 
     destination_path = get_plugin_directory(metadata.plugin.name)
@@ -737,24 +769,60 @@ def _install_plugin_archive(
 
 
 def install_source_plugin_archive(
-    zip_data: bytes, name: str, no_build_isolation: bool = False, pip_options: PipOptions = PIP_OPTIONS_DEFAULT
+    zip_data: bytes,
+    name: str,
+    no_build_isolation: bool = False,
+    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    allow_incompatible: bool = False,
 ):
-    return _install_plugin_archive(zip_data, name, no_build_isolation=no_build_isolation, pip_options=pip_options)
+    return _install_plugin_archive(
+        zip_data,
+        name,
+        no_build_isolation=no_build_isolation,
+        pip_options=pip_options,
+        allow_incompatible=allow_incompatible,
+    )
 
 
 def install_binary_plugin_archive(
-    zip_data: bytes, name: str, no_build_isolation: bool = False, pip_options: PipOptions = PIP_OPTIONS_DEFAULT
+    zip_data: bytes,
+    name: str,
+    no_build_isolation: bool = False,
+    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    allow_incompatible: bool = False,
 ):
-    return _install_plugin_archive(zip_data, name, no_build_isolation=no_build_isolation, pip_options=pip_options)
+    return _install_plugin_archive(
+        zip_data,
+        name,
+        no_build_isolation=no_build_isolation,
+        pip_options=pip_options,
+        allow_incompatible=allow_incompatible,
+    )
 
 
 def install_plugin_archive(
-    zip_data: bytes, name: str, no_build_isolation: bool = False, pip_options: PipOptions = PIP_OPTIONS_DEFAULT
+    zip_data: bytes,
+    name: str,
+    no_build_isolation: bool = False,
+    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    allow_incompatible: bool = False,
 ):
     if is_source_plugin_archive(zip_data, name):
-        install_source_plugin_archive(zip_data, name, no_build_isolation=no_build_isolation, pip_options=pip_options)
+        install_source_plugin_archive(
+            zip_data,
+            name,
+            no_build_isolation=no_build_isolation,
+            pip_options=pip_options,
+            allow_incompatible=allow_incompatible,
+        )
     elif is_binary_plugin_archive(zip_data, name):
-        install_binary_plugin_archive(zip_data, name, no_build_isolation=no_build_isolation, pip_options=pip_options)
+        install_binary_plugin_archive(
+            zip_data,
+            name,
+            no_build_isolation=no_build_isolation,
+            pip_options=pip_options,
+            allow_incompatible=allow_incompatible,
+        )
     else:
         raise ValueError("Invalid plugin archive")
 
@@ -785,7 +853,12 @@ def pack_plugin_directory_to_zip(source_dir: Path) -> bytes:
     return buf.getvalue()
 
 
-def install_plugin_directory_editable(source_dir: Path, name: str, no_build_isolation: bool = False):
+def install_plugin_directory_editable(
+    source_dir: Path,
+    name: str,
+    no_build_isolation: bool = False,
+    allow_incompatible: bool = False,
+):
     """Install a plugin from a local source directory by symlinking it into
     $IDAUSR/plugins/<name>.
 
@@ -815,12 +888,16 @@ def install_plugin_directory_editable(source_dir: Path, name: str, no_build_isol
 
     platforms = metadata.plugin.platforms
     if current_platform not in platforms:
-        logger.warning(f"Current platform not supported: {current_platform}")
-        raise PlatformIncompatibleError(current_platform, platforms)
+        if not allow_incompatible:
+            logger.warning(f"Current platform not supported: {current_platform}")
+            raise PlatformIncompatibleError(current_platform, platforms)
+        warn_incompatible_platform(current_platform, platforms)
 
     if metadata.plugin.ida_versions and not is_ida_version_compatible(current_version, metadata.plugin.ida_versions):
-        logger.warning(f"Current IDA version not supported: {current_version}")
-        raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
+        if not allow_incompatible:
+            logger.warning(f"Current IDA version not supported: {current_version}")
+            raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
+        warn_incompatible_ida_version(current_version, metadata.plugin.ida_versions)
 
     try:
         destination_path = get_plugin_directory(metadata.plugin.name)

@@ -218,6 +218,32 @@ class BasePluginRepo(ABC):
         """
         return self.find_plugin_from_spec(plugin_spec, current_platform, current_version, host=host)
 
+    def find_plugin_from_spec_allowing_incompatible(
+        self,
+        plugin_spec: str,
+        current_platform: str,
+        current_version: str,
+        host: str | None = None,
+    ) -> PluginArchiveLocation:
+        """Find a plugin location, preferring a compatible archive but accepting
+        an incompatible one when nothing matches the current environment.
+
+        Backs `hcli plugin install --allow-incompatible`. The filters are relaxed
+        in stages, so archive selection stays deterministic: an archive built for
+        this platform and IDA version wins, then one built for this platform (the
+        right binaries, the wrong IDA version), and only then anything at all.
+        """
+        for platform, version in (
+            (current_platform, current_version),
+            (current_platform, None),
+        ):
+            try:
+                return self.find_plugin_from_spec(plugin_spec, platform, version, host=host)
+            except KeyError:
+                continue
+
+        return self.find_plugin_from_spec(plugin_spec, None, None, host=host)
+
     def fetch_plugin_from_spec(
         self,
         plugin_spec: str,
@@ -249,6 +275,23 @@ class BasePluginRepo(ABC):
         directly.
         """
         location = self.find_compatible_plugin_from_spec(plugin_spec, current_platform, current_version, host=host)
+        return self._fetch_and_verify(location)
+
+    def fetch_plugin_from_spec_allowing_incompatible(
+        self,
+        plugin_spec: str,
+        current_platform: str,
+        current_version: str,
+        host: str | None = None,
+    ) -> tuple[str, bytes]:
+        """Fetch a plugin, falling back to an archive that does not support this
+        environment when no compatible one exists.
+
+        See ``find_plugin_from_spec_allowing_incompatible``.
+        """
+        location = self.find_plugin_from_spec_allowing_incompatible(
+            plugin_spec, current_platform, current_version, host=host
+        )
         return self._fetch_and_verify(location)
 
     def _fetch_and_verify(self, location: PluginArchiveLocation) -> tuple[str, bytes]:
