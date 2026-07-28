@@ -27,8 +27,8 @@ from hcli.lib.ida.python import (
     GET_PYTHON_INFO_PY,
     PythonNotFoundError,
     _derive_python_exe,
-    detect_current_python_version,
-    find_current_python_executable,
+    detect_current_ida_python_version,
+    find_current_ida_python_executable,
 )
 from hcli.lib.venv import find_candidate_virtual_envs, is_uv_cache_virtual_env, resolve_user_virtual_env
 
@@ -207,7 +207,7 @@ def explain_environment() -> None:
     console.print("[bold]Python version[/bold]")
 
     try:
-        python_exe = find_current_python_executable()
+        python_exe = find_current_ida_python_executable()
         _kv("final python exe", _path(python_exe))
 
         result = subprocess.run(
@@ -225,7 +225,7 @@ def explain_environment() -> None:
     _kv("hcli interpreter", interpreter_version, _path(sys.executable))
 
     try:
-        final = detect_current_python_version()
+        final = detect_current_ida_python_version()
         style = "green" if final != interpreter_version else "yellow"
         _kv("final version", f"[{style}]{final}[/{style}]")
     except Exception as e:

@@ -51,7 +51,12 @@ from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
 from hcli.lib.ida.plugin.settings import has_plugin_setting, parse_setting_value, set_plugin_setting
-from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, detect_current_python_version, merge_bundle_pip_options
+from hcli.lib.ida.python import (
+    PIP_OPTIONS_DEFAULT,
+    PipOptions,
+    detect_current_ida_python_version,
+    merge_bundle_pip_options,
+)
 
 from ._prompt import prompt_plugin_settings
 
@@ -290,7 +295,7 @@ def install_plugin(
             assert buf is not None
             effective_pip_options = pip_options
             if isinstance(plugin_repo_obj, PluginBundleRepo) and not pip_options.has_custom_sources:
-                current_python_version = detect_current_python_version()
+                current_python_version = detect_current_ida_python_version()
                 with bundle_dependency_source(
                     plugin_repo_obj, current_ida_platform, current_python_version
                 ) as bundle_opts:

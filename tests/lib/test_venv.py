@@ -3,6 +3,7 @@ from pathlib import Path
 
 from hcli.lib.venv import (
     find_candidate_virtual_envs,
+    is_shell_activated_virtual_env,
     is_uv_cache_virtual_env,
     resolve_user_virtual_env,
 )
@@ -137,14 +138,36 @@ def test_resolve_user_venv_returns_non_uv_virtual_env(tmp_path, monkeypatch):
     assert resolve_user_virtual_env() == user_venv
 
 
-def test_resolve_user_venv_returns_none_when_hcli_own(tmp_path, monkeypatch):
+def test_resolve_user_venv_returns_none_when_hcli_own_and_not_activated(tmp_path, monkeypatch):
+    """`uv run hcli` sets VIRTUAL_ENV without the user working in that venv."""
     venv = tmp_path / ".venv"
     _write_pyvenv_cfg(venv, "home = /usr/bin\n")
 
     monkeypatch.setenv("VIRTUAL_ENV", str(venv))
+    monkeypatch.delenv("VIRTUAL_ENV_PROMPT", raising=False)
     monkeypatch.setattr("hcli.lib.venv.sys", type("FakeSys", (), {"prefix": str(venv)}))
 
     assert resolve_user_virtual_env() is None
+
+
+def test_resolve_user_venv_returns_hcli_own_when_shell_activated(tmp_path, monkeypatch):
+    """`. .venv/bin/activate` means IDA inherits it too, so it counts."""
+    venv = tmp_path / ".venv"
+    _write_pyvenv_cfg(venv, "home = /usr/bin\n")
+
+    monkeypatch.setenv("VIRTUAL_ENV", str(venv))
+    monkeypatch.setenv("VIRTUAL_ENV_PROMPT", ".venv")
+    monkeypatch.setattr("hcli.lib.venv.sys", type("FakeSys", (), {"prefix": str(venv)}))
+
+    assert resolve_user_virtual_env() == venv
+
+
+def test_is_shell_activated_virtual_env(monkeypatch):
+    monkeypatch.delenv("VIRTUAL_ENV_PROMPT", raising=False)
+    assert not is_shell_activated_virtual_env()
+
+    monkeypatch.setenv("VIRTUAL_ENV_PROMPT", "myproject")
+    assert is_shell_activated_virtual_env()
 
 
 def test_resolve_user_venv_recovers_from_uv_cache(tmp_path, monkeypatch):

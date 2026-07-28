@@ -444,7 +444,7 @@ def test_resolve_targets_current_platform(monkeypatch):
 
 
 def test_resolve_targets_current_python(monkeypatch):
-    monkeypatch.setattr("hcli.lib.ida.python.detect_current_python_version", lambda: "3.13")
+    monkeypatch.setattr("hcli.lib.ida.python.detect_current_ida_python_version", lambda: "3.13")
     targets = _resolve_targets(("linux",), ("current",), ())
     assert len(targets) == 1
     assert targets[0].python_version == "3.13"

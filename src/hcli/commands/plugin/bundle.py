@@ -32,7 +32,7 @@ from hcli.lib.ida.plugin.repo.bundle import (
     PluginBundleRepo,
     is_plugin_bundle_zip,
 )
-from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, find_current_python_executable
+from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, find_current_ida_python_executable
 
 logger = logging.getLogger(__name__)
 
@@ -160,9 +160,9 @@ def _resolve_targets(
         if lower == "all":
             resolved_pythons.extend(SUPPORTED_PYTHON_VERSIONS)
         elif lower == "current":
-            from hcli.lib.ida.python import detect_current_python_version
+            from hcli.lib.ida.python import detect_current_ida_python_version
 
-            resolved_pythons.append(detect_current_python_version())
+            resolved_pythons.append(detect_current_ida_python_version())
         else:
             resolved_pythons.append(py)
 
@@ -343,7 +343,7 @@ def _download_wheelhouse(
     dest: Path,
     pip_options: PipOptions,
 ) -> None:
-    python_exe = find_current_python_executable()
+    python_exe = find_current_ida_python_executable()
     cmd = [
         str(python_exe),
         "-m",

@@ -26,6 +26,26 @@ def _parse_pyvenv_cfg(path: Path) -> dict[str, str]:
     return result
 
 
+def get_virtual_env_version(venv: Path) -> tuple[int, int] | None:
+    """Return the (major, minor) Python version a virtual environment was built on.
+
+    Read from pyvenv.cfg - ``version_info`` as written by uv, ``version`` as
+    written by the stdlib venv module - so no interpreter has to be launched.
+    Returns None when the file is missing or carries no usable version.
+    """
+    cfg = _parse_pyvenv_cfg(venv / "pyvenv.cfg")
+    raw = cfg.get("version_info") or cfg.get("version")
+    if not raw:
+        return None
+
+    parts = raw.split(".")
+    try:
+        return int(parts[0]), int(parts[1])
+    except (IndexError, ValueError):
+        logger.debug("could not parse a version from pyvenv.cfg: %r", raw)
+        return None
+
+
 def _get_uv_cache_dirs() -> list[Path]:
     """
     compute the file system path to the cache directory used by uv,
@@ -176,6 +196,18 @@ def find_candidate_virtual_envs() -> list[VenvCandidate]:
     return candidates
 
 
+def is_shell_activated_virtual_env() -> bool:
+    """Whether `$VIRTUAL_ENV` was activated in the user's shell.
+
+    The `activate` script exports `$VIRTUAL_ENV_PROMPT` alongside
+    `$VIRTUAL_ENV` - both the stdlib venv module and uv write it. Launchers
+    that merely point a child process at a venv (`uv run`, `poetry run`, ...)
+    set `$VIRTUAL_ENV` on its own, so the prompt variable distinguishes an
+    environment the user works in from one that describes how HCLI was started.
+    """
+    return bool(os.environ.get("VIRTUAL_ENV_PROMPT"))
+
+
 def resolve_user_virtual_env() -> Path | None:
     """Resolve the user's activated virtual environment.
 
@@ -188,6 +220,11 @@ def resolve_user_virtual_env() -> Path | None:
      with its own ephemeral virtual environment.
     Based on our research, the user's real venv typically
      remains on `$PATH` (the `activate` script prepends its `bin/`).
+
+    A venv that HCLI itself runs from counts only when the user activated it:
+     `. .venv/bin/activate` means IDA launched from that shell inherits
+     `$VIRTUAL_ENV` and activates it too, whereas `uv run hcli` sets the same
+     variable without the user working in that environment.
     """
     virtual_env = os.environ.get("VIRTUAL_ENV")
     if not virtual_env:
@@ -195,7 +232,11 @@ def resolve_user_virtual_env() -> Path | None:
 
     if not is_uv_cache_virtual_env(virtual_env):
         hcli_prefix = os.path.normcase(os.path.abspath(sys.prefix))
-        if os.path.normcase(os.path.abspath(virtual_env)) == hcli_prefix:
+        if os.path.normcase(os.path.abspath(virtual_env)) == hcli_prefix and not is_shell_activated_virtual_env():
+            # HCLI is running from this venv and nobody activated it in the
+            # shell, so `$VIRTUAL_ENV` only describes how HCLI was launched
+            # (`uv run hcli`), not an environment the user works in.
+            logger.debug("ignoring %s: it is HCLI's own venv and was not activated in the shell", virtual_env)
             return None
         return Path(virtual_env)
 

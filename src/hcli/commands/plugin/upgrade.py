@@ -97,9 +97,9 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
 
         effective_pip_options = pip_options
         if isinstance(plugin_repo, PluginBundleRepo) and not pip_options.has_custom_sources:
-            from hcli.lib.ida.python import detect_current_python_version, merge_bundle_pip_options
+            from hcli.lib.ida.python import detect_current_ida_python_version, merge_bundle_pip_options
 
-            current_python_version = detect_current_python_version()
+            current_python_version = detect_current_ida_python_version()
             with bundle_dependency_source(plugin_repo, current_ida_platform, current_python_version) as bundle_opts:
                 if bundle_opts is None:
                     available = ", ".join(plugin_repo.target_ids) or "none"

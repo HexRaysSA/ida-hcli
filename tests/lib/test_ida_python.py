@@ -10,7 +10,8 @@ from hcli.lib.ida.python import (
     PipOptions,
     _derive_python_exe,
     does_current_ida_have_pip,
-    find_current_python_executable,
+    find_current_ida_python_executable,
+    idat,
     merge_bundle_pip_options,
     verify_pip_can_install_packages,
 )
@@ -25,9 +26,9 @@ def has_idat():
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_find_current_python_executable_returns_path():
-    """Test that find_current_python_executable returns a valid path."""
-    result = find_current_python_executable()
+def test_find_current_ida_python_executable_returns_path():
+    """Test that find_current_ida_python_executable returns a valid path."""
+    result = find_current_ida_python_executable()
     assert isinstance(result, Path)
     assert result.exists()
     assert result.is_file()
@@ -36,7 +37,7 @@ def test_find_current_python_executable_returns_path():
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_does_current_ida_have_pip():
-    python_exe = find_current_python_executable()
+    python_exe = find_current_ida_python_executable()
     assert does_current_ida_have_pip(python_exe, timeout=30.0)
 
 
@@ -131,16 +132,20 @@ def _create_venv_with_ida_python(venv_dir: Path) -> None:
     Otherwise the venv's interpreter version may not match IDA's embedded Python
     (e.g. uv-managed test runner is 3.10 but IDA ships 3.13).
     """
-    ida_python = find_current_python_executable()
+    ida_python = find_current_ida_python_executable()
     subprocess.run([str(ida_python), "-m", "venv", str(venv_dir)], check=True)
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_find_current_python_executable_honors_activated_virtualenv(tmp_path, monkeypatch):
+def test_idat_honors_activated_virtualenv(tmp_path, monkeypatch):
     """VIRTUAL_ENV in the hcli process env is stripped before invoking idat,
     so the only way to detect a venv is via idapythonrc.py activating it inside idat.
     This test verifies that an idapythonrc.py that sets sys.prefix to a venv
-    causes find_current_python_executable to return the venv's Python.
+    causes the idat strategy to return the venv's Python.
+
+    Asks idat directly: the finder prefers idapro, which reads IDA's
+    configuration and so cannot see a venv that idapythonrc.py creates at
+    startup.
     """
     source_idausr = get_ida_user_dir()
     if not source_idausr.exists():
@@ -165,12 +170,12 @@ def test_find_current_python_executable_honors_activated_virtualenv(tmp_path, mo
     monkeypatch.delenv("IDAPYTHON_VENV_EXECUTABLE", raising=False)
     monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
 
-    result = find_current_python_executable()
+    result = idat.find_python_executable()
     _assert_detected_venv_python(result, venv_dir)
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_find_current_python_executable_honors_idapython_venv_executable(tmp_path, monkeypatch):
+def test_find_current_ida_python_executable_honors_idapython_venv_executable(tmp_path, monkeypatch):
     source_idausr = get_ida_user_dir()
     if not source_idausr.exists():
         pytest.skip("Current IDAUSR directory not available")
@@ -188,12 +193,12 @@ def test_find_current_python_executable_honors_idapython_venv_executable(tmp_pat
     monkeypatch.delenv("VIRTUAL_ENV", raising=False)
     monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
 
-    result = find_current_python_executable()
+    result = find_current_ida_python_executable()
     _assert_detected_venv_python(result, venv_dir)
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_find_current_python_executable_honors_idapythonrc(tmp_path, monkeypatch):
+def test_idat_honors_idapythonrc(tmp_path, monkeypatch):
     source_idausr = get_ida_user_dir()
     if not source_idausr.exists():
         pytest.skip("Current IDAUSR directory not available")
@@ -219,13 +224,13 @@ def test_find_current_python_executable_honors_idapythonrc(tmp_path, monkeypatch
     monkeypatch.setenv("HCLI_TEST_VENV", str(venv_dir))
     monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
 
-    result = find_current_python_executable()
+    result = idat.find_python_executable()
     _assert_detected_venv_python(result, venv_dir)
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_verify_pip_can_install_packages():
-    python_exe = find_current_python_executable()
+    python_exe = find_current_ida_python_executable()
 
     verify_pip_can_install_packages(python_exe, ["flare-capa"])
 

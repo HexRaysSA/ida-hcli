@@ -51,7 +51,7 @@ from hcli.lib.ida.python import (
     CantInstallPackagesError,
     PipOptions,
     does_current_ida_have_pip,
-    find_current_python_executable,
+    find_current_ida_python_executable,
     pip_install_packages,
     verify_pip_can_install_packages,
 )
@@ -504,7 +504,7 @@ def validate_can_install_python_dependencies(
         all_python_dependencies.extend(python_dependencies)
 
         if python_exe is None:
-            python_exe = find_current_python_executable()
+            python_exe = find_current_ida_python_executable()
         logger.debug(f"python: {python_exe}")
 
         if not does_current_ida_have_pip(python_exe):
@@ -924,7 +924,7 @@ def install_plugin_directory_editable(
                 all_python_dependencies.extend(existing_deps)
             all_python_dependencies.extend(python_dependencies)
 
-        python_exe = find_current_python_executable()
+        python_exe = find_current_ida_python_executable()
         if not does_current_ida_have_pip(python_exe):
             raise PipNotAvailableError(python_exe)
 
@@ -986,7 +986,7 @@ def _get_ida_site_packages_dir() -> Path:
     ``--target``. Uses sysconfig on the IDA-side interpreter so the result
     reflects IDA's bundled Python, not hcli's.
     """
-    python_exe = find_current_python_executable()
+    python_exe = find_current_ida_python_executable()
     result = subprocess.run(
         [str(python_exe), "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
         capture_output=True,
