@@ -140,7 +140,7 @@ def _run_pip_install(
     effective = _merge_no_build_isolation(pip_options, no_build_isolation)
     args = ["install"]
     if dry_run:
-        args.append("--dry-run")
+        args.extend(["--dry-run", "--no-deps"])
     args += effective.build_args() + packages
     run_pip(python_exe, args)
 
