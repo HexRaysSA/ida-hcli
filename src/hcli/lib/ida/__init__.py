@@ -139,7 +139,7 @@ def get_ida_user_dir() -> Path:
         return Path(ENV.HCLI_IDAUSR)
 
     if ENV.IDAUSR is not None:
-        return Path(ENV.IDAUSR)
+        return Path(ENV.IDAUSR.split(os.pathsep)[0])
 
     os_ = get_os()
     if os_ == "windows":
