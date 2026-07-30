@@ -20,6 +20,7 @@ from hcli.lib.ida import (
 from hcli.lib.ida.plugin import parse_plugin_version
 from hcli.lib.ida.plugin.exceptions import AmbiguousPluginReferenceError
 from hcli.lib.ida.plugin.install import (
+    find_installed_plugin_in,
     get_installed_legacy_plugins,
     get_installed_minimal_plugins,
     get_installed_plugin_records,
@@ -31,10 +32,16 @@ logger = logging.getLogger(__name__)
 
 
 @click.command()
+@click.argument("plugins", nargs=-1)
 @click.pass_context
-def get_plugin_status(ctx) -> None:
-    """Show installed plugins and their upgrade status."""
+def get_plugin_status(ctx, plugins: tuple[str, ...]) -> None:
+    """Show installed plugins and their upgrade status.
+
+    If one or more PLUGINS are given, show status for just those plugins,
+    and exit with a non-zero status if any of them isn't installed.
+    """
     plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
+    not_found_names: list[str] = []
     try:
         current_platform = find_current_ida_platform()
         current_ida_version = find_current_ida_version()
@@ -44,7 +51,19 @@ def get_plugin_status(ctx) -> None:
         table.add_column("version", style="default")
         table.add_column("status")
 
-        for record in get_installed_plugin_records():
+        all_records = get_installed_plugin_records()
+        if plugins:
+            installed_records = []
+            for name in plugins:
+                record = find_installed_plugin_in(all_records, name)
+                if record is None:
+                    not_found_names.append(name)
+                else:
+                    installed_records.append(record)
+        else:
+            installed_records = all_records
+
+        for record in installed_records:
             status = ""
             try:
                 # Anchor the repository lookup on the installed plugin's host so a
@@ -66,30 +85,34 @@ def get_plugin_status(ctx) -> None:
             table.add_row(record.name, record.version, status)
 
         has_incompatible_plugins = False
-        plugin_directory = get_plugins_directory()
-        for path, metadata in get_installed_minimal_plugins():
-            plugin_path = path.parent.relative_to(plugin_directory)
-            table.add_row(
-                f"[grey69](incompatible)[/grey69] [blue]{metadata.plugin.name}[/blue]",
-                metadata.plugin.version or "",
-                f"[grey69]found at: $IDAPLUGINS/[/grey69]{plugin_path}/",
-            )
-            has_incompatible_plugins = True
-
         has_legacy_plugins = False
-        for path in get_installed_legacy_plugins():
-            plugin_path = path.parent.relative_to(plugin_directory)
-            table.add_row(
-                f"[grey69](legacy)[/grey69] [blue]{path.name}[/blue]",
-                "",
-                f"[grey69]found at: $IDAPLUGINS/[/grey69]{path.name}",
-            )
-            has_legacy_plugins = True
+        if not plugins:
+            plugin_directory = get_plugins_directory()
+            for path, metadata in get_installed_minimal_plugins():
+                plugin_path = path.parent.relative_to(plugin_directory)
+                table.add_row(
+                    f"[grey69](incompatible)[/grey69] [blue]{metadata.plugin.name}[/blue]",
+                    metadata.plugin.version or "",
+                    f"[grey69]found at: $IDAPLUGINS/[/grey69]{plugin_path}/",
+                )
+                has_incompatible_plugins = True
+
+            for path in get_installed_legacy_plugins():
+                plugin_path = path.parent.relative_to(plugin_directory)
+                table.add_row(
+                    f"[grey69](legacy)[/grey69] [blue]{path.name}[/blue]",
+                    "",
+                    f"[grey69]found at: $IDAPLUGINS/[/grey69]{path.name}",
+                )
+                has_legacy_plugins = True
 
         if table.row_count:
             console.print(table)
-        else:
+        elif not plugins:
             console.print("[grey69]No plugins found[/grey69]")
+
+        for name in not_found_names:
+            console.print(f"[red]Not installed[/red]: {name}")
 
         if has_incompatible_plugins:
             console.print()
@@ -116,3 +139,6 @@ def get_plugin_status(ctx) -> None:
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
         raise click.Abort()
+
+    if not_found_names:
+        ctx.exit(1)

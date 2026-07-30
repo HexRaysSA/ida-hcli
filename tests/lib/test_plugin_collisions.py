@@ -487,6 +487,56 @@ def test_status_does_not_crash_on_colliding_name(tmp_path, virtual_ida_environme
     assert "3.0.0" in result.output
 
 
+def test_status_named_plugin_installed(virtual_ida_environment):
+    """`status <name>` shows just that plugin and exits 0 when it's installed."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==1.0.0"])
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1"])
+    assert result.exit_code == 0, result.output
+    assert "plugin1" in result.output
+
+
+def test_status_named_plugin_not_installed(virtual_ida_environment):
+    """`status <name>` exits non-zero and reports absence when not installed."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "does-not-exist"])
+    assert result.exit_code != 0
+    assert "does-not-exist" in result.output
+
+
+def test_status_multiple_plugins_all_installed(virtual_ida_environment):
+    """`status <name1> <name2>` shows both plugins and exits 0 when both are installed."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==1.0.0"])
+    assert result.exit_code == 0, result.output
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "zydisinfo==1.0.0"])
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1", "zydisinfo"])
+    assert result.exit_code == 0, result.output
+    assert "plugin1" in result.output
+    assert "zydisinfo" in result.output
+
+
+def test_status_multiple_plugins_partially_installed(virtual_ida_environment):
+    """`status <name1> <name2>` exits non-zero and reports only the missing one when mixed."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==1.0.0"])
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1", "does-not-exist"])
+    assert result.exit_code != 0
+    assert "plugin1" in result.output
+    assert "Not installed" in result.output
+    assert "does-not-exist" in result.output
+
+
 def test_upgrade_not_installed_fails(tmp_path, virtual_ida_environment):
     """Upgrade must fail cleanly when the plugin is not installed."""
     repo_dir = _build_colliding_repo_dir_with_v2(tmp_path)
