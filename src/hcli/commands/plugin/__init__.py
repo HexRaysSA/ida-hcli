@@ -171,8 +171,9 @@ plugin.add_command(get_plugin_status, name="status")
 
 @click.command(name="list", hidden=True)
 @click.argument("plugins", nargs=-1)
+@click.option("--offline", is_flag=True, default=False)
 @click.pass_context
-def _plugin_status_alias(ctx, plugins: tuple[str, ...]) -> None:
+def _plugin_status_alias(ctx, plugins: tuple[str, ...], offline: bool) -> None:
     """Show installed plugins and their upgrade status (alias for 'status')."""
     ctx.forward(get_plugin_status)
 

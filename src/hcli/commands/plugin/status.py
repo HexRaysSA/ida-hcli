@@ -33,8 +33,14 @@ logger = logging.getLogger(__name__)
 
 @click.command()
 @click.argument("plugins", nargs=-1)
+@click.option(
+    "--offline",
+    is_flag=True,
+    default=False,
+    help="skip the per-plugin upgrade check against the plugin repository",
+)
 @click.pass_context
-def get_plugin_status(ctx, plugins: tuple[str, ...]) -> None:
+def get_plugin_status(ctx, plugins: tuple[str, ...], offline: bool) -> None:
     """Show installed plugins and their upgrade status.
 
     If one or more PLUGINS are given, show status for just those plugins,
@@ -65,22 +71,25 @@ def get_plugin_status(ctx, plugins: tuple[str, ...]) -> None:
 
         for record in installed_records:
             status = ""
-            try:
-                # Anchor the repository lookup on the installed plugin's host so a
-                # colliding plugin name in the repository does not raise ambiguity
-                # or pick the wrong variant.
-                location = plugin_repo.find_compatible_plugin_from_spec(
-                    record.name, current_platform, current_ida_version, host=record.host
-                )
-                if parse_plugin_version(location.metadata.plugin.version) > parse_plugin_version(record.version):
-                    status = f"upgradable to [yellow]{location.metadata.plugin.version}[/yellow]"
-            except (ValueError, KeyError, AmbiguousPluginReferenceError):
-                # AmbiguousPluginReferenceError should not escape this command.
-                # The installed plugin's own metadata carries its host, so
-                # anchoring on that host above should normally resolve the
-                # collision; if it does not, treat the plugin as absent from
-                # the repository rather than crashing status.
-                status = "[yellow]not found in repository[/yellow]"
+            if offline:
+                status = "[dim]skipped (offline)[/dim]"
+            else:
+                try:
+                    # Anchor the repository lookup on the installed plugin's host so a
+                    # colliding plugin name in the repository does not raise ambiguity
+                    # or pick the wrong variant.
+                    location = plugin_repo.find_compatible_plugin_from_spec(
+                        record.name, current_platform, current_ida_version, host=record.host
+                    )
+                    if parse_plugin_version(location.metadata.plugin.version) > parse_plugin_version(record.version):
+                        status = f"upgradable to [yellow]{location.metadata.plugin.version}[/yellow]"
+                except (ValueError, KeyError, AmbiguousPluginReferenceError):
+                    # AmbiguousPluginReferenceError should not escape this command.
+                    # The installed plugin's own metadata carries its host, so
+                    # anchoring on that host above should normally resolve the
+                    # collision; if it does not, treat the plugin as absent from
+                    # the repository rather than crashing status.
+                    status = "[yellow]not found in repository[/yellow]"
 
             table.add_row(record.name, record.version, status)
 

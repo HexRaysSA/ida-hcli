@@ -508,6 +508,25 @@ def test_status_named_plugin_not_installed(virtual_ida_environment):
     assert "does-not-exist" in result.output
 
 
+def test_status_offline_skips_upgrade_check(virtual_ida_environment):
+    """`status --offline` reports installed plugins without querying the repo for upgrades."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==1.0.0"])
+    assert result.exit_code == 0, result.output
+
+    # sanity check: online status detects the newer version available in PLUGINS_DIR
+    online_result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1"])
+    assert online_result.exit_code == 0, online_result.output
+    assert "upgradable to" in online_result.output
+
+    offline_result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1", "--offline"])
+    assert offline_result.exit_code == 0, offline_result.output
+    assert "plugin1" in offline_result.output
+    assert "upgradable to" not in offline_result.output
+    assert "skipped (offline)" in offline_result.output
+
+
 def test_status_multiple_plugins_all_installed(virtual_ida_environment):
     """`status <name1> <name2>` shows both plugins and exits 0 when both are installed."""
     runner = CliRunner(mix_stderr=False)
