@@ -527,6 +527,105 @@ def test_status_offline_skips_upgrade_check(virtual_ida_environment):
     assert "skipped (offline)" in offline_result.output
 
 
+def test_status_json_installed_plugin(virtual_ida_environment):
+    """`status <name> --json` reports upgrade info as structured JSON."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==1.0.0"])
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1", "--json"])
+    assert result.exit_code == 0, result.output
+
+    payload = json.loads(result.output)
+    assert payload["plugins"] == [
+        {
+            "name": "plugin1",
+            "version": "1.0.0",
+            "installed": True,
+            "kind": "installed",
+            "upgrade_checked": True,
+            "in_repository": True,
+            "upgradable_to": "6.0.0",
+        }
+    ]
+
+
+def test_status_json_not_installed_plugin(virtual_ida_environment):
+    """`status <name> --json` reports a missing plugin and exits non-zero."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "does-not-exist", "--json"])
+    assert result.exit_code != 0
+
+    payload = json.loads(result.output)
+    assert payload["plugins"] == [{"name": "does-not-exist", "installed": False}]
+
+
+def test_status_json_offline(virtual_ida_environment):
+    """`status <name> --json --offline` marks the upgrade check as skipped."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==1.0.0"])
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1", "--offline", "--json"])
+    assert result.exit_code == 0, result.output
+
+    payload = json.loads(result.output)
+    assert payload["plugins"] == [
+        {
+            "name": "plugin1",
+            "version": "1.0.0",
+            "installed": True,
+            "kind": "installed",
+            "upgrade_checked": False,
+            "in_repository": None,
+            "upgradable_to": None,
+        }
+    ]
+
+
+def test_search_json_keyword_query(virtual_ida_environment):
+    """`search --json` (no query) reports the full plugin listing as JSON."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "--json"])
+    assert result.exit_code == 0, result.output
+
+    payload = json.loads(result.output)
+    assert payload["query"] is None
+    names = {entry["name"] for entry in payload["results"]}
+    assert "plugin1" in names
+
+
+def test_search_json_exact_name_query(virtual_ida_environment):
+    """`search <name> --json` reports plugin metadata and versions as JSON."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "plugin1", "--json"])
+    assert result.exit_code == 0, result.output
+
+    payload = json.loads(result.output)
+    assert payload["plugin"]["name"] == "plugin1"
+    assert payload["installed_version"] is None
+    assert any(v["version"] == "4.0.0" for v in payload["versions"])
+
+
+def test_search_json_ambiguous_reference(tmp_path):
+    """`search <name> --json` reports an ambiguity error as JSON and exits non-zero."""
+    repo_dir = _build_colliding_repo_dir(tmp_path)
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", "shared", "--json"])
+    assert result.exit_code != 0
+
+    payload = json.loads(result.output)
+    assert payload["error"] == "ambiguous plugin reference"
+    assert payload["name"] == "shared"
+    assert len(payload["candidates"]) == 2
+
+
 def test_status_multiple_plugins_all_installed(virtual_ida_environment):
     """`status <name1> <name2>` shows both plugins and exits 0 when both are installed."""
     runner = CliRunner(mix_stderr=False)
