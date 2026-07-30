@@ -169,8 +169,11 @@ plugin.add_command(get_plugin_status, name="status")
 
 
 @click.command(name="list", hidden=True)
+@click.argument("plugins", nargs=-1)
+@click.option("--skip-upgrade-check", is_flag=True, default=False)
+@click.option("--json", "json_output", is_flag=True, default=False)
 @click.pass_context
-def _plugin_status_alias(ctx) -> None:
+def _plugin_status_alias(ctx, plugins: tuple[str, ...], skip_upgrade_check: bool, json_output: bool) -> None:
     """Show installed plugins and their upgrade status (alias for 'status')."""
     ctx.forward(get_plugin_status)
 
@@ -189,8 +192,9 @@ plugin.add_command(bundle, name="bundle")
 
 # Backwards-compat alias. Remove after 0.20.
 @click.command(name="explain-environment", hidden=True)
+@click.option("--json", "json_output", is_flag=True, default=False)
 @click.pass_context
-def _explain_environment_alias(ctx) -> None:
+def _explain_environment_alias(ctx, json_output: bool) -> None:
     """Show how the current IDA installation and Python version are detected.
 
     Moved to `hcli ida python explain-environment`.
