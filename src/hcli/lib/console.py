@@ -1,5 +1,7 @@
+import json
 import sys
 from collections.abc import Mapping
+from typing import Any
 
 import rich_click as click
 from rich.console import Console
@@ -45,3 +47,15 @@ def _sync_console_streams():
 
 
 _sync_console_streams()
+
+
+def print_json(data: Any) -> None:
+    """Print `data` as JSON via `console`, not `click.echo`.
+
+    `click.echo` resolves its output stream independently of `console`, so it
+    isn't covered by `_sync_console_streams` and can write to a stale stdout
+    handle under Click's pytest CliRunner integration (see #190). Markup and
+    highlighting are disabled so JSON's own brackets aren't parsed as Rich
+    markup, and soft_wrap avoids Rich reflowing long lines.
+    """
+    console.print(json.dumps(data, indent=2), markup=False, highlight=False, soft_wrap=True)

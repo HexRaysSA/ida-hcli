@@ -4,12 +4,14 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Literal
 
 import rich_click as click
+from pydantic import BaseModel
 from rich.markup import escape
 
 from hcli.env import ENV
-from hcli.lib.console import console
+from hcli.lib.console import console, print_json
 from hcli.lib.ida import (
     MissingCurrentInstallationDirectory,
     detect_binary_arch,
@@ -27,6 +29,7 @@ from hcli.lib.ida.python import (
     GET_PYTHON_INFO_PY,
     PRINT_VERSION_PY,
     PythonNotFoundError,
+    PythonVersionMismatch,
     _derive_python_exe,
     detect_current_python_version,
     find_current_python_executable,
@@ -35,6 +38,435 @@ from hcli.lib.ida.python import (
     get_virtual_env_version,
 )
 from hcli.lib.venv import find_candidate_virtual_envs, is_uv_cache_virtual_env, resolve_user_virtual_env
+
+
+class InstallationEntry(BaseModel):
+    path: str
+    version: str | None = None
+
+
+class KnownInstallationsReport(BaseModel):
+    installations: list[InstallationEntry] = []
+    error: str | None = None
+
+
+class SelectedInstallationReport(BaseModel):
+    install_dir: str | None = None
+    install_dir_source: str | None = None
+    install_dir_error: str | None = None
+    resolved_dir: str | None = None
+    resolved_dir_error: str | None = None
+
+
+class ArchitectureAndVersionReport(BaseModel):
+    ida_binary: str | None = None
+    ida_binary_error: str | None = None
+    binary_arch: str | None = None
+    binary_arch_error: str | None = None
+    platform: str | None = None
+    platform_error: str | None = None
+    ida_version: str | None = None
+    ida_version_source: str | None = None
+    ida_version_error: str | None = None
+
+
+class CandidateVirtualEnv(BaseModel):
+    path: str
+    source: str
+
+
+class IdatProbe(BaseModel):
+    """What IDA's embedded Python reports about itself, via GET_PYTHON_INFO_PY."""
+
+    frozen: bool = False
+    prefix: str
+    base_prefix: str
+    executable: str | None = None
+    virtual_env: str | None = None
+    idapython_venv_executable: str | None = None
+    version_major: int
+    version_minor: int
+
+
+class PythonEnvironmentReport(BaseModel):
+    virtual_env: str | None = None
+    virtual_env_is_uv_cache: bool = False
+    user_virtual_env: str | None = None
+    candidate_virtual_envs: list[CandidateVirtualEnv] = []
+    idapython_venv_executable: str | None = None
+    idapython_venv_executable_exists: bool | None = None
+    python_exe: str | None = None
+    python_exe_source: str | None = None
+    idat_probe: IdatProbe | None = None
+    idat_probe_error: str | None = None
+    derived_exe: str | None = None
+    derived_exe_error: str | None = None
+
+
+class IdaPythonVirtualEnvReport(BaseModel):
+    venv: str
+    home: str | None = None
+    system_site_packages: str | None = None
+    python_version: str | None = None
+
+
+class PythonVersionReport(BaseModel):
+    final_python_exe: str | None = None
+    final_python_exe_error: str | None = None
+    probed_version: str | None = None
+    probed_version_error: str | None = None
+    hcli_interpreter_version: str
+    hcli_interpreter_path: str
+    final_version: str | None = None
+    final_version_error: str | None = None
+
+
+class PythonVersionMismatchEntry(BaseModel):
+    ida_version: str
+    other_version: str
+    other_path: str
+    other_source: str
+
+
+class EnvironmentNote(BaseModel):
+    kind: Literal["diagnostic", "hint", "warning"]
+    text: str
+
+
+class EnvironmentReport(BaseModel):
+    experimental: bool = True
+    known_installations: KnownInstallationsReport
+    selected_installation: SelectedInstallationReport
+    # the sections below need an installation directory, so they're absent when it can't be resolved.
+    architecture_and_version: ArchitectureAndVersionReport | None = None
+    python_environment: PythonEnvironmentReport | None = None
+    idapython_virtualenv: IdaPythonVirtualEnvReport | None = None
+    python_version: PythonVersionReport | None = None
+    python_version_mismatches: list[PythonVersionMismatchEntry] = []
+    python_version_mismatch_error: str | None = None
+    notes: list[EnvironmentNote] = []
+
+
+def collect_known_installations() -> KnownInstallationsReport:
+    report = KnownInstallationsReport()
+
+    try:
+        for path in sorted(find_standard_installations()):
+            version = parse_version_from_ida_pro_py(path) or parse_version_from_dir_name(path) or None
+            report.installations.append(InstallationEntry(path=str(path), version=version))
+    except Exception as e:
+        report.error = str(e)
+
+    return report
+
+
+def collect_selected_installation() -> SelectedInstallationReport:
+    report = SelectedInstallationReport()
+
+    env_install_dir = os.environ.get("HCLI_CURRENT_IDA_INSTALL_DIR") or ENV.HCLI_CURRENT_IDA_INSTALL_DIR
+    if env_install_dir:
+        report.install_dir = str(env_install_dir)
+        report.install_dir_source = "$HCLI_CURRENT_IDA_INSTALL_DIR"
+    else:
+        config_path = get_ida_config_path()
+        try:
+            config = get_ida_config()
+            if config.paths.installation_directory:
+                report.install_dir = str(config.paths.installation_directory)
+                report.install_dir_source = str(config_path)
+            else:
+                report.install_dir_error = f"not configured in {config_path}"
+        except Exception as e:
+            report.install_dir_error = str(e)
+
+    try:
+        report.resolved_dir = str(find_current_ida_install_directory())
+    except MissingCurrentInstallationDirectory as e:
+        report.resolved_dir_error = str(e)
+
+    return report
+
+
+def collect_architecture_and_version(install_dir: Path) -> ArchitectureAndVersionReport:
+    report = ArchitectureAndVersionReport()
+
+    try:
+        ida_binary = find_current_ida_executable()
+        report.ida_binary = str(ida_binary)
+    except Exception as e:
+        report.ida_binary_error = str(e)
+    else:
+        try:
+            report.binary_arch = detect_binary_arch(ida_binary)
+        except Exception as e:
+            report.binary_arch_error = str(e)
+
+    try:
+        report.platform = find_current_ida_platform()
+    except Exception as e:
+        report.platform_error = str(e)
+
+    env_version = os.environ.get("HCLI_CURRENT_IDA_VERSION") or ENV.HCLI_CURRENT_IDA_VERSION
+    if env_version:
+        report.ida_version = env_version
+        report.ida_version_source = "$HCLI_CURRENT_IDA_VERSION"
+    else:
+        sdk_version = parse_version_from_ida_pro_py(install_dir)
+        dir_version = parse_version_from_dir_name(install_dir)
+        if sdk_version:
+            report.ida_version = sdk_version
+            report.ida_version_source = "python/ida_pro.py SDK docstring"
+        elif dir_version:
+            report.ida_version = dir_version
+            report.ida_version_source = "directory name"
+        else:
+            report.ida_version_error = "could not determine"
+
+    return report
+
+
+def collect_python_environment() -> PythonEnvironmentReport:
+    report = PythonEnvironmentReport()
+
+    process_virtual_env = os.environ.get("VIRTUAL_ENV")
+    report.virtual_env = process_virtual_env
+    report.virtual_env_is_uv_cache = process_virtual_env is not None and is_uv_cache_virtual_env(process_virtual_env)
+
+    user_venv = resolve_user_virtual_env()
+    report.user_virtual_env = str(user_venv) if user_venv else None
+
+    report.candidate_virtual_envs = [
+        CandidateVirtualEnv(path=str(candidate.path), source=candidate.source)
+        for candidate in find_candidate_virtual_envs()
+        if not is_uv_cache_virtual_env(candidate.path)
+    ]
+
+    idapython_venv_exe = os.environ.get("IDAPYTHON_VENV_EXECUTABLE") or ENV.IDAPYTHON_VENV_EXECUTABLE
+    if idapython_venv_exe:
+        report.idapython_venv_executable = str(idapython_venv_exe)
+        report.idapython_venv_executable_exists = Path(idapython_venv_exe).is_file()
+
+    env_python = os.environ.get("HCLI_CURRENT_IDA_PYTHON_EXE") or ENV.HCLI_CURRENT_IDA_PYTHON_EXE
+    if env_python:
+        # the interpreter is pinned, so there's nothing for idat to tell us.
+        report.python_exe = str(env_python)
+        report.python_exe_source = "$HCLI_CURRENT_IDA_PYTHON_EXE"
+        return report
+
+    if report.idapython_venv_executable and report.idapython_venv_executable_exists:
+        report.python_exe = report.idapython_venv_executable
+        report.python_exe_source = "$IDAPYTHON_VENV_EXECUTABLE"
+        return report
+
+    try:
+        info = run_py_in_current_idapython(GET_PYTHON_INFO_PY)
+        report.idat_probe = IdatProbe.model_validate(info)
+
+        try:
+            report.derived_exe = str(_derive_python_exe(info))
+        except PythonNotFoundError as e:
+            report.derived_exe_error = str(e)
+    except Exception as e:
+        report.idat_probe_error = f"{type(e).__name__}: {e}"
+
+    return report
+
+
+def collect_idapython_virtualenv(probe: IdatProbe | None) -> IdaPythonVirtualEnvReport | None:
+    ida_venv = probe.virtual_env if probe else None
+    if not ida_venv:
+        return None
+
+    venv_path = Path(ida_venv)
+    report = IdaPythonVirtualEnvReport(venv=str(venv_path))
+
+    pyvenv_cfg = venv_path / "pyvenv.cfg"
+    if pyvenv_cfg.is_file():
+        for line in pyvenv_cfg.read_text().splitlines():
+            if line.startswith("home"):
+                report.home = line.split("=", 1)[1].strip()
+            elif line.startswith("include-system-site-packages"):
+                report.system_site_packages = line.split("=", 1)[1].strip()
+
+    report.python_version = get_virtual_env_version(venv_path)
+
+    return report
+
+
+def collect_python_version() -> PythonVersionReport:
+    report = PythonVersionReport(
+        hcli_interpreter_version=f"{sys.version_info.major}.{sys.version_info.minor}",
+        hcli_interpreter_path=sys.executable,
+    )
+
+    python_exe: Path | None = None
+    try:
+        python_exe = find_current_python_executable()
+        report.final_python_exe = str(python_exe)
+
+        result = subprocess.run(
+            [str(python_exe), "-c", PRINT_VERSION_PY],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+        report.probed_version = result.stdout.strip()
+    except Exception as e:
+        if python_exe is None:
+            report.final_python_exe_error = f"{type(e).__name__}: {e}"
+        else:
+            report.probed_version_error = f"{type(e).__name__}: {e}"
+
+    try:
+        report.final_version = detect_current_python_version()
+    except Exception as e:
+        report.final_version_error = f"{type(e).__name__}: {e}"
+
+    return report
+
+
+def collect_python_version_mismatches(
+    python_environment: PythonEnvironmentReport,
+    python_version: PythonVersionReport,
+) -> tuple[list[PythonVersionMismatchEntry], str | None]:
+    """Find Python environments whose version disagrees with IDA's embedded Python.
+
+    A virtualenv only redirects sys.path; it can't change the Python version IDA
+    runs, which idapyswitch fixed when it registered a libpython. So a venv built
+    for a different version silently can't provide packages to IDA.
+    """
+    probe = python_environment.idat_probe
+    if probe is None:
+        return [], None
+
+    final_python_exe = Path(python_version.final_python_exe) if python_version.final_python_exe else None
+
+    try:
+        mismatches = find_python_version_mismatches(probe.model_dump(), final_python_exe)
+    except Exception as e:
+        return [], f"{type(e).__name__}: {e}"
+
+    return [
+        PythonVersionMismatchEntry(
+            ida_version=mismatch.ida_version,
+            other_version=mismatch.other_version,
+            other_path=str(mismatch.other_path),
+            other_source=mismatch.other_source,
+        )
+        for mismatch in mismatches
+    ], None
+
+
+def collect_notes(
+    python_environment: PythonEnvironmentReport,
+    idapython_virtualenv: IdaPythonVirtualEnvReport | None,
+    python_version: PythonVersionReport,
+) -> list[EnvironmentNote]:
+    notes: list[EnvironmentNote] = []
+
+    process_virtual_env = python_environment.virtual_env
+    is_uv_cache = python_environment.virtual_env_is_uv_cache
+    user_venv = python_environment.user_virtual_env
+    is_hcli_own_venv = bool(process_virtual_env) and os.path.normcase(
+        os.path.abspath(process_virtual_env or "")
+    ) == os.path.normcase(os.path.abspath(sys.prefix))
+
+    if is_uv_cache and user_venv:
+        notes.append(
+            EnvironmentNote(
+                kind="diagnostic",
+                text=f"$VIRTUAL_ENV is a uv cache overlay. Resolved user virtualenv: {user_venv}",
+            )
+        )
+    elif is_uv_cache:
+        notes.append(
+            EnvironmentNote(
+                kind="diagnostic",
+                text=(
+                    "$VIRTUAL_ENV is a uv cache overlay, not your virtualenv. No user virtualenvs were found on $PATH."
+                ),
+            )
+        )
+    elif process_virtual_env and is_hcli_own_venv:
+        notes.append(
+            EnvironmentNote(
+                kind="diagnostic",
+                text=(
+                    f"$VIRTUAL_ENV ({process_virtual_env}) is the HCLI process environment, not the IDA Python "
+                    f"environment. It is not used for plugin installation."
+                ),
+            )
+        )
+    elif process_virtual_env and not idapython_virtualenv:
+        notes.append(
+            EnvironmentNote(
+                kind="diagnostic",
+                text=(
+                    f"$VIRTUAL_ENV is set ({process_virtual_env}) but was not detected inside IDA. "
+                    f"To use this virtualenv with IDA, activate it via idapythonrc.py."
+                ),
+            )
+        )
+
+    if not idapython_virtualenv:
+        notes.append(
+            EnvironmentNote(
+                kind="hint",
+                text=(
+                    "To use a virtualenv with IDA, see: "
+                    "https://community.hex-rays.com/t/using-a-virtualenv-for-idapython/261/5"
+                ),
+            )
+        )
+    if not user_venv and not is_uv_cache and not idapython_virtualenv:
+        notes.append(
+            EnvironmentNote(
+                kind="hint",
+                text="To change IDA's Python, use idapyswitch to point at a different interpreter.",
+            )
+        )
+
+    if python_version.final_version:
+        try:
+            parts = python_version.final_version.split(".")
+            major, minor = int(parts[0]), int(parts[1])
+            if (major, minor) <= (3, 9):
+                notes.append(
+                    EnvironmentNote(
+                        kind="warning",
+                        text=(
+                            f"Python {python_version.final_version} has reached end-of-life. "
+                            "Many IDA plugins may not support it. "
+                            "Consider upgrading to a newer Python and using idapyswitch to point IDA at it."
+                        ),
+                    )
+                )
+        except (ValueError, IndexError):
+            pass
+
+    return notes
+
+
+def collect_environment_report() -> EnvironmentReport:
+    report = EnvironmentReport(
+        known_installations=collect_known_installations(),
+        selected_installation=collect_selected_installation(),
+    )
+
+    if report.selected_installation.resolved_dir is None:
+        return report
+
+    report.architecture_and_version = collect_architecture_and_version(Path(report.selected_installation.resolved_dir))
+    report.python_environment = collect_python_environment()
+    report.idapython_virtualenv = collect_idapython_virtualenv(report.python_environment.idat_probe)
+    report.python_version = collect_python_version()
+    report.python_version_mismatches, report.python_version_mismatch_error = collect_python_version_mismatches(
+        report.python_environment, report.python_version
+    )
+    report.notes = collect_notes(report.python_environment, report.idapython_virtualenv, report.python_version)
+
+    return report
 
 
 def _path(p: object) -> str:
@@ -52,278 +484,216 @@ def _err(key: str, error: str) -> None:
     console.print(f"  [bold]{key}[/bold]: [red]{escape(error)}[/red]")
 
 
-@click.command()
-def explain_environment() -> None:
-    """Show how the current IDA installation and Python version are detected."""
-
-    # --- Known installations ---
-
+def render_known_installations_text(report: KnownInstallationsReport) -> None:
     console.print("[bold]Known IDA installations[/bold]")
-    try:
-        installations = find_standard_installations()
-        if installations:
-            for path in sorted(installations):
-                version = parse_version_from_ida_pro_py(path) or parse_version_from_dir_name(path) or "?"
-                console.print(f"  {_path(path)}  [dim](v{version})[/dim]")
-        else:
-            console.print("  [dim]none found[/dim]")
-    except Exception as e:
-        _err("scan", str(e))
 
-    console.print()
+    for installation in report.installations:
+        console.print(f"  {_path(installation.path)}  [dim](v{installation.version or '?'})[/dim]")
 
-    # --- Selected installation ---
+    if report.error:
+        _err("scan", report.error)
+    elif not report.installations:
+        console.print("  [dim]none found[/dim]")
 
+
+def render_selected_installation_text(report: SelectedInstallationReport) -> None:
     console.print("[bold]Selected installation[/bold]")
 
-    env_install_dir = os.environ.get("HCLI_CURRENT_IDA_INSTALL_DIR") or ENV.HCLI_CURRENT_IDA_INSTALL_DIR
-    if env_install_dir:
-        _kv("install dir", _path(env_install_dir), "$HCLI_CURRENT_IDA_INSTALL_DIR")
-    else:
-        config_path = get_ida_config_path()
-        try:
-            config = get_ida_config()
-            if config.paths.installation_directory:
-                _kv("install dir", _path(config.paths.installation_directory), str(config_path))
-            else:
-                _err("install dir", f"not configured in {config_path}")
-        except Exception as e:
-            _err("install dir", str(e))
+    if report.install_dir:
+        _kv("install dir", _path(report.install_dir), report.install_dir_source)
+    elif report.install_dir_error:
+        _err("install dir", report.install_dir_error)
 
-    try:
-        install_dir = find_current_ida_install_directory()
-        _kv("resolved dir", _path(install_dir))
-    except MissingCurrentInstallationDirectory as e:
-        _err("resolved dir", str(e))
-        console.print()
-        return
+    if report.resolved_dir:
+        _kv("resolved dir", _path(report.resolved_dir))
+    elif report.resolved_dir_error:
+        _err("resolved dir", report.resolved_dir_error)
 
-    console.print()
 
-    # --- Architecture and version ---
-
+def render_architecture_and_version_text(report: ArchitectureAndVersionReport) -> None:
     console.print("[bold]Architecture and version[/bold]")
 
-    try:
-        ida_binary = find_current_ida_executable()
-        _kv("ida binary", _path(ida_binary))
+    if report.ida_binary:
+        _kv("ida binary", _path(report.ida_binary))
+    if report.ida_binary_error:
+        _err("ida binary", report.ida_binary_error)
 
-        arch = detect_binary_arch(ida_binary)
-        _kv("binary arch", arch or "unknown", f"{escape(ida_binary.name)} binary header")
-    except Exception as e:
-        _err("ida binary", str(e))
+    if report.binary_arch_error:
+        _err("binary arch", report.binary_arch_error)
+    elif report.ida_binary:
+        ida_binary_name = escape(Path(report.ida_binary).name)
+        _kv("binary arch", report.binary_arch or "unknown", f"{ida_binary_name} binary header")
 
-    try:
-        platform = find_current_ida_platform()
-        _kv("platform", platform)
-    except Exception as e:
-        _err("platform", str(e))
+    if report.platform:
+        _kv("platform", report.platform)
+    elif report.platform_error:
+        _err("platform", report.platform_error)
 
-    env_version = os.environ.get("HCLI_CURRENT_IDA_VERSION") or ENV.HCLI_CURRENT_IDA_VERSION
-    if env_version:
-        _kv("ida version", env_version, "$HCLI_CURRENT_IDA_VERSION")
-    else:
-        sdk_version = parse_version_from_ida_pro_py(install_dir)
-        dir_version = parse_version_from_dir_name(install_dir)
-        if sdk_version:
-            _kv("ida version", sdk_version, "python/ida_pro.py SDK docstring")
-        elif dir_version:
-            _kv("ida version", dir_version, "directory name")
-        else:
-            _err("ida version", "could not determine")
+    if report.ida_version:
+        _kv("ida version", report.ida_version, report.ida_version_source)
+    elif report.ida_version_error:
+        _err("ida version", report.ida_version_error)
 
-    console.print()
 
-    # --- Python detection ---
-
+def render_python_environment_text(report: PythonEnvironmentReport) -> None:
     console.print("[bold]Python environment[/bold]")
 
-    process_virtual_env = os.environ.get("VIRTUAL_ENV")
-    is_uv_cache = process_virtual_env is not None and is_uv_cache_virtual_env(process_virtual_env)
-    if process_virtual_env and is_uv_cache:
-        _kv("$VIRTUAL_ENV", f"{_path(process_virtual_env)}  [dim](uv cache)[/dim]")
-    elif process_virtual_env:
-        _kv("$VIRTUAL_ENV", _path(process_virtual_env))
+    if report.virtual_env and report.virtual_env_is_uv_cache:
+        _kv("$VIRTUAL_ENV", f"{_path(report.virtual_env)}  [dim](uv cache)[/dim]")
+    elif report.virtual_env:
+        _kv("$VIRTUAL_ENV", _path(report.virtual_env))
     else:
         _kv("$VIRTUAL_ENV", "not set")
 
-    user_venv = resolve_user_virtual_env()
-    if user_venv:
-        _kv("user virtualenv", _path(user_venv), "resolved from $PATH")
+    if report.user_virtual_env:
+        _kv("user virtualenv", _path(report.user_virtual_env), "resolved from $PATH")
 
-    path_venvs = find_candidate_virtual_envs()
-    non_uv_candidates = [c for c in path_venvs if not is_uv_cache_virtual_env(c.path)]
-    if non_uv_candidates:
-        for candidate in non_uv_candidates:
-            _kv("  candidate venv", f"{_path(candidate.path)}  [dim](via {candidate.source})[/dim]")
+    for candidate in report.candidate_virtual_envs:
+        _kv("  candidate venv", f"{_path(candidate.path)}  [dim](via {candidate.source})[/dim]")
 
-    idapython_venv_exe = os.environ.get("IDAPYTHON_VENV_EXECUTABLE") or ENV.IDAPYTHON_VENV_EXECUTABLE
-    if idapython_venv_exe:
-        exists = Path(idapython_venv_exe).is_file()
-        if exists:
-            _kv("$IDAPYTHON_VENV_EXECUTABLE", _path(idapython_venv_exe))
+    if report.idapython_venv_executable:
+        if report.idapython_venv_executable_exists:
+            _kv("$IDAPYTHON_VENV_EXECUTABLE", _path(report.idapython_venv_executable))
         else:
-            _kv("$IDAPYTHON_VENV_EXECUTABLE", f"{_path(idapython_venv_exe)}  [red](not found)[/red]")
+            _kv("$IDAPYTHON_VENV_EXECUTABLE", f"{_path(report.idapython_venv_executable)}  [red](not found)[/red]")
     else:
         _kv("$IDAPYTHON_VENV_EXECUTABLE", "not set")
 
-    info: dict | None = None
-    env_python = os.environ.get("HCLI_CURRENT_IDA_PYTHON_EXE") or ENV.HCLI_CURRENT_IDA_PYTHON_EXE
-    if env_python:
-        _kv("python exe", _path(env_python), "$HCLI_CURRENT_IDA_PYTHON_EXE")
-    elif idapython_venv_exe and Path(idapython_venv_exe).is_file():
-        _kv("python exe", _path(idapython_venv_exe), "$IDAPYTHON_VENV_EXECUTABLE")
-    else:
-        _kv("HCLI_CURRENT_IDA_PYTHON_EXE", "not set")
+    if report.python_exe:
+        _kv("python exe", _path(report.python_exe), report.python_exe_source)
+        return
 
-        try:
-            info = run_py_in_current_idapython(GET_PYTHON_INFO_PY)
-            console.print("  [bold]idat probe[/bold]: [green]success[/green]")
-            _kv("  sys.prefix", _path(info["prefix"]))
-            _kv("  sys.base_prefix", _path(info["base_prefix"]))
-            _kv("  sys.executable", _path(info.get("executable")))
-            _kv("  $VIRTUAL_ENV", _path(info.get("virtual_env")))
-            _kv("  $IDAPYTHON_VENV_EXECUTABLE", _path(info.get("idapython_venv_executable")))
-            _kv("  sys.version_info", f"{info['version_major']}.{info['version_minor']}")
+    _kv("HCLI_CURRENT_IDA_PYTHON_EXE", "not set")
 
-            try:
-                derived = _derive_python_exe(info)
-                _kv("derived exe", _path(derived))
-            except PythonNotFoundError as e:
-                _err("derived exe", str(e))
+    if report.idat_probe_error:
+        _err("idat probe", report.idat_probe_error)
+        return
 
-        except Exception as e:
-            _err("idat probe", f"{type(e).__name__}: {e}")
+    probe = report.idat_probe
+    if probe is None:
+        return
 
-    console.print()
+    console.print("  [bold]idat probe[/bold]: [green]success[/green]")
+    _kv("  sys.prefix", _path(probe.prefix))
+    _kv("  sys.base_prefix", _path(probe.base_prefix))
+    _kv("  sys.executable", _path(probe.executable))
+    _kv("  $VIRTUAL_ENV", _path(probe.virtual_env))
+    _kv("  $IDAPYTHON_VENV_EXECUTABLE", _path(probe.idapython_venv_executable))
+    _kv("  sys.version_info", f"{probe.version_major}.{probe.version_minor}")
 
-    # --- IDAPython virtualenv ---
+    if report.derived_exe:
+        _kv("derived exe", _path(report.derived_exe))
+    elif report.derived_exe_error:
+        _err("derived exe", report.derived_exe_error)
 
+
+def render_idapython_virtualenv_text(report: IdaPythonVirtualEnvReport | None, ida_python_version: str | None) -> None:
     console.print("[bold]IDAPython virtualenv[/bold]")
 
-    ida_venv = info.get("virtual_env") if info else None
-
-    if ida_venv:
-        venv_path = Path(ida_venv)
-        _kv("venv", _path(venv_path), "activated by idapythonrc.py")
-        pyvenv_cfg = venv_path / "pyvenv.cfg"
-        if pyvenv_cfg.is_file():
-            for line in pyvenv_cfg.read_text().splitlines():
-                if line.startswith("home"):
-                    _kv("  home", line.split("=", 1)[1].strip())
-                elif line.startswith("include-system-site-packages"):
-                    _kv("  system site-packages", line.split("=", 1)[1].strip())
-
-        venv_version = get_virtual_env_version(venv_path)
-        if venv_version:
-            ida_python_version = f"{info['version_major']}.{info['version_minor']}" if info else None
-            style = "yellow" if ida_python_version and venv_version != ida_python_version else "green"
-            _kv("  python version", f"[{style}]{venv_version}[/{style}]")
-        else:
-            _err("  python version", "could not determine")
-    else:
+    if report is None:
         console.print("  [dim]none detected[/dim]")
+        return
 
-    console.print()
+    _kv("venv", _path(report.venv), "activated by idapythonrc.py")
+    if report.home is not None:
+        _kv("  home", report.home)
+    if report.system_site_packages is not None:
+        _kv("  system site-packages", report.system_site_packages)
 
-    # --- Final Python version ---
+    if report.python_version:
+        style = "yellow" if ida_python_version and report.python_version != ida_python_version else "green"
+        _kv("  python version", f"[{style}]{report.python_version}[/{style}]")
+    else:
+        _err("  python version", "could not determine")
 
+
+def render_python_version_text(report: PythonVersionReport) -> None:
     console.print("[bold]Python version[/bold]")
 
-    final_python_exe: Path | None = None
-    try:
-        final_python_exe = find_current_python_executable()
-        _kv("final python exe", _path(final_python_exe))
+    if report.final_python_exe:
+        _kv("final python exe", _path(report.final_python_exe))
 
-        result = subprocess.run(
-            [str(final_python_exe), "-c", PRINT_VERSION_PY],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10,
-        )
-        _kv("probed version", result.stdout.strip(), f"running {escape(final_python_exe.name)}")
-    except Exception as e:
-        _err("probed version", f"{type(e).__name__}: {e}")
+    if report.probed_version:
+        exe_name = escape(Path(report.final_python_exe or "").name)
+        _kv("probed version", report.probed_version, f"running {exe_name}")
+    elif report.final_python_exe_error or report.probed_version_error:
+        _err("probed version", report.final_python_exe_error or report.probed_version_error or "")
 
-    interpreter_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-    _kv("HCLI interpreter", interpreter_version, _path(sys.executable))
+    _kv("HCLI interpreter", report.hcli_interpreter_version, _path(report.hcli_interpreter_path))
 
-    try:
-        final = detect_current_python_version()
-        style = "green" if final != interpreter_version else "yellow"
-        _kv("final version", f"[{style}]{final}[/{style}]")
-    except Exception as e:
-        _err("final version", f"{type(e).__name__}: {e}")
+    if report.final_version:
+        style = "green" if report.final_version != report.hcli_interpreter_version else "yellow"
+        _kv("final version", f"[{style}]{report.final_version}[/{style}]")
+    elif report.final_version_error:
+        _err("final version", report.final_version_error)
 
-    console.print()
-    is_hcli_own_venv = process_virtual_env and os.path.normcase(
-        os.path.abspath(process_virtual_env)
-    ) == os.path.normcase(os.path.abspath(sys.prefix))
 
-    if is_uv_cache and user_venv:
-        console.print(
-            f"[dim]Note: $VIRTUAL_ENV is a uv cache overlay. Resolved user virtualenv: {escape(str(user_venv))}[/dim]",
-            highlight=False,
-        )
-        console.print()
-    elif is_uv_cache:
-        console.print(
-            "[dim]Note: $VIRTUAL_ENV is a uv cache overlay, not your virtualenv. "
-            "No user virtualenvs were found on $PATH.[/dim]",
-            highlight=False,
-        )
-        console.print()
-    elif process_virtual_env and is_hcli_own_venv:
-        console.print(
-            f"[dim]Note: $VIRTUAL_ENV ({escape(process_virtual_env)}) "
-            f"is the HCLI process environment, not the IDA Python environment. "
-            f"It is not used for plugin installation.[/dim]",
-            highlight=False,
-        )
-        console.print()
-    elif process_virtual_env and not ida_venv:
-        console.print(
-            f"[dim]Note: $VIRTUAL_ENV is set ({escape(process_virtual_env)}) "
-            f"but was not detected inside IDA. "
-            f"To use this virtualenv with IDA, activate it via idapythonrc.py.[/dim]",
-            highlight=False,
-        )
-        console.print()
+def render_python_version_mismatches_text(report: EnvironmentReport) -> None:
+    if report.python_version_mismatch_error:
+        _err("version mismatch check", report.python_version_mismatch_error)
 
-    if not ida_venv:
-        console.print(
-            "[dim]To use a virtualenv with IDA, see: "
-            "https://community.hex-rays.com/t/using-a-virtualenv-for-idapython/261/5[/dim]",
-            highlight=False,
-        )
-    if not user_venv and not is_uv_cache and not ida_venv:
-        console.print("[dim]To change IDA's Python, use idapyswitch to point at a different interpreter.[/dim]")
-
-    # A virtualenv only redirects sys.path; it can't change the Python version IDA
-    # runs, which idapyswitch fixed when it registered a libpython. So a venv built
-    # for a different version silently can't provide packages to IDA.
-    if info:
-        try:
-            mismatches = find_python_version_mismatches(info, final_python_exe)
-        except Exception as e:
-            mismatches = []
-            _err("version mismatch check", f"{type(e).__name__}: {e}")
-
-        if mismatches:
-            console.print()
-            console.print(format_python_version_mismatch_warning(mismatches), highlight=False)
-
-    try:
-        final_version = detect_current_python_version()
-        parts = final_version.split(".")
-        major, minor = int(parts[0]), int(parts[1])
-        if (major, minor) <= (3, 9):
-            console.print()
-            console.print(
-                f"[bold yellow]Warning:[/bold yellow] Python {final_version} has reached end-of-life. "
-                "Many IDA plugins may not support it. "
-                "Consider upgrading to a newer Python and using idapyswitch to point IDA at it.",
+    if report.python_version_mismatches:
+        mismatches = [
+            PythonVersionMismatch(
+                ida_version=entry.ida_version,
+                other_version=entry.other_version,
+                other_path=Path(entry.other_path),
+                other_source=entry.other_source,
             )
-    except Exception:
-        pass
+            for entry in report.python_version_mismatches
+        ]
+        console.print(format_python_version_mismatch_warning(mismatches), highlight=False)
+        console.print()
+
+
+def render_notes_text(notes: list[EnvironmentNote]) -> None:
+    for note in notes:
+        if note.kind == "warning":
+            console.print(f"[bold yellow]Warning:[/bold yellow] {escape(note.text)}", highlight=False)
+            console.print()
+        elif note.kind == "diagnostic":
+            console.print(f"[dim]Note: {escape(note.text)}[/dim]", highlight=False)
+            console.print()
+        else:
+            console.print(f"[dim]{escape(note.text)}[/dim]", highlight=False)
+
+
+def render_environment_report_text(report: EnvironmentReport) -> None:
+    render_known_installations_text(report.known_installations)
+    console.print()
+    render_selected_installation_text(report.selected_installation)
+    console.print()
+
+    if report.architecture_and_version is None or report.python_environment is None or report.python_version is None:
+        return
+
+    render_architecture_and_version_text(report.architecture_and_version)
+    console.print()
+    render_python_environment_text(report.python_environment)
+    console.print()
+
+    probe = report.python_environment.idat_probe
+    ida_python_version = f"{probe.version_major}.{probe.version_minor}" if probe else None
+    render_idapython_virtualenv_text(report.idapython_virtualenv, ida_python_version)
+    console.print()
+    render_python_version_text(report.python_version)
+    console.print()
+    render_notes_text([note for note in report.notes if note.kind != "warning"])
+    render_python_version_mismatches_text(report)
+    render_notes_text([note for note in report.notes if note.kind == "warning"])
+
+
+def render_environment_report_json(report: EnvironmentReport) -> None:
+    print_json(report.model_dump(mode="json"))
+
+
+@click.command()
+@click.option("--json", "json_output", is_flag=True, default=False, help="output machine-readable JSON")
+def explain_environment(json_output: bool) -> None:
+    """Show how the current IDA installation and Python version are detected. (experimental)"""
+    report = collect_environment_report()
+
+    if json_output:
+        render_environment_report_json(report)
+    else:
+        render_environment_report_text(report)
