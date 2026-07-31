@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from typing import Any, TypedDict
 
 import rich.table
 import rich_click as click
@@ -44,6 +45,46 @@ from hcli.lib.ida.plugin.repo import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class VersionEntry(TypedDict):
+    version: str
+    compatible: bool
+    currently_installed: bool
+    upgradable: bool
+
+
+class DownloadLocationEntry(TypedDict):
+    ida_versions: str
+    platforms: str
+    url: str
+
+
+class PluginNameQueryResult(TypedDict):
+    plugin: dict[str, Any]
+    installed_version: str | None
+    versions: list[VersionEntry]
+
+
+class PluginExactVersionQueryResult(TypedDict):
+    plugin: dict[str, Any]
+    download_locations: list[DownloadLocationEntry]
+
+
+class PluginVersionRangeQueryResult(TypedDict):
+    plugin: dict[str, Any]
+    installed_version: str | None
+    versions: list[VersionEntry]
+
+
+class KeywordMatchEntry(TypedDict):
+    name: str
+    version: str
+    repository: str | None
+    compatible: bool
+    installed: bool
+    installed_version: str | None
+    upgradable: bool
 
 
 def does_plugin_match_query(query: str, plugin: Plugin) -> bool:
@@ -126,7 +167,7 @@ def collect_version_entries(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
-) -> tuple[list[dict], str | None]:
+) -> tuple[list[VersionEntry], str | None]:
     """Build per-version compatibility/install status entries for `plugin`.
 
     Returns (entries, installed_version), where installed_version is the
@@ -138,7 +179,7 @@ def collect_version_entries(
     if installed_record is not None:
         existing_version = parse_plugin_version(installed_record.version)
 
-    entries = []
+    entries: list[VersionEntry] = []
     for version in versions:
         locations = plugin.versions[version]
         metadata = locations[0].metadata
@@ -239,7 +280,7 @@ def build_plugin_name_query_result(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
-) -> dict:
+) -> PluginNameQueryResult:
     plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
     entries, installed_version = collect_version_entries(
         plugin, all_versions_newest_first(plugin), current_version, current_platform, installed_records
@@ -271,7 +312,7 @@ def render_platforms(platforms: Sequence[Platform]) -> str:
     return ", ".join(sorted(platforms))
 
 
-def collect_download_locations(locations) -> list[dict]:
+def collect_download_locations(locations) -> list[DownloadLocationEntry]:
     return [
         {
             "ida_versions": render_ida_versions(location.metadata.plugin.ida_versions),
@@ -306,7 +347,7 @@ def handle_plugin_exact_version_query(plugin: Plugin, version: str):
     console.print(table)
 
 
-def build_plugin_exact_version_query_result(plugin: Plugin, version: str) -> dict:
+def build_plugin_exact_version_query_result(plugin: Plugin, version: str) -> PluginExactVersionQueryResult:
     if version not in plugin.versions:
         raise KeyError(f"version {version} not found for plugin {plugin.name}")
 
@@ -341,7 +382,7 @@ def build_plugin_version_range_query_result(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
-) -> dict:
+) -> PluginVersionRangeQueryResult:
     matching_versions = get_matching_versions(plugin, ref.version_spec)
     if not matching_versions:
         raise KeyError(f"no versions matching {ref.version_spec!r} found for plugin {plugin.name!r}")
@@ -381,7 +422,7 @@ def build_plugin_spec_query_result(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
-) -> dict:
+) -> PluginExactVersionQueryResult | PluginVersionRangeQueryResult:
     plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
 
     if ref.version_spec.startswith("=="):
@@ -399,8 +440,8 @@ def collect_keyword_matches(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
-) -> list[dict]:
-    matches = []
+) -> list[KeywordMatchEntry]:
+    matches: list[KeywordMatchEntry] = []
 
     for plugin in sorted(plugins, key=lambda p: p.name.lower()):
         if not does_plugin_match_query(query or "", plugin):

@@ -36,11 +36,11 @@ def _build_installed_entry(
     record,
     current_platform: str,
     current_ida_version: str,
-    offline: bool,
+    skip_upgrade_check: bool,
 ) -> dict:
     entry = {"name": record.name, "version": record.version, "installed": True, "kind": "installed"}
 
-    if offline:
+    if skip_upgrade_check:
         entry["upgrade_checked"] = False
         entry["in_repository"] = None
         entry["upgradable_to"] = None
@@ -92,7 +92,7 @@ def _render_status_row(table: rich.table.Table, entry: dict) -> None:
         return
 
     if not entry["upgrade_checked"]:
-        status = "[dim]skipped (offline)[/dim]"
+        status = "[dim]skipped[/dim]"
     elif not entry["in_repository"]:
         status = "[yellow]not found in repository[/yellow]"
     elif entry["upgradable_to"]:
@@ -106,14 +106,14 @@ def _render_status_row(table: rich.table.Table, entry: dict) -> None:
 @click.command()
 @click.argument("plugins", nargs=-1)
 @click.option(
-    "--offline",
+    "--skip-upgrade-check",
     is_flag=True,
     default=False,
     help="skip the per-plugin upgrade check against the plugin repository",
 )
 @click.option("--json", "json_output", is_flag=True, default=False, help="output machine-readable JSON")
 @click.pass_context
-def get_plugin_status(ctx, plugins: tuple[str, ...], offline: bool, json_output: bool) -> None:
+def get_plugin_status(ctx, plugins: tuple[str, ...], skip_upgrade_check: bool, json_output: bool) -> None:
     """Show installed plugins and their upgrade status.
 
     If one or more PLUGINS are given, show status for just those plugins,
@@ -138,7 +138,7 @@ def get_plugin_status(ctx, plugins: tuple[str, ...], offline: bool, json_output:
             installed_records = all_records
 
         entries = [
-            _build_installed_entry(plugin_repo, record, current_platform, current_ida_version, offline)
+            _build_installed_entry(plugin_repo, record, current_platform, current_ida_version, skip_upgrade_check)
             for record in installed_records
         ]
         not_found_entries = [{"name": name, "installed": False} for name in not_found_names]

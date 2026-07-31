@@ -508,23 +508,23 @@ def test_status_named_plugin_not_installed(virtual_ida_environment):
     assert "does-not-exist" in result.output
 
 
-def test_status_offline_skips_upgrade_check(virtual_ida_environment):
-    """`status --offline` reports installed plugins without querying the repo for upgrades."""
+def test_status_skip_upgrade_check(virtual_ida_environment):
+    """`status --skip-upgrade-check` reports installed plugins without querying the repo for upgrades."""
     runner = CliRunner(mix_stderr=False)
 
     result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==1.0.0"])
     assert result.exit_code == 0, result.output
 
-    # sanity check: online status detects the newer version available in PLUGINS_DIR
+    # sanity check: without the flag, status detects the newer version available in PLUGINS_DIR
     online_result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1"])
     assert online_result.exit_code == 0, online_result.output
     assert "upgradable to" in online_result.output
 
-    offline_result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1", "--offline"])
-    assert offline_result.exit_code == 0, offline_result.output
-    assert "plugin1" in offline_result.output
-    assert "upgradable to" not in offline_result.output
-    assert "skipped (offline)" in offline_result.output
+    skip_result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1", "--skip-upgrade-check"])
+    assert skip_result.exit_code == 0, skip_result.output
+    assert "plugin1" in skip_result.output
+    assert "upgradable to" not in skip_result.output
+    assert "skipped" in skip_result.output
 
 
 def test_status_json_installed_plugin(virtual_ida_environment):
@@ -562,14 +562,16 @@ def test_status_json_not_installed_plugin(virtual_ida_environment):
     assert payload["plugins"] == [{"name": "does-not-exist", "installed": False}]
 
 
-def test_status_json_offline(virtual_ida_environment):
-    """`status <name> --json --offline` marks the upgrade check as skipped."""
+def test_status_json_skip_upgrade_check(virtual_ida_environment):
+    """`status <name> --json --skip-upgrade-check` marks the upgrade check as skipped."""
     runner = CliRunner(mix_stderr=False)
 
     result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==1.0.0"])
     assert result.exit_code == 0, result.output
 
-    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1", "--offline", "--json"])
+    result = runner.invoke(
+        plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1", "--skip-upgrade-check", "--json"]
+    )
     assert result.exit_code == 0, result.output
 
     payload = json.loads(result.output)
