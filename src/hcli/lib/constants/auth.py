@@ -96,4 +96,5 @@ class CredentialsConfig(BaseModel):
 
 
 # Configuration keys
-CONFIG_CREDENTIALS = f"{ENV.HCLI_BINARY_NAME}.credentials"
+CONFIG_CREDENTIALS = f"{ENV.HCLI_CONFIG_NAMESPACE}.credentials"
+CONFIG_LOGIN_EMAIL = f"{ENV.HCLI_CONFIG_NAMESPACE}.login.email"

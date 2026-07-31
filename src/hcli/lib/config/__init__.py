@@ -42,14 +42,14 @@ class ConfigStore:
         version_key = f"{binary}.version"
         current_version = self.get_string(version_key, "0.0.0")
         if current_version != ENV.HCLI_VERSION:
-            self._migrate_legacy_keys(binary)
+            self._migrate_legacy_keys(ENV.HCLI_CONFIG_NAMESPACE)
             self._data[version_key] = ENV.HCLI_VERSION
             self._save_config()
 
-    def _migrate_legacy_keys(self, binary: str):
-        """Migrate unscoped config keys to per-binary namespaced keys."""
+    def _migrate_legacy_keys(self, namespace: str):
+        """Migrate unscoped config keys to namespaced auth keys."""
         for old_key, suffix in [("credentials", "credentials"), ("login.email", "login.email")]:
-            new_key = f"{binary}.{suffix}"
+            new_key = f"{namespace}.{suffix}"
             if old_key in self._data and new_key not in self._data:
                 self._data[new_key] = self._data[old_key]
                 del self._data[old_key]
