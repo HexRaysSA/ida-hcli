@@ -40,6 +40,7 @@ A typical `ida-plugin.json` file might look like this:
     "categories": [
       "ui-ux-and-visualization"
     ],
+    "requiresPython": ">=3.11",
     "pythonDependencies": ["pydantic>=2"],
     "urls": {
       "repository": "https://github.com/williballenthin/idawilli"
@@ -88,6 +89,7 @@ In addition to the primary fields described initially on the [Hex-Rays docs](htt
 
 And there are new optional fields:
 
+  - `.plugin.requiresPython` is an optional [PEP 440](https://peps.python.org/pep-0440/) version specifier, such as `">=3.11"`. HCLI checks the active IDA Python environment before installing and stops with guidance if it is incompatible.
   - `.plugin.pythonDependencies` is a list of packages on PyPI that will be installed
   - `.plugin.keywords` is a list of terms to help users searching for plugins
   - `.plugin.platforms` is recommended, defaults to all platforms. The possible values are: `windows-x86_64`, `linux-x86_64`, `macos-x86_64`, and `macos-aarch64`.

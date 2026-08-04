@@ -242,6 +242,22 @@
           "description": "Relative path within the repository to an image representing the plugin on `plugins.hex-rays.com`. Recommended aspect ratio is 16:9.",
           "title": "Logopath"
         },
+        "requiresPython": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Python version requirement for the IDA Python environment, expressed as a PEP 440 version specifier. HCLI checks this before installing the plugin.",
+          "examples": [
+            ">=3.11"
+          ],
+          "title": "Requirespython"
+        },
         "pythonDependencies": {
           "anyOf": [
             {
