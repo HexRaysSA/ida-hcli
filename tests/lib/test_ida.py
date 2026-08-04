@@ -11,7 +11,6 @@ import pytest
 from hcli.lib.ida import (
     IdaProduct,
     _is_ida_install_dir_name,
-    _log_idat_env,
     _prepare_headless_ida_user_dir,
     accept_eula,
     detect_binary_arch,
@@ -451,40 +450,3 @@ def test_prepare_headless_ida_user_dir_copies_only_required_files(tmp_path):
     assert not (target_dir / "ida-config.json").exists()
     assert not (target_dir / "plugins").exists()
     assert not (target_dir / "mcp").exists()
-
-
-def test_log_idat_env_logs_set_and_unset_vars(caplog):
-    env = {
-        "IDAUSR": "/home/user/.idapro",
-        "VIRTUAL_ENV": "/home/user/.venv",
-        "HCLI_API_KEY": "s3cret",
-    }
-
-    with caplog.at_level("DEBUG", logger="hcli.lib.ida"):
-        _log_idat_env(env)
-
-    messages = [record.getMessage() for record in caplog.records]
-
-    assert "idat env: IDAUSR=/home/user/.idapro" in messages
-    assert "idat env: VIRTUAL_ENV=/home/user/.venv" in messages
-    # variables that were stripped or never set are reported too: their absence
-    # is what usually explains a broken Python environment.
-    assert "idat env: PYTHONHOME=<not set>" in messages
-    assert "idat env: PATH=<not set>" in messages
-
-    # nothing outside the curated set is logged: the env handed to idat is a copy
-    # of ours and may hold credentials.
-    assert not any("HCLI_API_KEY" in message for message in messages)
-    assert not any("s3cret" in message for message in messages)
-
-
-def test_log_idat_env_reports_inherited_environment(caplog, monkeypatch):
-    monkeypatch.setenv("IDAUSR", "/inherited/idausr")
-
-    with caplog.at_level("DEBUG", logger="hcli.lib.ida"):
-        _log_idat_env(None)
-
-    messages = [record.getMessage() for record in caplog.records]
-
-    assert "idat env: inherited from the current process" in messages
-    assert "idat env: IDAUSR=/inherited/idausr" in messages
