@@ -31,7 +31,7 @@ from hcli.lib.ida.plugin.repo import BasePluginRepo
 logger = logging.getLogger(__name__)
 
 
-def _build_installed_entry(
+def _collect_installed_entry(
     plugin_repo: BasePluginRepo,
     record,
     current_platform: str,
@@ -138,7 +138,7 @@ def get_plugin_status(ctx, plugins: tuple[str, ...], skip_upgrade_check: bool, j
             installed_records = all_records
 
         entries = [
-            _build_installed_entry(plugin_repo, record, current_platform, current_ida_version, skip_upgrade_check)
+            _collect_installed_entry(plugin_repo, record, current_platform, current_ida_version, skip_upgrade_check)
             for record in installed_records
         ]
         not_found_entries = [{"name": name, "installed": False} for name in not_found_names]

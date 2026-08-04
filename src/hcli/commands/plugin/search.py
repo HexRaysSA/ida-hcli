@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 import rich.table
 import rich_click as click
@@ -87,6 +87,17 @@ class KeywordMatchEntry(TypedDict):
     upgradable: bool
 
 
+class KeywordQueryResult(TypedDict):
+    query: str | None
+    results: list[KeywordMatchEntry]
+
+
+class AmbiguityErrorResult(TypedDict):
+    error: str
+    name: str
+    candidates: list[str]
+
+
 def does_plugin_match_query(query: str, plugin: Plugin) -> bool:
     if not query:
         return True
@@ -139,7 +150,15 @@ def find_installed_matching(
     return find_installed_plugin_in(installed_records, plugin.name, host=plugin.host)
 
 
-def render_ambiguity_error(err: AmbiguousPluginReferenceError) -> None:
+def collect_ambiguity_error(err: AmbiguousPluginReferenceError) -> AmbiguityErrorResult:
+    return {
+        "error": "ambiguous plugin reference",
+        "name": err.name,
+        "candidates": [format_qualified_plugin_reference(ref) for ref in err.candidate_refs],
+    }
+
+
+def render_ambiguity_error_text(err: AmbiguousPluginReferenceError) -> None:
     """Render the user-facing message for an ambiguous bare-name query."""
     console.print(f"[red]Error[/red]: plugin name '{err.name}' is ambiguous")
     console.print("Choose one of:")
@@ -147,16 +166,15 @@ def render_ambiguity_error(err: AmbiguousPluginReferenceError) -> None:
         console.print(f"  {format_qualified_plugin_reference(ref)}")
 
 
-def build_plugin_metadata_dict(metadata) -> dict:
+def collect_plugin_metadata(metadata) -> dict[str, Any]:
     metadata_dict = metadata.plugin.model_dump(mode="json")
     del metadata_dict["platforms"]
     metadata_dict["idaVersions"] = render_ida_versions(metadata_dict["idaVersions"])
     return metadata_dict
 
 
-def output_plugin_metadata(metadata) -> None:
-    metadata_dict = build_plugin_metadata_dict(metadata)
-    for key, value in sorted(metadata_dict.items()):
+def render_plugin_metadata_text(plugin: dict[str, Any]) -> None:
+    for key, value in sorted(plugin.items()):
         console.print(f"{key}: {value}")
     console.print()
 
@@ -205,18 +223,7 @@ def collect_version_entries(
     return entries, (installed_record.version if installed_record is not None else None)
 
 
-def output_plugin_versions_table(
-    plugin: Plugin,
-    versions: Sequence[str],
-    current_version: str,
-    current_platform: str,
-    title: str,
-    installed_records: list[InstalledPluginRecord],
-) -> None:
-    entries, installed_version = collect_version_entries(
-        plugin, versions, current_version, current_platform, installed_records
-    )
-
+def render_plugin_versions_text(entries: list[VersionEntry], installed_version: str | None, title: str) -> None:
     table = rich.table.Table(show_header=False, box=None)
     table.add_column("version", style="default")
     table.add_column("status")
@@ -248,33 +255,14 @@ def get_matching_versions(plugin: Plugin, version_spec: str) -> list[str]:
     ]
 
 
-def all_versions_newest_first(plugin: Plugin) -> list[str]:
+def get_all_versions_newest_first(plugin: Plugin) -> list[str]:
     return [
         version
         for version, _ in sorted(plugin.versions.items(), key=lambda p: parse_plugin_version(p[0]), reverse=True)
     ]
 
 
-def handle_plugin_name_query(
-    plugins: list[Plugin],
-    ref: PluginReference,
-    current_version: str,
-    current_platform: str,
-    installed_records: list[InstalledPluginRecord],
-):
-    plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
-    output_plugin_metadata(get_latest_plugin_metadata(plugin))
-    output_plugin_versions_table(
-        plugin,
-        all_versions_newest_first(plugin),
-        current_version,
-        current_platform,
-        "available versions:",
-        installed_records,
-    )
-
-
-def build_plugin_name_query_result(
+def collect_plugin_name_query_result(
     plugins: list[Plugin],
     ref: PluginReference,
     current_version: str,
@@ -283,13 +271,18 @@ def build_plugin_name_query_result(
 ) -> PluginNameQueryResult:
     plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
     entries, installed_version = collect_version_entries(
-        plugin, all_versions_newest_first(plugin), current_version, current_platform, installed_records
+        plugin, get_all_versions_newest_first(plugin), current_version, current_platform, installed_records
     )
     return {
-        "plugin": build_plugin_metadata_dict(get_latest_plugin_metadata(plugin)),
+        "plugin": collect_plugin_metadata(get_latest_plugin_metadata(plugin)),
         "installed_version": installed_version,
         "versions": entries,
     }
+
+
+def render_plugin_name_query_text(result: PluginNameQueryResult) -> None:
+    render_plugin_metadata_text(result["plugin"])
+    render_plugin_versions_text(result["versions"], result["installed_version"], "available versions:")
 
 
 def render_ida_versions(versions: Sequence[IdaVersion]) -> str:
@@ -323,20 +316,27 @@ def collect_download_locations(locations) -> list[DownloadLocationEntry]:
     ]
 
 
-def handle_plugin_exact_version_query(plugin: Plugin, version: str):
+def collect_plugin_exact_version_query_result(plugin: Plugin, version: str) -> PluginExactVersionQueryResult:
     if version not in plugin.versions:
         raise KeyError(f"version {version} not found for plugin {plugin.name}")
 
     locations = plugin.versions[version]
     metadata = locations[0].metadata
-    output_plugin_metadata(metadata)
+    return {
+        "plugin": collect_plugin_metadata(metadata),
+        "download_locations": collect_download_locations(locations),
+    }
+
+
+def render_plugin_exact_version_query_text(result: PluginExactVersionQueryResult) -> None:
+    render_plugin_metadata_text(result["plugin"])
 
     table = rich.table.Table(show_header=False, box=None)
     table.add_column("IDA version spec", style="default")
     table.add_column("IDA platforms", style="default")
     table.add_column("URL")
 
-    for location in collect_download_locations(locations):
+    for location in result["download_locations"]:
         table.add_row(
             "IDA: " + location["ida_versions"],
             "platforms: " + location["platforms"],
@@ -347,36 +347,7 @@ def handle_plugin_exact_version_query(plugin: Plugin, version: str):
     console.print(table)
 
 
-def build_plugin_exact_version_query_result(plugin: Plugin, version: str) -> PluginExactVersionQueryResult:
-    if version not in plugin.versions:
-        raise KeyError(f"version {version} not found for plugin {plugin.name}")
-
-    locations = plugin.versions[version]
-    metadata = locations[0].metadata
-    return {
-        "plugin": build_plugin_metadata_dict(metadata),
-        "download_locations": collect_download_locations(locations),
-    }
-
-
-def handle_plugin_version_range_query(
-    plugin: Plugin,
-    ref: PluginReference,
-    current_version: str,
-    current_platform: str,
-    installed_records: list[InstalledPluginRecord],
-):
-    matching_versions = get_matching_versions(plugin, ref.version_spec)
-    if not matching_versions:
-        raise KeyError(f"no versions matching {ref.version_spec!r} found for plugin {plugin.name!r}")
-
-    output_plugin_metadata(plugin.versions[matching_versions[0]][0].metadata)
-    output_plugin_versions_table(
-        plugin, matching_versions, current_version, current_platform, "matching versions:", installed_records
-    )
-
-
-def build_plugin_version_range_query_result(
+def collect_plugin_version_range_query_result(
     plugin: Plugin,
     ref: PluginReference,
     current_version: str,
@@ -391,32 +362,18 @@ def build_plugin_version_range_query_result(
         plugin, matching_versions, current_version, current_platform, installed_records
     )
     return {
-        "plugin": build_plugin_metadata_dict(plugin.versions[matching_versions[0]][0].metadata),
+        "plugin": collect_plugin_metadata(plugin.versions[matching_versions[0]][0].metadata),
         "installed_version": installed_version,
         "versions": entries,
     }
 
 
-def handle_plugin_spec_query(
-    plugins: list[Plugin],
-    ref: PluginReference,
-    current_version: str,
-    current_platform: str,
-    installed_records: list[InstalledPluginRecord],
-):
-    plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
-
-    if ref.version_spec.startswith("=="):
-        version = ref.version_spec[2:]
-        if not version:
-            raise ValueError(f"invalid plugin version: {ref.version_spec!r}")
-        handle_plugin_exact_version_query(plugin, version)
-        return
-
-    handle_plugin_version_range_query(plugin, ref, current_version, current_platform, installed_records)
+def render_plugin_version_range_query_text(result: PluginVersionRangeQueryResult) -> None:
+    render_plugin_metadata_text(result["plugin"])
+    render_plugin_versions_text(result["versions"], result["installed_version"], "matching versions:")
 
 
-def build_plugin_spec_query_result(
+def collect_plugin_spec_query_result(
     plugins: list[Plugin],
     ref: PluginReference,
     current_version: str,
@@ -429,9 +386,17 @@ def build_plugin_spec_query_result(
         version = ref.version_spec[2:]
         if not version:
             raise ValueError(f"invalid plugin version: {ref.version_spec!r}")
-        return build_plugin_exact_version_query_result(plugin, version)
+        return collect_plugin_exact_version_query_result(plugin, version)
 
-    return build_plugin_version_range_query_result(plugin, ref, current_version, current_platform, installed_records)
+    return collect_plugin_version_range_query_result(plugin, ref, current_version, current_platform, installed_records)
+
+
+def render_plugin_spec_query_text(result: PluginExactVersionQueryResult | PluginVersionRangeQueryResult) -> None:
+    # mypy doesn't narrow a TypedDict union via `in`, so discriminate and cast explicitly.
+    if "download_locations" in result:
+        render_plugin_exact_version_query_text(cast(PluginExactVersionQueryResult, result))
+    else:
+        render_plugin_version_range_query_text(cast(PluginVersionRangeQueryResult, result))
 
 
 def collect_keyword_matches(
@@ -485,14 +450,21 @@ def collect_keyword_matches(
     return matches
 
 
-def handle_keyword_query(
+def collect_keyword_query_result(
     plugins: list[Plugin],
     query: str,
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
-):
-    matches = collect_keyword_matches(plugins, query, current_version, current_platform, installed_records)
+) -> KeywordQueryResult:
+    return {
+        "query": query or None,
+        "results": collect_keyword_matches(plugins, query, current_version, current_platform, installed_records),
+    }
+
+
+def render_keyword_query_text(result: KeywordQueryResult) -> None:
+    matches = result["results"]
 
     if not matches:
         console.print("[grey69]No plugins found[/grey69]")
@@ -575,38 +547,32 @@ def search_plugins(ctx, query: str | None = None, json_output: bool = False) -> 
         ref = resolve_query_reference(plugins, query)
 
         if ref is None:
+            keyword_result = collect_keyword_query_result(
+                plugins, query or "", current_version, current_platform, installed_records
+            )
             if json_output:
-                print_json(
-                    {
-                        "query": query or None,
-                        "results": collect_keyword_matches(
-                            plugins, query or "", current_version, current_platform, installed_records
-                        ),
-                    }
-                )
+                print_json(keyword_result)
             else:
-                handle_keyword_query(plugins, query or "", current_version, current_platform, installed_records)
+                render_keyword_query_text(keyword_result)
             return
 
         try:
             if ref.version_spec:
+                spec_result = collect_plugin_spec_query_result(
+                    plugins, ref, current_version, current_platform, installed_records
+                )
                 if json_output:
-                    print_json(
-                        build_plugin_spec_query_result(
-                            plugins, ref, current_version, current_platform, installed_records
-                        )
-                    )
+                    print_json(spec_result)
                 else:
-                    handle_plugin_spec_query(plugins, ref, current_version, current_platform, installed_records)
+                    render_plugin_spec_query_text(spec_result)
             else:
+                name_result = collect_plugin_name_query_result(
+                    plugins, ref, current_version, current_platform, installed_records
+                )
                 if json_output:
-                    print_json(
-                        build_plugin_name_query_result(
-                            plugins, ref, current_version, current_platform, installed_records
-                        )
-                    )
+                    print_json(name_result)
                 else:
-                    handle_plugin_name_query(plugins, ref, current_version, current_platform, installed_records)
+                    render_plugin_name_query_text(name_result)
 
         except AmbiguousPluginReferenceError as e:
             # get_plugin_by_name does not know the user's version spec; attach
@@ -615,16 +581,10 @@ def search_plugins(ctx, query: str | None = None, json_output: bool = False) -> 
                 e = AmbiguousPluginReferenceError(e.name, e.candidates, ref.version_spec)
 
             if json_output:
-                print_json(
-                    {
-                        "error": "ambiguous plugin reference",
-                        "name": e.name,
-                        "candidates": [format_qualified_plugin_reference(c) for c in e.candidate_refs],
-                    }
-                )
+                print_json(collect_ambiguity_error(e))
                 ctx.exit(1)
 
-            render_ambiguity_error(e)
+            render_ambiguity_error_text(e)
             raise click.Abort()
 
         except (KeyError, ValueError) as e:
