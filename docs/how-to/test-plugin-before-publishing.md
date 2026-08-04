@@ -252,6 +252,7 @@ Launch IDA Pro and verify:
    ```python
    # In IDA Python console
    import ida_loader
+
    ida_loader.load_and_run_plugin("my-awesome-plugin", 0)
    ```
 
