@@ -120,6 +120,7 @@ class EnvironmentNote(BaseModel):
 
 
 class EnvironmentReport(BaseModel):
+    experimental: bool = True
     known_installations: KnownInstallationsReport
     selected_installation: SelectedInstallationReport
     # the sections below need an installation directory, so they're absent when it can't be resolved.
@@ -567,7 +568,7 @@ def render_environment_report_json(report: EnvironmentReport) -> None:
 @click.command(hidden=True)
 @click.option("--json", "json_output", is_flag=True, default=False, help="output machine-readable JSON")
 def explain_environment(json_output: bool) -> None:
-    """Show how the current IDA installation and Python version are detected."""
+    """Show how the current IDA installation and Python version are detected. (experimental)"""
     report = collect_environment_report()
 
     try:
