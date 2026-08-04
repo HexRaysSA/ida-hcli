@@ -1104,13 +1104,10 @@ def _clean_env_for_idat() -> dict[str, str]:
     #  with its own ephemeral virtual environment.
     # So, we try to resolve the *real* virtual environment, if possible.
     user_venv = resolve_user_virtual_env()
-    logger.debug("resolved user virtualenv for idat: %s", user_venv if user_venv is not None else "<none>")
 
     env = os.environ.copy()
     for key in ("VIRTUAL_ENV", "PYTHONHOME", "PYTHONPATH", "PATH"):
-        removed = env.pop(key, None)
-        if removed is not None:
-            logger.debug("stripping %s from idat environment (was: %s)", key, removed)
+        env.pop(key, None)
 
     if user_venv is not None:
         # we pass this along so idat can recognize the current virtualenv

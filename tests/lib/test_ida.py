@@ -11,7 +11,6 @@ import pytest
 from hcli.lib.ida import (
     IDAT_ENV_VARS_OF_INTEREST,
     IdaProduct,
-    _clean_env_for_idat,
     _is_ida_install_dir_name,
     _log_idat_env,
     _prepare_headless_ida_user_dir,
@@ -490,22 +489,3 @@ def test_log_idat_env_reports_inherited_environment(caplog, monkeypatch):
 
     assert "idat env: inherited from the current process" in messages
     assert "idat env: IDAUSR=/inherited/idausr" in messages
-
-
-def test_clean_env_for_idat_logs_stripped_vars(caplog, monkeypatch):
-    monkeypatch.setenv("PYTHONHOME", "/some/pythonhome")
-    monkeypatch.setenv("PATH", "/usr/bin")
-    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
-    monkeypatch.delenv("PYTHONPATH", raising=False)
-
-    with caplog.at_level("DEBUG", logger="hcli.lib.ida"):
-        env = _clean_env_for_idat()
-
-    messages = [record.getMessage() for record in caplog.records]
-
-    assert "PYTHONHOME" not in env
-    assert "PATH" not in env
-    assert "stripping PYTHONHOME from idat environment (was: /some/pythonhome)" in messages
-    assert "stripping PATH from idat environment (was: /usr/bin)" in messages
-    assert not any(message.startswith("stripping PYTHONPATH") for message in messages)
-    assert any(message.startswith("resolved user virtualenv for idat: ") for message in messages)
