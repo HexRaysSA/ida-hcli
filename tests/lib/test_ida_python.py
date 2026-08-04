@@ -526,10 +526,11 @@ def test_format_python_version_mismatch_warning_is_empty_without_mismatches():
 
 
 def test_format_python_version_mismatch_warning_explains_the_fix():
+    venv = Path("/home/user/.venv")
     mismatch = PythonVersionMismatch(
         ida_version="3.12",
         other_version="3.14",
-        other_path=Path("/home/user/.venv"),
+        other_path=venv,
         other_source="the virtualenv activated inside IDA ($VIRTUAL_ENV)",
     )
 
@@ -538,5 +539,6 @@ def test_format_python_version_mismatch_warning_explains_the_fix():
     assert "Warning" in warning
     assert "3.12" in warning
     assert "3.14" in warning
-    assert "/home/user/.venv" in warning
+    # str(), not a literal: Path renders with backslashes on Windows
+    assert str(venv) in warning
     assert "idapyswitch" in warning
