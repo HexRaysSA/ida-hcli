@@ -1,6 +1,7 @@
 import json
 import sys
 from collections.abc import Mapping
+from typing import Any
 
 import rich_click as click
 from rich.console import Console
@@ -48,7 +49,7 @@ def _sync_console_streams():
 _sync_console_streams()
 
 
-def print_json(data) -> None:
+def print_json(data: Any) -> None:
     """Print `data` as JSON via `console`, not `click.echo`.
 
     `click.echo` resolves its output stream independently of `console`, so it

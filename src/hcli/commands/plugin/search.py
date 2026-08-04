@@ -23,6 +23,7 @@ from hcli.lib.ida import (
 from hcli.lib.ida.plugin import (
     ALL_IDA_VERSIONS,
     ALL_PLATFORMS,
+    IDAMetadataDescriptor,
     IdaVersion,
     Platform,
     parse_ida_version,
@@ -38,6 +39,7 @@ from hcli.lib.ida.plugin.reference import (
 from hcli.lib.ida.plugin.repo import (
     BasePluginRepo,
     Plugin,
+    PluginArchiveLocation,
     get_latest_compatible_plugin_metadata,
     get_latest_plugin_metadata,
     get_plugin_by_name,
@@ -167,7 +169,7 @@ def render_ambiguity_error_text(err: AmbiguousPluginReferenceError) -> None:
         console.print(f"  {format_qualified_plugin_reference(ref)}")
 
 
-def collect_plugin_metadata(metadata) -> dict[str, Any]:
+def collect_plugin_metadata(metadata: IDAMetadataDescriptor) -> dict[str, Any]:
     metadata_dict = metadata.plugin.model_dump(mode="json")
     del metadata_dict["platforms"]
     metadata_dict["idaVersions"] = render_ida_versions(metadata_dict["idaVersions"])
@@ -306,7 +308,7 @@ def render_platforms(platforms: Sequence[Platform]) -> str:
     return ", ".join(sorted(platforms))
 
 
-def collect_download_locations(locations) -> list[DownloadLocationEntry]:
+def collect_download_locations(locations: list[PluginArchiveLocation]) -> list[DownloadLocationEntry]:
     return [
         DownloadLocationEntry(
             ida_versions=render_ida_versions(location.metadata.plugin.ida_versions),
