@@ -305,7 +305,14 @@ def verify_pip_can_install_packages(
         logger.debug("can't install packages")
         logger.debug(stdout.decode("utf-8", errors="replace"))
         logger.debug(stderr.decode("utf-8", errors="replace"))
-        raise CantInstallPackagesError(_format_pip_error(stdout, stderr))
+
+        error_text = _format_pip_error(stdout, stderr)
+        if "no such option: --dry-run" in error_text:
+            raise CantInstallPackagesError(
+                f"pip does not support --dry-run (requires pip 22.2 or later). "
+                f"Please upgrade pip: {python_exe} -m pip install --upgrade pip"
+            )
+        raise CantInstallPackagesError(error_text)
 
 
 def pip_install_packages(
