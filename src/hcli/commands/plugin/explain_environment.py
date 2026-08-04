@@ -277,7 +277,8 @@ def explain_environment() -> None:
 
     try:
         final_version = detect_current_python_version()
-        major, minor = (int(x) for x in final_version.split("."))
+        parts = final_version.split(".")
+        major, minor = int(parts[0]), int(parts[1])
         if (major, minor) <= (3, 9):
             console.print()
             console.print(
