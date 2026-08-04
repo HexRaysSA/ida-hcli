@@ -21,20 +21,24 @@ Notably it supports IDA 6.6+ - that will be hard to reproduce with HCLI.
 These are actually moderately complex:
 
 ```py
-      install_requires=[
-          'ipykernel>=4.6',
-          'ipykernel>=5.1.4; python_version >= "3.8" and platform_system=="Windows"',
-          'qtconsole>=4.3',
-          'qasync; python_version >= "3"',
-          'jupyter-client<6.1.13',
-          'nbformat',
-      ],
-      extras_require={
-          "notebook": [
-              "notebook<7",
-              "jupyter-kernel-proxy",
-          ]
-      },
+install_requires = (
+    [
+        "ipykernel>=4.6",
+        'ipykernel>=5.1.4; python_version >= "3.8" and platform_system=="Windows"',
+        "qtconsole>=4.3",
+        'qasync; python_version >= "3"',
+        "jupyter-client<6.1.13",
+        "nbformat",
+    ],
+)
+extras_require = (
+    {
+        "notebook": [
+            "notebook<7",
+            "jupyter-kernel-proxy",
+        ]
+    },
+)
 ```
 
 However, all these dependencies are packaged into the `ipyida` Python package from PyPI.
