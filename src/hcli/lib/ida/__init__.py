@@ -993,6 +993,46 @@ def _prepare_headless_ida_user_dir(source_dir: Path, target_dir: Path) -> None:
             shutil.copy2(license_file, target_dir / license_file.name)
 
 
+# Environment variables that steer how IDA locates its user directory and
+# reconstructs its Python environment. Logged before every idat invocation so
+# reports about Python detection show the environment idat actually saw.
+#
+# Only this curated set is logged: the environment passed to idat is a copy of
+# our own, which may hold credentials and other unrelated secrets.
+IDAT_ENV_VARS_OF_INTEREST = (
+    "IDAUSR",
+    "IDADIR",
+    "IDA_IS_INTERACTIVE",
+    "IDAPYTHON_VENV_EXECUTABLE",
+    "VIRTUAL_ENV",
+    "CONDA_PREFIX",
+    "PYENV_VERSION",
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "PYTHONEXECUTABLE",
+    "PYTHONNOUSERSITE",
+    "PYTHONUSERBASE",
+    "PYTHONSTARTUP",
+    "PYTHONUTF8",
+    "PYTHONIOENCODING",
+    "PATH",
+)
+
+
+def _log_idat_env(env: dict[str, str] | None) -> None:
+    """Log the environment variables that affect idat's Python environment."""
+    if env is None:
+        # subprocess.run(env=None) means the child inherits our environment.
+        effective = dict(os.environ)
+        logger.debug("idat env: inherited from the current process")
+    else:
+        effective = env
+
+    for key in IDAT_ENV_VARS_OF_INTEREST:
+        value = effective.get(key)
+        logger.debug("idat env: %s=%s", key, value if value is not None else "<not set>")
+
+
 def _run_ida_batch_script(idat_path: Path, src: str, env: dict[str, str] | None = None) -> dict:
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -1022,6 +1062,11 @@ def _run_ida_batch_script(idat_path: Path, src: str, env: dict[str, str] | None 
             f"-S{script_path.absolute()!s}",
         ]
 
+        # log before invoking, so the environment is recorded even when idat
+        # hangs or crashes hard enough that we never get to the lines below.
+        logger.debug(f"idat command: {' '.join(cmd)}")
+        _log_idat_env(env)
+
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -1031,9 +1076,6 @@ def _run_ida_batch_script(idat_path: Path, src: str, env: dict[str, str] | None 
             check=False,
             env=env,
         )
-        logger.debug(f"idat command: {' '.join(cmd)}")
-        if env and env.get("IDAUSR"):
-            logger.debug(f"idat IDAUSR: {env['IDAUSR']}")
         logger.debug(f"idat exit code: {result.returncode}")
         if result.stdout:
             logger.debug(f"idat stdout: {result.stdout}")
@@ -1062,10 +1104,13 @@ def _clean_env_for_idat() -> dict[str, str]:
     #  with its own ephemeral virtual environment.
     # So, we try to resolve the *real* virtual environment, if possible.
     user_venv = resolve_user_virtual_env()
+    logger.debug("resolved user virtualenv for idat: %s", user_venv if user_venv is not None else "<none>")
 
     env = os.environ.copy()
     for key in ("VIRTUAL_ENV", "PYTHONHOME", "PYTHONPATH", "PATH"):
-        env.pop(key, None)
+        removed = env.pop(key, None)
+        if removed is not None:
+            logger.debug("stripping %s from idat environment (was: %s)", key, removed)
 
     if user_venv is not None:
         # we pass this along so idat can recognize the current virtualenv
