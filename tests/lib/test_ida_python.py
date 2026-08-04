@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,11 +10,16 @@ from hcli.lib.ida.python import (
     CantInstallPackagesError,
     PipOptions,
     _derive_python_exe,
+    detect_python_version,
     does_current_ida_have_pip,
     find_current_python_executable,
     merge_bundle_pip_options,
     verify_pip_can_install_packages,
 )
+
+
+def test_detect_python_version_returns_full_version():
+    assert detect_python_version(Path(sys.executable)) == ".".join(str(part) for part in sys.version_info[:3])
 
 
 def has_idat():

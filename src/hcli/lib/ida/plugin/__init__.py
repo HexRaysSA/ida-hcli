@@ -15,6 +15,8 @@ else:
     import tomli as tomllib
 
 import semantic_version
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import Version
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -439,6 +441,16 @@ class PluginMetadata(BaseModel):
         ),
     )
 
+    requires_python: str | None = Field(
+        alias="requiresPython",
+        default=None,
+        description=(
+            "Python version requirement for the IDA Python environment, expressed as a PEP 440 version specifier. "
+            "HCLI checks this before installing the plugin."
+        ),
+        examples=[">=3.11"],
+    )
+
     python_dependencies: list[str] | str = Field(
         alias="pythonDependencies",
         default_factory=list,
@@ -453,6 +465,22 @@ class PluginMetadata(BaseModel):
         default_factory=list,
         description="User-configurable settings exposed by the plugin.",
     )
+
+    @field_validator("requires_python", mode="after")
+    @classmethod
+    def is_valid_python_requirement(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        value = value.strip()
+        if not value:
+            raise ValueError("requiresPython must not be empty")
+
+        try:
+            SpecifierSet(value)
+        except InvalidSpecifier as e:
+            raise ValueError("requiresPython must be a valid PEP 440 version specifier (for example, '>=3.11')") from e
+        return value
 
     @field_validator("name", mode="after")
     @classmethod
@@ -781,6 +809,11 @@ def does_plugin_path_exist_in_plugin_archive(zip_data: bytes, plugin_root: Path,
 def is_ida_version_compatible(current_version: str, compatible_versions: Iterable[str]) -> bool:
     """Check if current IDA version is compatible with the given versions."""
     return current_version in compatible_versions
+
+
+def is_python_version_compatible(current_version: str, requirement: str) -> bool:
+    """Check whether a Python version satisfies a PEP 440 version requirement."""
+    return Version(current_version) in SpecifierSet(requirement)
 
 
 # expect paths to be:

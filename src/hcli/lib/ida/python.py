@@ -355,6 +355,24 @@ def _merge_no_build_isolation(pip_options: PipOptions, no_build_isolation: bool)
     return pip_options
 
 
+def detect_python_version(python_exe: Path) -> str:
+    """Detect the full version of a Python interpreter."""
+    result = subprocess.run(
+        [
+            str(python_exe),
+            "-c",
+            "import sys; print('.'.join(str(part) for part in sys.version_info[:3]))",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    version = result.stdout.strip()
+    logger.debug("detected Python version: %s", version)
+    return version
+
+
 def detect_current_python_version() -> str:
     """Detect the major.minor Python version of the active IDA Python.
 
@@ -364,16 +382,9 @@ def detect_current_python_version() -> str:
     logger.debug("detecting IDA Python executable...")
     python_exe = find_current_python_executable()
     logger.debug("found IDA Python executable: %s", python_exe)
-    result = subprocess.run(
-        [str(python_exe), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=10,
-    )
-    version = result.stdout.strip()
-    logger.debug("detected Python version: %s", version)
-    return version
+    version = detect_python_version(python_exe)
+    major, minor, *_ = version.split(".")
+    return f"{major}.{minor}"
 
 
 def pip_freeze(python_exe: Path):

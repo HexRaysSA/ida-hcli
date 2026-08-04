@@ -27,6 +27,7 @@ from hcli.lib.ida.plugin import (
     get_python_dependencies_from_plugin_directory,
     is_binary_plugin_archive,
     is_ida_version_compatible,
+    is_python_version_compatible,
     is_source_plugin_archive,
     parse_plugin_version,
     validate_metadata_in_plugin_archive,
@@ -43,12 +44,14 @@ from hcli.lib.ida.plugin.exceptions import (
     PluginInUseError,
     PluginNotInstalledError,
     PluginVersionDowngradeError,
+    PythonVersionIncompatibleError,
 )
 from hcli.lib.ida.plugin.reference import normalize_plugin_host
 from hcli.lib.ida.python import (
     PIP_OPTIONS_DEFAULT,
     CantInstallPackagesError,
     PipOptions,
+    detect_python_version,
     does_current_ida_have_pip,
     find_current_python_executable,
     pip_install_packages,
@@ -452,6 +455,34 @@ def get_installed_legacy_plugins() -> list[Path]:
     return installed_plugins
 
 
+def validate_python_version(
+    metadata: IDAMetadataDescriptor,
+    python_exe: Path | None = None,
+) -> Path | None:
+    """Verify that IDA's Python satisfies the plugin's ``requiresPython`` field.
+
+    Returns the discovered Python executable when a requirement was checked, or
+    the supplied executable/``None`` when the plugin has no requirement.
+
+    Raises:
+        PythonVersionIncompatibleError: If IDA's Python does not satisfy the requirement.
+    """
+    requirement = metadata.plugin.requires_python
+    if requirement is None:
+        return python_exe
+
+    if python_exe is None:
+        python_exe = find_current_python_executable()
+
+    current_version = detect_python_version(python_exe)
+    logger.debug("IDA Python: %s (%s); plugin requires: %s", current_version, python_exe, requirement)
+    if not is_python_version_compatible(current_version, requirement):
+        logger.warning("IDA Python version %s does not satisfy %s", current_version, requirement)
+        raise PythonVersionIncompatibleError(current_version, requirement, python_exe)
+
+    return python_exe
+
+
 def validate_can_install_python_dependencies(
     zip_data: bytes,
     metadata: IDAMetadataDescriptor,
@@ -522,6 +553,7 @@ def validate_can_install_plugin(
         BrokenPluginInstallationError: If remnants of a broken installation are in the way
         PlatformIncompatibleError: If current platform is not supported
         IDAVersionIncompatibleError: If current IDA version is not supported
+        PythonVersionIncompatibleError: If IDA's Python does not satisfy requiresPython
         PipNotAvailableError: If pip is not available (when dependencies are needed)
         DependencyInstallationError: If dependencies cannot be installed
     """
@@ -556,8 +588,13 @@ def validate_can_install_plugin(
         logger.warning(f"Current IDA version not supported: {current_version}")
         raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
 
+    python_exe = validate_python_version(metadata)
     return validate_can_install_python_dependencies(
-        zip_data, metadata, no_build_isolation=no_build_isolation, pip_options=pip_options
+        zip_data,
+        metadata,
+        python_exe=python_exe,
+        no_build_isolation=no_build_isolation,
+        pip_options=pip_options,
     )
 
 
@@ -822,6 +859,8 @@ def install_plugin_directory_editable(source_dir: Path, name: str, no_build_isol
         logger.warning(f"Current IDA version not supported: {current_version}")
         raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
 
+    python_exe = validate_python_version(metadata)
+
     try:
         destination_path = get_plugin_directory(metadata.plugin.name)
     except ValueError as e:
@@ -847,7 +886,8 @@ def install_plugin_directory_editable(source_dir: Path, name: str, no_build_isol
                 all_python_dependencies.extend(existing_deps)
             all_python_dependencies.extend(python_dependencies)
 
-        python_exe = find_current_python_executable()
+        if python_exe is None:
+            python_exe = find_current_python_executable()
         if not does_current_ida_have_pip(python_exe):
             raise PipNotAvailableError(python_exe)
 
@@ -1042,6 +1082,7 @@ def validate_can_upgrade_plugin(
         PluginNotInstalledError: If plugin is not currently installed
         PlatformIncompatibleError: If current platform is not supported
         IDAVersionIncompatibleError: If current IDA version is not supported
+        PythonVersionIncompatibleError: If IDA's Python does not satisfy requiresPython
         PipNotAvailableError: If pip is not available (when dependencies are needed)
         DependencyInstallationError: If dependencies cannot be installed
     """
@@ -1065,8 +1106,14 @@ def validate_can_upgrade_plugin(
         logger.warning(f"Current IDA version not supported: {current_version}")
         raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
 
+    python_exe = validate_python_version(metadata)
     validate_can_install_python_dependencies(
-        zip_data, metadata, excluded_plugins=[name], no_build_isolation=no_build_isolation, pip_options=pip_options
+        zip_data,
+        metadata,
+        excluded_plugins=[name],
+        python_exe=python_exe,
+        no_build_isolation=no_build_isolation,
+        pip_options=pip_options,
     )
 
 

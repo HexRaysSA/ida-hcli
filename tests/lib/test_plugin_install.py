@@ -23,6 +23,7 @@ from hcli.lib.ida.plugin.exceptions import (
     PluginInUseError,
     PluginNotInstalledError,
     PluginVersionDowngradeError,
+    PythonVersionIncompatibleError,
 )
 from hcli.lib.ida.plugin.install import (
     extract_zip_subdirectory_to,
@@ -66,6 +67,40 @@ def test_install_source_plugin_archive(virtual_ida_environment):
     assert (plugin_directory / "plugin1.py").exists()
 
     assert ("plugin1", "1.0.0") in get_installed_plugins()
+
+
+def with_requires_python(zip_data: bytes, requirement: str) -> bytes:
+    """Return a plugin archive with ``requiresPython`` added to its manifest."""
+    source = io.BytesIO(zip_data)
+    destination = io.BytesIO()
+    with zipfile.ZipFile(source) as input_zip, zipfile.ZipFile(destination, "w") as output_zip:
+        for info in input_zip.infolist():
+            content = input_zip.read(info.filename)
+            if info.filename.endswith("ida-plugin.json"):
+                doc = json.loads(content)
+                doc["plugin"]["requiresPython"] = requirement
+                content = json.dumps(doc).encode()
+            output_zip.writestr(info, content)
+    return destination.getvalue()
+
+
+def test_install_checks_requires_python_before_extracting(virtual_ida_environment, monkeypatch):
+    original = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
+    buf = with_requires_python(original, ">=3.12")
+    python_exe = Path("/configured/ida/python")
+    monkeypatch.setattr("hcli.lib.ida.plugin.install.find_current_python_executable", lambda: python_exe)
+    monkeypatch.setattr("hcli.lib.ida.plugin.install.detect_python_version", lambda _: "3.11.9")
+
+    with pytest.raises(PythonVersionIncompatibleError) as exc_info:
+        install_plugin_archive(buf, "plugin1")
+
+    error = exc_info.value
+    assert error.current == "3.11.9"
+    assert error.required == ">=3.12"
+    assert error.python_exe == python_exe
+    assert "IDA's Python environment uses Python 3.11.9" in str(error)
+    assert "idapyswitch" in str(error)
+    assert not get_plugin_directory("plugin1").exists()
 
 
 def test_install_binary_plugin_archive(virtual_ida_environment):
@@ -115,6 +150,21 @@ def test_upgrade(virtual_ida_environment):
     with pytest.raises(PluginVersionDowngradeError):
         # this is a downgrade
         upgrade_plugin_archive(v1, "plugin1")
+
+
+def test_upgrade_checks_requires_python_before_replacing_plugin(virtual_ida_environment, monkeypatch):
+    v1 = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
+    v2 = (PLUGINS_DIR / "plugin1" / "plugin1-v2.0.0.zip").read_bytes()
+    install_plugin_archive(v1, "plugin1")
+
+    python_exe = Path("/configured/ida/python")
+    monkeypatch.setattr("hcli.lib.ida.plugin.install.find_current_python_executable", lambda: python_exe)
+    monkeypatch.setattr("hcli.lib.ida.plugin.install.detect_python_version", lambda _: "3.11.9")
+
+    with pytest.raises(PythonVersionIncompatibleError):
+        upgrade_plugin_archive(with_requires_python(v2, ">=3.12"), "plugin1")
+
+    assert ("plugin1", "1.0.0") in get_installed_plugins()
 
 
 def test_plugin_python_dependencies(virtual_ida_environment_with_venv):

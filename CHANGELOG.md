@@ -2,6 +2,9 @@
 
 ## unreleased
 
+### Added
+- Support an optional `requiresPython` field in `ida-plugin.json` and check it against IDA's Python environment before installation
+
 ### Fixed
 - Update uv.lock for better Python 3.14 support
 - Update ida-config.json by default on install
