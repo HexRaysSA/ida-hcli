@@ -2,6 +2,9 @@
 
 ## unreleased
 
+### Added
+- Warn when IDA's Python version (registered by idapyswitch) doesn't match the active virtualenv, in `explain-environment` and before installing plugin dependencies
+
 ### Fixed
 - Update uv.lock for better Python 3.14 support
 - Update ida-config.json by default on install

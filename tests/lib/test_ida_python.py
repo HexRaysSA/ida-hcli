@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,10 +9,15 @@ from hcli.lib.ida import find_current_ida_install_directory, get_ida_user_dir
 from hcli.lib.ida.python import (
     CantInstallPackagesError,
     PipOptions,
+    PythonVersionMismatch,
     _derive_python_exe,
     does_current_ida_have_pip,
     find_current_python_executable,
+    find_python_version_mismatches,
+    format_python_version_mismatch_warning,
+    get_virtual_env_version,
     merge_bundle_pip_options,
+    probe_python_version,
     verify_pip_can_install_packages,
 )
 
@@ -370,3 +376,167 @@ def test_merge_bundle_pip_options_default_user():
     )
     merged = merge_bundle_pip_options(user, bundle)
     assert merged == bundle
+
+
+def _write_fake_venv(venv_dir: Path, version: str) -> Path:
+    """Create a venv layout whose interpreter can't be run, so pyvenv.cfg decides the version."""
+    venv_dir.mkdir(parents=True, exist_ok=True)
+    (venv_dir / "pyvenv.cfg").write_text(f"home = /base/python\nversion = {version}\n", encoding="utf-8")
+    bin_dir = _venv_bin_dir(venv_dir)
+    bin_dir.mkdir(exist_ok=True)
+    python = _venv_launcher_for_ida(venv_dir)
+    python.write_text("", encoding="utf-8")
+    return python
+
+
+def _ida_info(version: tuple[int, int], **overrides) -> dict:
+    info = {
+        "frozen": False,
+        "prefix": "/opt/python3",
+        "base_prefix": "/opt/python3",
+        "executable": "/opt/python3/bin/python3",
+        "virtual_env": None,
+        "idapython_venv_executable": None,
+        "version_major": version[0],
+        "version_minor": version[1],
+    }
+    info.update(overrides)
+    return info
+
+
+def test_get_virtual_env_version_falls_back_to_pyvenv_cfg(tmp_path):
+    venv = tmp_path / "venv"
+    _write_fake_venv(venv, "3.14.1")
+
+    assert get_virtual_env_version(venv) == "3.14"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinking an interpreter requires privileges on Windows")
+def test_get_virtual_env_version_prefers_the_interpreter_over_pyvenv_cfg(tmp_path):
+    venv = tmp_path / "venv"
+    _write_fake_venv(venv, "9.9.9")
+
+    # replace the unrunnable stub with the interpreter running this test,
+    # so probing succeeds and disagrees with the stale pyvenv.cfg
+    python = _venv_launcher_for_ida(venv)
+    python.unlink()
+    python.symlink_to(sys.executable)
+
+    expected = f"{sys.version_info.major}.{sys.version_info.minor}"
+    assert get_virtual_env_version(venv) == expected
+
+
+def test_get_virtual_env_version_returns_none_when_unknown(tmp_path):
+    venv = tmp_path / "venv"
+    venv.mkdir()
+
+    assert get_virtual_env_version(venv) is None
+
+
+def test_find_python_version_mismatches_detects_ida_venv_mismatch(tmp_path):
+    """idapyswitch registered 3.12, but idapythonrc.py activates a 3.14 venv."""
+    venv = tmp_path / "venv"
+    venv_python = _write_fake_venv(venv, "3.14.1")
+
+    info = _ida_info((3, 12), virtual_env=str(venv), executable=str(venv_python))
+
+    mismatches = find_python_version_mismatches(info, venv_python)
+
+    assert len(mismatches) == 1
+    assert mismatches[0].ida_version == "3.12"
+    assert mismatches[0].other_version == "3.14"
+    assert mismatches[0].other_path == venv
+    assert "$VIRTUAL_ENV" in mismatches[0].other_source
+
+
+def test_find_python_version_mismatches_accepts_matching_versions(tmp_path):
+    venv = tmp_path / "venv"
+    venv_python = _write_fake_venv(venv, "3.12.7")
+
+    info = _ida_info((3, 12), virtual_env=str(venv), executable=str(venv_python))
+
+    assert find_python_version_mismatches(info, venv_python) == []
+
+
+def test_find_python_version_mismatches_detects_requested_venv_mismatch(tmp_path):
+    """IDAPYTHON_VENV_EXECUTABLE points at a venv IDA's interpreter can't use."""
+    venv = tmp_path / "venv"
+    venv_python = _write_fake_venv(venv, "3.14.1")
+
+    info = _ida_info((3, 12), idapython_venv_executable=str(venv_python))
+
+    mismatches = find_python_version_mismatches(info, venv_python)
+
+    assert len(mismatches) == 1
+    assert mismatches[0].other_version == "3.14"
+    assert mismatches[0].other_path == venv
+    assert "$IDAPYTHON_VENV_EXECUTABLE" in mismatches[0].other_source
+
+
+def test_find_python_version_mismatches_reports_each_venv_once(tmp_path):
+    """The same venv reached two ways is one problem, not two."""
+    venv = tmp_path / "venv"
+    venv_python = _write_fake_venv(venv, "3.14.1")
+
+    info = _ida_info(
+        (3, 12),
+        virtual_env=str(venv),
+        idapython_venv_executable=str(venv_python),
+        executable=str(venv_python),
+    )
+
+    assert len(find_python_version_mismatches(info, venv_python)) == 1
+
+
+def test_find_python_version_mismatches_detects_install_interpreter_mismatch():
+    """The interpreter hcli would install into disagrees with IDA's embedded Python."""
+    # sys.executable is real, so its version is probed rather than guessed
+    info = _ida_info((3, 1), executable=sys.executable)
+
+    mismatches = find_python_version_mismatches(info, Path(sys.executable))
+
+    assert len(mismatches) == 1
+    assert mismatches[0].ida_version == "3.1"
+    assert mismatches[0].other_version == f"{sys.version_info.major}.{sys.version_info.minor}"
+    assert mismatches[0].other_path == Path(sys.executable)
+    assert "install" in mismatches[0].other_source
+
+
+def test_find_python_version_mismatches_ignores_unreadable_venv(tmp_path):
+    """A venv whose version can't be determined isn't reported as a mismatch."""
+    venv = tmp_path / "venv"
+    venv.mkdir()
+
+    info = _ida_info((3, 12), virtual_env=str(venv), executable=str(sys.executable))
+
+    mismatches = find_python_version_mismatches(info, Path(sys.executable))
+
+    assert all(m.other_path != venv for m in mismatches)
+
+
+def test_probe_python_version_returns_none_for_unrunnable_interpreter(tmp_path):
+    fake = tmp_path / "not-python"
+    fake.write_text("", encoding="utf-8")
+
+    assert probe_python_version(fake, timeout=5.0) is None
+
+
+def test_format_python_version_mismatch_warning_is_empty_without_mismatches():
+    assert format_python_version_mismatch_warning([]) == ""
+
+
+def test_format_python_version_mismatch_warning_explains_the_fix():
+    mismatch = PythonVersionMismatch(
+        ida_version="3.12",
+        other_version="3.14",
+        other_path=Path("/home/user/.venv"),
+        other_source="the virtualenv activated inside IDA ($VIRTUAL_ENV)",
+    )
+
+    warning = format_python_version_mismatch_warning([mismatch])
+
+    assert "Warning" in warning
+    assert "3.12" in warning
+    assert "3.14" in warning
+    assert "/home/user/.venv" in warning
+    assert "idapyswitch" in warning
