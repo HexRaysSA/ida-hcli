@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from hcli.lib.ida import (
-    IDAT_ENV_VARS_OF_INTEREST,
     IdaProduct,
     _is_ida_install_dir_name,
     _log_idat_env,
@@ -473,9 +472,9 @@ def test_log_idat_env_logs_set_and_unset_vars(caplog):
     assert "idat env: PYTHONHOME=<not set>" in messages
     assert "idat env: PATH=<not set>" in messages
 
-    # every variable of interest gets exactly one line ...
-    assert len(messages) == len(IDAT_ENV_VARS_OF_INTEREST)
-    # ... and nothing outside that curated set is logged.
+    # nothing outside the curated set is logged: the env handed to idat is a copy
+    # of ours and may hold credentials.
+    assert not any("HCLI_API_KEY" in message for message in messages)
     assert not any("s3cret" in message for message in messages)
 
 

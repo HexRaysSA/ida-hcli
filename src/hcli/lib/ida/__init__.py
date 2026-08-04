@@ -993,34 +993,31 @@ def _prepare_headless_ida_user_dir(source_dir: Path, target_dir: Path) -> None:
             shutil.copy2(license_file, target_dir / license_file.name)
 
 
-# Environment variables that steer how IDA locates its user directory and
-# reconstructs its Python environment. Logged before every idat invocation so
-# reports about Python detection show the environment idat actually saw.
-#
-# Only this curated set is logged: the environment passed to idat is a copy of
-# our own, which may hold credentials and other unrelated secrets.
-IDAT_ENV_VARS_OF_INTEREST = (
-    "IDAUSR",
-    "IDADIR",
-    "IDA_IS_INTERACTIVE",
-    "IDAPYTHON_VENV_EXECUTABLE",
-    "VIRTUAL_ENV",
-    "CONDA_PREFIX",
-    "PYENV_VERSION",
-    "PYTHONHOME",
-    "PYTHONPATH",
-    "PYTHONEXECUTABLE",
-    "PYTHONNOUSERSITE",
-    "PYTHONUSERBASE",
-    "PYTHONSTARTUP",
-    "PYTHONUTF8",
-    "PYTHONIOENCODING",
-    "PATH",
-)
-
-
 def _log_idat_env(env: dict[str, str] | None) -> None:
     """Log the environment variables that affect idat's Python environment."""
+    # Variables that steer how IDA locates its user directory and reconstructs
+    # its Python environment. Only this curated set is logged: the environment
+    # passed to idat is a copy of our own, which may hold credentials and other
+    # unrelated secrets.
+    keys = (
+        "IDAUSR",
+        "IDADIR",
+        "IDA_IS_INTERACTIVE",
+        "IDAPYTHON_VENV_EXECUTABLE",
+        "VIRTUAL_ENV",
+        "CONDA_PREFIX",
+        "PYENV_VERSION",
+        "PYTHONHOME",
+        "PYTHONPATH",
+        "PYTHONEXECUTABLE",
+        "PYTHONNOUSERSITE",
+        "PYTHONUSERBASE",
+        "PYTHONSTARTUP",
+        "PYTHONUTF8",
+        "PYTHONIOENCODING",
+        "PATH",
+    )
+
     if env is None:
         # subprocess.run(env=None) means the child inherits our environment.
         effective = dict(os.environ)
@@ -1028,7 +1025,7 @@ def _log_idat_env(env: dict[str, str] | None) -> None:
     else:
         effective = env
 
-    for key in IDAT_ENV_VARS_OF_INTEREST:
+    for key in keys:
         value = effective.get(key)
         logger.debug("idat env: %s=%s", key, value if value is not None else "<not set>")
 
