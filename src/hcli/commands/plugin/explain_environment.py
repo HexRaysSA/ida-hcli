@@ -28,10 +28,8 @@ from hcli.lib.ida.python import (
     GET_PYTHON_INFO_PY,
     PythonNotFoundError,
     _derive_python_exe,
-    build_console_script_search_dirs,
     detect_current_python_version,
     find_current_python_executable,
-    probe_console_script_info,
 )
 from hcli.lib.venv import find_candidate_virtual_envs, is_uv_cache_virtual_env, resolve_user_virtual_env
 
@@ -370,52 +368,6 @@ def explain_environment(json_output: bool) -> None:
 
     emit("")
 
-    # --- Console scripts (e.g. locating a pip-installed script like `speakeasy`) ---
-
-    emit("[bold]Console scripts[/bold]")
-    console_scripts_report: dict[str, Any] = {
-        "python_exe": None,
-        "prefix": None,
-        "base_prefix": None,
-        "scripts_dir": None,
-        "os_name": None,
-        "search_dirs": [],
-        "error": None,
-    }
-    report["console_scripts"] = console_scripts_report
-
-    if python_exe is None:
-        console_scripts_report["error"] = "no final python exe was detected above"
-        if not json_output:
-            _err("search dirs", "no final python exe was detected above")
-    else:
-        try:
-            csi = probe_console_script_info(python_exe)
-            search_dirs = build_console_script_search_dirs(
-                csi["prefix"], csi["base_prefix"], csi["scripts_dir"], csi["os_name"]
-            )
-            console_scripts_report.update(
-                {
-                    "python_exe": str(python_exe),
-                    "prefix": csi["prefix"],
-                    "base_prefix": csi["base_prefix"],
-                    "scripts_dir": csi["scripts_dir"],
-                    "os_name": csi["os_name"],
-                    "search_dirs": search_dirs,
-                }
-            )
-            if not json_output:
-                _kv("prefix", _path(csi["prefix"]))
-                _kv("base_prefix", _path(csi["base_prefix"]))
-                _kv("scripts dir", _path(csi["scripts_dir"]))
-                for directory in search_dirs:
-                    _kv("  search dir", _path(directory))
-        except Exception as e:
-            console_scripts_report["error"] = f"{type(e).__name__}: {e}"
-            if not json_output:
-                _err("search dirs", f"{type(e).__name__}: {e}")
-
-    emit("")
     is_hcli_own_venv = process_virtual_env and os.path.normcase(
         os.path.abspath(process_virtual_env)
     ) == os.path.normcase(os.path.abspath(sys.prefix))

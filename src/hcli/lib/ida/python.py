@@ -1,5 +1,4 @@
 # see also hcli.lib.util.python
-import json
 import logging
 import os
 import platform
@@ -203,55 +202,6 @@ def find_current_python_executable() -> Path:
 
     logger.debug("IDA Python info: %s", info)
     return _derive_python_exe(info)
-
-
-GET_CONSOLE_SCRIPT_INFO_PY = (
-    "import json, os, sys, sysconfig; "
-    "print(json.dumps({"
-    "'prefix': sys.prefix, "
-    "'base_prefix': sys.base_prefix, "
-    "'scripts_dir': sysconfig.get_path('scripts'), "
-    "'os_name': os.name, "
-    "}))"
-)
-
-
-def probe_console_script_info(python_exe: Path, timeout: float = 10.0) -> dict:
-    """Probe `python_exe` for the facts needed to locate its pip-installed console scripts.
-
-    These are exactly the ingredients used by ``find_console_script()`` in
-    one-click-debugging and ida-codemode-mcp: sys.prefix, sys.base_prefix, the
-    sysconfig scripts directory, and os.name, all as seen by that interpreter
-    (which may differ from hcli's own interpreter, and can't be observed from
-    outside the process any other way).
-    """
-    result = subprocess.run(
-        [str(python_exe), "-c", GET_CONSOLE_SCRIPT_INFO_PY],
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=timeout,
-    )
-    return json.loads(result.stdout)
-
-
-def build_console_script_search_dirs(prefix: str, base_prefix: str, scripts_dir: str | None, os_name: str) -> list[str]:
-    """Build the ordered list of directories that hold `python_exe`'s console scripts.
-
-    Mirrors the directory order used by find_console_script() in
-    one-click-debugging and ida-codemode-mcp: the sysconfig scripts dir first,
-    then prefix/bin (prefix\\Scripts on Windows) for sys.prefix and
-    sys.base_prefix, deduplicated while preserving order.
-    """
-    dirs: list[str] = []
-    if scripts_dir:
-        dirs.append(scripts_dir)
-
-    bin_dir_name = "Scripts" if os_name == "nt" else "bin"
-    for prefix_ in dict.fromkeys([prefix, base_prefix]):
-        dirs.append(os.path.join(prefix_, bin_dir_name))
-
-    return dirs
 
 
 def does_current_ida_have_pip(python_exe: Path, timeout=10.0) -> bool:
