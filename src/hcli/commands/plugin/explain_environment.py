@@ -274,3 +274,16 @@ def explain_environment() -> None:
         )
     if not user_venv and not is_uv_cache and not ida_venv:
         console.print("[dim]To change IDA's Python, use idapyswitch to point at a different interpreter.[/dim]")
+
+    try:
+        final_version = detect_current_python_version()
+        major, minor = (int(x) for x in final_version.split("."))
+        if (major, minor) <= (3, 9):
+            console.print()
+            console.print(
+                f"[bold yellow]Warning:[/bold yellow] Python {final_version} has reached end-of-life. "
+                "Many IDA plugins may not support it. "
+                "Consider upgrading to a newer Python and using idapyswitch to point IDA at it.",
+            )
+    except Exception:
+        pass
