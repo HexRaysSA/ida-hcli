@@ -209,6 +209,11 @@ def resolve_current_python() -> tuple[Path, dict | None]:
     if ENV.HCLI_CURRENT_IDA_PYTHON_EXE is not None:
         return Path(ENV.HCLI_CURRENT_IDA_PYTHON_EXE), None
 
+    venv_exe = os.environ.get("IDAPYTHON_VENV_EXECUTABLE") or ENV.IDAPYTHON_VENV_EXECUTABLE
+    if venv_exe and Path(venv_exe).is_file():
+        logger.debug("using $IDAPYTHON_VENV_EXECUTABLE: %s", venv_exe)
+        return Path(venv_exe), None
+
     try:
         info = run_py_in_current_idapython(GET_PYTHON_INFO_PY)
     except RuntimeError as e:

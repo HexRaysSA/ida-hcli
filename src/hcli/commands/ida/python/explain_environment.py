@@ -157,10 +157,22 @@ def explain_environment() -> None:
         for candidate in non_uv_candidates:
             _kv("  candidate venv", f"{_path(candidate.path)}  [dim](via {candidate.source})[/dim]")
 
+    idapython_venv_exe = os.environ.get("IDAPYTHON_VENV_EXECUTABLE") or ENV.IDAPYTHON_VENV_EXECUTABLE
+    if idapython_venv_exe:
+        exists = Path(idapython_venv_exe).is_file()
+        if exists:
+            _kv("$IDAPYTHON_VENV_EXECUTABLE", _path(idapython_venv_exe))
+        else:
+            _kv("$IDAPYTHON_VENV_EXECUTABLE", f"{_path(idapython_venv_exe)}  [red](not found)[/red]")
+    else:
+        _kv("$IDAPYTHON_VENV_EXECUTABLE", "not set")
+
     info: dict | None = None
     env_python = os.environ.get("HCLI_CURRENT_IDA_PYTHON_EXE") or ENV.HCLI_CURRENT_IDA_PYTHON_EXE
     if env_python:
         _kv("python exe", _path(env_python), "$HCLI_CURRENT_IDA_PYTHON_EXE")
+    elif idapython_venv_exe and Path(idapython_venv_exe).is_file():
+        _kv("python exe", _path(idapython_venv_exe), "$IDAPYTHON_VENV_EXECUTABLE")
     else:
         _kv("HCLI_CURRENT_IDA_PYTHON_EXE", "not set")
 
