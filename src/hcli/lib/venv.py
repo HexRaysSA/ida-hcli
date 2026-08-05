@@ -121,53 +121,6 @@ def is_uv_cache_virtual_env(virtual_env: str | Path) -> bool:
     return "extends-environment" in cfg
 
 
-def find_virtual_env_python(virtual_env: str | Path) -> Path | None:
-    """Locate the Python interpreter inside a virtual environment.
-
-    Returns None when the directory doesn't look like a virtual environment,
-    or when its interpreter is missing (such as a venv whose base Python was
-    uninstalled).
-    """
-    root = Path(virtual_env)
-
-    if platform.system() == "Windows":
-        candidates = [root / "Scripts" / "python.exe", root / "python.exe"]
-    else:
-        candidates = [root / "bin" / "python3", root / "bin" / "python"]
-
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-
-    return None
-
-
-def read_virtual_env_version(virtual_env: str | Path) -> str | None:
-    """Read the `major.minor` Python version recorded in a venv's pyvenv.cfg.
-
-    The stdlib `venv` module writes `version`, while uv writes `version_info`;
-    both are handled.  Returns None when pyvenv.cfg is missing or records no
-    usable version.
-
-    This only reports what created the venv.  Prefer running the venv's
-    interpreter when it's available, since a venv can be relocated or its base
-    Python replaced after pyvenv.cfg was written.
-    """
-    cfg = _parse_pyvenv_cfg(Path(virtual_env) / "pyvenv.cfg")
-    raw = cfg.get("version") or cfg.get("version_info")
-    if not raw:
-        return None
-
-    parts = raw.split(".")
-    if len(parts) < 2:
-        return None
-
-    try:
-        return f"{int(parts[0])}.{int(parts[1])}"
-    except ValueError:
-        return None
-
-
 @dataclass(frozen=True)
 class VenvCandidate:
     path: Path

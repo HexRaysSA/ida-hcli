@@ -85,7 +85,6 @@ nav:
     - Managing Licenses: user-guide/licenses.md
     - Sharing Files: user-guide/file-sharing.md
     - IDA Plugin Manager: user-guide/plugin-manager.md
-    - IDA's Python Environment: user-guide/ida-python-environment.md
   - How-To Guides:
     - Use HCLI in Docker: how-to/use-hcli-in-docker.md
     - Share Files with Support: how-to/share-files-with-support.md

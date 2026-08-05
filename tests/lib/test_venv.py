@@ -3,9 +3,7 @@ from pathlib import Path
 
 from hcli.lib.venv import (
     find_candidate_virtual_envs,
-    find_virtual_env_python,
     is_uv_cache_virtual_env,
-    read_virtual_env_version,
     resolve_user_virtual_env,
 )
 
@@ -186,70 +184,3 @@ def test_resolve_user_venv_skips_uv_cache_candidates(tmp_path, monkeypatch):
 def test_resolve_user_venv_returns_none_when_unset(monkeypatch):
     monkeypatch.delenv("VIRTUAL_ENV", raising=False)
     assert resolve_user_virtual_env() is None
-
-
-def _venv_bin_dir(venv_dir: Path) -> Path:
-    return venv_dir / ("Scripts" if os.name == "nt" else "bin")
-
-
-def _write_venv_python(venv_dir: Path, name: str) -> Path:
-    bin_dir = _venv_bin_dir(venv_dir)
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    python = bin_dir / name
-    python.write_text("", encoding="utf-8")
-    return python
-
-
-def test_find_virtual_env_python_finds_interpreter(tmp_path):
-    venv = tmp_path / ".venv"
-    _write_pyvenv_cfg(venv, "home = /usr/bin\n")
-    python = _write_venv_python(venv, "python.exe" if os.name == "nt" else "python3")
-
-    assert find_virtual_env_python(venv) == python
-
-
-def test_find_virtual_env_python_falls_back_to_unversioned_name(tmp_path):
-    venv = tmp_path / ".venv"
-    _write_pyvenv_cfg(venv, "home = /usr/bin\n")
-    python = _write_venv_python(venv, "python.exe" if os.name == "nt" else "python")
-
-    assert find_virtual_env_python(venv) == python
-
-
-def test_find_virtual_env_python_returns_none_when_missing(tmp_path):
-    venv = tmp_path / ".venv"
-    _write_pyvenv_cfg(venv, "home = /usr/bin\n")
-
-    assert find_virtual_env_python(venv) is None
-
-
-def test_read_virtual_env_version_reads_stdlib_version_key(tmp_path):
-    venv = tmp_path / ".venv"
-    _write_pyvenv_cfg(venv, "home = /usr/bin\nversion = 3.12.7\n")
-
-    assert read_virtual_env_version(venv) == "3.12"
-
-
-def test_read_virtual_env_version_reads_uv_version_info_key(tmp_path):
-    venv = tmp_path / ".venv"
-    _write_pyvenv_cfg(venv, "home = /usr/bin\nuv = 0.7.16\nversion_info = 3.14.0\n")
-
-    assert read_virtual_env_version(venv) == "3.14"
-
-
-def test_read_virtual_env_version_returns_none_without_version(tmp_path):
-    venv = tmp_path / ".venv"
-    _write_pyvenv_cfg(venv, "home = /usr/bin\n")
-
-    assert read_virtual_env_version(venv) is None
-
-
-def test_read_virtual_env_version_returns_none_when_malformed(tmp_path):
-    venv = tmp_path / ".venv"
-    _write_pyvenv_cfg(venv, "home = /usr/bin\nversion = unknown\n")
-
-    assert read_virtual_env_version(venv) is None
-
-
-def test_read_virtual_env_version_returns_none_without_pyvenv_cfg(tmp_path):
-    assert read_virtual_env_version(tmp_path / "missing") is None
