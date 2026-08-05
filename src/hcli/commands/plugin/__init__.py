@@ -187,6 +187,7 @@ plugin.add_command(schema, name="schema")
 plugin.add_command(bundle, name="bundle")
 
 
+# Backwards-compat alias. Remove after 0.20.
 @click.command(name="explain-environment", hidden=True)
 @click.pass_context
 def _explain_environment_alias(ctx) -> None:
