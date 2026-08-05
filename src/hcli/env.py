@@ -68,6 +68,7 @@ class ENV:
     HCLI_CURRENT_IDA_PLATFORM: str | None = os.getenv("HCLI_CURRENT_IDA_PLATFORM")
     HCLI_CURRENT_IDA_VERSION: str | None = os.getenv("HCLI_CURRENT_IDA_VERSION")
     HCLI_CURRENT_IDA_PYTHON_EXE: str | None = os.getenv("HCLI_CURRENT_IDA_PYTHON_EXE")
+    IDAPYTHON_VENV_EXECUTABLE: str | None = os.getenv("IDAPYTHON_VENV_EXECUTABLE")
 
     # KE download settings
     HCLI_KE_DOWNLOADS_DIR: str | None = os.getenv("HCLI_KE_DOWNLOADS_DIR")

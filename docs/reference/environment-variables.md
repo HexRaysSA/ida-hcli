@@ -28,10 +28,11 @@ HCLI respects the following system variables:
 
 Furthermore, HCLI reads the following IDA Pro-related environment variables:
 
-| Variable       | Purpose                                                          |
-|----------------|------------------------------------------------------------------|
-| IDAUSR         | Standard IDA Pro user directory (checked if HCLI_IDAUSR not set) |
-| IDADIR         | Set by HCLI during IDA Pro execution contexts                    |
+| Variable                      | Purpose                                                          |
+|-------------------------------|------------------------------------------------------------------|
+| IDAUSR                        | Standard IDA Pro user directory (checked if HCLI_IDAUSR not set) |
+| IDADIR                        | Set by HCLI during IDA Pro execution contexts                    |
+| IDAPYTHON_VENV_EXECUTABLE     | Python interpreter for IDA's virtualenv; used for plugin dependency management when the file exists (lower priority than `HCLI_CURRENT_IDA_PYTHON_EXE`) |
 
 ## Network & API Endpoints
 

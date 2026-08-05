@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from hcli.env import ENV
 from hcli.lib.ida import find_current_ida_install_directory, get_ida_user_dir
 from hcli.lib.ida.python import (
     CantInstallPackagesError,
@@ -74,6 +75,35 @@ def _venv_launcher_for_ida(venv_dir: Path) -> Path:
 
 def _venv_bin_dir(venv_dir: Path) -> Path:
     return venv_dir / ("Scripts" if os.name == "nt" else "bin")
+
+
+def test_find_current_python_executable_uses_idapython_venv_executable(tmp_path, monkeypatch):
+    python = tmp_path / "bin" / "python3"
+    python.parent.mkdir()
+    python.write_text("", encoding="utf-8")
+
+    monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
+    monkeypatch.setattr(ENV, "HCLI_CURRENT_IDA_PYTHON_EXE", None)
+    monkeypatch.setenv("IDAPYTHON_VENV_EXECUTABLE", str(python))
+
+    result = find_current_python_executable()
+    assert result == python
+
+
+def test_find_current_python_executable_hcli_exe_overrides_idapython_venv(tmp_path, monkeypatch):
+    hcli_python = tmp_path / "hcli" / "python3"
+    hcli_python.parent.mkdir()
+    hcli_python.write_text("", encoding="utf-8")
+
+    venv_python = tmp_path / "venv" / "bin" / "python3"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("", encoding="utf-8")
+
+    monkeypatch.setenv("HCLI_CURRENT_IDA_PYTHON_EXE", str(hcli_python))
+    monkeypatch.setenv("IDAPYTHON_VENV_EXECUTABLE", str(venv_python))
+
+    result = find_current_python_executable()
+    assert result == hcli_python
 
 
 def test_derive_python_exe_uses_idapython_venv_executable_when_sys_executable_is_idat(tmp_path):
