@@ -114,8 +114,7 @@ class PythonVersionReport(BaseModel):
 
 
 class EnvironmentNote(BaseModel):
-    # diagnostic notes describe the environment we found, hints suggest what to do about it.
-    kind: Literal["diagnostic", "hint"]
+    kind: Literal["diagnostic", "hint", "warning"]
     text: str
 
 
@@ -301,6 +300,7 @@ def collect_python_version() -> PythonVersionReport:
 def collect_notes(
     python_environment: PythonEnvironmentReport,
     idapython_virtualenv: IdaPythonVirtualEnvReport | None,
+    python_version: PythonVersionReport,
 ) -> list[EnvironmentNote]:
     notes: list[EnvironmentNote] = []
 
@@ -366,6 +366,24 @@ def collect_notes(
             )
         )
 
+    if python_version.final_version:
+        try:
+            parts = python_version.final_version.split(".")
+            major, minor = int(parts[0]), int(parts[1])
+            if (major, minor) <= (3, 9):
+                notes.append(
+                    EnvironmentNote(
+                        kind="warning",
+                        text=(
+                            f"Python {python_version.final_version} has reached end-of-life. "
+                            "Many IDA plugins may not support it. "
+                            "Consider upgrading to a newer Python and using idapyswitch to point IDA at it."
+                        ),
+                    )
+                )
+        except (ValueError, IndexError):
+            pass
+
     return notes
 
 
@@ -382,7 +400,7 @@ def collect_environment_report() -> EnvironmentReport:
     report.python_environment = collect_python_environment()
     report.idapython_virtualenv = collect_idapython_virtualenv(report.python_environment.idat_probe)
     report.python_version = collect_python_version()
-    report.notes = collect_notes(report.python_environment, report.idapython_virtualenv)
+    report.notes = collect_notes(report.python_environment, report.idapython_virtualenv, report.python_version)
 
     return report
 
@@ -534,7 +552,10 @@ def render_python_version_text(report: PythonVersionReport) -> None:
 
 def render_notes_text(notes: list[EnvironmentNote]) -> None:
     for note in notes:
-        if note.kind == "diagnostic":
+        if note.kind == "warning":
+            console.print(f"[bold yellow]Warning:[/bold yellow] {escape(note.text)}", highlight=False)
+            console.print()
+        elif note.kind == "diagnostic":
             console.print(f"[dim]Note: {escape(note.text)}[/dim]", highlight=False)
             console.print()
         else:
@@ -570,26 +591,6 @@ def render_environment_report_json(report: EnvironmentReport) -> None:
 def explain_environment(json_output: bool) -> None:
     """Show how the current IDA installation and Python version are detected. (experimental)"""
     report = collect_environment_report()
-
-    try:
-        final_version = detect_current_python_version()
-        parts = final_version.split(".")
-        major, minor = int(parts[0]), int(parts[1])
-        if (major, minor) <= (3, 9):
-            notes.append(
-                f"Python {final_version} has reached end-of-life. "
-                "Many IDA plugins may not support it. "
-                "Consider upgrading to a newer Python and using idapyswitch to point IDA at it."
-            )
-            if not json_output:
-                console.print()
-                console.print(
-                    f"[bold yellow]Warning:[/bold yellow] Python {final_version} has reached end-of-life. "
-                    "Many IDA plugins may not support it. "
-                    "Consider upgrading to a newer Python and using idapyswitch to point IDA at it.",
-                )
-    except Exception:
-        pass
 
     if json_output:
         render_environment_report_json(report)
