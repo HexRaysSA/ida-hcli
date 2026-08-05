@@ -16,7 +16,7 @@ def exec_python(ctx: click.Context, args: tuple[str, ...]) -> None:
     """Run IDA's Python interpreter, passing through all arguments.
 
     Without arguments, this starts an interactive interpreter.
-    hcli exits with the status of the interpreter.
+    HCLI exits with the status of the interpreter.
 
     \b
     Examples:
@@ -25,7 +25,7 @@ def exec_python(ctx: click.Context, args: tuple[str, ...]) -> None:
       hcli ida python exec script.py --flag
 
     \b
-    Use `--` for arguments that hcli would otherwise interpret:
+    Use `--` for arguments that HCLI would otherwise interpret:
       hcli ida python exec -- --version
     """
     python_exe = get_python_exe()

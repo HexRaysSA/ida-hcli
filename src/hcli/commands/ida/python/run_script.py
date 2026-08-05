@@ -21,14 +21,14 @@ def run_script(ctx: click.Context, name: str, args: tuple[str, ...]) -> None:
     NAME: name of the script, like `speakeasy`
     ARGS: arguments passed through to the script
 
-    hcli exits with the status of the script.
+    HCLI exits with the status of the script.
 
     \b
     Examples:
       hcli ida python run-script speakeasy -t sample.exe
 
     \b
-    Use `--` for arguments that hcli would otherwise interpret:
+    Use `--` for arguments that HCLI would otherwise interpret:
       hcli ida python run-script speakeasy -- --help
     """
     python_exe = get_python_exe()

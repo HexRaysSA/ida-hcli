@@ -6,21 +6,21 @@ Everything after `hcli ida python exec` goes to the interpreter:
 
 ```bash
 $ hcli ida python exec -c "import sys; print(sys.executable)"
-/Users/user/.idapro-live/venv/bin/python
+/Users/user/.idapro/venv/bin/python
 
 $ hcli ida python exec -m pip --version
-pip 25.2 from /Users/user/.idapro-live/venv/lib/python3.13/site-packages/pip (python 3.13)
+pip 25.2 from /Users/user/.idapro/venv/lib/python3.13/site-packages/pip (python 3.13)
 
 $ hcli ida python exec -m pip install requests
 ```
 
-With no arguments you get an interactive interpreter, and hcli exits with whatever status the interpreter returned. hcli parses its own options first, so pass `--` before arguments it would otherwise claim, as in `hcli ida python exec -- --version`.
+With no arguments you get an interactive interpreter, and HCLI exits with whatever status the interpreter returned. HCLI parses its own options first, so pass `--` before arguments it would otherwise claim, as in `hcli ida python exec -- --version`.
 
 Packages often install command-line programs, such as `capa` from `flare-capa`. These land in the environment's scripts directory, which usually isn't on your `PATH`:
 
 ```bash
 $ hcli ida python find-script capa
-/Users/user/.idapro-live/venv/bin/capa
+/Users/user/.idapro/venv/bin/capa
 
 $ hcli ida python run-script capa -- --version
 capa 9.3.1
