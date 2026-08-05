@@ -12,6 +12,9 @@
 - Remove idat invocations for version and platform detection
 - Validate all plugin paths before extracting any
 
+### Changed
+- Log the Python-relevant environment variables (`VIRTUAL_ENV`, `PYTHONHOME`, `PATH`, ...) passed to `idat` at debug level
+
 ## [0.15.13] - 2026-01-27
 
 ### Fixed

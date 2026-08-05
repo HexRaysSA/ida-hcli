@@ -993,6 +993,34 @@ def _prepare_headless_ida_user_dir(source_dir: Path, target_dir: Path) -> None:
             shutil.copy2(license_file, target_dir / license_file.name)
 
 
+def _log_idat_env(env: dict[str, str] | None) -> None:
+    """Log the curated set of env vars that affect idat's Python environment."""
+    keys = (
+        "IDAUSR",
+        "IDADIR",
+        "IDA_IS_INTERACTIVE",
+        "IDAPYTHON_VENV_EXECUTABLE",
+        "VIRTUAL_ENV",
+        "CONDA_PREFIX",
+        "PYENV_VERSION",
+        "PYTHONHOME",
+        "PYTHONPATH",
+        "PYTHONEXECUTABLE",
+        "PYTHONNOUSERSITE",
+        "PYTHONUSERBASE",
+        "PYTHONSTARTUP",
+        "PYTHONUTF8",
+        "PYTHONIOENCODING",
+        "PATH",
+    )
+
+    effective = env if env is not None else os.environ
+
+    for key in keys:
+        value = effective.get(key)
+        logger.debug(f"idat env: {key}={value if value is not None else '<not set>'}")
+
+
 def _run_ida_batch_script(idat_path: Path, src: str, env: dict[str, str] | None = None) -> dict:
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -1022,6 +1050,10 @@ def _run_ida_batch_script(idat_path: Path, src: str, env: dict[str, str] | None 
             f"-S{script_path.absolute()!s}",
         ]
 
+        # Log before invoking so the environment is captured even if idat hangs.
+        logger.debug(f"idat command: {' '.join(cmd)}")
+        _log_idat_env(env)
+
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -1031,9 +1063,6 @@ def _run_ida_batch_script(idat_path: Path, src: str, env: dict[str, str] | None 
             check=False,
             env=env,
         )
-        logger.debug(f"idat command: {' '.join(cmd)}")
-        if env and env.get("IDAUSR"):
-            logger.debug(f"idat IDAUSR: {env['IDAUSR']}")
         logger.debug(f"idat exit code: {result.returncode}")
         if result.stdout:
             logger.debug(f"idat stdout: {result.stdout}")
