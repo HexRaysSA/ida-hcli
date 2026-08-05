@@ -994,11 +994,7 @@ def _prepare_headless_ida_user_dir(source_dir: Path, target_dir: Path) -> None:
 
 
 def _log_idat_env(env: dict[str, str] | None) -> None:
-    """Log the environment variables that affect idat's Python environment."""
-    # Variables that steer how IDA locates its user directory and reconstructs
-    # its Python environment. Only this curated set is logged: the environment
-    # passed to idat is a copy of our own, which may hold credentials and other
-    # unrelated secrets.
+    """Log the curated set of env vars that affect idat's Python environment."""
     keys = (
         "IDAUSR",
         "IDADIR",
@@ -1018,16 +1014,11 @@ def _log_idat_env(env: dict[str, str] | None) -> None:
         "PATH",
     )
 
-    if env is None:
-        # subprocess.run(env=None) means the child inherits our environment.
-        effective = dict(os.environ)
-        logger.debug("idat env: inherited from the current process")
-    else:
-        effective = env
+    effective = env if env is not None else os.environ
 
     for key in keys:
         value = effective.get(key)
-        logger.debug("idat env: %s=%s", key, value if value is not None else "<not set>")
+        logger.debug(f"idat env: {key}={value if value is not None else '<not set>'}")
 
 
 def _run_ida_batch_script(idat_path: Path, src: str, env: dict[str, str] | None = None) -> dict:
@@ -1059,8 +1050,7 @@ def _run_ida_batch_script(idat_path: Path, src: str, env: dict[str, str] | None 
             f"-S{script_path.absolute()!s}",
         ]
 
-        # log before invoking, so the environment is recorded even when idat
-        # hangs or crashes hard enough that we never get to the lines below.
+        # Log before invoking so the environment is captured even if idat hangs.
         logger.debug(f"idat command: {' '.join(cmd)}")
         _log_idat_env(env)
 
