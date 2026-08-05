@@ -25,10 +25,14 @@ from hcli.lib.ida import (
 )
 from hcli.lib.ida.python import (
     GET_PYTHON_INFO_PY,
+    PRINT_VERSION_PY,
     PythonNotFoundError,
     _derive_python_exe,
     detect_current_python_version,
     find_current_python_executable,
+    find_python_version_mismatches,
+    format_python_version_mismatch_warning,
+    get_virtual_env_version,
 )
 from hcli.lib.venv import find_candidate_virtual_envs, is_uv_cache_virtual_env, resolve_user_virtual_env
 
@@ -197,6 +201,14 @@ def explain_environment() -> None:
                     _kv("  home", line.split("=", 1)[1].strip())
                 elif line.startswith("include-system-site-packages"):
                     _kv("  system site-packages", line.split("=", 1)[1].strip())
+
+        venv_version = get_virtual_env_version(venv_path)
+        if venv_version:
+            ida_python_version = f"{info['version_major']}.{info['version_minor']}" if info else None
+            style = "yellow" if ida_python_version and venv_version != ida_python_version else "green"
+            _kv("  python version", f"[{style}]{venv_version}[/{style}]")
+        else:
+            _err("  python version", "could not determine")
     else:
         console.print("  [dim]none detected[/dim]")
 
@@ -206,18 +218,19 @@ def explain_environment() -> None:
 
     console.print("[bold]Python version[/bold]")
 
+    final_python_exe: Path | None = None
     try:
-        python_exe = find_current_python_executable()
-        _kv("final python exe", _path(python_exe))
+        final_python_exe = find_current_python_executable()
+        _kv("final python exe", _path(final_python_exe))
 
         result = subprocess.run(
-            [str(python_exe), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+            [str(final_python_exe), "-c", PRINT_VERSION_PY],
             capture_output=True,
             text=True,
             check=True,
             timeout=10,
         )
-        _kv("probed version", result.stdout.strip(), f"running {escape(python_exe.name)}")
+        _kv("probed version", result.stdout.strip(), f"running {escape(final_python_exe.name)}")
     except Exception as e:
         _err("probed version", f"{type(e).__name__}: {e}")
 
@@ -274,6 +287,20 @@ def explain_environment() -> None:
         )
     if not user_venv and not is_uv_cache and not ida_venv:
         console.print("[dim]To change IDA's Python, use idapyswitch to point at a different interpreter.[/dim]")
+
+    # A virtualenv only redirects sys.path; it can't change the Python version IDA
+    # runs, which idapyswitch fixed when it registered a libpython. So a venv built
+    # for a different version silently can't provide packages to IDA.
+    if info:
+        try:
+            mismatches = find_python_version_mismatches(info, final_python_exe)
+        except Exception as e:
+            mismatches = []
+            _err("version mismatch check", f"{type(e).__name__}: {e}")
+
+        if mismatches:
+            console.print()
+            console.print(format_python_version_mismatch_warning(mismatches), highlight=False)
 
     try:
         final_version = detect_current_python_version()
