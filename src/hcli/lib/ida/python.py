@@ -1,8 +1,12 @@
 # see also hcli.lib.util.python
+from __future__ import annotations
+
+import json
 import logging
 import os
 import platform
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -595,3 +599,351 @@ def pip_freeze(python_exe: Path):
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, [str(python_exe), "-m", "pip", "freeze"])
     return stdout.decode("utf-8", errors="replace")
+
+
+class ProbeError(RuntimeError):
+    """Failed to run a probe script in IDA's Python environment."""
+
+
+class ScriptNotFoundError(RuntimeError):
+    """Could not find a console script in IDA's Python environment."""
+
+
+# Script run by IDA's Python interpreter (not by idat).
+# Locates the wrapper executable installed for a console script, like `speakeasy`.
+#
+# There is no API for this. Package metadata declares the entry point
+# (`speakeasy = speakeasy.__main__:main`), which is a Python object reference, not a
+# file: the wrapper is generated at install time and where it lands is up to the
+# installer. see: https://discuss.python.org/t/can-i-retrieve-the-path-for-an-entry-point-using-importlib-metadata/79490
+#
+# So we resolve it in two steps:
+#
+#  1. the distribution's RECORD, via `Distribution.files`. This is the installer's own
+#     list of the files it wrote, including generated scripts, which appear as paths
+#     relative to site-packages, like `../../../bin/speakeasy`. It's authoritative:
+#     the wrapper it names belongs to the same environment as the package we matched.
+#     pip and uv both write RECORD, as does any wheel-spec-compliant installer.
+#     (Debian strips it from apt-packaged distributions, but those interpreters are
+#     externally managed, so we don't support installing into them anyway.)
+#
+#  2. otherwise, look for the file in the scripts directories, which is where the
+#     wheel spec says installers should put it. This is only name matching, so it can
+#     turn up a stale or unrelated script - hence it comes second.
+#
+# The wrapper's filename matches the entry point name by convention, not by rule.
+# Windows installers generate a `name.exe` trampoline; older setuptools also left a
+# `name-script.py` beside it.
+GET_SCRIPT_INFO_PY = r"""
+import io
+import json
+import os
+import sys
+import sysconfig
+
+# ensure UTF-8 output for unicode install paths
+if hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
+name = sys.argv[1]
+
+if os.name == "nt":
+    filenames = [name + ".exe", name + ".cmd", name + ".bat", name, name + "-script.py"]
+else:
+    filenames = [name]
+
+# Scan distributions for the entry point, rather than using entry_points(name=...)
+# or EntryPoint.dist, which need Python 3.10+. IDA may be using an older interpreter.
+entry_point = None
+record_candidates = []
+try:
+    from importlib.metadata import distributions
+
+    for dist in distributions():
+        try:
+            eps = [
+                ep
+                for ep in dist.entry_points
+                if ep.name == name and ep.group in ("console_scripts", "gui_scripts")
+            ]
+        except Exception:
+            continue
+
+        if not eps:
+            continue
+
+        entry_point = {
+            "name": eps[0].name,
+            "value": eps[0].value,
+            "group": eps[0].group,
+            "distribution": dist.metadata["Name"],
+            "version": dist.version,
+        }
+
+        # `files` is None when the distribution has no RECORD
+        for file in dist.files or []:
+            if os.path.basename(str(file)) not in filenames:
+                continue
+            try:
+                record_candidates.append(os.path.realpath(str(dist.locate_file(file))))
+            except Exception:
+                pass
+
+        break
+except Exception:
+    pass
+
+scripts_dirs = []
+
+
+def add_dir(path):
+    if path and path not in scripts_dirs:
+        scripts_dirs.append(path)
+
+
+# next to the interpreter: where a virtualenv keeps its scripts.
+# don't resolve symlinks here: a virtualenv's python is usually a link to the base
+# interpreter, and following it would lead out of the environment we're inspecting.
+add_dir(os.path.dirname(os.path.abspath(sys.executable)))
+add_dir(sysconfig.get_path("scripts"))
+try:
+    # where `pip install --user` puts scripts
+    add_dir(sysconfig.get_path("scripts", sysconfig.get_preferred_scheme("user")))
+except Exception:
+    add_dir(sysconfig.get_path("scripts", "nt_user" if os.name == "nt" else "posix_user"))
+
+candidates = record_candidates + [os.path.join(d, f) for d in scripts_dirs for f in filenames]
+
+path = None
+for candidate in candidates:
+    if os.path.isfile(candidate):
+        path = candidate
+        break
+
+print("__hcli__:" + json.dumps({
+    "name": name,
+    "path": path,
+    "scripts_dirs": scripts_dirs,
+    "record_candidates": record_candidates,
+    "entry_point": entry_point,
+}))
+"""
+
+
+# Script run by IDA's Python interpreter (not by idat).
+# Invokes a console script by its entry point: import the module, call the attribute,
+# exit with its return value. That is exactly what the wheel spec defines a console
+# script to do, and what the generated wrapper contains, so this is behaviorally
+# identical. Used when the wrapper itself can't be found on disk.
+RUN_ENTRY_POINT_PY = r"""
+import sys
+from importlib.metadata import distributions
+
+name = sys.argv[1]
+
+for dist in distributions():
+    try:
+        eps = [
+            ep
+            for ep in dist.entry_points
+            if ep.name == name and ep.group in ("console_scripts", "gui_scripts")
+        ]
+    except Exception:
+        continue
+
+    if eps:
+        sys.argv = [name] + sys.argv[2:]
+        sys.exit(eps[0].load()())
+
+sys.exit("error: no console script named " + name)
+"""
+
+
+@dataclass(frozen=True)
+class EntryPoint:
+    """A console script entry point declared by an installed distribution."""
+
+    name: str
+    value: str
+    group: str
+    distribution: str | None
+    version: str | None
+
+    @classmethod
+    def from_probe(cls, doc: dict) -> EntryPoint:
+        return cls(
+            name=doc["name"],
+            value=doc["value"],
+            group=doc["group"],
+            distribution=doc.get("distribution"),
+            version=doc.get("version"),
+        )
+
+
+@dataclass(frozen=True)
+class ScriptInfo:
+    """The result of looking for a console script in a Python environment.
+
+    `path` is the wrapper executable, when one was found on disk.
+    `entry_point` is the declaration found in package metadata, which may exist
+    even when no wrapper was installed (or when it was installed elsewhere).
+    """
+
+    name: str
+    path: Path | None
+    scripts_dirs: tuple[Path, ...]
+    entry_point: EntryPoint | None
+
+    @classmethod
+    def from_probe(cls, doc: dict) -> ScriptInfo:
+        entry_point = doc.get("entry_point")
+        return cls(
+            name=doc["name"],
+            path=Path(doc["path"]) if doc.get("path") else None,
+            scripts_dirs=tuple(Path(p) for p in doc.get("scripts_dirs", ())),
+            entry_point=EntryPoint.from_probe(entry_point) if entry_point else None,
+        )
+
+
+def get_environment_for_python(python_exe: Path) -> dict[str, str]:
+    """Build the environment for a process run against the given Python.
+
+    hcli may itself run inside a virtualenv (or a uv cache overlay), so the
+    inherited VIRTUAL_ENV/PYTHONHOME describe hcli's environment, not IDA's.
+    """
+    env = os.environ.copy()
+
+    env.pop("PYTHONHOME", None)
+
+    venv_root = _get_venv_root_from_python(str(python_exe))
+    if venv_root:
+        env["VIRTUAL_ENV"] = str(venv_root)
+    else:
+        env.pop("VIRTUAL_ENV", None)
+
+    scripts_dir = str(python_exe.parent)
+    path = env.get("PATH")
+    env["PATH"] = f"{scripts_dir}{os.pathsep}{path}" if path else scripts_dir
+
+    return env
+
+
+def _run_probe(python_exe: Path, src: str, args: Sequence[str] = (), timeout: float = 60.0) -> dict:
+    """Run a probe script with the given Python and parse its `__hcli__:` result line.
+
+    Raises:
+        ProbeError: if the interpreter can't be run, fails, or emits no result.
+    """
+    argv = [str(python_exe), "-c", src, *args]
+    logger.debug("probing IDA Python environment: %s", argv)
+
+    try:
+        process = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=timeout,
+            env=get_environment_for_python(python_exe),
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise ProbeError(f"failed to run {python_exe}: {e}") from e
+
+    if process.returncode != 0:
+        raise ProbeError(f"{python_exe} exited with status {process.returncode}: {process.stderr.strip()}")
+
+    for line in process.stdout.splitlines():
+        if line.startswith("__hcli__:"):
+            return json.loads(line[len("__hcli__:") :])
+
+    raise ProbeError(f"no result from {python_exe}: {process.stdout.strip()}")
+
+
+def get_script_info(python_exe: Path, name: str) -> ScriptInfo:
+    """Look for the console script `name` in the given Python environment.
+
+    Raises:
+        ProbeError: if the environment can't be inspected.
+    """
+    doc = _run_probe(python_exe, GET_SCRIPT_INFO_PY, [name])
+    logger.debug("script probe: %s", doc)
+    return ScriptInfo.from_probe(doc)
+
+
+def find_script(python_exe: Path, name: str) -> Path:
+    """Resolve the path of the console script `name` in the given Python environment.
+
+    Raises:
+        ProbeError: if the environment can't be inspected.
+        ScriptNotFoundError: if no such script is installed.
+    """
+    info = get_script_info(python_exe, name)
+    if info.path is None:
+        raise ScriptNotFoundError(render_script_not_found(info))
+    return info.path
+
+
+def render_script_not_found(info: ScriptInfo) -> str:
+    """Explain why a console script couldn't be resolved to a path."""
+    searched = "\n".join(f"  {d}" for d in info.scripts_dirs)
+
+    if info.entry_point:
+        distribution = " ".join(filter(None, [info.entry_point.distribution or "?", info.entry_point.version]))
+        return (
+            f"script '{info.name}' is declared by {distribution} ({info.entry_point.value}), "
+            f"but no program for it was installed.\n"
+            f"Searched that distribution's file list and:\n{searched}\n"
+            f"Try reinstalling {info.entry_point.distribution or distribution}."
+        )
+
+    return f"script '{info.name}' is not installed. Searched:\n{searched}"
+
+
+def run_in_python_environment(python_exe: Path, argv: Sequence[str]) -> int:
+    """Run a command in the given Python environment, connected to this terminal.
+
+    Returns the exit status of the command.
+
+    Raises:
+        OSError: if the command can't be executed.
+    """
+    logger.debug("running: %s", list(argv))
+
+    try:
+        process = subprocess.run(list(argv), check=False, env=get_environment_for_python(python_exe))
+    except KeyboardInterrupt:
+        # the child received SIGINT too, and has already exited.
+        return 130
+
+    return process.returncode
+
+
+def run_script(python_exe: Path, name: str, args: Sequence[str] = ()) -> int:
+    """Run the console script `name` in the given Python environment.
+
+    Prefers the installed wrapper executable, so the script sees exactly what it
+    would when invoked from the shell. Falls back to invoking the entry point
+    directly when the wrapper isn't on disk, for example when an installer put it
+    somewhere we don't know to look.
+
+    Returns the exit status of the script.
+
+    Raises:
+        ProbeError: if the environment can't be inspected.
+        ScriptNotFoundError: if no such script is installed.
+    """
+    info = get_script_info(python_exe, name)
+
+    if info.path is not None:
+        if os.access(info.path, os.X_OK):
+            return run_in_python_environment(python_exe, [str(info.path), *args])
+        # a wrapper without the executable bit is still a Python script we can run.
+        return run_in_python_environment(python_exe, [str(python_exe), str(info.path), *args])
+
+    if info.entry_point is not None:
+        logger.debug("no wrapper for '%s', invoking entry point %s", name, info.entry_point.value)
+        return run_in_python_environment(python_exe, [str(python_exe), "-c", RUN_ENTRY_POINT_PY, name, *args])
+
+    raise ScriptNotFoundError(render_script_not_found(info))

@@ -52,7 +52,7 @@ def _err(key: str, error: str) -> None:
     console.print(f"  [bold]{key}[/bold]: [red]{escape(error)}[/red]")
 
 
-@click.command(hidden=True)
+@click.command()
 def explain_environment() -> None:
     """Show how the current IDA installation and Python version are detected."""
 
