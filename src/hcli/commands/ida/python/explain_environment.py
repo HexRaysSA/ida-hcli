@@ -52,7 +52,7 @@ def _err(key: str, error: str) -> None:
     console.print(f"  [bold]{key}[/bold]: [red]{escape(error)}[/red]")
 
 
-@click.command(hidden=True)
+@click.command()
 def explain_environment() -> None:
     """Show how the current IDA installation and Python version are detected."""
 
@@ -235,7 +235,7 @@ def explain_environment() -> None:
         _err("probed version", f"{type(e).__name__}: {e}")
 
     interpreter_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-    _kv("hcli interpreter", interpreter_version, _path(sys.executable))
+    _kv("HCLI interpreter", interpreter_version, _path(sys.executable))
 
     try:
         final = detect_current_python_version()
@@ -265,7 +265,7 @@ def explain_environment() -> None:
     elif process_virtual_env and is_hcli_own_venv:
         console.print(
             f"[dim]Note: $VIRTUAL_ENV ({escape(process_virtual_env)}) "
-            f"is the hcli process environment, not the IDA Python environment. "
+            f"is the HCLI process environment, not the IDA Python environment. "
             f"It is not used for plugin installation.[/dim]",
             highlight=False,
         )

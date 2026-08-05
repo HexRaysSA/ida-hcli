@@ -14,6 +14,7 @@ from .install import install
 from .list import list_instances
 from .open import open_ida_link
 from .protocol import protocol
+from .python import python
 from .remove import remove
 from .set_default import set_default_ida
 from .source import source
@@ -25,6 +26,7 @@ ida.add_command(install)
 ida.add_command(list_instances, name="list")
 ida.add_command(open_ida_link)
 ida.add_command(protocol)
+ida.add_command(python)
 ida.add_command(remove)
 ida.add_command(set_default_ida)
 ida.add_command(source)

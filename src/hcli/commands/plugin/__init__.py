@@ -18,7 +18,6 @@ from hcli.lib.ida.python import PipOptions
 
 from .bundle import bundle
 from .config import config
-from .explain_environment import explain_environment
 from .install import install_plugin
 from .lint import lint_plugin_directory
 from .repo import repo
@@ -186,4 +185,19 @@ plugin.add_command(repo, name="repo")
 plugin.add_command(config, name="config")
 plugin.add_command(schema, name="schema")
 plugin.add_command(bundle, name="bundle")
-plugin.add_command(explain_environment, name="explain-environment")
+
+
+# Backwards-compat alias. Remove after 0.20.
+@click.command(name="explain-environment", hidden=True)
+@click.pass_context
+def _explain_environment_alias(ctx) -> None:
+    """Show how the current IDA installation and Python version are detected.
+
+    Moved to `hcli ida python explain-environment`.
+    """
+    from hcli.commands.ida.python.explain_environment import explain_environment
+
+    ctx.forward(explain_environment)
+
+
+plugin.add_command(_explain_environment_alias)
