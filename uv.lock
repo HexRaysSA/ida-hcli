@@ -388,7 +388,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click" },
-    { name = "httpx" },
+    { name = "httpx", specifier = "<1" },
     { name = "idapro", specifier = ">=0.0.5" },
     { name = "mkdocs-click", marker = "extra == 'docs'", specifier = ">=0.9.0" },
     { name = "mkdocs-gen-files", marker = "extra == 'docs'", specifier = ">=0.5.0" },
