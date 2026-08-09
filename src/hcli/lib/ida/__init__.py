@@ -27,6 +27,7 @@ from hcli.lib.util.io import NoSpaceError, check_free_space, get_os
 from hcli.lib.venv import resolve_user_virtual_env
 
 logger = logging.getLogger(__name__)
+_IDALIB_SYNC_PATH_KEY = "ida.idalib-observed-install-dir"
 
 
 class DownloadResource(NamedTuple):
@@ -884,6 +885,90 @@ def find_hcli_default_ida_install_directory() -> Path | None:
     return install_dir
 
 
+def register_ida_installation(path: Path, *, make_default: bool = False) -> str:
+    """Register an installation by path and optionally select it as default.
+
+    Existing registrations are reused by resolved path. Name collisions get a
+    numeric suffix, matching ``hcli ida install`` behavior.
+    """
+    from hcli.lib.config import config_store
+
+    install_dir = _normalize_install_dir(path).resolve()
+    instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
+    for name, configured_path in instances.items():
+        try:
+            if _normalize_install_dir(Path(configured_path)).resolve() == install_dir:
+                if make_default:
+                    config_store.set_string("ida.default", name)
+                return name
+        except OSError:
+            continue
+
+    base_name = generate_instance_name(install_dir)
+    name = base_name
+    suffix = 2
+    while name in instances:
+        name = f"{base_name}-{suffix}"
+        suffix += 1
+    instances[name] = str(install_dir)
+    config_store.set_object("ida.instances", instances)
+    if make_default:
+        config_store.set_string("ida.default", name)
+    return name
+
+
+def synchronize_idalib_installation_with_hcli() -> Path | None:
+    """Import a newly installer-selected idalib path into hcli's registry.
+
+    The native IDA installer updates ``ida-config.json`` but does not know about
+    hcli's newer multi-installation registry. Reconcile each newly observed path
+    once, so a later explicit ``hcli ida remove`` or GUI-only selection is not
+    continually undone. If both defaults are idalib-capable, the newly selected
+    installer path is authoritative.
+    """
+    from hcli.lib.config import config_store
+
+    try:
+        config = get_ida_config()
+    except (OSError, ValueError) as exc:
+        logger.warning("could not read idalib configuration for hcli sync: %s", exc)
+        return None
+    configured_path = config.paths.installation_directory
+    if configured_path is None:
+        return None
+
+    install_dir = _normalize_install_dir(configured_path)
+    try:
+        usable = (
+            install_dir.exists()
+            and is_ida_dir(install_dir)
+            and is_idalib_capable_installation(install_dir)
+        )
+    except OSError:
+        usable = False
+    if not usable:
+        return None
+
+    resolved_install_dir = install_dir.resolve()
+    observed_path = config_store.get_string(_IDALIB_SYNC_PATH_KEY, "")
+    if observed_path:
+        try:
+            if _normalize_install_dir(Path(observed_path)).resolve() == resolved_install_dir:
+                return install_dir
+        except OSError:
+            pass
+
+    hcli_default = find_hcli_default_ida_install_directory()
+    make_default = (
+        hcli_default is None
+        or hcli_default.resolve() == resolved_install_dir
+        or is_idalib_capable_installation(hcli_default)
+    )
+    register_ida_installation(install_dir, make_default=make_default)
+    config_store.set_string(_IDALIB_SYNC_PATH_KEY, str(resolved_install_dir))
+    return install_dir
+
+
 def find_current_ida_install_directory() -> Path:
     # duplicate here, because we prefer access through ENV
     # but tests might update env vars for the current process.
@@ -895,6 +980,10 @@ def find_current_ida_install_directory() -> Path:
 
     if ENV.IDADIR is not None:
         return _normalize_install_dir(Path(ENV.IDADIR))
+
+    # A native installer can update ida-config.json without updating hcli's
+    # multi-installation registry. Reconcile that before choosing the default.
+    synchronize_idalib_installation_with_hcli()
 
     hcli_default = find_hcli_default_ida_install_directory()
     if hcli_default is not None:

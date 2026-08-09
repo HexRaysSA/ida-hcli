@@ -39,7 +39,13 @@ def _get_status_section() -> str:
             is_ida_dir,
             is_idalib_capable_installation,
             parse_instance_version,
+            synchronize_idalib_installation_with_hcli,
         )
+
+        # Native IDA installers update ida-config.json independently of hcli's
+        # instance registry. Keep the status summary and command resolution in
+        # agreement before displaying either default.
+        synchronize_idalib_installation_with_hcli()
 
         lines: list[str] = []
 

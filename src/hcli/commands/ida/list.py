@@ -11,7 +11,11 @@ from rich.text import Text
 
 from hcli.env import ENV
 from hcli.lib.config import config_store
-from hcli.lib.ida import is_ida_dir, parse_instance_version
+from hcli.lib.ida import (
+    is_ida_dir,
+    parse_instance_version,
+    synchronize_idalib_installation_with_hcli,
+)
 
 console = Console()
 
@@ -34,6 +38,8 @@ def _sort_instance_rows(instance_rows: list[InstanceRow]) -> None:
 @click.command()
 def list_instances() -> None:
     """List all registered IDA Pro instances."""
+    synchronize_idalib_installation_with_hcli()
+
     # Get existing instances and default
     instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
     default_instance = config_store.get_string("ida.default", "")
