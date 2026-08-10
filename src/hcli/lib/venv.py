@@ -3,17 +3,23 @@ from __future__ import annotations
 import logging
 import os
 import platform
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Prints the running interpreter's version as `major.minor`.
+PRINT_VERSION_PY = "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
 
-def _parse_pyvenv_cfg(path: Path) -> dict[str, str]:
+
+def parse_pyvenv_cfg(path: Path) -> dict[str, str]:
     """
     Fetch key-value pairs from a pyvenv.cfg file, such as found in uv-created
     virtual environments.
+
+    Keys are lowercased.  Returns an empty dict when the file can't be read.
     """
     result: dict[str, str] = {}
     try:
@@ -117,8 +123,26 @@ def is_uv_cache_virtual_env(virtual_env: str | Path) -> bool:
     if _has_uv_internal_parent(path):
         return True
 
-    cfg = _parse_pyvenv_cfg(path / "pyvenv.cfg")
+    cfg = parse_pyvenv_cfg(path / "pyvenv.cfg")
     return "extends-environment" in cfg
+
+
+def get_python_exe_candidates(root: Path, version: str | None = None) -> list[Path]:
+    """List the paths where a Python interpreter may live under an environment root.
+
+    The root can be a virtualenv or an installation prefix (sys.prefix); both
+    use the same layout.  `version` is a `major.minor` string that adds the
+    version-suffixed name (like `bin/python3.12`) to the candidates on POSIX.
+    """
+    if platform.system() == "Windows":
+        return [root / "Scripts" / "python.exe", root / "python.exe"]
+
+    bindir = root / "bin"
+    candidates = []
+    if version:
+        candidates.append(bindir / f"python{version}")
+    candidates.extend([bindir / "python3", bindir / "python"])
+    return candidates
 
 
 def find_virtual_env_python(virtual_env: str | Path) -> Path | None:
@@ -128,18 +152,33 @@ def find_virtual_env_python(virtual_env: str | Path) -> Path | None:
     or when its interpreter is missing (such as a venv whose base Python was
     uninstalled).
     """
-    root = Path(virtual_env)
-
-    if platform.system() == "Windows":
-        candidates = [root / "Scripts" / "python.exe", root / "python.exe"]
-    else:
-        candidates = [root / "bin" / "python3", root / "bin" / "python"]
-
-    for candidate in candidates:
+    for candidate in get_python_exe_candidates(Path(virtual_env)):
         if candidate.is_file():
             return candidate
 
     return None
+
+
+def probe_python_version(python_exe: Path, timeout: float = 10.0) -> str | None:
+    """Probe the major.minor version of a Python interpreter by running it.
+
+    Returns None when the interpreter can't be run, so callers can treat this
+    as best-effort.
+    """
+    try:
+        result = subprocess.run(
+            [str(python_exe), "-c", PRINT_VERSION_PY],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=timeout,
+        )
+    except (subprocess.SubprocessError, OSError) as e:
+        logger.debug("failed to probe version of %s: %s", python_exe, e)
+        return None
+
+    version = result.stdout.strip()
+    return version or None
 
 
 def read_virtual_env_version(virtual_env: str | Path) -> str | None:
@@ -153,7 +192,7 @@ def read_virtual_env_version(virtual_env: str | Path) -> str | None:
     interpreter when it's available, since a venv can be relocated or its base
     Python replaced after pyvenv.cfg was written.
     """
-    cfg = _parse_pyvenv_cfg(Path(virtual_env) / "pyvenv.cfg")
+    cfg = parse_pyvenv_cfg(Path(virtual_env) / "pyvenv.cfg")
     raw = cfg.get("version") or cfg.get("version_info")
     if not raw:
         return None
@@ -166,6 +205,22 @@ def read_virtual_env_version(virtual_env: str | Path) -> str | None:
         return f"{int(parts[0])}.{int(parts[1])}"
     except ValueError:
         return None
+
+
+def get_virtual_env_version(virtual_env: str | Path) -> str | None:
+    """Detect the major.minor Python version of a virtual environment.
+
+    Runs the venv's own interpreter, which is authoritative, and falls back to
+    the version recorded in pyvenv.cfg when the interpreter is missing or can't
+    be run.  Returns None when neither is available.
+    """
+    python_exe = find_virtual_env_python(virtual_env)
+    if python_exe is not None:
+        version = probe_python_version(python_exe)
+        if version:
+            return version
+
+    return read_virtual_env_version(virtual_env)
 
 
 @dataclass(frozen=True)
@@ -217,7 +272,7 @@ def find_candidate_virtual_envs() -> list[VenvCandidate]:
             continue
         seen.add(resolved)
 
-        cfg = _parse_pyvenv_cfg(cfg_path)
+        cfg = parse_pyvenv_cfg(cfg_path)
         candidates.append(VenvCandidate(path=venv_root, source="PATH", cfg=cfg))
 
     return candidates

@@ -4,6 +4,7 @@ from pathlib import Path
 from hcli.lib.venv import (
     find_candidate_virtual_envs,
     find_virtual_env_python,
+    get_python_exe_candidates,
     is_uv_cache_virtual_env,
     read_virtual_env_version,
     resolve_user_virtual_env,
@@ -221,6 +222,19 @@ def test_find_virtual_env_python_returns_none_when_missing(tmp_path):
     _write_pyvenv_cfg(venv, "home = /usr/bin\n")
 
     assert find_virtual_env_python(venv) is None
+
+
+def test_get_python_exe_candidates_prefers_versioned_name(tmp_path):
+    candidates = get_python_exe_candidates(tmp_path, "3.12")
+
+    if os.name == "nt":
+        assert candidates == [tmp_path / "Scripts" / "python.exe", tmp_path / "python.exe"]
+    else:
+        assert candidates == [
+            tmp_path / "bin" / "python3.12",
+            tmp_path / "bin" / "python3",
+            tmp_path / "bin" / "python",
+        ]
 
 
 def test_read_virtual_env_version_reads_stdlib_version_key(tmp_path):
