@@ -11,7 +11,7 @@
 - Update ida-config.json by default on install
 - Explicitly use encoding="utf-8" everywhere and set PYTHONUTF8=1 for subprocesses
 - Better algorithm to detect python executable from idat
-- Use an isolated minimal IDAUSR for idat-based Python detection, while preserving `idapythonrc.py`, to avoid headless startup crashes from user plugins
+- Cache idat-based Python and script detection and use low-overhead `find-script` and `run-script` entrypoints
 - Use ida executable in find_current_ida_platform
 - Remove idat invocations for version and platform detection
 - Validate all plugin paths before extracting any

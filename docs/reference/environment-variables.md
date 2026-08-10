@@ -10,6 +10,7 @@ Typically you won't have to touch these, but they can be useful in automation co
 |----------------------|---------------|----------------------------------------------------------------------------|
 | HCLI_API_KEY         | None          | API key for authentication with Hex-Rays services                          |
 | HCLI_DISABLE_UPDATES | false         | Disable automatic update checking                                          |
+| HCLI_DISABLE_PYTHON_CACHE | false    | Force an authoritative IDA Python probe instead of using the short-lived cross-process cache |
 | HCLI_LOG_LEVEL       | None          | Set logging level (e.g., "DEBUG", "INFO", "WARNING")                       |
 | HCLI_DEBUG           | false         | Enable debug mode with verbose logging (accepts: "true", "yes", "on", "1") |
 

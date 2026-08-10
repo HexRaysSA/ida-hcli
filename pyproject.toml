@@ -32,8 +32,8 @@ Repository = "https://github.com/HexRaysSA/ida-hcli"
 Issues = "https://github.com/HexRaysSA/ida-hcli/issues"
 
 [project.scripts]
-hcli = "hcli.main:cli"
-ida-hcli = "hcli.main:cli"
+hcli = "hcli.entrypoint:main"
+ida-hcli = "hcli.entrypoint:main"
 
 [tool.taskipy.tasks]
 current-version = "semantic-release version --print-last-released"
