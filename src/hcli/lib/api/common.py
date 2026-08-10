@@ -16,7 +16,7 @@ from rich.progress import (
 from hcli import __version__
 from hcli.env import ENV
 from hcli.lib.auth import get_auth_service
-from hcli.lib.console import console
+from hcli.lib.console import console, stderr_console
 from hcli.lib.constants.auth import CredentialType
 from hcli.lib.util.cache import get_cache_directory
 from hcli.lib.util.io import NoSpaceError, check_free_space
@@ -149,7 +149,7 @@ class APIClient:
                 DownloadColumn(),
                 TransferSpeedColumn(),
                 TimeRemainingColumn(),
-                console=console,
+                console=stderr_console,
             ) as progress,
         ):
             task = progress.add_task(f"Uploading {file_path}", total=file_size)
@@ -261,7 +261,7 @@ class APIClient:
                 DownloadColumn(),
                 TransferSpeedColumn(),
                 TimeRemainingColumn(),
-                console=console,
+                console=stderr_console,
             ) as progress:
                 download_task = progress.add_task(
                     f"Downloading {filename}",

@@ -12,7 +12,7 @@ from hcli.commands.common import safe_ask_async
 from hcli.lib.api.asset import SHARED, Asset, asset
 from hcli.lib.api.common import get_api_client
 from hcli.lib.commands import async_command, auth_command
-from hcli.lib.console import console
+from hcli.lib.console import console, stderr_console
 from hcli.lib.constants import cli
 
 
@@ -30,7 +30,7 @@ async def list_shares(limit: int, offset: int, interactive: bool) -> None:
 
     try:
         # Get shared files
-        with console.status("[bold blue]Loading shared files..."):
+        with stderr_console.status("[bold blue]Loading shared files..."):
             from hcli.lib.api.asset import PagingFilter
 
             filter_params = PagingFilter(limit=limit, offset=offset)

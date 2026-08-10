@@ -7,7 +7,7 @@ import rich_click as click
 from hcli.lib.api.asset import asset
 from hcli.lib.api.common import get_api_client
 from hcli.lib.commands import async_command, auth_command
-from hcli.lib.console import console
+from hcli.lib.console import console, stderr_console
 
 
 @auth_command()
@@ -38,7 +38,7 @@ async def get(shortcode: str, output_dir: Path | None, output_file: Path | None,
 
     try:
         # Get file information
-        with console.status("[bold blue]Getting file information..."):
+        with stderr_console.status("[bold blue]Getting file information..."):
             file_info = await asset.get_shared_file_by_code(shortcode)
 
         if not file_info:
