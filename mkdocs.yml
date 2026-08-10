@@ -99,6 +99,7 @@ nav:
     - Plugin Bundles: reference/plugin-bundle-spec.md
   - Reference:
     - Environment Variables: reference/environment-variables.md
+    - How HCLI Finds IDA: reference/ida-detection.md
   - Changelog: changelog.md
 
 plugins:

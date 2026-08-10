@@ -73,6 +73,8 @@ In particular, if you haven't registered a default IDA installation, such as wit
 
 then you may need to set `HCLI_CURRENT_IDA_INSTALL_DIR` when using the plugin manager, so that HCLI can find IDA and its resources.
 
+See [How HCLI Finds IDA](ida-detection.md) for the full resolution order these overrides participate in.
+
 
 ## Cache & Storage
 
