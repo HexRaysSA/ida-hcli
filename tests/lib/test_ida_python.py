@@ -9,6 +9,7 @@ from hcli.env import ENV
 from hcli.lib.ida import find_current_ida_install_directory, get_ida_user_dir
 from hcli.lib.ida.python import (
     CantInstallPackagesError,
+    IdatProbe,
     PipOptions,
     PythonVersionMismatch,
     _derive_python_exe,
@@ -20,6 +21,7 @@ from hcli.lib.ida.python import (
     merge_bundle_pip_options,
     probe_current_python_info,
     probe_python_version,
+    resolve_current_python,
     verify_pip_can_install_packages,
 )
 
@@ -91,6 +93,19 @@ def test_find_current_python_executable_uses_idapython_venv_executable(tmp_path,
     assert result == python
 
 
+def test_resolve_current_python_reports_env_pin_source(tmp_path, monkeypatch):
+    python = tmp_path / "python3"
+    python.write_text("", encoding="utf-8")
+
+    monkeypatch.setenv("HCLI_CURRENT_IDA_PYTHON_EXE", str(python))
+
+    resolved = resolve_current_python()
+
+    assert resolved.exe == python
+    assert resolved.source == "$HCLI_CURRENT_IDA_PYTHON_EXE"
+    assert resolved.probe is None
+
+
 def test_find_current_python_executable_hcli_exe_overrides_idapython_venv(tmp_path, monkeypatch):
     hcli_python = tmp_path / "hcli" / "python3"
     hcli_python.parent.mkdir()
@@ -125,16 +140,16 @@ def test_derive_python_exe_uses_idapython_venv_executable_when_sys_executable_is
     idat_binary = tmp_path / "idat"
     idat_binary.write_text("", encoding="utf-8")
 
-    info = {
-        "frozen": False,
-        "prefix": "/Library/Frameworks/Python.framework/Versions/3.14",
-        "base_prefix": "/Library/Frameworks/Python.framework/Versions/3.14",
-        "executable": str(idat_binary),
-        "virtual_env": None,
-        "idapython_venv_executable": str(venv_python),
-        "version_major": 3,
-        "version_minor": 14,
-    }
+    info = IdatProbe(
+        frozen=False,
+        prefix="/Library/Frameworks/Python.framework/Versions/3.14",
+        base_prefix="/Library/Frameworks/Python.framework/Versions/3.14",
+        executable=str(idat_binary),
+        virtual_env=None,
+        idapython_venv_executable=str(venv_python),
+        version_major=3,
+        version_minor=14,
+    )
 
     assert _derive_python_exe(info) == venv_python
 
@@ -148,16 +163,16 @@ def test_derive_python_exe_honors_validated_virtualenv_executable_when_prefix_is
     venv_python = _venv_launcher_for_ida(venv_dir)
     venv_python.write_text("", encoding="utf-8")
 
-    info = {
-        "frozen": False,
-        "prefix": "/Library/Frameworks/Python.framework/Versions/3.14",
-        "base_prefix": "/Library/Frameworks/Python.framework/Versions/3.14",
-        "executable": str(venv_python),
-        "virtual_env": str(venv_dir),
-        "idapython_venv_executable": str(venv_python),
-        "version_major": 3,
-        "version_minor": 14,
-    }
+    info = IdatProbe(
+        frozen=False,
+        prefix="/Library/Frameworks/Python.framework/Versions/3.14",
+        base_prefix="/Library/Frameworks/Python.framework/Versions/3.14",
+        executable=str(venv_python),
+        virtual_env=str(venv_dir),
+        idapython_venv_executable=str(venv_python),
+        version_major=3,
+        version_minor=14,
+    )
 
     assert _derive_python_exe(info) == venv_python
 
@@ -428,7 +443,7 @@ def _write_fake_venv(venv_dir: Path, version: str) -> Path:
     return python
 
 
-def _ida_info(version: tuple[int, int], **overrides) -> dict:
+def _ida_info(version: tuple[int, int], **overrides) -> IdatProbe:
     info = {
         "frozen": False,
         "prefix": "/opt/python3",
@@ -440,7 +455,7 @@ def _ida_info(version: tuple[int, int], **overrides) -> dict:
         "version_minor": version[1],
     }
     info.update(overrides)
-    return info
+    return IdatProbe.model_validate(info)
 
 
 def test_get_virtual_env_version_falls_back_to_pyvenv_cfg(tmp_path):
@@ -559,7 +574,7 @@ def test_probe_current_python_info_runs_idat_once_per_process(monkeypatch):
 
     def fake_probe(src: str) -> dict:
         calls.append(src)
-        return _ida_info((3, 12))
+        return _ida_info((3, 12)).model_dump()
 
     monkeypatch.setattr("hcli.lib.ida.python.run_py_in_current_idapython", fake_probe)
 
