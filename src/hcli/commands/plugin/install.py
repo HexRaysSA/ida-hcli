@@ -246,11 +246,9 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                         console.print(f"Available targets in this bundle: {available}")
                         raise click.Abort()
                     effective_pip_options = merge_bundle_pip_options(pip_options, bundle_opts)
-                    with rich.status.Status("installing plugin", console=stderr_console):
-                        install_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
+                    install_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
             else:
-                with rich.status.Status("installing plugin", console=stderr_console):
-                    install_plugin_archive(buf, plugin_name, pip_options=pip_options)
+                install_plugin_archive(buf, plugin_name, pip_options=pip_options)
 
         try:
             if metadata.plugin.settings:
