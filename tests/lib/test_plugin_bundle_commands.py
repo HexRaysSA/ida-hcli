@@ -5,9 +5,12 @@ import sys
 import zipfile
 from pathlib import Path
 
+import rich.progress
 from click.testing import CliRunner
 
 from hcli.commands.plugin.bundle import bundle
+from hcli.lib.console import stderr_console
+from hcli.lib.ida.plugin.repo.fs import FileSystemPluginRepo
 from hcli.lib.ida.python import PipOptions
 
 TESTS_DIR = Path(__file__).parent.parent
@@ -96,6 +99,33 @@ def test_bundle_create_from_local_zip_no_deps(tmp_path):
         assert plugins[0].name == "plugin1"
     finally:
         repo.close()
+
+
+def test_bundle_create_composes_repository_live_display(monkeypatch, tmp_path):
+    """Rich 14.1+ renders repository progress beneath the command status."""
+    original_get_plugins = FileSystemPluginRepo.get_plugins
+    live_depths: list[int] = []
+
+    def get_plugins_with_progress(self):
+        with rich.progress.Progress(console=stderr_console, transient=True):
+            live_depths.append(len(stderr_console._live_stack))
+            return original_get_plugins(self)
+
+    monkeypatch.setattr(FileSystemPluginRepo, "get_plugins", get_plugins_with_progress)
+
+    out = tmp_path / "output.zip"
+    repo = FileSystemPluginRepo(PLUGIN1_V1.parent)
+    runner = CliRunner()
+    result = runner.invoke(
+        bundle,
+        ["create", "--path", str(out), "--target", "linux-x86_64-cp312", "plugin1==1.0.0"],
+        obj={"pip_options": PipOptions(), "plugin_repo": repo},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert live_depths == [2]
+    assert not stderr_console._live_stack
+    assert out.exists()
 
 
 def test_bundle_create_unknown_target_rejected(tmp_path):

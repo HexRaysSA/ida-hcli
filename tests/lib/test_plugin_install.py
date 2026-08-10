@@ -9,7 +9,9 @@ import zipfile
 from pathlib import Path
 
 import pytest
+import rich.progress
 import rich.status
+from click.testing import CliRunner
 from fixtures import *
 from fixtures import (
     PLUGINS_DIR,
@@ -18,6 +20,7 @@ from fixtures import (
     temp_env_var,
 )
 
+from hcli.commands.plugin import plugin as plugin_group
 from hcli.lib.console import stderr_console
 from hcli.lib.ida.plugin.exceptions import (
     BrokenPluginInstallationError,
@@ -38,6 +41,7 @@ from hcli.lib.ida.plugin.install import (
     upgrade_plugin_archive,
     validate_archive_entry,
 )
+from hcli.lib.ida.plugin.repo.fs import FileSystemPluginRepo
 from hcli.lib.ida.python import pip_freeze
 
 logger = logging.getLogger(__name__)
@@ -81,6 +85,30 @@ def test_install_source_plugin_archive_under_an_active_spinner(virtual_ida_envir
     with rich.status.Status("installing plugin", console=stderr_console):
         install_plugin_archive(buf, "plugin1")
 
+    assert is_plugin_installed("plugin1")
+
+
+def test_install_composes_repository_live_display(monkeypatch, virtual_ida_environment):
+    """Rich 14.1+ renders repository progress beneath the command status."""
+    original_get_plugins = FileSystemPluginRepo.get_plugins
+    live_depths: list[int] = []
+
+    def get_plugins_with_progress(self):
+        with rich.progress.Progress(console=stderr_console, transient=True):
+            live_depths.append(len(stderr_console._live_stack))
+            return original_get_plugins(self)
+
+    monkeypatch.setattr(FileSystemPluginRepo, "get_plugins", get_plugins_with_progress)
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(
+        plugin_group,
+        ["--repo", str(PLUGINS_DIR), "install", "plugin1==1.0.0"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert live_depths == [2]
+    assert not stderr_console._live_stack
     assert is_plugin_installed("plugin1")
 
 
