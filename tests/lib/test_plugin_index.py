@@ -15,13 +15,13 @@ from hcli.lib.util.cache import get_cache_directory
 @pytest.fixture
 def temp_hcli_cache_dir():
     temp_dir = tempfile.mkdtemp()
-    old_history = os.environ.get("HCLI_CACHE_DIR", "")
+    old_history = os.environ.get("HCLI_CACHE_DIR")
     os.environ["HCLI_CACHE_DIR"] = temp_dir
     try:
         yield
     finally:
         shutil.rmtree(temp_dir)
-        if old_history:
+        if old_history is not None:
             os.environ["HCLI_CACHE_DIR"] = old_history
         else:
             os.environ.pop("HCLI_CACHE_DIR", None)
