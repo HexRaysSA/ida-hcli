@@ -12,7 +12,7 @@ authors = [
 
 dependencies = [
     "click",
-    "rich",
+    "rich>=14.1",
     "rich-click",
     "httpx<1",
     "pydantic>=2.11.0",
