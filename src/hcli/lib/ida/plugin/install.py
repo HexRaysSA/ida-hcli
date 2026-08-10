@@ -300,8 +300,8 @@ def get_installed_plugin_records() -> list[InstalledPluginRecord]:
     """Enumerate installed plugins with their on-disk metadata.
 
     This is the canonical source of truth for "what is installed". Other
-    helpers (``get_installed_plugins``, ``is_plugin_installed``, etc.) are
-    implemented on top of this list so they agree on what counts as
+    helpers (``get_installed_plugin_paths``, ``is_plugin_installed``, etc.)
+    are implemented on top of this list so they agree on what counts as
     installed.
     """
     plugins_dir = get_plugins_directory()
@@ -391,11 +391,6 @@ def resolve_installed_plugin_directory(name: str) -> Path:
 
 def get_installed_plugin_paths() -> list[Path]:
     return [r.path for r in get_installed_plugin_records()]
-
-
-def get_installed_plugins() -> list[tuple[str, str]]:
-    """fetch (name, version) pairs for currently installed plugins"""
-    return [(r.name, r.version) for r in get_installed_plugin_records()]
 
 
 def get_installed_minimal_plugins() -> list[tuple[Path, MinimalIDAPluginMetadata]]:
@@ -733,21 +728,11 @@ def _install_plugin_archive(
     extract_zip_subdirectory_to(zip_data, plugin_subdirectory, destination_path)
 
 
-def install_source_plugin_archive(zip_data: bytes, name: str, pip_options: PipOptions = PIP_OPTIONS_DEFAULT):
-    return _install_plugin_archive(zip_data, name, pip_options=pip_options)
-
-
-def install_binary_plugin_archive(zip_data: bytes, name: str, pip_options: PipOptions = PIP_OPTIONS_DEFAULT):
-    return _install_plugin_archive(zip_data, name, pip_options=pip_options)
-
-
 def install_plugin_archive(zip_data: bytes, name: str, pip_options: PipOptions = PIP_OPTIONS_DEFAULT):
-    if is_source_plugin_archive(zip_data, name):
-        install_source_plugin_archive(zip_data, name, pip_options=pip_options)
-    elif is_binary_plugin_archive(zip_data, name):
-        install_binary_plugin_archive(zip_data, name, pip_options=pip_options)
-    else:
+    if not is_source_plugin_archive(zip_data, name) and not is_binary_plugin_archive(zip_data, name):
         raise ValueError("Invalid plugin archive")
+
+    _install_plugin_archive(zip_data, name, pip_options=pip_options)
 
 
 # Files/directories under a plugin source tree we never want to ship into a
@@ -931,17 +916,6 @@ def _remove_editable_pth_file(plugin_name: str) -> None:
     if pth_path.exists():
         pth_path.unlink()
         logger.info("removed editable .pth file: %s", pth_path)
-
-
-def validate_can_uninstall_plugin(name: str) -> None:
-    """Verify plugin can be uninstalled.
-
-    Raises:
-        PluginNotInstalledError: If plugin is not installed
-    """
-    # find_installed_plugin raises PluginNotInstalledError when no match; name
-    # matching is case-insensitive.
-    find_installed_plugin(name)
 
 
 def _uninstall_broken_plugin_directory(name: str) -> None:

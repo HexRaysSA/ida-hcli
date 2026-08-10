@@ -327,15 +327,15 @@ class IDAIPCClient:
             )
 
     @staticmethod
-    def _send_command(socket_path: str, command: dict, read_timeout: float | None = None) -> dict:
+    def _send_command(socket_path: str, command: dict) -> dict:
         """Send a JSON command and receive response."""
         if sys.platform == "win32":
-            return IDAIPCClient._send_command_windows(socket_path, command, read_timeout=read_timeout)
+            return IDAIPCClient._send_command_windows(socket_path, command)
         else:
-            return IDAIPCClient._send_command_unix(socket_path, command, read_timeout=read_timeout)
+            return IDAIPCClient._send_command_unix(socket_path, command)
 
     @staticmethod
-    def _send_command_unix(socket_path: str, command: dict, read_timeout: float | None = None) -> dict:
+    def _send_command_unix(socket_path: str, command: dict) -> dict:
         """Send command via Unix domain socket."""
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)  # type: ignore[attr-defined]
         sock.settimeout(IDAIPCClient.CONNECT_TIMEOUT)
@@ -360,7 +360,7 @@ class IDAIPCClient:
             data = json.dumps(command).encode("utf-8")
             sock.sendall(data)
 
-            sock.settimeout(read_timeout or IDAIPCClient.READ_TIMEOUT)
+            sock.settimeout(IDAIPCClient.READ_TIMEOUT)
             response_data = b""
             while True:
                 try:
@@ -387,10 +387,8 @@ class IDAIPCClient:
             sock.close()
 
     @staticmethod
-    def _send_command_windows(pipe_path: str, command: dict, read_timeout: float | None = None) -> dict:
+    def _send_command_windows(pipe_path: str, command: dict) -> dict:
         """Send command via Windows named pipe."""
-        # Note: read_timeout is accepted for API consistency but Windows pipes
-        # use blocking I/O by default
         try:
             import ctypes
             from ctypes import wintypes
@@ -442,25 +440,6 @@ class IDAIPCClient:
 
         except ImportError:
             raise IPCConnectionError("Windows named pipe support not available")
-
-
-def find_instance_for_idb(idb_name: str) -> IDAInstance | None:
-    """Find an IDA instance that has the specified IDB open.
-
-    Args:
-        idb_name: The IDB name to search for (basename without extension).
-
-    Returns:
-        IDAInstance if found, None otherwise.
-    """
-    instances = IDAIPCClient.discover_instances()
-
-    for instance in instances:
-        info = IDAIPCClient.query_instance(instance.socket_path)
-        if info and info.has_idb and info.idb_name and info.idb_name.lower() == idb_name.lower():
-            return info
-
-    return None
 
 
 def find_all_instances_with_info() -> list[IDAInstance]:

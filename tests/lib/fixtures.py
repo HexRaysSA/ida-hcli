@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from hcli.env import ENV
+
 logger = logging.getLogger(__name__)
 _THIS_FILE = Path(__file__)
 TESTS_DIR = _THIS_FILE.parent.parent
@@ -17,9 +19,29 @@ PLUGINS_DIR = TESTS_DIR / "data" / "plugins"
 PROJECT_DIR = TESTS_DIR.parent
 
 
+def set_env_var(monkeypatch: pytest.MonkeyPatch, key: str, value: str) -> None:
+    """Set an environment variable and the matching `hcli.env.ENV` attribute, if any.
+
+    `ENV` is evaluated at import time, so in-process code reads it rather than
+    `os.environ`; `os.environ` still matters for tests that run hcli as a subprocess.
+    """
+    monkeypatch.setenv(key, value)
+    if hasattr(ENV, key):
+        monkeypatch.setattr(ENV, key, value)
+
+
+def unset_env_var(monkeypatch: pytest.MonkeyPatch, key: str) -> None:
+    """Unset an environment variable and the matching `hcli.env.ENV` attribute, if any."""
+    monkeypatch.delenv(key, raising=False)
+    if hasattr(ENV, key):
+        monkeypatch.setattr(ENV, key, None)
+
+
 @contextlib.contextmanager
 def temp_env_var(key: str, value: str):
     """Temporarily set the given environment variable for the duration of the contextmanager block.
+
+    Also updates the matching `hcli.env.ENV` attribute, if any; see `set_env_var`.
 
     Example:
 
@@ -29,6 +51,12 @@ def temp_env_var(key: str, value: str):
     """
     _orig = os.environ.get(key, "")
     os.environ[key] = value
+
+    has_env_attr = hasattr(ENV, key)
+    _orig_attr = getattr(ENV, key, None)
+    if has_env_attr:
+        setattr(ENV, key, value)
+
     try:
         yield
     finally:
@@ -36,6 +64,9 @@ def temp_env_var(key: str, value: str):
             os.environ[key] = _orig
         else:
             del os.environ[key]
+
+        if has_env_attr:
+            setattr(ENV, key, _orig_attr)
 
 
 @contextlib.contextmanager

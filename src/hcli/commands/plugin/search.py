@@ -204,7 +204,7 @@ def collect_version_entries(
     for version in versions:
         locations = plugin.versions[version]
         metadata = locations[0].metadata
-        is_compatible = is_compatible_plugin_version(plugin, version, locations, current_platform, current_version)
+        is_compatible = is_compatible_plugin_version(locations, current_platform, current_version)
 
         currently_installed = False
         upgradable = False

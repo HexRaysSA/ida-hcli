@@ -683,15 +683,6 @@ def get_source_archive(owner: str, repo: str, commit_hash: str, zip_url: str) ->
         return buf
 
 
-def get_release_metadata(client: GitHubGraphQLClient, owner: str, repo: str, release_id: str) -> GitHubRelease:
-    """Extract release metadata from a release"""
-    for release in get_releases_metadata(client, owner, repo).releases:
-        if release.tag_name == release_id:
-            return release
-
-    raise KeyError(f"release {release_id} not found for {owner}/{repo}")
-
-
 def get_candidate_github_repos_cache_path() -> Path:
     return get_cache_directory() / "candidate_repos.json"
 

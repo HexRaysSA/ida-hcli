@@ -54,8 +54,6 @@ class ENV:
     # explicitly to let sibling binaries share a single credential store.
     HCLI_CONFIG_NAMESPACE: str = os.getenv("HCLI_CONFIG_NAMESPACE", HCLI_BINARY_NAME)
     HCLI_VERSION_EXTRA: str = os.getenv("HCLI_VERSION_EXTRA", "")
-    HCLI_MODE: str = os.getenv("HCLI_MODE", "user")
-    QUIET: bool = False
 
     HCLI_DISABLE_UPDATES: bool = _env_bool("HCLI_DISABLE_UPDATES")
 

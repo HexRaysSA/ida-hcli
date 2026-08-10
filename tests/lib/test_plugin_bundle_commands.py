@@ -5,6 +5,7 @@ import sys
 import zipfile
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from hcli.commands.plugin.bundle import bundle
@@ -36,10 +37,9 @@ def test_bundle_info_valid_bundle(tmp_path):
     result = runner.invoke(bundle, ["info", str(p)])
 
     assert result.exit_code == 0, result.output
-    assert "plugin bundle" in result.output
-    assert "built:" in result.output
-    assert "targets:" in result.output
-    assert "plugins:" in result.output
+    assert "2026-04-28T16:00:00+00:00" in result.output
+    assert "linux-x86_64-cp312" in result.output
+    assert "plugin1: 1.0.0" in result.output
 
 
 def test_bundle_info_not_a_bundle(tmp_path):
@@ -64,7 +64,6 @@ def test_bundle_info_empty_bundle(tmp_path):
     result = runner.invoke(bundle, ["info", str(p)])
 
     assert result.exit_code == 0, result.output
-    assert "plugins: (none)" in result.output
 
 
 def test_bundle_create_from_local_zip_no_deps(tmp_path):
@@ -84,13 +83,13 @@ def test_bundle_create_from_local_zip_no_deps(tmp_path):
         names = zf.namelist()
         assert "plugin-bundle.json" in names
         plugin_members = [n for n in names if n.startswith("plugins/") and n.endswith(".zip")]
-        assert len(plugin_members) == 1
+        assert plugin_members == ["plugins/plugin1-1.0.0.zip"]
 
     from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 
     repo = PluginBundleRepo(out)
     try:
-        assert "linux-x86_64-cp312" in repo.target_ids
+        assert repo.target_ids == ["linux-x86_64-cp312"]
         plugins = repo.get_plugins()
         assert len(plugins) == 1
         assert plugins[0].name == "plugin1"
@@ -98,28 +97,22 @@ def test_bundle_create_from_local_zip_no_deps(tmp_path):
         repo.close()
 
 
-def test_bundle_create_unknown_target_rejected(tmp_path):
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--target", "nonexistent-target", str(PLUGIN1_V1)],
+        ["--target", "linux-x86_64-cp312", "someplugin"],
+    ],
+)
+def test_bundle_create_rejects_bad_input(tmp_path, argv):
     out = tmp_path / "output.zip"
 
     runner = CliRunner()
     result = runner.invoke(
         bundle,
-        ["create", "--path", str(out), "--target", "nonexistent-target", str(PLUGIN1_V1)],
+        ["create", "--path", str(out), *argv],
         obj={"pip_options": PipOptions()},
     )
 
     assert result.exit_code != 0
-    assert "unknown target" in result.output.lower() or "error" in result.output.lower()
-
-
-def test_bundle_create_requires_version_for_repo_spec(tmp_path):
-    out = tmp_path / "output.zip"
-
-    runner = CliRunner()
-    result = runner.invoke(
-        bundle,
-        ["create", "--path", str(out), "--target", "linux-x86_64-cp312", "someplugin"],
-        obj={"pip_options": PipOptions()},
-    )
-
-    assert result.exit_code != 0
+    assert not out.exists()

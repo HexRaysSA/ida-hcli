@@ -8,7 +8,6 @@ from hcli.lib.ida.plugin import (
     get_metadata_from_plugin_archive,
     get_python_dependencies_from_plugin_archive,
     get_python_dependencies_from_plugin_directory,
-    is_plugin_archive,
     is_source_plugin_archive,
     parse_pep723_metadata,
 )
@@ -18,9 +17,6 @@ from hcli.lib.ida.plugin.install import (
 
 
 def test_parse_pep723_metadata():
-    """Test parsing of PEP 723 inline metadata from Python file content."""
-
-    # Test valid PEP 723 metadata
     python_content = textwrap.dedent("""
         # /// script
         # dependencies = [
@@ -35,23 +31,18 @@ def test_parse_pep723_metadata():
             return None
     """).strip()
 
-    dependencies = parse_pep723_metadata(python_content)
-    assert dependencies == ["packaging>=25.0", "rich>=13.0.0"]
+    assert parse_pep723_metadata(python_content) == ["packaging>=25.0", "rich>=13.0.0"]
 
 
-def test_source_plugin_archive_v4_inline_dependencies():
-    """Test that plugin v4 with inline dependencies is recognized as source plugin."""
-    plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v4.0.0.zip"
-    buf = plugin_path.read_bytes()
-
-    assert is_plugin_archive(buf, "plugin1")
-    assert is_source_plugin_archive(buf, "plugin1")
+def test_parse_pep723_metadata_without_metadata_block():
+    assert parse_pep723_metadata("import ida_idaapi\n") == []
 
 
 def test_get_python_dependencies_from_plugin_archive_inline():
-    """Test getting inline dependencies from plugin archive."""
     plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v4.0.0.zip"
     buf = plugin_path.read_bytes()
+
+    assert is_source_plugin_archive(buf, "plugin1")
 
     _, metadata = get_metadata_from_plugin_archive(buf, "plugin1")
     assert metadata.plugin.python_dependencies == "inline"
@@ -61,7 +52,6 @@ def test_get_python_dependencies_from_plugin_archive_inline():
 
 
 def test_get_python_dependencies_from_plugin_directory_inline():
-    """Test getting inline dependencies from plugin directory."""
     with tempfile.TemporaryDirectory() as tmpdir:
         plugin_dir = Path(tmpdir) / "plugin1"
         plugin_dir.mkdir()

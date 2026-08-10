@@ -5,7 +5,7 @@ import os
 import platform
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -159,7 +159,7 @@ def find_virtual_env_python(virtual_env: str | Path) -> Path | None:
     return None
 
 
-def probe_python_version(python_exe: Path, timeout: float = 10.0) -> str | None:
+def probe_python_version(python_exe: Path) -> str | None:
     """Probe the major.minor version of a Python interpreter by running it.
 
     Returns None when the interpreter can't be run, so callers can treat this
@@ -171,7 +171,7 @@ def probe_python_version(python_exe: Path, timeout: float = 10.0) -> str | None:
             capture_output=True,
             text=True,
             check=True,
-            timeout=timeout,
+            timeout=10.0,
         )
     except (subprocess.SubprocessError, OSError) as e:
         logger.debug("failed to probe version of %s: %s", python_exe, e)
@@ -227,7 +227,6 @@ def get_virtual_env_version(virtual_env: str | Path) -> str | None:
 class VenvCandidate:
     path: Path
     source: str
-    cfg: dict[str, str] = field(default_factory=dict)
 
 
 def find_candidate_virtual_envs() -> list[VenvCandidate]:
@@ -272,8 +271,7 @@ def find_candidate_virtual_envs() -> list[VenvCandidate]:
             continue
         seen.add(resolved)
 
-        cfg = parse_pyvenv_cfg(cfg_path)
-        candidates.append(VenvCandidate(path=venv_root, source="PATH", cfg=cfg))
+        candidates.append(VenvCandidate(path=venv_root, source="PATH"))
 
     return candidates
 

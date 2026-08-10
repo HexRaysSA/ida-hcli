@@ -38,26 +38,16 @@ def _reload_with(binary=None, namespace=None):
         return hcli.env.ENV, auth_const
 
 
-def test_namespace_defaults_to_default_binary_name():
-    env, const = _reload_with()
-    assert env.HCLI_CONFIG_NAMESPACE == "hcli"
-    assert const.CONFIG_CREDENTIALS == "hcli.credentials"
-    assert const.CONFIG_LOGIN_EMAIL == "hcli.login.email"
-
-
-def test_namespace_follows_custom_binary_name_by_default():
-    env, const = _reload_with(binary="other")
-    assert env.HCLI_BINARY_NAME == "other"
-    assert env.HCLI_CONFIG_NAMESPACE == "other"
-    assert const.CONFIG_CREDENTIALS == "other.credentials"
-    assert const.CONFIG_LOGIN_EMAIL == "other.login.email"
-
-
-def test_explicit_namespace_decouples_auth_keys_from_binary_name():
-    env, const = _reload_with(binary="other", namespace="hcli")
-    # Binary identity stays distinct...
-    assert env.HCLI_BINARY_NAME == "other"
-    # ...while the auth keys resolve to the shared namespace.
-    assert env.HCLI_CONFIG_NAMESPACE == "hcli"
-    assert const.CONFIG_CREDENTIALS == "hcli.credentials"
-    assert const.CONFIG_LOGIN_EMAIL == "hcli.login.email"
+@pytest.mark.parametrize(
+    ("binary", "namespace", "expected_binary", "expected_keys"),
+    [
+        (None, None, "hcli", ("hcli.credentials", "hcli.login.email")),
+        ("other", None, "other", ("other.credentials", "other.login.email")),
+        # An explicit namespace decouples the auth keys from the binary identity.
+        ("other", "hcli", "other", ("hcli.credentials", "hcli.login.email")),
+    ],
+)
+def test_auth_keys_follow_the_namespace(binary, namespace, expected_binary, expected_keys):
+    env, const = _reload_with(binary=binary, namespace=namespace)
+    assert env.HCLI_BINARY_NAME == expected_binary
+    assert (const.CONFIG_CREDENTIALS, const.CONFIG_LOGIN_EMAIL) == expected_keys

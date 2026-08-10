@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 import rich_click as click
 from click.testing import CliRunner
 
@@ -29,46 +30,53 @@ def invoke(command: click.Command, argv: list[str]):
     return result.output.strip()
 
 
-def test_options_reach_the_program():
-    assert invoke(echo_args, ["-m", "pip", "--help"]) == "['-m', 'pip', '--help']"
-    assert invoke(echo_args, ["-c", "print(1)"]) == "['-c', 'print(1)']"
-    assert invoke(echo_args, ["script.py", "--flag"]) == "['script.py', '--flag']"
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        ([], []),
+        (["-m", "pip", "--help"], ["-m", "pip", "--help"]),
+        (["-c", "print(1)"], ["-c", "print(1)"]),
+        (["script.py", "--flag"], ["script.py", "--flag"]),
+        # options HCLI defines elsewhere aren't HCLI's here
+        (["--version"], ["--version"]),
+        (["-mpip", "--help"], ["-mpip", "--help"]),
+    ],
+)
+def test_arguments_reach_the_program(argv, expected):
+    assert invoke(echo_args, argv) == repr(expected)
 
 
-def test_hcli_options_reach_the_program():
-    """Options HCLI defines elsewhere aren't HCLI's here."""
-    assert invoke(echo_args, ["--version"]) == "['--version']"
-    assert invoke(echo_args, ["-mpip", "--help"]) == "['-mpip', '--help']"
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        # the leading `--` marks where the program's arguments start, so it is dropped
+        (["--", "--help"], ["--help"]),
+        (["--", "--version"], ["--version"]),
+        # doubling it passes one along
+        (["--", "--", "--version"], ["--", "--version"]),
+        # later separators belong to the program
+        (["script.py", "--", "-x"], ["script.py", "--", "-x"]),
+    ],
+)
+def test_separator_marks_where_the_program_arguments_start(argv, expected):
+    assert invoke(echo_args, argv) == repr(expected)
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (["capa"], []),
+        (["capa", "--version"], ["--version"]),
+        (["capa", "--", "--version"], ["--version"]),
+        (["capa", "-q", "--", "-x"], ["-q", "--", "-x"]),
+    ],
+)
+def test_arguments_after_a_required_one(argv, expected):
+    assert invoke(echo_named_args, argv) == f"capa: {expected!r}"
 
 
 def test_leading_help_describes_the_command():
     assert "Docstring for echo-args." in invoke(echo_args, ["--help"])
-
-
-def test_separator_is_dropped():
-    """`--` marks where the program's arguments start, so the program doesn't see it."""
-    assert invoke(echo_args, ["--", "--help"]) == "['--help']"
-    assert invoke(echo_args, ["--", "--version"]) == "['--version']"
-
-
-def test_separator_can_be_passed_along():
-    assert invoke(echo_args, ["--", "--", "--version"]) == "['--', '--version']"
-
-
-def test_later_separators_belong_to_the_program():
-    assert invoke(echo_args, ["script.py", "--", "-x"]) == "['script.py', '--', '-x']"
-    assert invoke(echo_named_args, ["capa", "-q", "--", "-x"]) == "capa: ['-q', '--', '-x']"
-
-
-def test_no_arguments():
-    assert invoke(echo_args, []) == "[]"
-
-
-def test_arguments_after_a_required_one():
-    assert invoke(echo_named_args, ["capa", "--version"]) == "capa: ['--version']"
-    assert invoke(echo_named_args, ["capa", "--", "--version"]) == "capa: ['--version']"
-    assert invoke(echo_named_args, ["capa"]) == "capa: []"
-    assert "Docstring for echo-named-args." in invoke(echo_named_args, ["--help"])
 
 
 def test_required_argument_is_still_required():

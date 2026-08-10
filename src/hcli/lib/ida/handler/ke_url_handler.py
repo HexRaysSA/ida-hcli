@@ -414,9 +414,7 @@ def _open_validated_stream(client: httpx.Client, url: str, pinned_ips: list[str]
         raise click.ClickException("Download failed: too many redirects")
 
 
-def _download_metadata(
-    client: httpx.Client, asset_url: str, sidecar_path: Path, pinned_ips: list[str] | None = None
-) -> None:
+def _download_metadata(client: httpx.Client, asset_url: str, sidecar_path: Path, pinned_ips: list[str] | None) -> None:
     """Download asset metadata and save as ``.ke.json`` sidecar (best-effort, bounded).
 
     Tries each validated IP in turn when an IP won't accept a connection and follows
@@ -454,9 +452,7 @@ def _download_metadata(
         _print(f"[yellow]Warning: Metadata fetch failed: {e}[/yellow]")
 
 
-def _download_file(
-    client: httpx.Client, download_url: str, resource_path: Path, pinned_ips: list[str] | None = None
-) -> None:
+def _download_file(client: httpx.Client, download_url: str, resource_path: Path, pinned_ips: list[str] | None) -> None:
     """Stream the resource file to disk.
 
     Streams rather than buffering the whole body in memory, enforces the optional
