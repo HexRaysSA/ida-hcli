@@ -23,10 +23,8 @@ from hcli.lib.ida import (
     get_ida_config_path,
     parse_version_from_dir_name,
     parse_version_from_ida_pro_py,
-    run_py_in_current_idapython,
 )
 from hcli.lib.ida.python import (
-    GET_PYTHON_INFO_PY,
     PRINT_VERSION_PY,
     PythonNotFoundError,
     PythonVersionMismatch,
@@ -36,6 +34,7 @@ from hcli.lib.ida.python import (
     find_python_version_mismatches,
     format_python_version_mismatch_warning,
     get_virtual_env_version,
+    probe_current_python_info,
 )
 from hcli.lib.venv import find_candidate_virtual_envs, is_uv_cache_virtual_env, resolve_user_virtual_env
 
@@ -287,7 +286,7 @@ def collect_python_environment() -> PythonEnvironmentReport:
         python_exe_source = "$IDAPYTHON_VENV_EXECUTABLE"
     else:
         try:
-            info = run_py_in_current_idapython(GET_PYTHON_INFO_PY)
+            info = probe_current_python_info()
             idat_probe = IdatProbe.model_validate(info)
 
             try:

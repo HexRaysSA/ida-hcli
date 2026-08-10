@@ -18,6 +18,7 @@ from hcli.lib.ida.python import (
     format_python_version_mismatch_warning,
     get_virtual_env_version,
     merge_bundle_pip_options,
+    probe_current_python_info,
     probe_python_version,
     verify_pip_can_install_packages,
 )
@@ -201,6 +202,10 @@ def test_find_current_python_executable_honors_activated_virtualenv(tmp_path, mo
     monkeypatch.delenv("IDAPYTHON_VENV_EXECUTABLE", raising=False)
     monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
 
+    # building the venv above probed IDA under the ambient environment;
+    # this test changes the environment, so it needs a fresh probe.
+    probe_current_python_info.cache_clear()
+
     result = find_current_python_executable()
     _assert_detected_venv_python(result, venv_dir)
 
@@ -254,6 +259,10 @@ def test_find_current_python_executable_honors_idapythonrc(tmp_path, monkeypatch
     monkeypatch.setenv("HCLI_CURRENT_IDA_INSTALL_DIR", str(install_dir))
     monkeypatch.setenv("HCLI_TEST_VENV", str(venv_dir))
     monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
+
+    # building the venv above probed IDA under the ambient environment;
+    # this test changes the environment, so it needs a fresh probe.
+    probe_current_python_info.cache_clear()
 
     result = find_current_python_executable()
     _assert_detected_venv_python(result, venv_dir)
@@ -542,6 +551,40 @@ def test_find_python_version_mismatches_ignores_unreadable_venv(tmp_path):
     mismatches = find_python_version_mismatches(info, Path(sys.executable))
 
     assert all(m.other_path != venv for m in mismatches)
+
+
+def test_probe_current_python_info_runs_idat_once_per_process(monkeypatch):
+    """The idat probe takes seconds, so repeated resolutions must reuse one probe."""
+    calls = []
+
+    def fake_probe(src: str) -> dict:
+        calls.append(src)
+        return _ida_info((3, 12))
+
+    monkeypatch.setattr("hcli.lib.ida.python.run_py_in_current_idapython", fake_probe)
+
+    first = probe_current_python_info()
+    second = probe_current_python_info()
+
+    assert first == second == _ida_info((3, 12))
+    assert len(calls) == 1
+
+
+def test_probe_current_python_info_does_not_cache_failures(monkeypatch):
+    attempts = []
+
+    def failing_probe(src: str) -> dict:
+        attempts.append(src)
+        raise RuntimeError("idat crashed")
+
+    monkeypatch.setattr("hcli.lib.ida.python.run_py_in_current_idapython", failing_probe)
+
+    with pytest.raises(RuntimeError):
+        probe_current_python_info()
+    with pytest.raises(RuntimeError):
+        probe_current_python_info()
+
+    assert len(attempts) == 2
 
 
 def test_probe_python_version_returns_none_for_unrunnable_interpreter(tmp_path):
