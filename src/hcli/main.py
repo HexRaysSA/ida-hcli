@@ -201,12 +201,11 @@ def handle_command_completion(_ctx, _result, **_kwargs):
 
 @click.group(help=get_help_text(), cls=MainGroup, result_callback=handle_command_completion)
 @click.version_option(version=f"{ENV.HCLI_VERSION}{ENV.HCLI_VERSION_EXTRA}", package_name="ida-hcli")
-@click.option("--quiet", "-q", is_flag=True, help="Run without prompting the user")
 @click.option("--auth", "-a", help="Force authentication type (interactive|key)", default=None)
 @click.option("--auth-credentials", "-s", help="Force specific credentials by name", default=None)
 @click.option("--disable-updates", is_flag=True, help="Disable automatic update checking")
 @click.pass_context
-def cli(_ctx, quiet, auth, auth_credentials, disable_updates: bool):
+def cli(_ctx, auth, auth_credentials, disable_updates: bool):
     """Main CLI entry point with background update checking."""
 
     if is_binary() and not (disable_updates or ENV.HCLI_DISABLE_UPDATES):
@@ -219,7 +218,6 @@ def cli(_ctx, quiet, auth, auth_credentials, disable_updates: bool):
         update_checker.start_check()
 
     _ctx.ensure_object(dict)
-    _ctx.obj["quiet"] = quiet
     _ctx.obj["auth"] = auth
     _ctx.obj["auth_credentials"] = auth_credentials
 
