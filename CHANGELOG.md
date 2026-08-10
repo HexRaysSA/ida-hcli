@@ -7,6 +7,7 @@
 - Honor `$IDAPYTHON_VENV_EXECUTABLE` for plugin dependency management
 
 ### Fixed
+- Pass every argument through to the program in `ida python exec` and `ida python run-script`, so `hcli ida python exec -m pip --help` describes pip (#287)
 - Update uv.lock for better Python 3.14 support
 - Update ida-config.json by default on install
 - Explicitly use encoding="utf-8" everywhere and set PYTHONUTF8=1 for subprocesses

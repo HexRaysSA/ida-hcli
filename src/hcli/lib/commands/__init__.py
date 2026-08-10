@@ -69,6 +69,41 @@ def enforce_login() -> bool:
     return True
 
 
+class PassthroughCommand(click.RichCommand):
+    """Command class for commands whose arguments belong to another program.
+
+    HCLI parses nothing but a leading `--help`: everything else reaches the
+    program verbatim, including options that HCLI defines elsewhere, so
+    `... exec -m pip --help` describes pip rather than HCLI.
+
+    A `--` where the program's arguments start is HCLI's separator and is
+    dropped, both because it reads well and because older releases required
+    it. Later ones belong to the program. Pass the separator along by
+    doubling it.
+    """
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        if not args or args[0] in ctx.help_option_names:
+            return super().parse_args(ctx, args)
+
+        index = self._get_passthrough_index()
+        if index < len(args) and args[index] == "--":
+            args = args[:index] + args[index + 1 :]
+
+        # everything past this `--` is an argument, never an option
+        return super().parse_args(ctx, ["--", *args])
+
+    def _get_passthrough_index(self) -> int:
+        """Report how many arguments HCLI claims before the program's own."""
+        count = 0
+        for param in self.params:
+            if isinstance(param, click.Argument):
+                if param.nargs < 0:
+                    break
+                count += param.nargs
+        return count
+
+
 class BaseCommand(click.RichCommand):
     """Base command class with optional authentication."""
 

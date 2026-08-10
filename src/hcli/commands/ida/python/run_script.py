@@ -4,13 +4,14 @@ import rich_click as click
 from rich.markup import escape
 
 import hcli.lib.ida.python
+from hcli.lib.commands import PassthroughCommand
 from hcli.lib.console import console
 from hcli.lib.ida.python import ProbeError, ScriptNotFoundError
 
 from ._common import get_python_exe
 
 
-@click.command(context_settings={"ignore_unknown_options": True})
+@click.command(cls=PassthroughCommand, context_settings={"ignore_unknown_options": True})
 @click.argument("name")
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
@@ -26,10 +27,7 @@ def run_script(ctx: click.Context, name: str, args: tuple[str, ...]) -> None:
     \b
     Examples:
       hcli ida python run-script speakeasy -t sample.exe
-
-    \b
-    Use `--` for arguments that HCLI would otherwise interpret:
-      hcli ida python run-script speakeasy -- --help
+      hcli ida python run-script speakeasy --help
     """
     python_exe = get_python_exe()
 
