@@ -48,15 +48,6 @@ class IDAStartupTimeout(Exception):
         super().__init__(f"IDA startup timeout after {timeout}s during {phase}")
 
 
-class IDBNotFoundError(Exception):
-    """IDB file not found in sources."""
-
-    def __init__(self, idb_filename: str, sources: dict[str, str]):
-        self.idb_filename = idb_filename
-        self.sources = sources
-        super().__init__(f"IDB '{idb_filename}' not found in sources")
-
-
 class NoIDAInstallationError(Exception):
     """No IDA installation configured or found."""
 

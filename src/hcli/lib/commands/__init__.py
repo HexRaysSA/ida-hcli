@@ -187,12 +187,6 @@ class AuthCommand(BaseCommand):
 
 
 # Click command decorators
-def base_command(*args, **kwargs):
-    """Decorator for creating a base command."""
-    kwargs.setdefault("cls", BaseCommand)
-    return click.command(*args, **kwargs)
-
-
 def auth_command(*args, auth_type: str | None = None, **kwargs):
     """Decorator for creating an authenticated command."""
     kwargs.setdefault("cls", AuthCommand)
