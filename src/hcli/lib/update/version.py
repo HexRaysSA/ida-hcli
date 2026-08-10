@@ -9,7 +9,6 @@ import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import httpx
 from packaging.version import Version, parse
 from platformdirs import user_cache_dir
 from semantic_version import SimpleSpec
@@ -17,42 +16,6 @@ from semantic_version import SimpleSpec
 from hcli import __version__
 from hcli.env import ENV
 from hcli.lib.update.release import GitHubRepo, get_compatible_version
-
-
-async def get_latest_pypi_version(package_name: str) -> Version | None:
-    """Get the latest version of a package from PyPI.
-
-    Args:
-        package_name: Name of the package on PyPI
-
-    Returns:
-        Latest stable version or None if not found
-    """
-    url = f"https://pypi.org/pypi/{package_name}/json"
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=10.0)
-            response.raise_for_status()
-
-            data = response.json()
-            releases = data.get("releases", {})
-
-            latest_stable = parse("0.0.0")
-
-            for version_str in releases:
-                try:
-                    version = parse(version_str)
-                    if not version.is_prerelease and version > latest_stable:
-                        latest_stable = version
-                except Exception:
-                    # Skip invalid version strings (common in PyPI data)
-                    pass
-
-            return latest_stable if latest_stable > parse("0.0.0") else None
-
-    except Exception:
-        return None
 
 
 def compare_versions(current: str, latest: Version) -> bool:
