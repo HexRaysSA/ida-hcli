@@ -12,7 +12,8 @@ authors = [
 
 dependencies = [
     "click",
-    "rich",
+    # <14.1 cannot nest live displays, like Status widgets
+    "rich>=14.1",
     "rich-click",
     "httpx<1",
     "pydantic>=2.11.0",

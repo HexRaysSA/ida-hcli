@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+import rich.status
 from fixtures import *
 from fixtures import (
     PLUGINS_DIR,
@@ -17,6 +18,7 @@ from fixtures import (
     temp_env_var,
 )
 
+from hcli.lib.console import stderr_console
 from hcli.lib.ida.plugin.exceptions import (
     BrokenPluginInstallationError,
     PluginAlreadyInstalledError,
@@ -66,6 +68,20 @@ def test_install_source_plugin_archive(virtual_ida_environment):
     assert (plugin_directory / "plugin1.py").exists()
 
     assert ("plugin1", "1.0.0") in get_installed_plugins()
+
+
+def test_install_source_plugin_archive_under_an_active_spinner(virtual_ida_environment):
+    """`hcli plugin install` wraps the install in its own spinner, and the install
+    starts more of its own. rich before 14.1 aborted the command there with
+    `Only one live display may be active at once`.
+    """
+    plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip"
+    buf = plugin_path.read_bytes()
+
+    with rich.status.Status("installing plugin", console=stderr_console):
+        install_plugin_archive(buf, "plugin1")
+
+    assert is_plugin_installed("plugin1")
 
 
 def test_install_binary_plugin_archive(virtual_ida_environment):

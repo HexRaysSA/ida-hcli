@@ -5,7 +5,7 @@ from rich.prompt import Confirm
 
 from hcli.lib.api.asset import SHARED, asset
 from hcli.lib.commands import async_command, auth_command
-from hcli.lib.console import console
+from hcli.lib.console import console, stderr_console
 
 
 @auth_command(help="Delete shared file by code.")
@@ -22,8 +22,8 @@ async def delete(code: str, force: bool) -> None:
     """
 
     try:
-        console.status("[bold blue]Getting file information...")
-        file = await asset.get_shared_file_by_code(code)
+        with stderr_console.status("[bold blue]Getting file information..."):
+            file = await asset.get_shared_file_by_code(code)
 
         if file is None:
             console.print(f"[yellow]File not found {code}.[/yellow]")
@@ -39,8 +39,8 @@ async def delete(code: str, force: bool) -> None:
             console.print("[yellow]Deletion cancelled.[/yellow]")
             return
 
-        console.status(f"[bold red]Deleting {file.filename} [{file.code}]...[/bold red]")
-        await asset.delete_file_by_key(SHARED, file.key)
+        with stderr_console.status(f"[bold red]Deleting {file.filename} [{file.code}]...[/bold red]"):
+            await asset.delete_file_by_key(SHARED, file.key)
         console.print(f"[green]✓ Deleted: {code}[/green]")
 
     except Exception as e:

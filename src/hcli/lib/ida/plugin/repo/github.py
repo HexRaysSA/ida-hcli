@@ -932,7 +932,7 @@ class GithubPluginRepo(BasePluginRepo):
         index = PluginArchiveIndex()
 
         for owner, repo, tag_name, asset, date in rich.progress.track(
-            assets, description="Fetching plugin assests", transient=True, console=stderr_console
+            assets, description="Fetching plugin assets", transient=True, console=stderr_console
         ):
             logger.debug(m("fetching release asset: %s", asset.download_url, owner=owner, repo=repo, tag=tag_name))
             try:
