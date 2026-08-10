@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import hcli.lib.ida.python as ida_python
 from hcli.env import ENV
 from hcli.lib.ida import find_current_ida_install_directory, get_ida_user_dir
 from hcli.lib.ida.python import (
@@ -119,6 +120,43 @@ def test_find_current_python_executable_hcli_exe_overrides_idapython_venv(tmp_pa
 
     result = find_current_python_executable()
     assert result == hcli_python
+
+
+def test_resolve_current_python_reuses_persistent_probe(tmp_path, monkeypatch):
+    prefix = tmp_path / "python"
+    if os.name == "nt":
+        python_exe = prefix / "python.exe"
+    else:
+        python_exe = prefix / "bin" / "python3.11"
+    python_exe.parent.mkdir(parents=True)
+    python_exe.write_text("", encoding="utf-8")
+
+    info = _ida_info((3, 11), prefix=str(prefix), base_prefix=str(prefix), executable=str(python_exe))
+    probe_calls = 0
+
+    def fake_probe(_src):
+        nonlocal probe_calls
+        probe_calls += 1
+        return info.model_dump(mode="json")
+
+    monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
+    monkeypatch.delenv("IDAPYTHON_VENV_EXECUTABLE", raising=False)
+    monkeypatch.delenv("HCLI_DEBUG", raising=False)
+    monkeypatch.setattr(ENV, "HCLI_CURRENT_IDA_PYTHON_EXE", None)
+    monkeypatch.setattr(ENV, "IDAPYTHON_VENV_EXECUTABLE", None)
+    monkeypatch.setattr(ida_python, "_python_info_cache_fingerprint", lambda: {"test": "unchanged"})
+    monkeypatch.setattr(ida_python, "run_py_in_current_idapython", fake_probe)
+
+    assert resolve_current_python().exe == python_exe
+    probe_current_python_info.cache_clear()  # simulate a new HCLI process
+    assert resolve_current_python().exe == python_exe
+    assert probe_calls == 1
+
+    # A diagnostic run must bypass even an otherwise valid persistent entry.
+    monkeypatch.setenv("HCLI_DEBUG", "1")
+    probe_current_python_info.cache_clear()
+    assert resolve_current_python().exe == python_exe
+    assert probe_calls == 2
 
 
 def test_derive_python_exe_uses_idapython_venv_executable_when_sys_executable_is_idat(tmp_path):

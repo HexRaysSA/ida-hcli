@@ -4,6 +4,7 @@ import rich.status
 import rich_click as click
 from rich.markup import escape
 
+from hcli.fast_cli import cache_script_result
 from hcli.lib.console import console, stderr_console
 from hcli.lib.ida.python import ProbeError, get_script_info, render_script_not_found
 
@@ -33,4 +34,5 @@ def find_script(name: str) -> None:
         console.print(f"[red]{escape(render_script_not_found(info))}[/red]")
         raise click.Abort()
 
+    cache_script_result(python_exe, name, info.path, info.cache_paths)
     console.print(str(info.path), highlight=False, soft_wrap=True)

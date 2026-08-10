@@ -19,3 +19,7 @@ The last two sources answer different questions. The HCLI default instance is HC
 `$HCLI_CURRENT_IDA_PYTHON_EXE` overrides everything, followed by `$IDAPYTHON_VENV_EXECUTABLE` when it points at an existing file. Otherwise HCLI probes IDA itself: it runs `idat` in batch mode, asks the embedded Python for its `sys.prefix`, `sys.executable`, and environment, and derives the interpreter path from that. The probe runs at most once per HCLI invocation.
 
 The probe honors a virtualenv activated by `idapythonrc.py`, so the interpreter HCLI installs plugin dependencies into is the one IDA actually imports from. See [IDA's Python Environment](../user-guide/ida-python-environment.md) for working with that interpreter directly.
+
+Because starting `idat` takes seconds, a successful probe is cached across HCLI processes for at most five minutes. The cache key includes the complete process environment (hashed, not stored), the selected IDA executable, HCLI's instance configuration, `ida-config.json`, `ida.reg`, `idapython.cfg`, `idapythonrc.py`, the Windows idapyswitch target, and the resolved interpreter. Changes to those inputs invalidate the cache immediately; the short expiry bounds staleness from files indirectly imported by `idapythonrc.py` or other state HCLI cannot observe.
+
+Set `$HCLI_DISABLE_PYTHON_CACHE=1` to force IDA to be probed directly. Debug mode (`$HCLI_DEBUG=1`) also bypasses the cache, and `hcli ida python explain-environment` always performs an authoritative probe so diagnostics cannot merely repeat a bad cached result.

@@ -17,7 +17,7 @@ if sys.platform == "win32":
 
 
 a = Analysis(
-    ['src/hcli/main.py'],
+    ['src/hcli/entrypoint.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,

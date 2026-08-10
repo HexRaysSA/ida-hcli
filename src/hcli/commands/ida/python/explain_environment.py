@@ -666,6 +666,11 @@ def render_environment_report_json(report: EnvironmentReport) -> None:
 @click.option("--json", "json_output", is_flag=True, default=False, help="output machine-readable JSON")
 def explain_environment(json_output: bool) -> None:
     """Show how the current IDA installation and Python version are detected. (experimental)"""
+    # Diagnostics must consult IDA itself rather than potentially restating a stale
+    # cross-process cache entry. The in-process cache is also cleared in case an
+    # extension resolved Python before dispatching this command.
+    os.environ["HCLI_DISABLE_PYTHON_CACHE"] = "1"
+    probe_current_python_info.cache_clear()
     report = collect_environment_report()
 
     if json_output:

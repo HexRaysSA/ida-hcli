@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import logging
 import os
 import subprocess
+import sys
+import tempfile
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from platformdirs import user_config_dir
 from pydantic import BaseModel
 from rich.markup import escape
 
 from hcli.env import ENV
 from hcli.lib.console import stderr_console
-from hcli.lib.ida import run_py_in_current_idapython
+from hcli.lib.ida import find_current_idat_executable, get_ida_user_dir, run_py_in_current_idapython
+from hcli.lib.util.cache import get_cache_directory
 from hcli.lib.venv import get_python_exe_candidates, get_virtual_env_version, probe_python_version
 
 logger = logging.getLogger(__name__)
@@ -185,19 +191,178 @@ def _derive_python_exe(info: IdatProbe) -> Path:
     )
 
 
+_PYTHON_INFO_CACHE_VERSION = 1
+_PYTHON_INFO_CACHE_MAX_AGE_SECONDS = 300
+_CACHE_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def _persistent_python_cache_enabled() -> bool:
+    """Whether cross-process probe caching is allowed for this invocation.
+
+    Debug mode always probes IDA authoritatively. This gives support/debugging a
+    single obvious escape hatch even if an untracked piece of IDA state made a
+    cache entry look valid when it was not.
+    """
+    debug = os.environ.get("HCLI_DEBUG", "").strip().lower() in _CACHE_TRUE_VALUES
+    disabled = os.environ.get("HCLI_DISABLE_PYTHON_CACHE", "").strip().lower() in _CACHE_TRUE_VALUES
+    return not debug and not disabled
+
+
+def _path_cache_signature(path: Path) -> tuple[str, int | None, int | None]:
+    """Return the path plus cheap change detectors for the Python probe cache."""
+    try:
+        stat = path.stat()
+    except OSError:
+        return str(path.absolute()), None, None
+    return str(path.absolute()), stat.st_mtime_ns, stat.st_size
+
+
+def _windows_idapython_target() -> str | None:
+    """Read the idapyswitch target used by IDA on Windows, when available."""
+    if sys.platform != "win32":
+        return None
+
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Hex-Rays\IDA") as key:
+            value, _ = winreg.QueryValueEx(key, "Python3TargetDLL")
+            return str(value)
+    except (OSError, ImportError):
+        return None
+
+
+def _environment_cache_hash() -> str:
+    encoded = json.dumps(sorted(os.environ.items()), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _python_info_cache_fingerprint() -> dict:
+    """Describe inputs that can change the Python environment reported by IDA.
+
+    idapythonrc.py may consult arbitrary custom variables, so the fingerprint includes
+    a hash of the complete environment. Only the hash is persisted; credentials and
+    other environment values are never written to the cache.
+    """
+    idat = find_current_idat_executable()
+    idausr = get_ida_user_dir()
+    tracked_paths = [
+        idat,
+        Path(user_config_dir("hcli", "hex-rays")) / "config.json",
+        idausr / "ida-config.json",
+        idausr / "ida.reg",
+        idausr / "cfg" / "idapython.cfg",
+        idausr / "idapythonrc.py",
+    ]
+    target = _windows_idapython_target()
+    if target:
+        tracked_paths.append(Path(target))
+
+    return {
+        "paths": [_path_cache_signature(path) for path in tracked_paths],
+        "environment_hash": _environment_cache_hash(),
+        "windows_idapython_target": target,
+    }
+
+
+def _python_info_cache_key(fingerprint: dict | None = None) -> str:
+    fingerprint = fingerprint or _python_info_cache_fingerprint()
+    encoded = json.dumps(fingerprint, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _python_info_cache_path() -> Path:
+    return get_cache_directory("ida") / "python-info.json"
+
+
+def _load_cached_python_info(cache_key: str) -> IdatProbe | None:
+    try:
+        cache_path = _python_info_cache_path()
+        doc = json.loads(cache_path.read_text(encoding="utf-8"))
+        if doc.get("version") != _PYTHON_INFO_CACHE_VERSION or doc.get("key") != cache_key:
+            return None
+        age = time.time() - float(doc["created_at"])
+        if age < 0 or age > _PYTHON_INFO_CACHE_MAX_AGE_SECONDS:
+            logger.debug("ignoring expired IDA Python cache (%0.1fs old): %s", age, cache_path)
+            return None
+
+        info = IdatProbe.model_validate(doc["info"])
+        python_exe = _derive_python_exe(info)
+        if not python_exe.is_file():
+            return None
+        for expected in doc.get("result_paths", ()):
+            if list(_path_cache_signature(Path(expected[0]))) != expected:
+                return None
+        logger.debug("persistent IDA Python cache hit (%0.1fs old): %s", age, cache_path)
+        return info
+    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _store_cached_python_info(cache_key: str, fingerprint: dict, python_exe: Path, info: IdatProbe) -> None:
+    cache_path = _python_info_cache_path()
+    result_paths = [python_exe]
+    venv_root = _get_venv_root_from_python(str(python_exe))
+    if venv_root is not None:
+        result_paths.append(venv_root / "pyvenv.cfg")
+    doc = {
+        "version": _PYTHON_INFO_CACHE_VERSION,
+        "created_at": time.time(),
+        "key": cache_key,
+        "fingerprint": fingerprint,
+        "python_exe": str(python_exe),
+        "result_paths": [_path_cache_signature(path) for path in result_paths],
+        "info": info.model_dump(mode="json"),
+    }
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=cache_path.parent, prefix="python-info-", suffix=".tmp", delete=False
+        ) as f:
+            json.dump(doc, f, ensure_ascii=False, separators=(",", ":"))
+            temporary_path = Path(f.name)
+        os.replace(temporary_path, cache_path)
+    except OSError as e:
+        logger.debug("failed to cache IDA Python info: %s", e)
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 @functools.cache
 def probe_current_python_info() -> IdatProbe:
-    """Run GET_PYTHON_INFO_PY inside IDA's embedded Python, once per process.
+    """Resolve IDA's embedded Python probe, cached in-process and on disk.
 
-    The probe launches IDA in batch mode via idat, which takes seconds, and its
-    inputs (the IDA installation and process environment) don't change within a
-    single hcli invocation, so the result is cached.  Failures are not cached:
-    an exception propagates and the next call retries.
+    Failures are not cached: an exception propagates and the next call retries.
 
     Raises:
         RuntimeError: if idat can't be run or emits no result.
     """
-    return IdatProbe.model_validate(run_py_in_current_idapython(GET_PYTHON_INFO_PY))
+    cache_key: str | None = None
+    fingerprint: dict | None = None
+    if _persistent_python_cache_enabled():
+        try:
+            fingerprint = _python_info_cache_fingerprint()
+            cache_key = _python_info_cache_key(fingerprint)
+            info = _load_cached_python_info(cache_key)
+            if info is not None:
+                return info
+        except (OSError, ValueError) as e:
+            logger.debug("could not inspect IDA Python info cache: %s", e)
+    else:
+        logger.debug("persistent IDA Python cache disabled; probing IDA")
+
+    info = IdatProbe.model_validate(run_py_in_current_idapython(GET_PYTHON_INFO_PY))
+    if cache_key is not None and fingerprint is not None:
+        try:
+            python_exe = _derive_python_exe(info)
+        except PythonNotFoundError as e:
+            logger.debug("not caching IDA Python probe that cannot be resolved: %s", e)
+        else:
+            _store_cached_python_info(cache_key, fingerprint, python_exe, info)
+    return info
 
 
 @dataclass(frozen=True)
@@ -631,6 +796,7 @@ else:
 # or EntryPoint.dist, which need Python 3.10+. IDA may be using an older interpreter.
 entry_point = None
 record_candidates = []
+cache_paths = []
 try:
     from importlib.metadata import distributions
 
@@ -655,9 +821,20 @@ try:
             "version": dist.version,
         }
 
+        try:
+            cache_paths.append(os.path.realpath(str(dist.locate_file(""))))
+        except Exception:
+            pass
+
         # `files` is None when the distribution has no RECORD
         for file in dist.files or []:
-            if os.path.basename(str(file)) not in filenames:
+            basename = os.path.basename(str(file))
+            if basename in ("RECORD", "METADATA", "entry_points.txt"):
+                try:
+                    cache_paths.append(os.path.realpath(str(dist.locate_file(file))))
+                except Exception:
+                    pass
+            if basename not in filenames:
                 continue
             try:
                 record_candidates.append(os.path.realpath(str(dist.locate_file(file))))
@@ -700,6 +877,7 @@ print("__hcli__:" + json.dumps({
     "path": path,
     "scripts_dirs": scripts_dirs,
     "record_candidates": record_candidates,
+    "cache_paths": cache_paths,
     "entry_point": entry_point,
 }))
 """
@@ -768,6 +946,7 @@ class ScriptInfo:
     path: Path | None
     scripts_dirs: tuple[Path, ...]
     entry_point: EntryPoint | None
+    cache_paths: tuple[Path, ...] = ()
 
     @classmethod
     def from_probe(cls, doc: dict) -> ScriptInfo:
@@ -777,6 +956,7 @@ class ScriptInfo:
             path=Path(doc["path"]) if doc.get("path") else None,
             scripts_dirs=tuple(Path(p) for p in doc.get("scripts_dirs", ())),
             entry_point=EntryPoint.from_probe(entry_point) if entry_point else None,
+            cache_paths=tuple(Path(p) for p in doc.get("cache_paths", ())),
         )
 
 
@@ -912,6 +1092,10 @@ def run_script(python_exe: Path, name: str, args: Sequence[str] = ()) -> int:
     info = get_script_info(python_exe, name)
 
     if info.path is not None:
+        # Prime the lightweight console entrypoint for subsequent worker starts.
+        from hcli.fast_cli import cache_script_result
+
+        cache_script_result(python_exe, name, info.path, info.cache_paths)
         if os.access(info.path, os.X_OK):
             return run_in_python_environment(python_exe, [str(info.path), *args])
         # a wrapper without the executable bit is still a Python script we can run.
