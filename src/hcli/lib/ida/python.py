@@ -247,7 +247,7 @@ def find_current_python_executable() -> Path:
     return python_exe
 
 
-def does_current_ida_have_pip(python_exe: Path, timeout=10.0) -> bool:
+def has_pip(python_exe: Path, timeout=10.0) -> bool:
     """Check if pip is available in the given Python executable."""
     try:
         process = subprocess.run(
@@ -330,16 +330,14 @@ def verify_pip_can_install_packages(
     python_exe: Path,
     packages: list[str],
     pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
-    no_build_isolation: bool = False,
 ):
     """Check if the given Python packages (e.g., "foo>=v1.0,<3") can be installed.
 
     Raises:
         CantInstallPackagesError: if pip dry-run fails.
     """
-    effective = _merge_no_build_isolation(pip_options, no_build_isolation)
     process = subprocess.run(
-        [str(python_exe), "-m", "pip", "install", "--dry-run"] + effective.build_args() + packages,
+        [str(python_exe), "-m", "pip", "install", "--dry-run"] + pip_options.build_args() + packages,
         capture_output=True,
         check=False,
     )
@@ -362,16 +360,14 @@ def pip_install_packages(
     python_exe: Path,
     packages: list[str],
     pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
-    no_build_isolation: bool = False,
 ):
     """Install the given Python packages (e.g., "foo>=v1.0,<3").
 
     Raises:
         CantInstallPackagesError: if pip install fails.
     """
-    effective = _merge_no_build_isolation(pip_options, no_build_isolation)
     process = subprocess.run(
-        [str(python_exe), "-m", "pip", "install"] + effective.build_args() + packages,
+        [str(python_exe), "-m", "pip", "install"] + pip_options.build_args() + packages,
         capture_output=True,
         check=False,
     )
@@ -381,21 +377,6 @@ def pip_install_packages(
         logger.debug(stdout.decode("utf-8", errors="replace"))
         logger.debug(stderr.decode("utf-8", errors="replace"))
         raise CantInstallPackagesError(_format_pip_error(stdout, stderr))
-
-
-def _merge_no_build_isolation(pip_options: PipOptions, no_build_isolation: bool) -> PipOptions:
-    if no_build_isolation and not pip_options.no_build_isolation:
-        return PipOptions(
-            index_url=pip_options.index_url,
-            extra_index_urls=pip_options.extra_index_urls,
-            find_links=pip_options.find_links,
-            offline=pip_options.offline,
-            isolated=pip_options.isolated,
-            no_cache_dir=pip_options.no_cache_dir,
-            disable_pip_version_check=pip_options.disable_pip_version_check,
-            no_build_isolation=True,
-        )
-    return pip_options
 
 
 def detect_current_python_version() -> str:

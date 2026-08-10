@@ -77,6 +77,8 @@ logger = logging.getLogger(__name__)
 def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no_build_isolation: bool) -> None:
     """Install a plugin from a repository, local directory, local .zip file, or URL."""
     pip_options: PipOptions = ctx.obj.get("pip_options", PIP_OPTIONS_DEFAULT)
+    if no_build_isolation:
+        pip_options = dataclasses.replace(pip_options, no_build_isolation=True)
     plugin_repo_obj = ctx.obj.get("plugin_repo")
     plugin_spec = plugin
     try:
@@ -227,10 +229,9 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                 descr.validate_value(parsed_value)
 
         if editable:
-            install_plugin_directory_editable(source_dir, plugin_name, no_build_isolation=no_build_isolation)
+            install_plugin_directory_editable(source_dir, plugin_name, pip_options=pip_options)
         else:
             assert buf is not None
-            effective_pip_options = pip_options
             if isinstance(plugin_repo_obj, PluginBundleRepo) and not pip_options.has_custom_sources:
                 current_python_version = detect_current_python_version()
                 with bundle_dependency_source(
@@ -245,15 +246,11 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                         console.print(f"Available targets in this bundle: {available}")
                         raise click.Abort()
                     effective_pip_options = merge_bundle_pip_options(pip_options, bundle_opts)
-                    if no_build_isolation:
-                        effective_pip_options = dataclasses.replace(effective_pip_options, no_build_isolation=True)
                     with rich.status.Status("installing plugin", console=stderr_console):
                         install_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
             else:
-                if no_build_isolation:
-                    effective_pip_options = dataclasses.replace(effective_pip_options, no_build_isolation=True)
                 with rich.status.Status("installing plugin", console=stderr_console):
-                    install_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
+                    install_plugin_archive(buf, plugin_name, pip_options=pip_options)
 
         try:
             if metadata.plugin.settings:

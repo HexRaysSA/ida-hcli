@@ -40,6 +40,8 @@ logger = logging.getLogger(__name__)
 def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
     """Upgrade an installed plugin to the latest compatible version."""
     pip_options: PipOptions = ctx.obj.get("pip_options", PIP_OPTIONS_DEFAULT)
+    if no_build_isolation:
+        pip_options = dataclasses.replace(pip_options, no_build_isolation=True)
     plugin_spec = plugin
     try:
         sweep_trash()
@@ -95,7 +97,6 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             console.print("Please check your internet connection.")
             raise click.Abort()
 
-        effective_pip_options = pip_options
         if isinstance(plugin_repo, PluginBundleRepo) and not pip_options.has_custom_sources:
             from hcli.lib.ida.python import detect_current_python_version, merge_bundle_pip_options
 
@@ -110,13 +111,9 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
                     console.print(f"Available targets in this bundle: {available}")
                     raise click.Abort()
                 effective_pip_options = merge_bundle_pip_options(pip_options, bundle_opts)
-                if no_build_isolation:
-                    effective_pip_options = dataclasses.replace(effective_pip_options, no_build_isolation=True)
                 upgrade_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
         else:
-            if no_build_isolation:
-                effective_pip_options = dataclasses.replace(effective_pip_options, no_build_isolation=True)
-            upgrade_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
+            upgrade_plugin_archive(buf, plugin_name, pip_options=pip_options)
 
         _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 
