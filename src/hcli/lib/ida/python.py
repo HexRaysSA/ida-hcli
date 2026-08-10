@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
@@ -192,6 +193,21 @@ def _derive_python_exe(info: dict) -> Path:
     )
 
 
+@functools.cache
+def probe_current_python_info() -> dict:
+    """Run GET_PYTHON_INFO_PY inside IDA's embedded Python, once per process.
+
+    The probe launches IDA in batch mode via idat, which takes seconds, and its
+    inputs (the IDA installation and process environment) don't change within a
+    single hcli invocation, so the result is cached.  Failures are not cached:
+    an exception propagates and the next call retries.
+
+    Raises:
+        RuntimeError: if idat can't be run or emits no result.
+    """
+    return run_py_in_current_idapython(GET_PYTHON_INFO_PY)
+
+
 def resolve_current_python() -> tuple[Path, dict | None]:
     """Find IDA's Python executable, along with the probe info used to find it.
 
@@ -214,7 +230,7 @@ def resolve_current_python() -> tuple[Path, dict | None]:
         return Path(venv_exe), None
 
     try:
-        info = run_py_in_current_idapython(GET_PYTHON_INFO_PY)
+        info = probe_current_python_info()
     except RuntimeError as e:
         raise PythonNotFoundError(
             "failed to run idat to detect IDA's Python interpreter. "
