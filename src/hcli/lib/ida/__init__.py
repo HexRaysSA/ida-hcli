@@ -29,18 +29,6 @@ from hcli.lib.venv import resolve_user_virtual_env
 logger = logging.getLogger(__name__)
 
 
-class DownloadResource(NamedTuple):
-    """IDA download resource information."""
-
-    id: str
-    name: str
-    description: str
-    category: str
-    version: str
-    os: str
-    arch: str
-
-
 class _WindowsRegistryInstallation(NamedTuple):
     """IDA installation metadata from the Windows uninstall registry."""
 
@@ -116,25 +104,8 @@ class IdaProduct:
         )
 
 
-def is_installable(download: DownloadResource) -> bool:
-    """Check if a download resource is installable on the current platform."""
-    current_os = get_os()
-    src = download.id
-
-    return (
-        (src.endswith(".app.zip") and current_os == "mac")
-        or (src.endswith(".run") and current_os == "linux")
-        or (src.endswith(".exe") and current_os == "windows")
-    )
-
-
 def get_ida_user_dir() -> Path:
     """Get the IDA Pro user directory."""
-    # duplicate here, because we prefer access through ENV
-    # but tests might update env vars for the current process.
-    idausr = os.environ.get("HCLI_IDAUSR")
-    if idausr:
-        return Path(idausr)
     if ENV.HCLI_IDAUSR is not None:
         return Path(ENV.HCLI_IDAUSR)
 
@@ -239,25 +210,6 @@ def get_ida_binary_path(ida_dir: Path, suffix: str = "") -> Path:
         return Path(get_ida_path(ida_dir)) / f"ida{suffix}"
 
 
-def get_idat_path(ida_dir: Path) -> Path:
-    """Get the IDA text-mode (idat) executable path."""
-    return get_ida_binary_path(ida_dir, "t")
-
-
-def get_idalib_path(ida_dir: Path) -> Path:
-    """Get the expected idalib library path for an IDA installation."""
-    os_ = get_os()
-    if os_ == "windows":
-        filename = "idalib.dll"
-    elif os_ == "linux":
-        filename = "libidalib.so"
-    elif os_ == "mac":
-        filename = "libidalib.dylib"
-    else:
-        raise ValueError(f"Unsupported operating system: {os_}")
-    return Path(get_ida_path(ida_dir)) / filename
-
-
 # Edition names as they appear on disk, per the IDA installer (../ida/ida/build/ida.xml).
 # Windows install directories and macOS app bundles use ``IDA ${ida_edition} ${version}``;
 # Linux install directories use ``ida-${edition}-${version}``.
@@ -300,8 +252,21 @@ def _is_ida_install_dir_name(name: str) -> bool:
 
 
 def is_idalib_capable_installation(ida_dir: Path) -> bool:
-    """Whether an IDA installation has idalib available."""
-    return get_idalib_path(ida_dir).exists()
+    """Whether an IDA installation has idalib available.
+
+    Raises:
+        ValueError: on an unsupported operating system.
+    """
+    os_ = get_os()
+    if os_ == "windows":
+        filename = "idalib.dll"
+    elif os_ == "linux":
+        filename = "libidalib.so"
+    elif os_ == "mac":
+        filename = "libidalib.dylib"
+    else:
+        raise ValueError(f"Unsupported operating system: {os_}")
+    return (get_ida_path(ida_dir) / filename).exists()
 
 
 def _dedupe_paths(paths: list[Path]) -> list[Path]:
@@ -903,11 +868,6 @@ def resolve_current_ida_install_directory() -> ResolvedInstallDir:
     Raises:
         MissingCurrentInstallationDirectory: when nothing configures a directory.
     """
-    # duplicate here, because we prefer access through ENV
-    # but tests might update env vars for the current process.
-    env = os.environ.get("HCLI_CURRENT_IDA_INSTALL_DIR")
-    if env:
-        return ResolvedInstallDir(_normalize_install_dir(Path(env)), "$HCLI_CURRENT_IDA_INSTALL_DIR")
     if ENV.HCLI_CURRENT_IDA_INSTALL_DIR is not None:
         return ResolvedInstallDir(
             _normalize_install_dir(Path(ENV.HCLI_CURRENT_IDA_INSTALL_DIR)), "$HCLI_CURRENT_IDA_INSTALL_DIR"
@@ -1210,11 +1170,6 @@ def detect_binary_arch(path: Path) -> str | None:
 
 def find_current_ida_platform() -> str:
     """find the platform associated with the current IDA installation"""
-    # duplicate here, because we prefer access through ENV
-    # but tests might update env vars for the current process.
-    env = os.environ.get("HCLI_CURRENT_IDA_PLATFORM")
-    if env:
-        return env
     if ENV.HCLI_CURRENT_IDA_PLATFORM is not None:
         return ENV.HCLI_CURRENT_IDA_PLATFORM
 
@@ -1373,11 +1328,6 @@ def resolve_current_ida_version() -> ResolvedIdaVersion:
         FailedToDetectIDAVersion: when no source yields a version.
         MissingCurrentInstallationDirectory: when no installation is configured.
     """
-    # duplicate here, because we prefer access through ENV
-    # but tests might update env vars for the current process.
-    env = os.environ.get("HCLI_CURRENT_IDA_VERSION")
-    if env:
-        return ResolvedIdaVersion(env, "$HCLI_CURRENT_IDA_VERSION")
     if ENV.HCLI_CURRENT_IDA_VERSION is not None:
         return ResolvedIdaVersion(ENV.HCLI_CURRENT_IDA_VERSION, "$HCLI_CURRENT_IDA_VERSION")
 

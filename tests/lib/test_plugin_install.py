@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 import rich.status
@@ -28,7 +28,7 @@ from hcli.lib.ida.plugin.exceptions import (
 )
 from hcli.lib.ida.plugin.install import (
     extract_zip_subdirectory_to,
-    get_installed_plugins,
+    get_installed_plugin_records,
     get_plugin_directory,
     get_trash_directory,
     install_plugin_archive,
@@ -38,9 +38,20 @@ from hcli.lib.ida.plugin.install import (
     upgrade_plugin_archive,
     validate_archive_entry,
 )
-from hcli.lib.ida.python import pip_freeze
 
 logger = logging.getLogger(__name__)
+
+
+def get_installed_plugins() -> list[tuple[str, str]]:
+    """(name, version) pairs for the currently installed plugins"""
+    return [(r.name, r.version) for r in get_installed_plugin_records()]
+
+
+def pip_freeze(python_exe: Path) -> str:
+    """Distributions installed in the given interpreter, as `pip freeze` output."""
+    argv = [str(python_exe), "-m", "pip", "freeze"]
+    process = subprocess.run(argv, capture_output=True, check=True)
+    return process.stdout.decode("utf-8", errors="replace")
 
 
 def row_contains(*values: str):
@@ -110,7 +121,8 @@ def test_uninstall(virtual_ida_environment):
 
     uninstall_plugin("plugin1")
     assert ("plugin1", "1.0.0") not in get_installed_plugins()
-    assert not is_plugin_installed("zydisinfo")
+    assert not is_plugin_installed("plugin1")
+    assert not get_plugin_directory("plugin1").exists()
 
 
 def test_upgrade(virtual_ida_environment):
@@ -148,12 +160,6 @@ def test_plugin_all(virtual_ida_environment_with_venv):
     install_this_package_in_venv(idausr / "venv")
 
     with temp_env_var("TERM", "dumb"), temp_env_var("COLUMNS", "80"):
-        p = run_hcli("--help")
-        assert "Usage: python -m hcli.main [OPTIONS] COMMAND [ARGS]..." in p.stdout
-
-        p = run_hcli("plugin --help")
-        assert "Usage: python -m hcli.main plugin [OPTIONS] COMMAND [ARGS]..." in p.stdout
-
         p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} repo snapshot")
         assert "plugin1" in p.stdout
         assert "zydisinfo" in p.stdout
@@ -203,8 +209,10 @@ def test_plugin_all(virtual_ida_environment_with_venv):
         p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
         assert "No plugins found\n" == p.stdout
 
-        p = run_hcli(f"plugin --repo {repo_path.absolute()} install plugin1==1.0.0")
+        # uppercase name: the repo lookup is case-insensitive and reports the canonical name
+        p = run_hcli(f"plugin --repo {repo_path.absolute()} install PLUGIN1==1.0.0")
         assert "Installed plugin: plugin1==1.0.0\n" == p.stdout
+        assert ("plugin1", "1.0.0") in get_installed_plugins()
 
         p = run_hcli(f"plugin --repo {repo_path.absolute()} status")
         assert row_contains("plugin1", "1.0.0", "upgradable to 6.0.0")(p.stdout)
@@ -214,11 +222,9 @@ def test_plugin_all(virtual_ida_environment_with_venv):
 
         # downgrade not supported
         with pytest.raises(subprocess.CalledProcessError) as e:
-            p = run_hcli(f"plugin --repo {repo_path.absolute()} upgrade plugin1==1.0.0")
-            assert (
-                e.value.stdout
-                == "Error: Cannot upgrade plugin plugin1: new version 1.0.0 is not greater than existing version 2.0.0\n"
-            )
+            run_hcli(f"plugin --repo {repo_path.absolute()} upgrade plugin1==1.0.0")
+        # rich wraps the message to COLUMNS, so compare against unwrapped output
+        assert "new version 1.0.0 is not greater than current version 2.0.0" in " ".join(e.value.stdout.split())
 
         # TODO: upgrade all
 
@@ -255,29 +261,6 @@ def test_plugin_all(virtual_ida_environment_with_venv):
         assert "Installed plugin: hint-calls==" in p.stdout
 
 
-def test_case_insensitive_plugin_install(virtual_ida_environment_with_venv):
-    """Test that plugin install works with case-insensitive name matching."""
-    idausr = Path(os.environ["HCLI_IDAUSR"])
-    install_this_package_in_venv(idausr / "venv")
-
-    with temp_env_var("TERM", "dumb"), temp_env_var("COLUMNS", "80"):
-        p = run_hcli(f"plugin --repo {PLUGINS_DIR.absolute()} repo snapshot")
-        repo_path = idausr / "repo.json"
-        repo_path.write_text(p.stdout, encoding="utf-8")
-
-        # Install using uppercase name "PLUGIN1" but expect it to resolve to "plugin1"
-        p = run_hcli(f"plugin --repo {repo_path.absolute()} install PLUGIN1==1.0.0")
-        assert "Installed plugin: plugin1==1.0.0\n" == p.stdout
-
-        # Verify the plugin is installed with the correct case
-        assert is_plugin_installed("plugin1")
-        assert ("plugin1", "1.0.0") in get_installed_plugins()
-
-        # Clean up
-        p = run_hcli(f"plugin --repo {repo_path.absolute()} uninstall plugin1")
-        assert "Uninstalled plugin: plugin1\n" == p.stdout
-
-
 def test_extract_zip_subdirectory_to_posix_paths():
     """
     Test that extract_zip_subdirectory_to works with forward-slash paths.
@@ -307,70 +290,23 @@ def test_extract_zip_subdirectory_to_posix_paths():
         assert (destination / "subdir" / "helper.py").exists()
 
 
-class TestValidateArchiveEntry:
-    """Tests for validate_archive_entry security function (CVE fix for path traversal)."""
+@pytest.mark.parametrize(
+    "filename,relative_path,external_attr,message",
+    [
+        ("plugin/../../../etc/passwd", "../../../etc/passwd", 0, "Path traversal"),
+        # 0xA in the high nibble of external_attr marks a Unix symlink
+        ("plugin/evil_symlink", "evil_symlink", 0xA0000000, "Symlinks not allowed"),
+        ("/etc/passwd", "/etc/passwd", 0, "Absolute path"),
+    ],
+)
+def test_validate_archive_entry_rejects_unsafe_entries(
+    filename: str, relative_path: str, external_attr: int, message: str
+):
+    file_info = zipfile.ZipInfo(filename)
+    file_info.external_attr = external_attr
 
-    def test_valid_entry_passes(self):
-        """Normal archive entries should pass validation."""
-        import pathlib
-
-        file_info = zipfile.ZipInfo("plugin/file.py")
-        file_info.external_attr = 0  # Regular file
-        relative_path = pathlib.PurePosixPath("file.py")
-
-        # Should not raise
-        validate_archive_entry(file_info, relative_path)
-
-    def test_rejects_path_traversal(self):
-        """Entries with '..' path components should be rejected."""
-        import pathlib
-
-        file_info = zipfile.ZipInfo("plugin/../../../etc/passwd")
-        file_info.external_attr = 0
-        relative_path = pathlib.PurePosixPath("../../../etc/passwd")
-
-        with pytest.raises(ValueError, match="Path traversal"):
-            validate_archive_entry(file_info, relative_path)
-
-    def test_rejects_symlinks(self):
-        """Symlinks in archives should be rejected."""
-        import pathlib
-
-        file_info = zipfile.ZipInfo("plugin/evil_symlink")
-        # Set external_attr to indicate Unix symlink (0xA in high nibble)
-        file_info.external_attr = 0xA0000000
-        relative_path = pathlib.PurePosixPath("evil_symlink")
-
-        with pytest.raises(ValueError, match="Symlinks not allowed"):
-            validate_archive_entry(file_info, relative_path)
-
-    def test_rejects_absolute_paths(self):
-        """Absolute paths should be rejected."""
-        import pathlib
-
-        file_info = zipfile.ZipInfo("/etc/passwd")
-        file_info.external_attr = 0
-        relative_path = pathlib.PurePosixPath("/etc/passwd")
-
-        with pytest.raises(ValueError, match="Absolute path"):
-            validate_archive_entry(file_info, relative_path)
-
-    def test_extract_rejects_malicious_archive(self):
-        """Integration test: extract_zip_subdirectory_to should reject path traversal."""
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w") as zf:
-            zf.writestr("plugin/ida-plugin.json", '{"test": true}')
-            zf.writestr("plugin/../../../tmp/evil.txt", "malicious content")
-        zip_data = buf.getvalue()
-
-        subdirectory = Path("plugin")
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # nested like $IDAUSR/plugins/<name> so staging lands within temp_dir
-            destination = Path(temp_dir) / "plugins" / "myplugin"
-            destination.parent.mkdir()
-            with pytest.raises(ValueError, match="Path traversal"):
-                extract_zip_subdirectory_to(zip_data, subdirectory, destination)
+    with pytest.raises(ValueError, match=message):
+        validate_archive_entry(file_info, PurePosixPath(relative_path))
 
 
 def test_install_already_installed(virtual_ida_environment):

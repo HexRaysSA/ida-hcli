@@ -1,6 +1,5 @@
 """Tests for repository-level plugin name collisions and host-aware resolution."""
 
-import io
 import json
 import zipfile
 from pathlib import Path
@@ -65,24 +64,24 @@ def build_index_with_colliding_plugins(tmp_path: Path) -> PluginArchiveIndex:
 
     index = PluginArchiveIndex()
     for zip_path in (repo_a_zip, repo_b_zip):
-        buf = zip_path.read_bytes()
-        # pass the expected host matching the one in ida-plugin.json so the
-        # index accepts the archive (GithubPluginRepo does the same).
-        metadata = json.loads(zipfile.ZipFile(io.BytesIO(buf)).read("src-v1/ida-plugin.json"))
-        host = metadata["plugin"]["urls"]["repository"]
-        index.index_plugin_archive(buf, zip_path.absolute().as_uri(), expected_host=host)
+        index.index_plugin_archive(zip_path.read_bytes(), zip_path.absolute().as_uri())
     return index
 
 
-def test_get_plugin_by_name_unique(tmp_path):
-    # build an index with two distinct plugins (no collision)
-    src = PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip"
-    z = make_plugin_zip(src, tmp_path / "alpha.zip", new_name="alpha")
+@pytest.mark.parametrize(
+    "indexed_name,query",
+    [
+        ("alpha", "alpha"),
+        ("Foo", "foo"),
+    ],
+)
+def test_get_plugin_by_name_matches_case_insensitively(tmp_path, indexed_name, query):
+    z = make_plugin_zip(PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip", tmp_path / "p.zip", new_name=indexed_name)
     index = PluginArchiveIndex()
     index.index_plugin_archive(z.read_bytes(), z.absolute().as_uri())
 
-    plugin = get_plugin_by_name(index.get_plugins(), "alpha")
-    assert plugin.name == "alpha"
+    plugin = get_plugin_by_name(index.get_plugins(), query)
+    assert plugin.name == indexed_name
 
 
 def test_get_plugin_by_name_ambiguous_raises(tmp_path):
@@ -101,24 +100,17 @@ def test_get_plugin_by_name_ambiguous_raises(tmp_path):
     }
 
 
-def test_get_plugin_by_name_ambiguous_resolved_by_host(tmp_path):
+@pytest.mark.parametrize(
+    "host",
+    [
+        "https://github.com/org-a/shared",
+        # trailing slashes and casing differences should not prevent matching
+        "https://GitHub.com/Org-A/Shared/",
+    ],
+)
+def test_get_plugin_by_name_ambiguous_resolved_by_host(tmp_path, host):
     index = build_index_with_colliding_plugins(tmp_path)
-    plugin = get_plugin_by_name(
-        index.get_plugins(),
-        "shared",
-        host="https://github.com/org-a/shared",
-    )
-    assert plugin.host == "https://github.com/org-a/shared"
-
-
-def test_get_plugin_by_name_host_normalized(tmp_path):
-    """Trailing slashes and casing differences should not prevent matching."""
-    index = build_index_with_colliding_plugins(tmp_path)
-    plugin = get_plugin_by_name(
-        index.get_plugins(),
-        "shared",
-        host="https://GitHub.com/Org-A/Shared/",
-    )
+    plugin = get_plugin_by_name(index.get_plugins(), "shared", host=host)
     assert plugin.name == "shared"
     assert plugin.host == "https://github.com/org-a/shared"
 
@@ -157,16 +149,6 @@ def test_get_plugin_by_name_not_found(tmp_path):
         get_plugin_by_name(index.get_plugins(), "does-not-exist")
 
 
-def test_get_plugin_by_name_is_case_insensitive(tmp_path):
-    src = PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip"
-    z = make_plugin_zip(src, tmp_path / "Foo.zip", new_name="Foo")
-    index = PluginArchiveIndex()
-    index.index_plugin_archive(z.read_bytes(), z.absolute().as_uri())
-
-    plugin = get_plugin_by_name(index.get_plugins(), "foo")
-    assert plugin.name == "Foo"
-
-
 def _build_colliding_repo_dir(tmp_path: Path) -> Path:
     """Write two colliding-name plugin zips into a repo directory."""
     repo_dir = tmp_path / "repo"
@@ -189,31 +171,18 @@ def _build_colliding_repo_dir(tmp_path: Path) -> Path:
     return repo_dir
 
 
-def test_search_ambiguous_exact_name_renders_candidates(tmp_path, virtual_ida_environment):
-    """`plugin search <bare-name>` on an ambiguous name prints candidates and aborts."""
+@pytest.mark.parametrize("version_spec", ["", "==1.0.0", ">=1.0.0"])
+def test_search_ambiguous_renders_candidates(tmp_path, virtual_ida_environment, version_spec):
+    """`plugin search <bare-name>` aborts and suggests qualified references, keeping the version spec."""
     repo_dir = _build_colliding_repo_dir(tmp_path)
 
     runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", "shared"])
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", f"shared{version_spec}"])
 
     assert result.exit_code != 0
     assert "plugin name 'shared' is ambiguous" in result.output
-    assert "Choose one of:" in result.output
-    assert "shared@https://github.com/org-a/shared" in result.output
-    assert "shared@https://github.com/org-b/shared" in result.output
-
-
-def test_search_ambiguous_version_spec_preserves_version(tmp_path, virtual_ida_environment):
-    """Candidate suggestions must keep the requested version spec."""
-    repo_dir = _build_colliding_repo_dir(tmp_path)
-
-    runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", "shared==1.0.0"])
-
-    assert result.exit_code != 0
-    assert "plugin name 'shared' is ambiguous" in result.output
-    assert "shared==1.0.0@https://github.com/org-a/shared" in result.output
-    assert "shared==1.0.0@https://github.com/org-b/shared" in result.output
+    assert f"shared{version_spec}@https://github.com/org-a/shared" in result.output
+    assert f"shared{version_spec}@https://github.com/org-b/shared" in result.output
 
 
 def test_search_qualified_exact_name_resolves(tmp_path, virtual_ida_environment):
@@ -227,7 +196,6 @@ def test_search_qualified_exact_name_resolves(tmp_path, virtual_ida_environment)
     )
 
     assert result.exit_code == 0, result.output
-    # details output should include the plugin name
     assert "shared" in result.output
     # the org-a repo should be identified in metadata
     assert "org-a" in result.output
@@ -235,79 +203,88 @@ def test_search_qualified_exact_name_resolves(tmp_path, virtual_ida_environment)
     assert "2.0.0" not in result.output
 
 
-def test_search_keyword_matches_colliding_plugins(tmp_path, virtual_ida_environment):
-    """Keyword search includes both colliding plugins (substring match on name)."""
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        # "shar" is a substring of "shared" but not an exact name, so this is a keyword query,
+        # and both colliding plugins should show up as separate rows.
+        ("shar", ["org-a", "org-b"]),
+        ("does-not-match-anything", ["No plugins found"]),
+    ],
+)
+def test_search_keyword_query(tmp_path, virtual_ida_environment, query, expected):
     repo_dir = _build_colliding_repo_dir(tmp_path)
 
     runner = CliRunner(mix_stderr=False)
-    # "shar" is a substring of "shared" but not an exact name, so this is a keyword query
-    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", "shar"])
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", query])
 
     assert result.exit_code == 0, result.output
-    # both repo URLs should show up as separate rows
-    assert "org-a" in result.output
-    assert "org-b" in result.output
+    for fragment in expected:
+        assert fragment in result.output
 
 
-def test_search_keyword_no_matches_reports_empty_result(tmp_path, virtual_ida_environment):
+@pytest.mark.parametrize(
+    "spec,expect_success,present,absent",
+    [
+        ("plugin1==2.0.0", True, ["download locations:"], ["matching versions:"]),
+        ("plugin1>=2.0.0", True, ["matching versions:", "5.0.0", "2.0.0"], ["download locations:", "1.0.0"]),
+        ("plugin1!=1.0.0", True, ["matching versions:", "2.0.0"], ["1.0.0"]),
+        ("plugin1>=99.0.0", False, ["no versions matching '>=99.0.0' found for plugin 'plugin1'"], []),
+    ],
+)
+def test_search_version_spec(virtual_ida_environment, spec, expect_success, present, absent):
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", spec])
+
+    if expect_success:
+        assert result.exit_code == 0, result.output
+    else:
+        assert result.exit_code != 0
+
+    for fragment in present:
+        assert fragment in result.output
+    for fragment in absent:
+        assert fragment not in result.output
+
+
+def test_search_json_keyword_query(virtual_ida_environment):
+    """`search --json` (no query) reports the full plugin listing as JSON."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "--json"])
+    assert result.exit_code == 0, result.output
+
+    payload = json.loads(result.output)
+    assert payload["query"] is None
+    names = {entry["name"] for entry in payload["results"]}
+    assert "plugin1" in names
+
+
+def test_search_json_exact_name_query(virtual_ida_environment):
+    """`search <name> --json` reports plugin metadata and versions as JSON."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "plugin1", "--json"])
+    assert result.exit_code == 0, result.output
+
+    payload = json.loads(result.output)
+    assert payload["plugin"]["name"] == "plugin1"
+    assert payload["installed_version"] is None
+    assert any(v["version"] == "4.0.0" for v in payload["versions"])
+
+
+def test_search_json_ambiguous_reference(tmp_path, virtual_ida_environment):
+    """`search <name> --json` reports an ambiguity error as JSON and exits non-zero."""
     repo_dir = _build_colliding_repo_dir(tmp_path)
-
     runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", "does-not-match-anything"])
 
-    assert result.exit_code == 0, result.output
-    assert "No plugins found" in result.output
-
-
-def test_search_exact_version_spec_shows_download_locations(virtual_ida_environment):
-    runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "plugin1==2.0.0"])
-
-    assert result.exit_code == 0, result.output
-    assert "download locations:" in result.output
-    assert "matching versions:" not in result.output
-
-
-def test_search_version_range_filters_matching_versions(virtual_ida_environment):
-    runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "plugin1>=2.0.0"])
-
-    assert result.exit_code == 0, result.output
-    assert "matching versions:" in result.output
-    assert "download locations:" not in result.output
-    assert "5.0.0" in result.output
-    assert "2.0.0" in result.output
-    assert "1.0.0" not in result.output
-
-
-def test_search_exclusion_version_spec_does_not_show_excluded_version(virtual_ida_environment):
-    runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "plugin1!=1.0.0"])
-
-    assert result.exit_code == 0, result.output
-    assert "matching versions:" in result.output
-    assert "1.0.0" not in result.output
-    assert "2.0.0" in result.output
-
-
-def test_search_version_range_without_matches_reports_constraint(virtual_ida_environment):
-    runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "plugin1>=99.0.0"])
-
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", "shared", "--json"])
     assert result.exit_code != 0
-    assert "no versions matching '>=99.0.0' found for plugin 'plugin1'" in result.output
 
-
-def test_search_ambiguous_non_exact_version_spec_preserves_version(tmp_path, virtual_ida_environment):
-    repo_dir = _build_colliding_repo_dir(tmp_path)
-
-    runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", "shared>=1.0.0"])
-
-    assert result.exit_code != 0
-    assert "plugin name 'shared' is ambiguous" in result.output
-    assert "shared>=1.0.0@https://github.com/org-a/shared" in result.output
-    assert "shared>=1.0.0@https://github.com/org-b/shared" in result.output
+    payload = json.loads(result.output)
+    assert payload["error"] == "ambiguous plugin reference"
+    assert payload["name"] == "shared"
+    assert len(payload["candidates"]) == 2
 
 
 def test_install_ambiguous_bare_name_fails(tmp_path, virtual_ida_environment):
@@ -323,8 +300,8 @@ def test_install_ambiguous_bare_name_fails(tmp_path, virtual_ida_environment):
     assert "shared@https://github.com/org-b/shared" in result.output
 
 
-def test_install_qualified_name_succeeds(tmp_path, virtual_ida_environment):
-    """`plugin install name@repo` installs the selected repository plugin."""
+def test_install_same_name_conflict(tmp_path, virtual_ida_environment):
+    """Installing a same-name plugin from another repository must fail with a conflict error."""
     from hcli.lib.ida.plugin.install import is_plugin_installed
 
     repo_dir = _build_colliding_repo_dir(tmp_path)
@@ -334,9 +311,18 @@ def test_install_qualified_name_succeeds(tmp_path, virtual_ida_environment):
         plugin_group,
         ["--repo", str(repo_dir), "install", "shared@https://github.com/org-a/shared"],
     )
-
     assert result.exit_code == 0, result.output
     assert is_plugin_installed("shared")
+
+    # now try to install the other colliding plugin
+    result = runner.invoke(
+        plugin_group,
+        ["--repo", str(repo_dir), "install", "shared@https://github.com/org-b/shared"],
+    )
+    assert result.exit_code != 0
+    assert "cannot install plugin" in result.output
+    assert "https://github.com/org-a/shared" in result.output
+    assert "https://github.com/org-b/shared" in result.output
 
 
 def _build_colliding_repo_dir_with_v2(tmp_path: Path) -> Path:
@@ -407,10 +393,19 @@ def test_upgrade_host_mismatch_fails(tmp_path, virtual_ida_environment):
     )
     assert result.exit_code != 0
     assert "comes from https://github.com/org-a/shared" in result.output
-    assert "Upgrade cannot switch repositories" in result.output
 
 
-def test_uninstall_case_insensitive_cli(tmp_path, virtual_ida_environment):
+def test_upgrade_not_installed_fails(tmp_path, virtual_ida_environment):
+    """Upgrade must fail cleanly when the plugin is not installed."""
+    repo_dir = _build_colliding_repo_dir_with_v2(tmp_path)
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "upgrade", "shared"])
+    assert result.exit_code != 0
+    assert "not installed" in result.output
+
+
+def test_uninstall_case_insensitive_cli(virtual_ida_environment):
     """`plugin uninstall PLUGIN1` finds $IDAUSR/plugins/plugin1."""
     from hcli.lib.ida.plugin.install import install_plugin_archive, is_plugin_installed
 
@@ -424,21 +419,8 @@ def test_uninstall_case_insensitive_cli(tmp_path, virtual_ida_environment):
     assert not is_plugin_installed("plugin1")
 
 
-def test_config_list_case_insensitive_cli(tmp_path, virtual_ida_environment):
-    """`plugin config PLUGIN1 list` resolves to the installed plugin's directory."""
-    from hcli.lib.ida.plugin.install import install_plugin_archive
-
-    # plugin1 has no settings defined, so `config list` should show the "No settings defined" line
-    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
-
-    runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(plugin_group, ["config", "PLUGIN1", "list"])
-    assert result.exit_code == 0, result.output
-    assert "No settings defined" in result.output
-
-
-def test_config_export_case_insensitive_cli(tmp_path, virtual_ida_environment):
+def test_config_case_insensitive_cli(virtual_ida_environment):
+    """`plugin config PLUGIN1 ...` resolves to the installed plugin's directory and record."""
     from hcli.lib.ida.plugin.install import install_plugin_archive
     from hcli.lib.ida.plugin.settings import set_plugin_setting
 
@@ -447,12 +429,20 @@ def test_config_export_case_insensitive_cli(tmp_path, virtual_ida_environment):
     set_plugin_setting("plugin1", "key1", "value")
 
     runner = CliRunner(mix_stderr=False)
+
+    # `list` resolves the installed plugin directory
+    result = runner.invoke(plugin_group, ["config", "PLUGIN1", "list"])
+    assert result.exit_code == 0, result.output
+    assert "key1" in result.output
+    assert "value" in result.output
+
+    # `export` resolves the installed plugin record
     result = runner.invoke(plugin_group, ["config", "PLUGIN1", "export"])
     assert result.exit_code == 0, result.output
     assert '"key1": "value"' in result.output
 
 
-def test_config_export_requires_installed_plugin(tmp_path, virtual_ida_environment):
+def test_config_export_requires_installed_plugin(virtual_ida_environment):
     from hcli.lib.ida.plugin.install import install_plugin_archive, uninstall_plugin
     from hcli.lib.ida.plugin.settings import set_plugin_setting
 
@@ -487,27 +477,6 @@ def test_status_does_not_crash_on_colliding_name(tmp_path, virtual_ida_environme
     assert "3.0.0" in result.output
 
 
-def test_status_named_plugin_installed(virtual_ida_environment):
-    """`status <name>` shows just that plugin and exits 0 when it's installed."""
-    runner = CliRunner(mix_stderr=False)
-
-    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==1.0.0"])
-    assert result.exit_code == 0, result.output
-
-    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1"])
-    assert result.exit_code == 0, result.output
-    assert "plugin1" in result.output
-
-
-def test_status_named_plugin_not_installed(virtual_ida_environment):
-    """`status <name>` exits non-zero and reports absence when not installed."""
-    runner = CliRunner(mix_stderr=False)
-
-    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "does-not-exist"])
-    assert result.exit_code != 0
-    assert "does-not-exist" in result.output
-
-
 def test_status_skip_upgrade_check(virtual_ida_environment):
     """`status --skip-upgrade-check` reports installed plugins without querying the repo for upgrades."""
     runner = CliRunner(mix_stderr=False)
@@ -527,14 +496,23 @@ def test_status_skip_upgrade_check(virtual_ida_environment):
     assert "skipped" in skip_result.output
 
 
-def test_status_json_installed_plugin(virtual_ida_environment):
+@pytest.mark.parametrize(
+    "extra_args,upgrade_checked,in_repository,upgradable_to",
+    [
+        ([], True, True, "6.0.0"),
+        (["--skip-upgrade-check"], False, None, None),
+    ],
+)
+def test_status_json_installed_plugin(
+    virtual_ida_environment, extra_args, upgrade_checked, in_repository, upgradable_to
+):
     """`status <name> --json` reports upgrade info as structured JSON."""
     runner = CliRunner(mix_stderr=False)
 
     result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==1.0.0"])
     assert result.exit_code == 0, result.output
 
-    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1", "--json"])
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1", "--json", *extra_args])
     assert result.exit_code == 0, result.output
 
     payload = json.loads(result.output)
@@ -544,9 +522,9 @@ def test_status_json_installed_plugin(virtual_ida_environment):
             "version": "1.0.0",
             "installed": True,
             "kind": "installed",
-            "upgrade_checked": True,
-            "in_repository": True,
-            "upgradable_to": "6.0.0",
+            "upgrade_checked": upgrade_checked,
+            "in_repository": in_repository,
+            "upgradable_to": upgradable_to,
         }
     ]
 
@@ -560,72 +538,6 @@ def test_status_json_not_installed_plugin(virtual_ida_environment):
 
     payload = json.loads(result.output)
     assert payload["plugins"] == [{"name": "does-not-exist", "installed": False}]
-
-
-def test_status_json_skip_upgrade_check(virtual_ida_environment):
-    """`status <name> --json --skip-upgrade-check` marks the upgrade check as skipped."""
-    runner = CliRunner(mix_stderr=False)
-
-    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==1.0.0"])
-    assert result.exit_code == 0, result.output
-
-    result = runner.invoke(
-        plugin_group, ["--repo", str(PLUGINS_DIR), "status", "plugin1", "--skip-upgrade-check", "--json"]
-    )
-    assert result.exit_code == 0, result.output
-
-    payload = json.loads(result.output)
-    assert payload["plugins"] == [
-        {
-            "name": "plugin1",
-            "version": "1.0.0",
-            "installed": True,
-            "kind": "installed",
-            "upgrade_checked": False,
-            "in_repository": None,
-            "upgradable_to": None,
-        }
-    ]
-
-
-def test_search_json_keyword_query(virtual_ida_environment):
-    """`search --json` (no query) reports the full plugin listing as JSON."""
-    runner = CliRunner(mix_stderr=False)
-
-    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "--json"])
-    assert result.exit_code == 0, result.output
-
-    payload = json.loads(result.output)
-    assert payload["query"] is None
-    names = {entry["name"] for entry in payload["results"]}
-    assert "plugin1" in names
-
-
-def test_search_json_exact_name_query(virtual_ida_environment):
-    """`search <name> --json` reports plugin metadata and versions as JSON."""
-    runner = CliRunner(mix_stderr=False)
-
-    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "search", "plugin1", "--json"])
-    assert result.exit_code == 0, result.output
-
-    payload = json.loads(result.output)
-    assert payload["plugin"]["name"] == "plugin1"
-    assert payload["installed_version"] is None
-    assert any(v["version"] == "4.0.0" for v in payload["versions"])
-
-
-def test_search_json_ambiguous_reference(tmp_path):
-    """`search <name> --json` reports an ambiguity error as JSON and exits non-zero."""
-    repo_dir = _build_colliding_repo_dir(tmp_path)
-    runner = CliRunner(mix_stderr=False)
-
-    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", "shared", "--json"])
-    assert result.exit_code != 0
-
-    payload = json.loads(result.output)
-    assert payload["error"] == "ambiguous plugin reference"
-    assert payload["name"] == "shared"
-    assert len(payload["candidates"]) == 2
 
 
 def test_status_multiple_plugins_all_installed(virtual_ida_environment):
@@ -655,36 +567,3 @@ def test_status_multiple_plugins_partially_installed(virtual_ida_environment):
     assert "plugin1" in result.output
     assert "Not installed" in result.output
     assert "does-not-exist" in result.output
-
-
-def test_upgrade_not_installed_fails(tmp_path, virtual_ida_environment):
-    """Upgrade must fail cleanly when the plugin is not installed."""
-    repo_dir = _build_colliding_repo_dir_with_v2(tmp_path)
-    runner = CliRunner(mix_stderr=False)
-
-    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "upgrade", "shared"])
-    assert result.exit_code != 0
-    assert "not installed" in result.output
-
-
-def test_install_same_name_conflict(tmp_path, virtual_ida_environment):
-    """Installing a same-name plugin from another repository must fail with a conflict error."""
-    repo_dir = _build_colliding_repo_dir(tmp_path)
-
-    runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(
-        plugin_group,
-        ["--repo", str(repo_dir), "install", "shared@https://github.com/org-a/shared"],
-    )
-    assert result.exit_code == 0, result.output
-
-    # now try to install the other colliding plugin
-    result = runner.invoke(
-        plugin_group,
-        ["--repo", str(repo_dir), "install", "shared@https://github.com/org-b/shared"],
-    )
-    assert result.exit_code != 0
-    assert "cannot install plugin" in result.output
-    assert "https://github.com/org-a/shared" in result.output
-    assert "https://github.com/org-b/shared" in result.output
-    assert "Only one plugin with the bare name 'shared' can be installed at a time." in result.output

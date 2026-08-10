@@ -76,13 +76,6 @@ class TestPosixHandlerArtifacts:
         # and it ensures the log dir exists at click time so the redirect can't break
         assert "mkdir -p" in script
 
-    def test_linux_desktop_exec_has_separator(self):
-        from hcli.lib.ida.protocol import _linux_desktop_entry
-
-        entry = _linux_desktop_entry("/path/hcli")
-        exec_line = next(ln for ln in entry.splitlines() if ln.startswith("Exec="))
-        assert exec_line.endswith("ida open -- %u"), exec_line
-
     def test_linux_registration_writes_separator_to_desktop_file(self, tmp_path, monkeypatch):
         # Real-artifact check: the written .desktop file must carry `-- %u`.
         monkeypatch.setattr("hcli.lib.ida.protocol.Path.home", lambda: tmp_path)

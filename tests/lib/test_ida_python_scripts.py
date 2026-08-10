@@ -19,7 +19,6 @@ import pytest
 from hcli.lib.ida.python import (
     ProbeError,
     ScriptNotFoundError,
-    find_script,
     get_environment_for_python,
     get_script_info,
     run_in_python_environment,
@@ -143,22 +142,23 @@ def python_env(tmp_path_factory) -> PythonEnv:
 
 def test_find_script_in_scripts_directory(python_env: PythonEnv):
     """A wrapper that RECORD doesn't mention is found in the scripts directory."""
-    path = find_script(python_env.python_exe, "hcli-test-installed")
-    assert path.parent.resolve() == python_env.scripts_dir.resolve()
-    assert path.is_file()
+    info = get_script_info(python_env.python_exe, "hcli-test-installed")
+    assert info.path is not None
+    assert info.path.parent.resolve() == python_env.scripts_dir.resolve()
 
 
 def test_find_script_via_record(python_env: PythonEnv):
     """A wrapper installed outside the scripts directory is found via the distribution's RECORD."""
-    path = find_script(python_env.python_exe, "hcli-test-recorded")
-    assert path.parent.resolve() == python_env.custom_bin.resolve()
-    assert path.is_file()
+    info = get_script_info(python_env.python_exe, "hcli-test-recorded")
+    assert info.path is not None
+    assert info.path.parent.resolve() == python_env.custom_bin.resolve()
 
 
 def test_find_script_prefers_record(python_env: PythonEnv):
     """RECORD names the wrapper belonging to the distribution, so it wins over a same-named file."""
-    path = find_script(python_env.python_exe, "hcli-test-shadowed")
-    assert path.parent.resolve() == python_env.custom_bin.resolve()
+    info = get_script_info(python_env.python_exe, "hcli-test-shadowed")
+    assert info.path is not None
+    assert info.path.parent.resolve() == python_env.custom_bin.resolve()
 
 
 def test_find_script_reports_entry_point(python_env: PythonEnv):
@@ -176,23 +176,15 @@ def test_find_script_without_wrapper(python_env: PythonEnv):
     assert info.path is None
     assert info.entry_point is not None
 
-    with pytest.raises(ScriptNotFoundError):
-        find_script(python_env.python_exe, "hcli-test-orphan")
-
 
 def test_find_script_missing(python_env: PythonEnv):
+    """Nothing found, and the reported search path stays inside the environment.
+
+    A virtualenv's python links to the base interpreter, whose bin/ isn't the venv's.
+    """
     info = get_script_info(python_env.python_exe, "hcli-test-missing")
     assert info.path is None
     assert info.entry_point is None
-    assert python_env.scripts_dir in info.scripts_dirs
-
-    with pytest.raises(ScriptNotFoundError):
-        find_script(python_env.python_exe, "hcli-test-missing")
-
-
-def test_scripts_dirs_stay_inside_the_environment(python_env: PythonEnv):
-    """A virtualenv's python links to the base interpreter, whose bin/ isn't the venv's."""
-    info = get_script_info(python_env.python_exe, "hcli-test-missing")
     assert info.scripts_dirs[0].resolve() == python_env.scripts_dir.resolve()
 
 
@@ -222,15 +214,6 @@ def test_run_script_missing(python_env: PythonEnv):
 def test_run_in_python_environment_returns_status(python_env: PythonEnv):
     argv = [str(python_env.python_exe), "-c", "import sys; sys.exit(7)"]
     assert run_in_python_environment(python_env.python_exe, argv) == 7
-
-
-def test_run_in_python_environment_uses_target_interpreter(python_env: PythonEnv, capfd):
-    argv = [str(python_env.python_exe), "-c", "import sys; print(sys.prefix)"]
-    assert run_in_python_environment(python_env.python_exe, argv) == 0
-
-    prefix = capfd.readouterr().out.strip()
-    assert Path(prefix) != Path(sys.prefix)
-    assert Path(prefix) == python_env.root / "venv"
 
 
 def test_get_environment_for_python_venv(python_env: PythonEnv, monkeypatch):

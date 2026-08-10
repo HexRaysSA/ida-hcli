@@ -14,7 +14,7 @@ import rich.status
 import rich_click as click
 
 from hcli import __version__ as hcli_version
-from hcli.lib.console import _sync_console_streams, console, stderr_console
+from hcli.lib.console import console, stderr_console
 from hcli.lib.ida.plugin import (
     get_metadatas_with_paths_from_plugin_archive,
     get_version_from_plugin_archive,
@@ -27,7 +27,7 @@ from hcli.lib.ida.plugin.bundle import (
     to_manifest_target,
 )
 from hcli.lib.ida.plugin.reference import parse_plugin_reference
-from hcli.lib.ida.plugin.repo import PluginArchiveIndex
+from hcli.lib.ida.plugin.repo import BasePluginRepo, PluginArchiveIndex
 from hcli.lib.ida.plugin.repo.bundle import (
     PluginBundleRepo,
     is_plugin_bundle_zip,
@@ -40,7 +40,6 @@ logger = logging.getLogger(__name__)
 @click.group()
 def bundle() -> None:
     """Manage plugin bundles for offline installation."""
-    _sync_console_streams()
 
 
 @bundle.command()
@@ -73,8 +72,7 @@ def info(bundle_path: str) -> None:
 
 def _resolve_plugin_bytes(
     spec: str,
-    pip_options: PipOptions,
-    plugin_repo=None,
+    plugin_repo: BasePluginRepo | None,
     current_platform: str | None = None,
 ) -> tuple[str, bytes]:
     path = Path(spec).expanduser()
@@ -259,7 +257,7 @@ def create(
 
             if is_local:
                 with rich.status.Status(f"resolving {spec}", console=stderr_console):
-                    name, buf = _resolve_plugin_bytes(spec, pip_options, parent_repo)
+                    name, buf = _resolve_plugin_bytes(spec, parent_repo)
                 h = hashlib.sha256(buf).hexdigest()
                 archives_by_hash[h] = (name, buf)
                 for plat in target_platforms:
@@ -267,7 +265,7 @@ def create(
             else:
                 for plat in target_platforms:
                     with rich.status.Status(f"resolving {spec} for {plat}", console=stderr_console):
-                        name, buf = _resolve_plugin_bytes(spec, pip_options, parent_repo, plat)
+                        name, buf = _resolve_plugin_bytes(spec, parent_repo, plat)
                     h = hashlib.sha256(buf).hexdigest()
                     archives_by_hash[h] = (name, buf)
                     hash_by_platform[plat] = h

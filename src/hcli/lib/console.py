@@ -1,5 +1,4 @@
 import json
-import sys
 from collections.abc import Mapping
 from typing import Any
 
@@ -35,26 +34,12 @@ console = _get_console()
 stderr_console = _get_stderr_console()
 
 
-def _sync_console_streams():
-    """
-    helper to reset the console file handles.
-
-    useful in pytest environment, where click test integration may manipulate stdout/err
-    see #190
-    """
-    console.file = sys.stdout
-    stderr_console.file = sys.stderr
-
-
-_sync_console_streams()
-
-
 def print_json(data: Any) -> None:
     """Print `data` as JSON via `console`, not `click.echo`.
 
     `click.echo` resolves its output stream independently of `console`, so it
-    isn't covered by `_sync_console_streams` and can write to a stale stdout
-    handle under Click's pytest CliRunner integration (see #190). Markup and
+    isn't covered by the stream pinning the test harness applies around
+    `CliRunner` and can write to a stale stdout handle (see #190). Markup and
     highlighting are disabled so JSON's own brackets aren't parsed as Rich
     markup, and soft_wrap avoids Rich reflowing long lines.
     """

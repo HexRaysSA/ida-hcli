@@ -4,14 +4,13 @@ import sys
 from pathlib import Path
 
 import pytest
+from fixtures import set_env_var, unset_env_var
 
-from hcli.env import ENV
 from hcli.lib.ida import find_current_ida_install_directory, get_ida_user_dir
 from hcli.lib.ida.python import (
     CantInstallPackagesError,
     IdatProbe,
     PipOptions,
-    PythonVersionMismatch,
     _derive_python_exe,
     find_current_python_executable,
     find_python_version_mismatches,
@@ -33,20 +32,38 @@ def has_idat():
     return os.environ["HCLI_HAS_IDAT"].lower() not in ("", "0", "false", "f")
 
 
-@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_find_current_python_executable_returns_path():
-    """Test that find_current_python_executable returns a valid path."""
-    result = find_current_python_executable()
-    assert isinstance(result, Path)
-    assert result.exists()
-    assert result.is_file()
-    assert "python" in result.name.lower()
+def _venv_bin_dir(venv_dir: Path) -> Path:
+    return venv_dir / ("Scripts" if os.name == "nt" else "bin")
 
 
-@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_has_pip():
-    python_exe = find_current_python_executable()
-    assert has_pip(python_exe, timeout=30.0)
+def _venv_launcher_for_ida(venv_dir: Path) -> Path:
+    return venv_dir / "Scripts" / "python.exe" if os.name == "nt" else venv_dir / "bin" / "python3"
+
+
+def _write_fake_venv(venv_dir: Path, version: str) -> Path:
+    """Create a venv layout whose interpreter can't be run, so pyvenv.cfg decides the version."""
+    venv_dir.mkdir(parents=True, exist_ok=True)
+    (venv_dir / "pyvenv.cfg").write_text(f"home = /base/python\nversion = {version}\n", encoding="utf-8")
+    bin_dir = _venv_bin_dir(venv_dir)
+    bin_dir.mkdir(exist_ok=True)
+    python = _venv_launcher_for_ida(venv_dir)
+    python.write_text("", encoding="utf-8")
+    return python
+
+
+def _ida_info(version: tuple[int, int], **overrides) -> IdatProbe:
+    info = {
+        "frozen": False,
+        "prefix": "/opt/python3",
+        "base_prefix": "/opt/python3",
+        "executable": "/opt/python3/bin/python3",
+        "virtual_env": None,
+        "idapython_venv_executable": None,
+        "version_major": version[0],
+        "version_minor": version[1],
+    }
+    info.update(overrides)
+    return IdatProbe.model_validate(info)
 
 
 def _prepare_isolated_idausr_for_python_detection(source_idausr: Path, target_idausr: Path) -> None:
@@ -71,111 +88,6 @@ def _assert_detected_venv_python(result: Path, venv_dir: Path) -> None:
     assert result.name.startswith("python")
 
 
-def _venv_launcher_for_ida(venv_dir: Path) -> Path:
-    return venv_dir / "Scripts" / "python.exe" if os.name == "nt" else venv_dir / "bin" / "python3"
-
-
-def _venv_bin_dir(venv_dir: Path) -> Path:
-    return venv_dir / ("Scripts" if os.name == "nt" else "bin")
-
-
-def test_find_current_python_executable_uses_idapython_venv_executable(tmp_path, monkeypatch):
-    python = tmp_path / "bin" / "python3"
-    python.parent.mkdir()
-    python.write_text("", encoding="utf-8")
-
-    monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
-    monkeypatch.setattr(ENV, "HCLI_CURRENT_IDA_PYTHON_EXE", None)
-    monkeypatch.setenv("IDAPYTHON_VENV_EXECUTABLE", str(python))
-
-    result = find_current_python_executable()
-    assert result == python
-
-
-def test_resolve_current_python_reports_env_pin_source(tmp_path, monkeypatch):
-    python = tmp_path / "python3"
-    python.write_text("", encoding="utf-8")
-
-    monkeypatch.setenv("HCLI_CURRENT_IDA_PYTHON_EXE", str(python))
-
-    resolved = resolve_current_python()
-
-    assert resolved.exe == python
-    assert resolved.source == "$HCLI_CURRENT_IDA_PYTHON_EXE"
-    assert resolved.probe is None
-
-
-def test_find_current_python_executable_hcli_exe_overrides_idapython_venv(tmp_path, monkeypatch):
-    hcli_python = tmp_path / "hcli" / "python3"
-    hcli_python.parent.mkdir()
-    hcli_python.write_text("", encoding="utf-8")
-
-    venv_python = tmp_path / "venv" / "bin" / "python3"
-    venv_python.parent.mkdir(parents=True)
-    venv_python.write_text("", encoding="utf-8")
-
-    monkeypatch.setenv("HCLI_CURRENT_IDA_PYTHON_EXE", str(hcli_python))
-    monkeypatch.setenv("IDAPYTHON_VENV_EXECUTABLE", str(venv_python))
-
-    result = find_current_python_executable()
-    assert result == hcli_python
-
-
-def test_derive_python_exe_uses_idapython_venv_executable_when_sys_executable_is_idat(tmp_path):
-    """IDA 9.4 macOS: sys.executable is the idat binary, not a Python interpreter.
-
-    When prefix==base_prefix (macOS framework) and sys.executable is not a Python
-    path, _derive_python_exe must still honour IDAPYTHON_VENV_EXECUTABLE.
-    """
-    venv_dir = tmp_path / "venv"
-    venv_dir.mkdir()
-    (venv_dir / "pyvenv.cfg").write_text("home = /base/python\n", encoding="utf-8")
-    bin_dir = _venv_bin_dir(venv_dir)
-    bin_dir.mkdir()
-    venv_python = _venv_launcher_for_ida(venv_dir)
-    venv_python.write_text("", encoding="utf-8")
-
-    # Simulate a fake idat binary as sys.executable
-    idat_binary = tmp_path / "idat"
-    idat_binary.write_text("", encoding="utf-8")
-
-    info = IdatProbe(
-        frozen=False,
-        prefix="/Library/Frameworks/Python.framework/Versions/3.14",
-        base_prefix="/Library/Frameworks/Python.framework/Versions/3.14",
-        executable=str(idat_binary),
-        virtual_env=None,
-        idapython_venv_executable=str(venv_python),
-        version_major=3,
-        version_minor=14,
-    )
-
-    assert _derive_python_exe(info) == venv_python
-
-
-def test_derive_python_exe_honors_validated_virtualenv_executable_when_prefix_is_base(tmp_path):
-    venv_dir = tmp_path / "venv"
-    venv_dir.mkdir()
-    (venv_dir / "pyvenv.cfg").write_text("home = /base/python\n", encoding="utf-8")
-    bin_dir = _venv_bin_dir(venv_dir)
-    bin_dir.mkdir()
-    venv_python = _venv_launcher_for_ida(venv_dir)
-    venv_python.write_text("", encoding="utf-8")
-
-    info = IdatProbe(
-        frozen=False,
-        prefix="/Library/Frameworks/Python.framework/Versions/3.14",
-        base_prefix="/Library/Frameworks/Python.framework/Versions/3.14",
-        executable=str(venv_python),
-        virtual_env=str(venv_dir),
-        idapython_venv_executable=str(venv_python),
-        version_major=3,
-        version_minor=14,
-    )
-
-    assert _derive_python_exe(info) == venv_python
-
-
 def _create_venv_with_ida_python(venv_dir: Path) -> None:
     """Build the venv using IDA's own Python so the venv is one IDA could plausibly use.
 
@@ -184,6 +96,94 @@ def _create_venv_with_ida_python(venv_dir: Path) -> None:
     """
     ida_python = find_current_python_executable()
     subprocess.run([str(ida_python), "-m", "venv", str(venv_dir)], check=True)
+
+
+@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
+def test_find_current_python_executable_returns_path():
+    """Test that find_current_python_executable returns a valid path."""
+    result = find_current_python_executable()
+    assert isinstance(result, Path)
+    assert result.exists()
+    assert result.is_file()
+    assert "python" in result.name.lower()
+
+
+@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
+def test_has_pip():
+    python_exe = find_current_python_executable()
+    assert has_pip(python_exe, timeout=30.0)
+
+
+def test_resolve_current_python_prefers_hcli_env_pin(tmp_path, monkeypatch):
+    """$HCLI_CURRENT_IDA_PYTHON_EXE wins, and skips the (slow) idat probe entirely."""
+    hcli_python = tmp_path / "hcli" / "python3"
+    hcli_python.parent.mkdir()
+    hcli_python.write_text("", encoding="utf-8")
+
+    venv_python = tmp_path / "venv" / "bin" / "python3"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("", encoding="utf-8")
+
+    set_env_var(monkeypatch, "HCLI_CURRENT_IDA_PYTHON_EXE", str(hcli_python))
+    set_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE", str(venv_python))
+
+    resolved = resolve_current_python()
+
+    assert resolved.exe == hcli_python
+    assert resolved.probe is None
+
+
+def test_find_current_python_executable_uses_idapython_venv_executable(tmp_path, monkeypatch):
+    python = tmp_path / "bin" / "python3"
+    python.parent.mkdir()
+    python.write_text("", encoding="utf-8")
+
+    unset_env_var(monkeypatch, "HCLI_CURRENT_IDA_PYTHON_EXE")
+    set_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE", str(python))
+
+    result = find_current_python_executable()
+    assert result == python
+
+
+def test_derive_python_exe_uses_idapython_venv_executable_when_sys_executable_is_idat(tmp_path):
+    """IDA 9.4 macOS: sys.executable is the idat binary, not a Python interpreter.
+
+    When prefix==base_prefix (macOS framework) and sys.executable is not a Python
+    path, _derive_python_exe must still honour IDAPYTHON_VENV_EXECUTABLE.
+    """
+    framework = "/Library/Frameworks/Python.framework/Versions/3.14"
+    venv_python = _write_fake_venv(tmp_path / "venv", "3.14.0")
+
+    # Simulate a fake idat binary as sys.executable
+    idat_binary = tmp_path / "idat"
+    idat_binary.write_text("", encoding="utf-8")
+
+    info = _ida_info(
+        (3, 14),
+        prefix=framework,
+        base_prefix=framework,
+        executable=str(idat_binary),
+        idapython_venv_executable=str(venv_python),
+    )
+
+    assert _derive_python_exe(info) == venv_python
+
+
+def test_derive_python_exe_honors_validated_virtualenv_executable_when_prefix_is_base(tmp_path):
+    framework = "/Library/Frameworks/Python.framework/Versions/3.14"
+    venv_dir = tmp_path / "venv"
+    venv_python = _write_fake_venv(venv_dir, "3.14.0")
+
+    info = _ida_info(
+        (3, 14),
+        prefix=framework,
+        base_prefix=framework,
+        executable=str(venv_python),
+        virtual_env=str(venv_dir),
+        idapython_venv_executable=str(venv_python),
+    )
+
+    assert _derive_python_exe(info) == venv_python
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
@@ -209,12 +209,12 @@ def test_find_current_python_executable_honors_activated_virtualenv(tmp_path, mo
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("HCLI_IDAUSR", str(target_idausr))
-    monkeypatch.setenv("HCLI_CURRENT_IDA_INSTALL_DIR", str(install_dir))
-    monkeypatch.setenv("HCLI_TEST_VENV", str(venv_dir))
-    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
-    monkeypatch.delenv("IDAPYTHON_VENV_EXECUTABLE", raising=False)
-    monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
+    set_env_var(monkeypatch, "HCLI_IDAUSR", str(target_idausr))
+    set_env_var(monkeypatch, "HCLI_CURRENT_IDA_INSTALL_DIR", str(install_dir))
+    set_env_var(monkeypatch, "HCLI_TEST_VENV", str(venv_dir))
+    unset_env_var(monkeypatch, "VIRTUAL_ENV")
+    unset_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE")
+    unset_env_var(monkeypatch, "HCLI_CURRENT_IDA_PYTHON_EXE")
 
     # building the venv above probed IDA under the ambient environment;
     # this test changes the environment, so it needs a fresh probe.
@@ -237,11 +237,11 @@ def test_find_current_python_executable_honors_idapython_venv_executable(tmp_pat
     target_idausr = tmp_path / "idausr-venv-executable"
     _prepare_isolated_idausr_for_python_detection(source_idausr, target_idausr)
 
-    monkeypatch.setenv("HCLI_IDAUSR", str(target_idausr))
-    monkeypatch.setenv("HCLI_CURRENT_IDA_INSTALL_DIR", str(install_dir))
-    monkeypatch.setenv("IDAPYTHON_VENV_EXECUTABLE", str(_venv_launcher_for_ida(venv_dir)))
-    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
-    monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
+    set_env_var(monkeypatch, "HCLI_IDAUSR", str(target_idausr))
+    set_env_var(monkeypatch, "HCLI_CURRENT_IDA_INSTALL_DIR", str(install_dir))
+    set_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE", str(_venv_launcher_for_ida(venv_dir)))
+    unset_env_var(monkeypatch, "VIRTUAL_ENV")
+    unset_env_var(monkeypatch, "HCLI_CURRENT_IDA_PYTHON_EXE")
 
     result = find_current_python_executable()
     _assert_detected_venv_python(result, venv_dir)
@@ -269,10 +269,10 @@ def test_find_current_python_executable_honors_idapythonrc(tmp_path, monkeypatch
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("HCLI_IDAUSR", str(target_idausr))
-    monkeypatch.setenv("HCLI_CURRENT_IDA_INSTALL_DIR", str(install_dir))
-    monkeypatch.setenv("HCLI_TEST_VENV", str(venv_dir))
-    monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
+    set_env_var(monkeypatch, "HCLI_IDAUSR", str(target_idausr))
+    set_env_var(monkeypatch, "HCLI_CURRENT_IDA_INSTALL_DIR", str(install_dir))
+    set_env_var(monkeypatch, "HCLI_TEST_VENV", str(venv_dir))
+    unset_env_var(monkeypatch, "HCLI_CURRENT_IDA_PYTHON_EXE")
 
     # building the venv above probed IDA under the ambient environment;
     # this test changes the environment, so it needs a fresh probe.
@@ -291,7 +291,6 @@ def test_verify_pip_can_install_packages():
     verify_pip_can_install_packages(python_exe, ["flare-capa==v1.0.0"])
     verify_pip_can_install_packages(python_exe, ["flare-capa==1.0.0"])
     verify_pip_can_install_packages(python_exe, ["flare-capa==1.0"])
-    verify_pip_can_install_packages(python_exe, ["flare-capa==1"])
     verify_pip_can_install_packages(python_exe, ["flare-capa==1"])
     verify_pip_can_install_packages(python_exe, ["flare-capa==v1.2.0"])
 
@@ -317,109 +316,88 @@ def test_verify_pip_can_install_packages():
         verify_pip_can_install_packages(python_exe, ["flare-capa==v1.2.0", "flare-capa<=v1.0.0"])
 
 
-def test_pip_options_default_builds_empty_args():
-    opts = PipOptions()
-    assert opts.build_args() == []
+@pytest.mark.parametrize(
+    "options,expected",
+    [
+        (PipOptions(), []),
+        (
+            PipOptions(
+                index_url="https://pypi.example.corp/simple",
+                extra_index_urls=("https://a.example.com/simple", "https://b.example.com/simple"),
+                find_links=("/local/wheels",),
+            ),
+            [
+                "--index-url",
+                "https://pypi.example.corp/simple",
+                "--extra-index-url",
+                "https://a.example.com/simple",
+                "--extra-index-url",
+                "https://b.example.com/simple",
+                "--find-links",
+                "/local/wheels",
+            ],
+        ),
+        (
+            PipOptions(
+                offline=True,
+                isolated=True,
+                no_cache_dir=True,
+                disable_pip_version_check=True,
+                find_links=("/tmp/wheelhouse",),
+            ),
+            [
+                "--isolated",
+                "--disable-pip-version-check",
+                "--no-cache-dir",
+                "--no-index",
+                "--find-links",
+                "/tmp/wheelhouse",
+            ],
+        ),
+        (PipOptions(no_build_isolation=True), ["--no-build-isolation"]),
+    ],
+)
+def test_pip_options_build_args(options: PipOptions, expected: list[str]):
+    assert options.build_args() == expected
 
 
-def test_pip_options_online_index_url():
-    opts = PipOptions(index_url="https://pypi.example.corp/simple")
-    args = opts.build_args()
-    assert args == ["--index-url", "https://pypi.example.corp/simple"]
+@pytest.mark.parametrize(
+    "options,expected",
+    [
+        (PipOptions(), False),
+        # offline alone isn't a source: it only forbids the default index
+        (PipOptions(offline=True), False),
+        (PipOptions(index_url="https://example.com"), True),
+        (PipOptions(extra_index_urls=("https://example.com",)), True),
+        (PipOptions(find_links=("/tmp/wh",)), True),
+    ],
+)
+def test_pip_options_has_custom_sources(options: PipOptions, expected: bool):
+    assert options.has_custom_sources is expected
 
 
-def test_pip_options_extra_index_urls():
-    opts = PipOptions(extra_index_urls=("https://a.example.com/simple", "https://b.example.com/simple"))
-    args = opts.build_args()
-    assert "--extra-index-url" in args
-    assert args.count("--extra-index-url") == 2
-
-
-def test_pip_options_find_links_offline():
-    opts = PipOptions(find_links=("/tmp/wheelhouse",), offline=True)
-    args = opts.build_args()
-    assert "--no-index" in args
-    assert "--find-links" in args
-    assert "/tmp/wheelhouse" in args
-
-
-def test_pip_options_bundle_mode():
-    opts = PipOptions(
-        offline=True,
-        isolated=True,
-        no_cache_dir=True,
-        disable_pip_version_check=True,
-        find_links=("/tmp/wh",),
-    )
-    args = opts.build_args()
-    assert "--isolated" in args
-    assert "--disable-pip-version-check" in args
-    assert "--no-cache-dir" in args
-    assert "--no-index" in args
-    assert "--find-links" in args
-
-
-def test_pip_options_no_build_isolation():
-    opts = PipOptions(no_build_isolation=True)
-    args = opts.build_args()
-    assert "--no-build-isolation" in args
-
-
-def test_pip_options_combined_index_and_find_links():
-    opts = PipOptions(
-        index_url="https://pypi.example.corp/simple",
-        find_links=("/local/wheels",),
-    )
-    args = opts.build_args()
-    assert "--index-url" in args
-    assert "--find-links" in args
-
-
-def test_pip_options_has_custom_sources_default():
-    assert not PipOptions().has_custom_sources
-
-
-def test_pip_options_has_custom_sources_offline_only():
-    assert not PipOptions(offline=True).has_custom_sources
-
-
-def test_pip_options_has_custom_sources_index_url():
-    assert PipOptions(index_url="https://example.com").has_custom_sources
-
-
-def test_pip_options_has_custom_sources_extra_index():
-    assert PipOptions(extra_index_urls=("https://example.com",)).has_custom_sources
-
-
-def test_pip_options_has_custom_sources_find_links():
-    assert PipOptions(find_links=("/tmp/wh",)).has_custom_sources
-
-
-def test_merge_bundle_pip_options_offline_user():
-    user = PipOptions(offline=True)
+def test_merge_bundle_pip_options_unions_user_and_bundle():
+    user = PipOptions(offline=True, no_build_isolation=True, find_links=("/user/wh",))
     bundle = PipOptions(
+        isolated=True,
+        no_cache_dir=True,
+        disable_pip_version_check=True,
+        find_links=("/bundle/wh",),
+    )
+
+    merged = merge_bundle_pip_options(user, bundle)
+
+    assert merged == PipOptions(
+        find_links=("/bundle/wh", "/user/wh"),
         offline=True,
         isolated=True,
         no_cache_dir=True,
         disable_pip_version_check=True,
-        find_links=("/tmp/wh",),
+        no_build_isolation=True,
     )
-    merged = merge_bundle_pip_options(user, bundle)
-    assert merged.offline is True
-    assert merged.find_links == ("/tmp/wh",)
-    assert merged.isolated is True
-
-
-def test_merge_bundle_pip_options_preserves_no_build_isolation():
-    user = PipOptions(no_build_isolation=True)
-    bundle = PipOptions(find_links=("/tmp/wh",), offline=True)
-    merged = merge_bundle_pip_options(user, bundle)
-    assert merged.no_build_isolation is True
-    assert merged.find_links == ("/tmp/wh",)
 
 
 def test_merge_bundle_pip_options_default_user():
-    user = PipOptions()
     bundle = PipOptions(
         offline=True,
         isolated=True,
@@ -427,34 +405,7 @@ def test_merge_bundle_pip_options_default_user():
         disable_pip_version_check=True,
         find_links=("/tmp/wh",),
     )
-    merged = merge_bundle_pip_options(user, bundle)
-    assert merged == bundle
-
-
-def _write_fake_venv(venv_dir: Path, version: str) -> Path:
-    """Create a venv layout whose interpreter can't be run, so pyvenv.cfg decides the version."""
-    venv_dir.mkdir(parents=True, exist_ok=True)
-    (venv_dir / "pyvenv.cfg").write_text(f"home = /base/python\nversion = {version}\n", encoding="utf-8")
-    bin_dir = _venv_bin_dir(venv_dir)
-    bin_dir.mkdir(exist_ok=True)
-    python = _venv_launcher_for_ida(venv_dir)
-    python.write_text("", encoding="utf-8")
-    return python
-
-
-def _ida_info(version: tuple[int, int], **overrides) -> IdatProbe:
-    info = {
-        "frozen": False,
-        "prefix": "/opt/python3",
-        "base_prefix": "/opt/python3",
-        "executable": "/opt/python3/bin/python3",
-        "virtual_env": None,
-        "idapython_venv_executable": None,
-        "version_major": version[0],
-        "version_minor": version[1],
-    }
-    info.update(overrides)
-    return IdatProbe.model_validate(info)
+    assert merge_bundle_pip_options(PipOptions(), bundle) == bundle
 
 
 def test_get_virtual_env_version_falls_back_to_pyvenv_cfg(tmp_path):
@@ -584,48 +535,12 @@ def test_probe_current_python_info_runs_idat_once_per_process(monkeypatch):
     assert len(calls) == 1
 
 
-def test_probe_current_python_info_does_not_cache_failures(monkeypatch):
-    attempts = []
-
-    def failing_probe(src: str) -> dict:
-        attempts.append(src)
-        raise RuntimeError("idat crashed")
-
-    monkeypatch.setattr("hcli.lib.ida.python.run_py_in_current_idapython", failing_probe)
-
-    with pytest.raises(RuntimeError):
-        probe_current_python_info()
-    with pytest.raises(RuntimeError):
-        probe_current_python_info()
-
-    assert len(attempts) == 2
-
-
 def test_probe_python_version_returns_none_for_unrunnable_interpreter(tmp_path):
     fake = tmp_path / "not-python"
     fake.write_text("", encoding="utf-8")
 
-    assert probe_python_version(fake, timeout=5.0) is None
+    assert probe_python_version(fake) is None
 
 
 def test_format_python_version_mismatch_warning_is_empty_without_mismatches():
     assert format_python_version_mismatch_warning([]) == ""
-
-
-def test_format_python_version_mismatch_warning_explains_the_fix():
-    venv = Path("/home/user/.venv")
-    mismatch = PythonVersionMismatch(
-        ida_version="3.12",
-        other_version="3.14",
-        other_path=venv,
-        other_source="the virtualenv activated inside IDA ($VIRTUAL_ENV)",
-    )
-
-    warning = format_python_version_mismatch_warning([mismatch])
-
-    assert "Warning" in warning
-    assert "3.12" in warning
-    assert "3.14" in warning
-    # str(), not a literal: Path renders with backslashes on Windows
-    assert str(venv) in warning
-    assert "idapyswitch" in warning

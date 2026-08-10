@@ -82,7 +82,7 @@ def is_plugin_bundle_zip(path: Path) -> bool:
         return False
 
 
-def load_manifest_from_zip(zf: zipfile.ZipFile) -> PluginBundleManifest:
+def _load_manifest_from_zip(zf: zipfile.ZipFile) -> PluginBundleManifest:
     raw = zf.read("plugin-bundle.json").decode("utf-8")
     manifest = PluginBundleManifest.model_validate_json(raw)
 
@@ -97,17 +97,12 @@ def load_manifest_from_zip(zf: zipfile.ZipFile) -> PluginBundleManifest:
 
 class PluginBundleRepo(BasePluginRepo):
     def __init__(self, path: Path):
-        self._path = path
         self._zf = zipfile.ZipFile(path, "r")
         try:
-            self._manifest = load_manifest_from_zip(self._zf)
+            self._manifest = _load_manifest_from_zip(self._zf)
         except Exception:
             self._zf.close()
             raise
-
-    @property
-    def path(self) -> Path:
-        return self._path
 
     @property
     def manifest(self) -> PluginBundleManifest:

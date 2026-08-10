@@ -43,23 +43,6 @@ end run
 '''
 
 
-def _linux_desktop_entry(hcli_cmd: str) -> str:
-    """Build the .desktop entry.
-
-    ``hcli_cmd`` is the hcli invocation already rendered as a shell fragment
-    (``shlex.join`` of the argv), so a spaced install path stays a single token when
-    the desktop environment parses ``Exec=``. ``-- %u`` keeps the URL from being
-    parsed as an option.
-    """
-    return f"""[Desktop Entry]
-Name=HCLI IDB Link Handler
-Exec={_PY_ENV_STRIP} {hcli_cmd} ida open -- %u
-Type=Application
-NoDisplay=true
-MimeType=x-scheme-handler/{PROTOCOL};
-"""
-
-
 def setup_macos_protocol_handler() -> None:
     """Set up protocol handler for macOS using AppleScript and plist modification."""
     try:
@@ -235,7 +218,14 @@ def setup_linux_protocol_handler() -> None:
         applications_dir.mkdir(parents=True, exist_ok=True)
 
         # The desktop launcher passes %u as a literal argv, so no shell mangles the URL.
-        desktop_content = _linux_desktop_entry(hcli_cmd)
+        # ``-- %u`` keeps the URL from being parsed as an option.
+        desktop_content = f"""[Desktop Entry]
+Name=HCLI IDB Link Handler
+Exec={_PY_ENV_STRIP} {hcli_cmd} ida open -- %u
+Type=Application
+NoDisplay=true
+MimeType=x-scheme-handler/{PROTOCOL};
+"""
 
         desktop_path = applications_dir / "hcli-idb-handler.desktop"
         desktop_path.write_text(desktop_content)

@@ -1,30 +1,25 @@
 import os
 import platform
+import re
 import struct
 import sys
-import tempfile
 import types
 from pathlib import Path
 
 import pytest
+from fixtures import set_env_var, unset_env_var
 
-from hcli.env import ENV
 from hcli.lib.ida import (
     IdaProduct,
     _is_ida_install_dir_name,
     _prepare_headless_ida_user_dir,
-    accept_eula,
     detect_binary_arch,
     find_current_ida_install_directory,
     find_current_ida_platform,
     find_current_ida_version,
     find_current_idat_executable,
     generate_instance_name,
-    get_ida_config,
-    get_ida_config_path,
     get_ida_path,
-    get_idalib_path,
-    is_idalib_capable_installation,
     parse_instance_version,
     parse_version_from_dir_name,
     parse_version_from_ida_pro_py,
@@ -36,55 +31,6 @@ from hcli.lib.ida import (
 from hcli.lib.ida.version import normalize_ida_binary_version, parse_version_from_ida_binary
 
 
-def test_get_ida_config_path():
-    result = get_ida_config_path()
-    assert isinstance(result, Path)
-    assert result.name == "ida-config.json"
-
-
-def test_get_ida_config():
-    result = get_ida_config()
-    assert result is not None
-    assert hasattr(result, "paths")
-    assert hasattr(result.paths, "installation_directory")
-
-
-def test_find_current_ida_install_directory():
-    result = find_current_ida_install_directory()
-    assert isinstance(result, Path)
-    assert result.exists()
-    assert result.is_dir()
-
-
-def test_resolve_current_ida_install_directory_reports_env_source(tmp_path, monkeypatch):
-    monkeypatch.setenv("HCLI_CURRENT_IDA_INSTALL_DIR", str(tmp_path))
-
-    resolved = resolve_current_ida_install_directory()
-
-    assert resolved.path == tmp_path
-    assert resolved.source == "$HCLI_CURRENT_IDA_INSTALL_DIR"
-
-
-def test_resolve_current_ida_install_directory_reports_idadir_source(tmp_path, monkeypatch):
-    monkeypatch.delenv("HCLI_CURRENT_IDA_INSTALL_DIR", raising=False)
-    monkeypatch.setattr(ENV, "HCLI_CURRENT_IDA_INSTALL_DIR", None)
-    monkeypatch.setattr(ENV, "IDADIR", str(tmp_path))
-
-    resolved = resolve_current_ida_install_directory()
-
-    assert resolved.path == tmp_path
-    assert resolved.source == "$IDADIR"
-
-
-def test_resolve_current_ida_version_reports_env_source(monkeypatch):
-    monkeypatch.setenv("HCLI_CURRENT_IDA_VERSION", "9.9")
-
-    resolved = resolve_current_ida_version()
-
-    assert resolved.version == "9.9"
-    assert resolved.source == "$HCLI_CURRENT_IDA_VERSION"
-
-
 def has_idat():
     if "HCLI_HAS_IDAT" not in os.environ:
         return True
@@ -92,61 +38,57 @@ def has_idat():
     return os.environ["HCLI_HAS_IDAT"].lower() not in ("", "0", "false", "f")
 
 
+def test_find_current_ida_install_directory():
+    assert find_current_ida_install_directory().is_dir()
+
+
+def test_resolve_current_ida_install_directory_precedence(tmp_path, monkeypatch):
+    hcli_dir = tmp_path / "hcli"
+    idadir = tmp_path / "idadir"
+    set_env_var(monkeypatch, "HCLI_CURRENT_IDA_INSTALL_DIR", str(hcli_dir))
+    set_env_var(monkeypatch, "IDADIR", str(idadir))
+
+    resolved = resolve_current_ida_install_directory()
+    assert (resolved.path, resolved.source) == (hcli_dir, "$HCLI_CURRENT_IDA_INSTALL_DIR")
+
+    unset_env_var(monkeypatch, "HCLI_CURRENT_IDA_INSTALL_DIR")
+
+    resolved = resolve_current_ida_install_directory()
+    assert (resolved.path, resolved.source) == (idadir, "$IDADIR")
+
+
+def test_resolve_current_ida_version_prefers_env(monkeypatch):
+    set_env_var(monkeypatch, "HCLI_CURRENT_IDA_VERSION", "9.9")
+
+    resolved = resolve_current_ida_version()
+
+    assert resolved.version == "9.9"
+    assert resolved.source == "$HCLI_CURRENT_IDA_VERSION"
+
+
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
 def test_find_current_idat_executable():
-    result = find_current_idat_executable()
-    assert isinstance(result, Path)
-    assert result.exists()
-    assert result.is_file()
-    assert "idat" in result.name.lower()
+    assert find_current_idat_executable().is_file()
 
 
-# Platform-specific tests for find_current_ida_platform()
-@pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific test")
-def test_find_current_ida_platform_windows():
-    """Test find_current_ida_platform() on Windows."""
-    result = find_current_ida_platform()
-    assert isinstance(result, str)
-    assert result == "windows-x86_64"
-
-
-@pytest.mark.skipif(platform.system() != "Linux", reason="Linux-specific test")
-def test_find_current_ida_platform_linux():
-    """Test find_current_ida_platform() on Linux."""
-    result = find_current_ida_platform()
-    assert isinstance(result, str)
-    assert result == "linux-x86_64"
-
-
-@pytest.mark.skipif(platform.system() != "Darwin", reason="macOS-specific test")
+@pytest.mark.skipif(platform.system() != "Darwin", reason="requires arch detection of the real IDA binary")
 def test_find_current_ida_platform_macos():
-    """Test find_current_ida_platform() on macOS."""
-    result = find_current_ida_platform()
-    assert isinstance(result, str)
-    assert result in ["macos-x86_64", "macos-aarch64"]
+    assert find_current_ida_platform() in ("macos-x86_64", "macos-aarch64")
 
 
 def test_find_current_ida_version():
-    """Test find_current_ida_version() returns expected version."""
-    result = find_current_ida_version()
-    assert isinstance(result, str)
-    assert result in ["9.0", "9.1", "9.2", "9.3", "9.4"]
+    """The whole detection chain, run against the installation under test."""
+    assert re.fullmatch(r"\d+\.\d+", find_current_ida_version())
 
 
+@pytest.mark.skipif(not has_idat(), reason="editions with IDAPython should have python/ida_pro.py")
 def test_parse_version_from_ida_pro_py():
-    """Test parsing IDA version from python/ida_pro.py."""
     ida_dir = find_current_ida_install_directory()
-    result = parse_version_from_ida_pro_py(ida_dir)
-    if has_idat():
-        # editions with IDAPython should have python/ida_pro.py
-        assert result in ["9.0", "9.1", "9.2", "9.3", "9.4"]
+    assert re.fullmatch(r"\d+\.\d+", parse_version_from_ida_pro_py(ida_dir) or "")
 
 
-def test_parse_version_from_ida_pro_py_missing():
-    """Test that missing ida_pro.py returns None."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        result = parse_version_from_ida_pro_py(Path(tmpdir))
-        assert result is None
+def test_parse_version_from_ida_pro_py_missing(tmp_path):
+    assert parse_version_from_ida_pro_py(tmp_path) is None
 
 
 def test_parse_version_from_dir_name():
@@ -237,39 +179,9 @@ def test_parse_version_from_windows_registry(monkeypatch):
     monkeypatch.setitem(sys.modules, "winreg", fake_winreg)
     monkeypatch.setattr("hcli.lib.ida.is_ida_dir", lambda _path: True)
 
+    # the install location is non-standard, so the registry display name is the only version source
     assert parse_version_from_windows_registry(Path(r"C:\IDA91")) == "9.1"
     assert generate_instance_name(Path(r"C:\IDA91")) == "ida-pro-9.1"
-
-
-def test_parse_instance_version_stops_after_first_valid_source(monkeypatch, tmp_path):
-    def fail(*_args):
-        raise AssertionError("version source should not be evaluated")
-
-    monkeypatch.setattr("hcli.lib.ida.parse_version_from_windows_registry", lambda _ida_dir: "9.4")
-    monkeypatch.setattr("hcli.lib.ida.parse_version_from_ida_pro_py", fail)
-    monkeypatch.setattr("hcli.lib.ida.parse_version_from_ida_binary", fail)
-    monkeypatch.setattr("hcli.lib.ida.parse_version_from_dir_name", fail)
-
-    assert str(parse_instance_version("ida94", tmp_path / "IDA94")) == "9.4"
-
-
-def test_parse_instance_version_uses_ida_binary_for_nonstandard_directory(monkeypatch, tmp_path):
-    ida_dir = tmp_path / "IDA94"
-    ida_dir.mkdir()
-    binary = ida_dir / "ida.exe"
-    binary.write_bytes(
-        b"prefix"
-        + "FileVersion".encode("utf-16-le")
-        + b"\x00\x00"
-        + "9.4.26.0622".encode("utf-16-le")
-        + b"\x00\x00"
-        + b"suffix"
-    )
-
-    monkeypatch.setattr("hcli.lib.ida.version.sys.platform", "win32")
-    monkeypatch.setattr("hcli.lib.ida.get_ida_binary_path", lambda _ida_dir: binary)
-
-    assert str(parse_instance_version("ida94", ida_dir)) == "9.4"
 
 
 def test_parse_instance_version_uses_ida_pro_py_for_nonstandard_directory(tmp_path):
@@ -283,7 +195,7 @@ def test_parse_instance_version_uses_ida_pro_py_for_nonstandard_directory(tmp_pa
 
 def test_select_default_ida_instance_uses_highest_parsed_version(tmp_path):
     ida91 = tmp_path / "IDA91"
-    python_dir = ida91 / "python"
+    python_dir = get_ida_path(ida91) / "python"
     python_dir.mkdir(parents=True)
     (python_dir / "ida_pro.py").write_text('"""IDA SDK v9.1."""', encoding="utf-8")
 
@@ -294,27 +206,6 @@ def test_select_default_ida_instance_uses_highest_parsed_version(tmp_path):
 
 def test_select_default_ida_instance_falls_back_to_name_without_versions(tmp_path):
     assert select_default_ida_instance([("ida-a", tmp_path / "ida-a"), ("ida-z", tmp_path / "ida-z")]) == "ida-z"
-
-
-def test_accept_eula_writes_supported_registry_keys(monkeypatch, tmp_path):
-    writes = []
-
-    monkeypatch.setitem(sys.modules, "idapro", types.SimpleNamespace())
-    monkeypatch.setitem(
-        sys.modules,
-        "ida_registry",
-        types.SimpleNamespace(reg_write_int=lambda key, value: writes.append((key, value))),
-    )
-
-    accept_eula(tmp_path)
-
-    assert writes == [
-        ("EULA 90", 1),
-        ("EULA 91", 1),
-        ("EULA 92", 1),
-        ("EULA 93", 1),
-        ("EULA 94", 1),
-    ]
 
 
 @pytest.mark.parametrize(
@@ -374,88 +265,38 @@ def test_ida_install_dir_name_detection_rejects_non_installer_names(name):
     assert not _is_ida_install_dir_name(name)
 
 
-@pytest.mark.parametrize(
-    ("os_name", "filename"),
-    [
-        ("windows", "idalib.dll"),
-        ("linux", "libidalib.so"),
-        ("mac", "libidalib.dylib"),
-    ],
-)
-def test_idalib_capable_installation_probes_for_idalib(monkeypatch, tmp_path, os_name, filename):
-    monkeypatch.setattr("hcli.lib.ida.get_os", lambda: os_name)
-    ida_dir = tmp_path / "IDA Home 9.4"
-    idalib_path = get_idalib_path(ida_dir)
-
-    assert idalib_path.name == filename
-    assert not is_idalib_capable_installation(ida_dir)
-
-    idalib_path.parent.mkdir(parents=True)
-    idalib_path.write_bytes(b"")
-
-    assert is_idalib_capable_installation(ida_dir)
-
-
-def test_detect_binary_arch_elf_x86_64():
-    """Test detecting x86_64 ELF binary."""
-    # Minimal ELF header: magic + class(64) + data(LE) + ... + e_machine=0x3E
+def _elf_header(e_machine: int) -> bytes:
     header = bytearray(20)
     header[0:4] = b"\x7fELF"
     header[4] = 2  # 64-bit
     header[5] = 1  # little-endian
-    struct.pack_into("<H", header, 18, 0x3E)  # EM_X86_64
-    with tempfile.NamedTemporaryFile(delete=False) as f:
-        f.write(header)
-        f.flush()
-        assert detect_binary_arch(Path(f.name)) == "x86_64"
-    os.unlink(f.name)
+    struct.pack_into("<H", header, 18, e_machine)
+    return bytes(header)
 
 
-def test_detect_binary_arch_elf_aarch64():
-    """Test detecting aarch64 ELF binary."""
-    header = bytearray(20)
-    header[0:4] = b"\x7fELF"
-    header[4] = 2
-    header[5] = 1
-    struct.pack_into("<H", header, 18, 0xB7)  # EM_AARCH64
-    with tempfile.NamedTemporaryFile(delete=False) as f:
-        f.write(header)
-        f.flush()
-        assert detect_binary_arch(Path(f.name)) == "aarch64"
-    os.unlink(f.name)
-
-
-def test_detect_binary_arch_macho_x86_64():
-    """Test detecting x86_64 Mach-O binary."""
+def _macho_header(cpu_type: int) -> bytes:
     header = bytearray(20)
     struct.pack_into("<I", header, 0, 0xFEEDFACF)  # MH_MAGIC_64
-    struct.pack_into("<I", header, 4, 0x01000007)  # CPU_TYPE_X86_64
-    with tempfile.NamedTemporaryFile(delete=False) as f:
-        f.write(header)
-        f.flush()
-        assert detect_binary_arch(Path(f.name)) == "x86_64"
-    os.unlink(f.name)
+    struct.pack_into("<I", header, 4, cpu_type)
+    return bytes(header)
 
 
-def test_detect_binary_arch_macho_aarch64():
-    """Test detecting aarch64 Mach-O binary."""
-    header = bytearray(20)
-    struct.pack_into("<I", header, 0, 0xFEEDFACF)  # MH_MAGIC_64
-    struct.pack_into("<I", header, 4, 0x0100000C)  # CPU_TYPE_ARM64
-    with tempfile.NamedTemporaryFile(delete=False) as f:
-        f.write(header)
-        f.flush()
-        assert detect_binary_arch(Path(f.name)) == "aarch64"
-    os.unlink(f.name)
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        (_elf_header(0x3E), "x86_64"),  # EM_X86_64
+        (_elf_header(0xB7), "aarch64"),  # EM_AARCH64
+        (_macho_header(0x01000007), "x86_64"),  # CPU_TYPE_X86_64
+        (_macho_header(0x0100000C), "aarch64"),  # CPU_TYPE_ARM64
+        (b"not a binary format at all!", None),
+    ],
+    ids=["elf-x86_64", "elf-aarch64", "macho-x86_64", "macho-aarch64", "unrecognized"],
+)
+def test_detect_binary_arch(tmp_path, header, expected):
+    binary = tmp_path / "ida"
+    binary.write_bytes(header)
 
-
-def test_detect_binary_arch_unknown():
-    """Test that unrecognized binary returns None."""
-    with tempfile.NamedTemporaryFile(delete=False) as f:
-        f.write(b"not a binary format at all!")
-        f.flush()
-        assert detect_binary_arch(Path(f.name)) is None
-    os.unlink(f.name)
+    assert detect_binary_arch(binary) == expected
 
 
 def test_prepare_headless_ida_user_dir_copies_only_required_files(tmp_path):

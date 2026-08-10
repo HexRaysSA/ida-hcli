@@ -65,7 +65,7 @@ class Plugin(BaseModel):
 
 
 def is_compatible_plugin_version_location(
-    plugin: Plugin, version: str, location: PluginArchiveLocation, current_platform: str, current_version: str
+    location: PluginArchiveLocation, current_platform: str, current_version: str
 ) -> bool:
     if not is_ida_version_compatible(current_version, location.metadata.plugin.ida_versions):
         return False
@@ -74,18 +74,17 @@ def is_compatible_plugin_version_location(
 
 
 def is_compatible_plugin_version(
-    plugin: Plugin, version: str, locations: list[PluginArchiveLocation], current_platform: str, current_version: str
+    locations: list[PluginArchiveLocation], current_platform: str, current_version: str
 ) -> bool:
     return any(
-        is_compatible_plugin_version_location(plugin, version, location, current_platform, current_version)
-        for location in locations
+        is_compatible_plugin_version_location(location, current_platform, current_version) for location in locations
     )
 
 
 def is_compatible_plugin(plugin: Plugin, current_platform: str, current_version: str) -> bool:
     return any(
-        is_compatible_plugin_version(plugin, version, locations, current_platform, current_version)
-        for version, locations in plugin.versions.items()
+        is_compatible_plugin_version(locations, current_platform, current_version)
+        for locations in plugin.versions.values()
     )
 
 
@@ -99,7 +98,7 @@ def get_latest_compatible_plugin_metadata(
     plugin: Plugin, current_platform: str, current_version: str
 ) -> IDAMetadataDescriptor:
     for version, locations in sorted(plugin.versions.items(), key=lambda p: parse_plugin_version(p[0]), reverse=True):
-        if is_compatible_plugin_version(plugin, version, locations, current_platform, current_version):
+        if is_compatible_plugin_version(locations, current_platform, current_version):
             return plugin.versions[version][0].metadata
 
     raise ValueError("no versions of plugin are compatible")

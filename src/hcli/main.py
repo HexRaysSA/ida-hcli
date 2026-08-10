@@ -12,7 +12,6 @@ os.environ["PYTHONUTF8"] = "1"
 import rich_click as click
 from rich.logging import RichHandler
 
-import hcli.lib.console
 from hcli.commands import register_commands
 from hcli.env import ENV
 from hcli.lib.console import console, stderr_console
@@ -209,9 +208,6 @@ def handle_command_completion(_ctx, _result, **_kwargs):
 @click.pass_context
 def cli(_ctx, quiet, auth, auth_credentials, disable_updates: bool):
     """Main CLI entry point with background update checking."""
-
-    # fix #190: stale stdout/err handles due to click pytest integration
-    hcli.lib.console._sync_console_streams()
 
     if is_binary() and not (disable_updates or ENV.HCLI_DISABLE_UPDATES):
         global update_checker
