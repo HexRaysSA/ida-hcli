@@ -49,7 +49,7 @@ def temp_env_var(key: str, value: str):
         with temp_env_var("HCLI_FOO", "1"):
             assert "HCLI_FOO" in os.environ
     """
-    _orig = os.environ.get(key, "")
+    _orig = os.environ.get(key)
     os.environ[key] = value
 
     has_env_attr = hasattr(ENV, key)
@@ -60,7 +60,7 @@ def temp_env_var(key: str, value: str):
     try:
         yield
     finally:
-        if _orig:
+        if _orig is not None:
             os.environ[key] = _orig
         else:
             del os.environ[key]

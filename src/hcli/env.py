@@ -11,6 +11,16 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in ("true", "yes", "on", "1")
 
 
+def _env_optional(name: str) -> str | None:
+    """An optional environment variable, treating set-but-empty as unset.
+
+    `export HCLI_IDAUSR=` leaves the variable set to "", which must not
+    survive as an override: readers do `Path(ENV.HCLI_IDAUSR)`, and
+    `Path("")` is the current directory.
+    """
+    return os.getenv(name) or None
+
+
 def _env_int(name: str, default: int) -> int:
     """Parse an integer environment variable, falling back to *default* on a bad value.
 
@@ -29,7 +39,7 @@ def _env_int(name: str, default: int) -> int:
 class ENV:
     """Environment configuration mirroring the Deno version."""
 
-    HCLI_API_KEY: str | None = os.getenv("HCLI_API_KEY")
+    HCLI_API_KEY: str | None = _env_optional("HCLI_API_KEY")
     HCLI_DEBUG: bool = _env_bool("HCLI_DEBUG")
     HCLI_API_URL: str = os.getenv("HCLI_API_URL", "https://api.eu.hex-rays.com")
     HCLI_CLOUD_URL: str = os.getenv("HCLI_CLOUD_URL", "https://api.hcli.run")
@@ -37,7 +47,7 @@ class ENV:
     HCLI_RELEASE_URL: str = os.getenv("HCLI_RELEASE_URL", "https://hcli.docs.hex-rays.com")
 
     # GitHub integration
-    HCLI_GITHUB_TOKEN: str | None = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    HCLI_GITHUB_TOKEN: str | None = _env_optional("GITHUB_TOKEN") or _env_optional("GH_TOKEN")
     HCLI_GITHUB_API_URL: str = os.getenv("GITHUB_API_URL", "https://api.github.com")
     HCLI_GITHUB_URL: str = os.getenv("HCLI_GITHUB_URL", "https://github.com/HexRaysSA/ida-hcli")
 
@@ -57,19 +67,19 @@ class ENV:
 
     HCLI_DISABLE_UPDATES: bool = _env_bool("HCLI_DISABLE_UPDATES")
 
-    IDAUSR: str | None = os.getenv("IDAUSR")
-    IDADIR: str | None = os.getenv("IDADIR")
+    IDAUSR: str | None = _env_optional("IDAUSR")
+    IDADIR: str | None = _env_optional("IDADIR")
 
     # IDA-specific environment variables
-    HCLI_IDAUSR: str | None = os.getenv("HCLI_IDAUSR")
-    HCLI_CURRENT_IDA_INSTALL_DIR: str | None = os.getenv("HCLI_CURRENT_IDA_INSTALL_DIR")
-    HCLI_CURRENT_IDA_PLATFORM: str | None = os.getenv("HCLI_CURRENT_IDA_PLATFORM")
-    HCLI_CURRENT_IDA_VERSION: str | None = os.getenv("HCLI_CURRENT_IDA_VERSION")
-    HCLI_CURRENT_IDA_PYTHON_EXE: str | None = os.getenv("HCLI_CURRENT_IDA_PYTHON_EXE")
-    IDAPYTHON_VENV_EXECUTABLE: str | None = os.getenv("IDAPYTHON_VENV_EXECUTABLE")
+    HCLI_IDAUSR: str | None = _env_optional("HCLI_IDAUSR")
+    HCLI_CURRENT_IDA_INSTALL_DIR: str | None = _env_optional("HCLI_CURRENT_IDA_INSTALL_DIR")
+    HCLI_CURRENT_IDA_PLATFORM: str | None = _env_optional("HCLI_CURRENT_IDA_PLATFORM")
+    HCLI_CURRENT_IDA_VERSION: str | None = _env_optional("HCLI_CURRENT_IDA_VERSION")
+    HCLI_CURRENT_IDA_PYTHON_EXE: str | None = _env_optional("HCLI_CURRENT_IDA_PYTHON_EXE")
+    IDAPYTHON_VENV_EXECUTABLE: str | None = _env_optional("IDAPYTHON_VENV_EXECUTABLE")
 
     # KE download settings
-    HCLI_KE_DOWNLOADS_DIR: str | None = os.getenv("HCLI_KE_DOWNLOADS_DIR")
+    HCLI_KE_DOWNLOADS_DIR: str | None = _env_optional("HCLI_KE_DOWNLOADS_DIR")
     HCLI_KE_DOWNLOADS_RETENTION_DAYS: int = _env_int("HCLI_KE_DOWNLOADS_RETENTION_DAYS", 3)
     # Allow KE deep links to download from private/loopback/link-local hosts. Off by
     # default so a clicked ida:// link cannot make hcli reach internal services; set

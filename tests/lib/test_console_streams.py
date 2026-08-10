@@ -38,6 +38,10 @@ def test_output_survives_stdout_replacement():
         sys.stdout = original
 
     assert result.exit_code == 0
-    # click 8.1 mixes stderr into output
     assert "stdout marker" in result.output
-    assert "stderr marker" in result.output
+    # click 8.1 mixes stderr into output and raises on .stderr; 8.2 separates them
+    try:
+        stderr = result.stderr
+    except ValueError:
+        stderr = ""
+    assert "stderr marker" in result.output + stderr
