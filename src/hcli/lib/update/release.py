@@ -8,7 +8,6 @@ import shutil
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
-from typing import ClassVar
 from urllib.parse import urlparse
 
 import httpx
@@ -22,10 +21,9 @@ from hcli.lib.util.io import NoSpaceError, check_free_space
 class GitHubRepo:
     user: str
     repo: str
-    token: str = ""
 
     @classmethod
-    def from_url(cls, url: str, token: str = "") -> "GitHubRepo":
+    def from_url(cls, url: str) -> "GitHubRepo":
         """
         Create a GitHubRepo from a URL like:
         - https://github.com/user/repo
@@ -48,7 +46,7 @@ class GitHubRepo:
         except ValueError:
             raise ValueError(f"Invalid GitHub URL: {url}")
 
-        return cls(user=user, repo=repo, token=token)
+        return cls(user=user, repo=repo)
 
 
 @dataclasses.dataclass
@@ -67,16 +65,6 @@ class ReleaseAsset:
             or self.size is None
             or self.size <= 0
         )
-
-
-class AuthSession:
-    header: ClassVar[dict[str, str]] = {}
-
-    @classmethod
-    def init(cls, repo: GitHubRepo):
-        if cls.header or not repo.token:
-            return
-        cls.header = {"Authorization": f"Bearer {repo.token}"}
 
 
 def get_compatible_version(repo: GitHubRepo, compatibility_spec: SimpleSpec, include_dev: bool = False):
@@ -121,8 +109,7 @@ def download_asset(
     asset_url = f"{ENV.HCLI_GITHUB_API_URL}/repos/{repo.user}/{repo.repo}/releases/assets/{asset.asset_id}"
 
     # Set proper headers for asset download
-    headers = AuthSession.header.copy()
-    headers["Accept"] = "application/octet-stream"
+    headers = {"Accept": "application/octet-stream"}
 
     check_free_space(out_dir, asset.size)
 
@@ -159,9 +146,7 @@ def get_available_versions(repo: GitHubRepo, process_tag: Callable[[str], Versio
     request_url = f"{ENV.HCLI_GITHUB_API_URL}/repos/{repo.user}/{repo.repo}/releases"
     page_size = 100
     for i in itertools.count(1):
-        data = json.loads(
-            httpx.get(request_url, params={"page": i, "per_page": page_size}, headers=AuthSession.header).text
-        )
+        data = json.loads(httpx.get(request_url, params={"page": i, "per_page": page_size}).text)
         if "message" in data or not isinstance(data, list):
             break
         for release in data:
@@ -189,7 +174,7 @@ def parse_tag(tag_name: str) -> Version | None:
 def get_assets(repo: GitHubRepo, tag_name: str, assets_mask=re.compile(".*")):
     logging.info(f"Searching for assets by tag '{tag_name}' and mask: '{assets_mask.pattern}'")
     request_url = f"{ENV.HCLI_GITHUB_API_URL}/repos/{repo.user}/{repo.repo}/releases/tags/{tag_name}"
-    data = json.loads(httpx.get(request_url, headers=AuthSession.header).text)
+    data = json.loads(httpx.get(request_url).text)
     if "message" in data:
         return []
     assets = data.get("assets")

@@ -4,8 +4,10 @@ from pathlib import Path
 
 
 def get_default_cache_directory() -> Path:
-    if "HCLI_CACHE_DIR" in os.environ:
-        return Path(os.environ["HCLI_CACHE_DIR"])
+    # set-but-empty must not become Path(""), the current directory
+    cache_dir = os.environ.get("HCLI_CACHE_DIR")
+    if cache_dir:
+        return Path(cache_dir)
 
     # otherwise use XDG_CACHE_HOME
     # ref: https://github.com/mandiant/capa/issues/1212#issuecomment-1361259813
