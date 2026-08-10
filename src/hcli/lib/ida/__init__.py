@@ -865,8 +865,18 @@ class FailedToDetectIDAVersion(RuntimeError):
             super().__init__("failed to determine current IDA version")
 
 
-def find_hcli_default_ida_install_directory() -> Path | None:
-    """Return hcli's selected default IDA installation, if configured and valid."""
+@dataclass(frozen=True)
+class ResolvedInstallDir:
+    """An IDA installation directory together with what selected it."""
+
+    path: Path
+    # human-readable description of what selected this directory,
+    # like "$IDADIR" or the path to ida-config.json
+    source: str
+
+
+def find_hcli_default_ida_instance() -> tuple[str, Path] | None:
+    """Return hcli's selected default IDA instance (name, path), if configured and valid."""
     from hcli.lib.config import config_store
 
     default_instance = config_store.get_string("ida.default", "")
@@ -881,25 +891,36 @@ def find_hcli_default_ida_install_directory() -> Path | None:
     if not is_ida_dir(install_dir):
         logger.warning("configured hcli default IDA installation is invalid: %s", install_dir)
         return None
-    return install_dir
+    return default_instance, install_dir
 
 
-def find_current_ida_install_directory() -> Path:
+def resolve_current_ida_install_directory() -> ResolvedInstallDir:
+    """Find the current IDA installation directory and what selected it.
+
+    Precedence: $HCLI_CURRENT_IDA_INSTALL_DIR, then $IDADIR, then hcli's
+    default instance (`hcli ida set-default`), then $IDAUSR/ida-config.json.
+
+    Raises:
+        MissingCurrentInstallationDirectory: when nothing configures a directory.
+    """
     # duplicate here, because we prefer access through ENV
     # but tests might update env vars for the current process.
     env = os.environ.get("HCLI_CURRENT_IDA_INSTALL_DIR")
     if env:
-        return _normalize_install_dir(Path(env))
+        return ResolvedInstallDir(_normalize_install_dir(Path(env)), "$HCLI_CURRENT_IDA_INSTALL_DIR")
     if ENV.HCLI_CURRENT_IDA_INSTALL_DIR is not None:
-        return _normalize_install_dir(Path(ENV.HCLI_CURRENT_IDA_INSTALL_DIR))
+        return ResolvedInstallDir(
+            _normalize_install_dir(Path(ENV.HCLI_CURRENT_IDA_INSTALL_DIR)), "$HCLI_CURRENT_IDA_INSTALL_DIR"
+        )
 
     if ENV.IDADIR is not None:
-        return _normalize_install_dir(Path(ENV.IDADIR))
+        return ResolvedInstallDir(_normalize_install_dir(Path(ENV.IDADIR)), "$IDADIR")
 
-    hcli_default = find_hcli_default_ida_install_directory()
+    hcli_default = find_hcli_default_ida_instance()
     if hcli_default is not None:
-        logger.debug("current IDA installation from hcli default: %s", hcli_default)
-        return hcli_default
+        name, install_dir = hcli_default
+        logger.debug("current IDA installation from hcli default: %s", install_dir)
+        return ResolvedInstallDir(install_dir, f"hcli default instance '{name}'")
 
     config = get_ida_config()
     if not config.paths.installation_directory:
@@ -911,7 +932,14 @@ def find_current_ida_install_directory() -> Path:
         raise MissingCurrentInstallationDirectory("ida-config.json invalid: ida-install-dir doesn't exist")
 
     logger.debug("current IDA installation from ida-config.json: %s", install_dir)
-    return install_dir
+    return ResolvedInstallDir(install_dir, str(get_ida_config_path()))
+
+
+def find_current_ida_install_directory() -> Path:
+    """Raises:
+    MissingCurrentInstallationDirectory: when nothing configures a directory.
+    """
+    return resolve_current_ida_install_directory().path
 
 
 def explain_missing_current_installation_directory(console: rich.console.Console):
@@ -1326,37 +1354,64 @@ def select_default_ida_instance(instances: Iterable[tuple[str, Path]]) -> str | 
     return max(candidates, key=sort_key)[0]
 
 
-def find_current_ida_version() -> str:
-    """find the version of the current IDA installation, like '9.1'"""
+@dataclass(frozen=True)
+class ResolvedIdaVersion:
+    """An IDA version (like '9.1') together with where it was read from."""
+
+    version: str
+    source: str
+
+
+def resolve_current_ida_version() -> ResolvedIdaVersion:
+    """Find the version of the current IDA installation and where it was read from.
+
+    Precedence: $HCLI_CURRENT_IDA_VERSION, then the Windows uninstall
+    registry, then the python/ida_pro.py SDK docstring, then version metadata
+    in the IDA binary, then the installation directory name.
+
+    Raises:
+        FailedToDetectIDAVersion: when no source yields a version.
+        MissingCurrentInstallationDirectory: when no installation is configured.
+    """
     # duplicate here, because we prefer access through ENV
     # but tests might update env vars for the current process.
     env = os.environ.get("HCLI_CURRENT_IDA_VERSION")
     if env:
-        return env
+        return ResolvedIdaVersion(env, "$HCLI_CURRENT_IDA_VERSION")
     if ENV.HCLI_CURRENT_IDA_VERSION is not None:
-        return ENV.HCLI_CURRENT_IDA_VERSION
+        return ResolvedIdaVersion(ENV.HCLI_CURRENT_IDA_VERSION, "$HCLI_CURRENT_IDA_VERSION")
 
     ida_dir = find_current_ida_install_directory()
 
     version = parse_version_from_windows_registry(ida_dir)
     if version:
-        return version
+        return ResolvedIdaVersion(version, "Windows registry")
 
     version = parse_version_from_ida_pro_py(ida_dir)
     if version:
-        return version
+        return ResolvedIdaVersion(version, "python/ida_pro.py SDK docstring")
 
     version = parse_version_from_ida_binary(get_ida_binary_path(ida_dir))
     if version:
-        return version
+        return ResolvedIdaVersion(version, "IDA binary version metadata")
 
     version = parse_version_from_dir_name(ida_dir)
     if version:
-        return version
+        return ResolvedIdaVersion(version, "installation directory name")
 
     raise FailedToDetectIDAVersion(
         "could not determine IDA version from python/ida_pro.py, the IDA executable, or the installation directory name"
     )
+
+
+def find_current_ida_version() -> str:
+    """find the version of the current IDA installation, like '9.1'
+
+    Raises:
+        FailedToDetectIDAVersion: when no source yields a version.
+        MissingCurrentInstallationDirectory: when no installation is configured.
+    """
+    return resolve_current_ida_version().version
 
 
 def generate_instance_name(path: Path) -> str:

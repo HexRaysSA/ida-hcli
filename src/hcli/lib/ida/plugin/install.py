@@ -484,11 +484,12 @@ def validate_can_install_python_dependencies(
         all_python_dependencies.extend(python_dependencies)
 
         if python_exe is None:
-            python_exe, python_info = resolve_current_python()
+            resolved = resolve_current_python()
+            python_exe = resolved.exe
             # These packages are about to be installed for a Python version that
             # IDA may not actually run, in which case IDA won't be able to import
             # them. Say so before spending time on the install.
-            warn_on_python_version_mismatch(python_info, python_exe)
+            warn_on_python_version_mismatch(resolved.probe, python_exe)
         logger.debug(f"python: {python_exe}")
 
         if not has_pip(python_exe):
@@ -837,8 +838,9 @@ def install_plugin_directory_editable(source_dir: Path, name: str, pip_options: 
                 all_python_dependencies.extend(existing_deps)
             all_python_dependencies.extend(python_dependencies)
 
-        python_exe, python_info = resolve_current_python()
-        warn_on_python_version_mismatch(python_info, python_exe)
+        resolved = resolve_current_python()
+        python_exe = resolved.exe
+        warn_on_python_version_mismatch(resolved.probe, python_exe)
 
         if not has_pip(python_exe):
             raise PipNotAvailableError(python_exe)

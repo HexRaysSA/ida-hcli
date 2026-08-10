@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from hcli.env import ENV
 from hcli.lib.ida import (
     IdaProduct,
     _is_ida_install_dir_name,
@@ -28,6 +29,8 @@ from hcli.lib.ida import (
     parse_version_from_dir_name,
     parse_version_from_ida_pro_py,
     parse_version_from_windows_registry,
+    resolve_current_ida_install_directory,
+    resolve_current_ida_version,
     select_default_ida_instance,
 )
 from hcli.lib.ida.version import normalize_ida_binary_version, parse_version_from_ida_binary
@@ -51,6 +54,35 @@ def test_find_current_ida_install_directory():
     assert isinstance(result, Path)
     assert result.exists()
     assert result.is_dir()
+
+
+def test_resolve_current_ida_install_directory_reports_env_source(tmp_path, monkeypatch):
+    monkeypatch.setenv("HCLI_CURRENT_IDA_INSTALL_DIR", str(tmp_path))
+
+    resolved = resolve_current_ida_install_directory()
+
+    assert resolved.path == tmp_path
+    assert resolved.source == "$HCLI_CURRENT_IDA_INSTALL_DIR"
+
+
+def test_resolve_current_ida_install_directory_reports_idadir_source(tmp_path, monkeypatch):
+    monkeypatch.delenv("HCLI_CURRENT_IDA_INSTALL_DIR", raising=False)
+    monkeypatch.setattr(ENV, "HCLI_CURRENT_IDA_INSTALL_DIR", None)
+    monkeypatch.setattr(ENV, "IDADIR", str(tmp_path))
+
+    resolved = resolve_current_ida_install_directory()
+
+    assert resolved.path == tmp_path
+    assert resolved.source == "$IDADIR"
+
+
+def test_resolve_current_ida_version_reports_env_source(monkeypatch):
+    monkeypatch.setenv("HCLI_CURRENT_IDA_VERSION", "9.9")
+
+    resolved = resolve_current_ida_version()
+
+    assert resolved.version == "9.9"
+    assert resolved.source == "$HCLI_CURRENT_IDA_VERSION"
 
 
 def has_idat():
