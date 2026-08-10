@@ -401,20 +401,17 @@ def _merge_no_build_isolation(pip_options: PipOptions, no_build_isolation: bool)
 def detect_current_python_version() -> str:
     """Detect the major.minor Python version of the active IDA Python.
 
-    Raises if detection fails rather than silently falling back to the
-    hcli interpreter's version, which may differ from IDA's Python.
+    Raises:
+        PythonNotFoundError: if the interpreter can't be found or its version
+            can't be probed. Never silently falls back to the hcli
+            interpreter's version, which may differ from IDA's Python.
     """
     logger.debug("detecting IDA Python executable...")
     python_exe = find_current_python_executable()
     logger.debug("found IDA Python executable: %s", python_exe)
-    result = subprocess.run(
-        [str(python_exe), "-c", PRINT_VERSION_PY],
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=10,
-    )
-    version = result.stdout.strip()
+    version = probe_python_version(python_exe)
+    if version is None:
+        raise PythonNotFoundError(f"failed to probe the version of IDA's Python interpreter: {python_exe}")
     logger.debug("detected Python version: %s", version)
     return version
 

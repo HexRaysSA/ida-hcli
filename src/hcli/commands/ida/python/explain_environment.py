@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import Literal
@@ -25,16 +24,15 @@ from hcli.lib.ida import (
     parse_version_from_ida_pro_py,
 )
 from hcli.lib.ida.python import (
-    PRINT_VERSION_PY,
     PythonNotFoundError,
     PythonVersionMismatch,
     _derive_python_exe,
-    detect_current_python_version,
     find_current_python_executable,
     find_python_version_mismatches,
     format_python_version_mismatch_warning,
     get_virtual_env_version,
     probe_current_python_info,
+    probe_python_version,
 )
 from hcli.lib.venv import find_candidate_virtual_envs, is_uv_cache_virtual_env, resolve_user_virtual_env
 
@@ -116,8 +114,6 @@ class PythonVersionReport(BaseModel):
     probed_version_error: str | None
     hcli_interpreter_version: str
     hcli_interpreter_path: str
-    final_version: str | None
-    final_version_error: str | None
 
 
 class PythonVersionMismatchEntry(BaseModel):
@@ -343,31 +339,15 @@ def collect_python_version() -> PythonVersionReport:
     probed_version: str | None = None
     probed_version_error: str | None = None
 
-    python_exe: Path | None = None
     try:
         python_exe = find_current_python_executable()
+    except Exception as e:
+        final_python_exe_error = f"{type(e).__name__}: {e}"
+    else:
         final_python_exe = str(python_exe)
-
-        result = subprocess.run(
-            [str(python_exe), "-c", PRINT_VERSION_PY],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10,
-        )
-        probed_version = result.stdout.strip()
-    except Exception as e:
-        if python_exe is None:
-            final_python_exe_error = f"{type(e).__name__}: {e}"
-        else:
-            probed_version_error = f"{type(e).__name__}: {e}"
-
-    final_version: str | None = None
-    final_version_error: str | None = None
-    try:
-        final_version = detect_current_python_version()
-    except Exception as e:
-        final_version_error = f"{type(e).__name__}: {e}"
+        probed_version = probe_python_version(python_exe)
+        if probed_version is None:
+            probed_version_error = f"failed to run {python_exe}"
 
     return PythonVersionReport(
         final_python_exe=final_python_exe,
@@ -376,8 +356,6 @@ def collect_python_version() -> PythonVersionReport:
         probed_version_error=probed_version_error,
         hcli_interpreter_version=f"{sys.version_info.major}.{sys.version_info.minor}",
         hcli_interpreter_path=sys.executable,
-        final_version=final_version,
-        final_version_error=final_version_error,
     )
 
 
@@ -482,16 +460,16 @@ def collect_notes(
             )
         )
 
-    if python_version.final_version:
+    if python_version.probed_version:
         try:
-            parts = python_version.final_version.split(".")
+            parts = python_version.probed_version.split(".")
             major, minor = int(parts[0]), int(parts[1])
             if (major, minor) <= (3, 9):
                 notes.append(
                     EnvironmentNote(
                         kind="warning",
                         text=(
-                            f"Python {python_version.final_version} has reached end-of-life. "
+                            f"Python {python_version.probed_version} has reached end-of-life. "
                             "Many IDA plugins may not support it. "
                             "Consider upgrading to a newer Python and using idapyswitch to point IDA at it."
                         ),
@@ -688,17 +666,12 @@ def render_python_version_text(report: PythonVersionReport) -> None:
 
     if report.probed_version:
         exe_name = escape(Path(report.final_python_exe or "").name)
-        _kv("probed version", report.probed_version, f"running {exe_name}")
+        style = "green" if report.probed_version != report.hcli_interpreter_version else "yellow"
+        _kv("probed version", f"[{style}]{report.probed_version}[/{style}]", f"running {exe_name}")
     elif report.final_python_exe_error or report.probed_version_error:
         _err("probed version", report.final_python_exe_error or report.probed_version_error or "")
 
     _kv("HCLI interpreter", report.hcli_interpreter_version, _path(report.hcli_interpreter_path))
-
-    if report.final_version:
-        style = "green" if report.final_version != report.hcli_interpreter_version else "yellow"
-        _kv("final version", f"[{style}]{report.final_version}[/{style}]")
-    elif report.final_version_error:
-        _err("final version", report.final_version_error)
 
 
 def render_python_version_mismatches_text(report: EnvironmentReport) -> None:
