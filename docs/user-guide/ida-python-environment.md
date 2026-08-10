@@ -14,7 +14,7 @@ pip 25.2 from /Users/user/.idapro/venv/lib/python3.13/site-packages/pip (python 
 $ hcli ida python exec -m pip install requests
 ```
 
-With no arguments you get an interactive interpreter, and HCLI exits with whatever status the interpreter returned. HCLI parses its own options first, so pass `--` before arguments it would otherwise claim, as in `hcli ida python exec -- --version`.
+With no arguments you get an interactive interpreter, and HCLI exits with whatever status the interpreter returned. Arguments reach the interpreter untouched, including ones HCLI understands elsewhere, so `hcli ida python exec -m pip --help` describes pip. The exception is a leading `--help`, which describes the HCLI command itself; write `hcli ida python exec -- --help` for the interpreter's.
 
 Packages often install command-line programs, such as `capa` from `flare-capa`. These land in the environment's scripts directory, which usually isn't on your `PATH`:
 
@@ -22,7 +22,7 @@ Packages often install command-line programs, such as `capa` from `flare-capa`. 
 $ hcli ida python find-script capa
 /Users/user/.idapro/venv/bin/capa
 
-$ hcli ida python run-script capa -- --version
+$ hcli ida python run-script capa --version
 capa 9.3.1
 ```
 
