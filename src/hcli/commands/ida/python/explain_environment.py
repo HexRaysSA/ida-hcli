@@ -28,12 +28,17 @@ from hcli.lib.ida.python import (
     find_current_python_executable,
     find_python_version_mismatches,
     format_python_version_mismatch_warning,
-    get_virtual_env_version,
     probe_current_python_info,
-    probe_python_version,
     resolve_current_python,
 )
-from hcli.lib.venv import find_candidate_virtual_envs, is_uv_cache_virtual_env, resolve_user_virtual_env
+from hcli.lib.venv import (
+    find_candidate_virtual_envs,
+    get_virtual_env_version,
+    is_uv_cache_virtual_env,
+    parse_pyvenv_cfg,
+    probe_python_version,
+    resolve_user_virtual_env,
+)
 
 
 class InstallationEntry(BaseModel):
@@ -261,21 +266,12 @@ def collect_idapython_virtualenv(probe: IdatProbe | None) -> IdaPythonVirtualEnv
         return None
 
     venv_path = Path(ida_venv)
-
-    home: str | None = None
-    system_site_packages: str | None = None
-    pyvenv_cfg = venv_path / "pyvenv.cfg"
-    if pyvenv_cfg.is_file():
-        for line in pyvenv_cfg.read_text().splitlines():
-            if line.startswith("home"):
-                home = line.split("=", 1)[1].strip()
-            elif line.startswith("include-system-site-packages"):
-                system_site_packages = line.split("=", 1)[1].strip()
+    cfg = parse_pyvenv_cfg(venv_path / "pyvenv.cfg")
 
     return IdaPythonVirtualEnvReport(
         venv=str(venv_path),
-        home=home,
-        system_site_packages=system_site_packages,
+        home=cfg.get("home"),
+        system_site_packages=cfg.get("include-system-site-packages"),
         python_version=get_virtual_env_version(venv_path),
     )
 

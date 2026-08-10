@@ -16,14 +16,13 @@ from hcli.lib.ida.python import (
     find_current_python_executable,
     find_python_version_mismatches,
     format_python_version_mismatch_warning,
-    get_virtual_env_version,
     has_pip,
     merge_bundle_pip_options,
     probe_current_python_info,
-    probe_python_version,
     resolve_current_python,
     verify_pip_can_install_packages,
 )
+from hcli.lib.venv import get_virtual_env_version, probe_python_version
 
 
 def has_idat():

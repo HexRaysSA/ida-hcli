@@ -4,7 +4,6 @@ import functools
 import json
 import logging
 import os
-import platform
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -16,12 +15,9 @@ from rich.markup import escape
 from hcli.env import ENV
 from hcli.lib.console import stderr_console
 from hcli.lib.ida import run_py_in_current_idapython
-from hcli.lib.venv import find_virtual_env_python, read_virtual_env_version
+from hcli.lib.venv import get_python_exe_candidates, get_virtual_env_version, probe_python_version
 
 logger = logging.getLogger(__name__)
-
-# Prints the running interpreter's version as `major.minor`.
-PRINT_VERSION_PY = "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
 
 
 # Script run inside IDA's embedded Python via idat.
@@ -101,24 +97,6 @@ def _get_venv_root_from_python(path: str | None) -> Path | None:
     return None
 
 
-def _get_prefix_candidates(prefix: str | None, version: str, is_windows: bool) -> list[str]:
-    if not prefix:
-        return []
-
-    if is_windows:
-        return [
-            os.path.join(prefix, "Scripts", "python.exe"),
-            os.path.join(prefix, "python.exe"),
-        ]
-
-    bindir = os.path.join(prefix, "bin")
-    return [
-        os.path.join(bindir, f"python{version}"),
-        os.path.join(bindir, "python3"),
-        os.path.join(bindir, "python"),
-    ]
-
-
 def _derive_python_exe(info: IdatProbe) -> Path:
     """Derive the Python executable path from IDA's embedded Python sys/env info.
 
@@ -128,7 +106,6 @@ def _derive_python_exe(info: IdatProbe) -> Path:
     if info.frozen:
         raise PythonNotFoundError("IDA is running as a frozen application, cannot detect Python executable")
 
-    is_windows = platform.system() == "Windows"
     version = f"{info.version_major}.{info.version_minor}"
     sys_executable = info.executable
     sys_executable_venv = _get_venv_root_from_python(sys_executable)
@@ -140,9 +117,10 @@ def _derive_python_exe(info: IdatProbe) -> Path:
     # deduplicate while preserving order: prefix first, then base_prefix
     prefixes = list(dict.fromkeys([info.prefix, info.base_prefix]))
     prefix_candidates = [
-        os.path.abspath(candidate)
+        os.path.abspath(str(candidate))
         for prefix in prefixes
-        for candidate in _get_prefix_candidates(prefix, version, is_windows)
+        if prefix
+        for candidate in get_python_exe_candidates(Path(prefix), version)
     ]
 
     for candidate in prefix_candidates:
@@ -432,44 +410,6 @@ def detect_current_python_version() -> str:
         raise PythonNotFoundError(f"failed to probe the version of IDA's Python interpreter: {python_exe}")
     logger.debug("detected Python version: %s", version)
     return version
-
-
-def probe_python_version(python_exe: Path, timeout: float = 10.0) -> str | None:
-    """Probe the major.minor version of a Python interpreter by running it.
-
-    Returns None when the interpreter can't be run, so callers can treat this
-    as best-effort.
-    """
-    try:
-        result = subprocess.run(
-            [str(python_exe), "-c", PRINT_VERSION_PY],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=timeout,
-        )
-    except (subprocess.SubprocessError, OSError) as e:
-        logger.debug("failed to probe version of %s: %s", python_exe, e)
-        return None
-
-    version = result.stdout.strip()
-    return version or None
-
-
-def get_virtual_env_version(virtual_env: str | Path) -> str | None:
-    """Detect the major.minor Python version of a virtual environment.
-
-    Runs the venv's own interpreter, which is authoritative, and falls back to
-    the version recorded in pyvenv.cfg when the interpreter is missing or can't
-    be run.  Returns None when neither is available.
-    """
-    python_exe = find_virtual_env_python(virtual_env)
-    if python_exe is not None:
-        version = probe_python_version(python_exe)
-        if version:
-            return version
-
-    return read_virtual_env_version(virtual_env)
 
 
 @dataclass(frozen=True)
