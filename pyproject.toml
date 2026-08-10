@@ -12,7 +12,10 @@ authors = [
 
 dependencies = [
     "click",
-    "rich",
+    # 14.1 made nested live displays a no-op instead of raising
+    # LiveError("Only one live display may be active at once"): hcli layers
+    # command-level spinners over library functions that show their own.
+    "rich>=14.1",
     "rich-click",
     "httpx<1",
     "pydantic>=2.11.0",

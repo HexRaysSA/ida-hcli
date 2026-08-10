@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 
 [[package]]
@@ -408,7 +408,7 @@ requires-dist = [
     { name = "pytest-mock", marker = "extra == 'test'", specifier = ">=3.10.0" },
     { name = "python-semantic-release", marker = "extra == 'dev'", specifier = ">=10.3.1" },
     { name = "questionary" },
-    { name = "rich" },
+    { name = "rich", specifier = ">=14.1" },
     { name = "rich-click" },
     { name = "semantic-version", specifier = ">=2.10.0" },
     { name = "taskipy", marker = "extra == 'dev'", specifier = ">=1.14.1" },
