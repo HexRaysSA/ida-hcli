@@ -12,9 +12,7 @@ authors = [
 
 dependencies = [
     "click",
-    # 14.1 made nested live displays a no-op instead of raising
-    # LiveError("Only one live display may be active at once"): hcli layers
-    # command-level spinners over library functions that show their own.
+    # <14.1 cannot nest live displays, like Status widgets
     "rich>=14.1",
     "rich-click",
     "httpx<1",
