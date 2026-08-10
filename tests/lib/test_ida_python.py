@@ -12,11 +12,11 @@ from hcli.lib.ida.python import (
     PipOptions,
     PythonVersionMismatch,
     _derive_python_exe,
-    does_current_ida_have_pip,
     find_current_python_executable,
     find_python_version_mismatches,
     format_python_version_mismatch_warning,
     get_virtual_env_version,
+    has_pip,
     merge_bundle_pip_options,
     probe_current_python_info,
     probe_python_version,
@@ -43,9 +43,9 @@ def test_find_current_python_executable_returns_path():
 
 
 @pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_does_current_ida_have_pip():
+def test_has_pip():
     python_exe = find_current_python_executable()
-    assert does_current_ida_have_pip(python_exe, timeout=30.0)
+    assert has_pip(python_exe, timeout=30.0)
 
 
 def _prepare_isolated_idausr_for_python_detection(source_idausr: Path, target_idausr: Path) -> None:
