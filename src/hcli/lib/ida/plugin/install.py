@@ -62,6 +62,23 @@ from hcli.lib.util.io import NoSpaceError
 
 logger = logging.getLogger(__name__)
 
+_VCS_PREFIXES = ("git+", "hg+", "svn+", "bzr+")
+
+
+def is_vcs_or_url_dependency(dependency: str) -> bool:
+    """Whether a dependency spec resolves via VCS clone or direct URL download.
+
+    Unlike plain "name>=1.0" requirements, pip can't cheaply confirm these are
+    already satisfied (e.g. a git branch ref has no stable version to check against),
+    so pip re-fetches them - clones, submodules and all - on every invocation.
+    """
+    dependency = dependency.strip()
+    target = dependency
+    if " @ " in dependency:
+        _, _, target = dependency.partition(" @ ")
+        target = target.strip()
+    return target.startswith(_VCS_PREFIXES) or "://" in target
+
 
 def get_plugins_directory() -> Path:
     """$IDAUSR/plugins/<name>"""
@@ -476,7 +493,10 @@ def validate_can_install_python_dependencies(
                 continue
 
             existing_deps = get_python_dependencies_from_plugin_directory(existing_plugin_path, existing_metadata)
-            all_python_dependencies.extend(existing_deps)
+            # Other plugins' VCS/URL deps are excluded: pip can't cheaply verify
+            # they're already satisfied and would re-fetch them (clone, submodules
+            # and all) on every unrelated plugin install.
+            all_python_dependencies.extend(dep for dep in existing_deps if not is_vcs_or_url_dependency(dep))
 
         all_python_dependencies.extend(python_dependencies)
 
@@ -711,7 +731,10 @@ def _install_plugin_archive(
             for existing_plugin_path in get_installed_plugin_paths():
                 existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
                 existing_deps = get_python_dependencies_from_plugin_directory(existing_plugin_path, existing_metadata)
-                all_python_dependencies.extend(existing_deps)
+                # Other plugins' VCS/URL deps are excluded: pip can't cheaply verify
+                # they're already satisfied and would re-fetch them (clone, submodules
+                # and all) on every unrelated plugin install.
+                all_python_dependencies.extend(dep for dep in existing_deps if not is_vcs_or_url_dependency(dep))
 
             logger.debug("installing new python dependencies: %s", python_dependencies)
             all_python_dependencies.extend(python_dependencies)
@@ -826,7 +849,10 @@ def install_plugin_directory_editable(source_dir: Path, name: str, pip_options: 
                 if existing_metadata.plugin.name == metadata.plugin.name:
                     continue
                 existing_deps = get_python_dependencies_from_plugin_directory(existing_plugin_path, existing_metadata)
-                all_python_dependencies.extend(existing_deps)
+                # Other plugins' VCS/URL deps are excluded: pip can't cheaply verify
+                # they're already satisfied and would re-fetch them (clone, submodules
+                # and all) on every unrelated plugin install.
+                all_python_dependencies.extend(dep for dep in existing_deps if not is_vcs_or_url_dependency(dep))
             all_python_dependencies.extend(python_dependencies)
 
         resolved = resolve_current_python()

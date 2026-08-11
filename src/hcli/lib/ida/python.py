@@ -381,21 +381,30 @@ def _raise_for_known_pip_errors(error_text: str, python_exe: Path) -> None:
         )
 
 
+PIP_INSTALL_TIMEOUT = 300.0
+
+
 def verify_pip_can_install_packages(
     python_exe: Path,
     packages: list[str],
     pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    timeout: float = PIP_INSTALL_TIMEOUT,
 ):
     """Check if the given Python packages (e.g., "foo>=v1.0,<3") can be installed.
 
     Raises:
-        CantInstallPackagesError: if pip dry-run fails.
+        CantInstallPackagesError: if pip dry-run fails or times out.
     """
-    process = subprocess.run(
-        [str(python_exe), "-m", "pip", "install", "--dry-run"] + pip_options.build_args() + packages,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        process = subprocess.run(
+            [str(python_exe), "-m", "pip", "install", "--dry-run"] + pip_options.build_args() + packages,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise CantInstallPackagesError(f"pip dry-run install timed out after {timeout:.0f}s") from e
     stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
         logger.debug("can't install packages")
@@ -411,17 +420,23 @@ def pip_install_packages(
     python_exe: Path,
     packages: list[str],
     pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    timeout: float = PIP_INSTALL_TIMEOUT,
 ):
     """Install the given Python packages (e.g., "foo>=v1.0,<3").
 
     Raises:
-        CantInstallPackagesError: if pip install fails.
+        CantInstallPackagesError: if pip install fails or times out.
     """
-    process = subprocess.run(
-        [str(python_exe), "-m", "pip", "install"] + pip_options.build_args() + packages,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        process = subprocess.run(
+            [str(python_exe), "-m", "pip", "install"] + pip_options.build_args() + packages,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise CantInstallPackagesError(f"pip install timed out after {timeout:.0f}s") from e
     stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
         logger.debug("can't install packages")
