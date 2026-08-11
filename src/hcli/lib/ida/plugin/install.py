@@ -49,8 +49,10 @@ from hcli.lib.ida.python import (
     PIP_OPTIONS_DEFAULT,
     CantInstallPackagesError,
     PipOptions,
+    externally_managed_environment_message,
     find_current_python_executable,
     has_pip,
+    is_externally_managed,
     pip_install_packages,
     resolve_current_python,
     verify_pip_can_install_packages,
@@ -485,6 +487,10 @@ def validate_can_install_python_dependencies(
             # IDA may not actually run, in which case IDA won't be able to import
             # them. Say so before spending time on the install.
             warn_on_python_version_mismatch(resolved.probe, python_exe)
+            if is_externally_managed(resolved):
+                raise DependencyInstallationError(
+                    python_dependencies, externally_managed_environment_message(python_exe)
+                )
         logger.debug(f"python: {python_exe}")
 
         if not has_pip(python_exe):
@@ -826,6 +832,8 @@ def install_plugin_directory_editable(source_dir: Path, name: str, pip_options: 
         resolved = resolve_current_python()
         python_exe = resolved.exe
         warn_on_python_version_mismatch(resolved.probe, python_exe)
+        if is_externally_managed(resolved):
+            raise DependencyInstallationError(python_dependencies, externally_managed_environment_message(python_exe))
 
         if not has_pip(python_exe):
             raise PipNotAvailableError(python_exe)

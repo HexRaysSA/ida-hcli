@@ -27,10 +27,21 @@ import sys
 import io
 import json
 import os
+import sysconfig
 
 # ensure UTF-8 output for unicode install paths
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
+# PEP 668: distributors mark a Python installation as externally managed by
+# dropping this file next to the stdlib. pip refuses to install into such an
+# interpreter unless it's a venv, so check for it here rather than shelling
+# out to pip just to learn the same thing.
+try:
+    stdlib = sysconfig.get_path("stdlib")
+    externally_managed = bool(stdlib) and os.path.exists(os.path.join(stdlib, "EXTERNALLY-MANAGED"))
+except Exception:
+    externally_managed = False
 
 print("__hcli__:" + json.dumps({
     "frozen": getattr(sys, "frozen", False),
@@ -41,6 +52,7 @@ print("__hcli__:" + json.dumps({
     "idapython_venv_executable": os.environ.get("IDAPYTHON_VENV_EXECUTABLE"),
     "version_major": sys.version_info.major,
     "version_minor": sys.version_info.minor,
+    "externally_managed": externally_managed,
 }))
 sys.exit()
 """
@@ -61,6 +73,7 @@ class IdatProbe(BaseModel):
     idapython_venv_executable: str | None = None
     version_major: int
     version_minor: int
+    externally_managed: bool = False
 
 
 def _normalize_path(path: str | None) -> str | None:
@@ -217,6 +230,19 @@ class ResolvedPython:
     probe: IdatProbe | None = None
 
 
+def is_externally_managed(resolved: ResolvedPython) -> bool:
+    """Whether installing into `resolved.exe` would be blocked by PEP 668.
+
+    The EXTERNALLY-MANAGED marker is a property of the base installation, but
+    pip (and this check) only honors it for the base interpreter itself: a
+    venv built on top of a managed installation is exempt, since pip skips
+    the check whenever sys.prefix != sys.base_prefix.
+    """
+    if resolved.probe is None or not resolved.probe.externally_managed:
+        return False
+    return _get_venv_root_from_python(str(resolved.exe)) is None
+
+
 def resolve_current_python() -> ResolvedPython:
     """Find IDA's Python executable, along with the probe info used to find it.
 
@@ -336,6 +362,25 @@ def _format_pip_error(stdout: bytes, stderr: bytes) -> str:
     return "\n".join(parts) if parts else stdout_text
 
 
+def externally_managed_environment_message(python_exe: Path) -> str:
+    return (
+        f"{python_exe} is an externally-managed Python (PEP 668), so pip refuses to install into it directly. "
+        "Point IDA at a virtual environment instead of the system/Homebrew Python: "
+        "https://community.hex-rays.com/t/using-a-virtualenv-for-idapython/261/5 "
+        f"(run '{ENV.HCLI_BINARY_NAME} ida python explain-environment' to inspect the current setup)."
+    )
+
+
+def _raise_for_known_pip_errors(error_text: str, python_exe: Path) -> None:
+    if "externally-managed-environment" in error_text:
+        raise CantInstallPackagesError(externally_managed_environment_message(python_exe))
+    if "no such option: --dry-run" in error_text:
+        raise CantInstallPackagesError(
+            f"pip does not support --dry-run (requires pip 22.2 or later). "
+            f"Please upgrade pip: {python_exe} -m pip install --upgrade pip"
+        )
+
+
 def verify_pip_can_install_packages(
     python_exe: Path,
     packages: list[str],
@@ -358,11 +403,7 @@ def verify_pip_can_install_packages(
         logger.debug(stderr.decode("utf-8", errors="replace"))
 
         error_text = _format_pip_error(stdout, stderr)
-        if "no such option: --dry-run" in error_text:
-            raise CantInstallPackagesError(
-                f"pip does not support --dry-run (requires pip 22.2 or later). "
-                f"Please upgrade pip: {python_exe} -m pip install --upgrade pip"
-            )
+        _raise_for_known_pip_errors(error_text, python_exe)
         raise CantInstallPackagesError(error_text)
 
 
@@ -386,7 +427,9 @@ def pip_install_packages(
         logger.debug("can't install packages")
         logger.debug(stdout.decode("utf-8", errors="replace"))
         logger.debug(stderr.decode("utf-8", errors="replace"))
-        raise CantInstallPackagesError(_format_pip_error(stdout, stderr))
+        error_text = _format_pip_error(stdout, stderr)
+        _raise_for_known_pip_errors(error_text, python_exe)
+        raise CantInstallPackagesError(error_text)
 
 
 def detect_current_python_version() -> str:
