@@ -290,8 +290,9 @@ get_binary_name() {
         Linux:x86_64) echo "${APP_NAME}" ;;
         Linux:aarch64) echo "${APP_NAME}" ;;
         Darwin:arm64) echo "${APP_NAME}" ;;
+        Darwin:x86_64) echo "${APP_NAME}" ;;
         *)
-            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Linux:aarch64, Darwin:arm64"
+            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Linux:aarch64, Darwin:arm64, Darwin:x86_64"
             ;;
     esac
 }
@@ -301,8 +302,9 @@ get_platform_name() {
         Linux:x86_64) echo "linux" ;;
         Linux:aarch64) echo "linux" ;;
         Darwin:arm64) echo "mac" ;;
+        Darwin:x86_64) echo "mac" ;;
         *)
-            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Linux:aarch64, Darwin:arm64"
+            err "Unsupported OS or architecture: $1:$2. Supported platforms: Linux:x86_64, Linux:aarch64, Darwin:arm64, Darwin:x86_64"
             ;;
     esac
 }
@@ -600,10 +602,10 @@ install_binary() {
     local _binary_name
     local _download_url
     
-    _binary_name=$(get_binary_name "$_os" "$_arch")
+    _binary_name=$(get_binary_name "$_os" "$_arch") || exit 1
 
     local _platform_name
-    _platform_name=$(get_platform_name "$_os" "$_arch")
+    _platform_name=$(get_platform_name "$_os" "$_arch") || exit 1
     local _filename="$APP_NAME-$_platform_name-$_arch-$_version"
     _download_url="https://github.com/$GITHUB_REPO/releases/download/v$_version/$_filename"
 
@@ -794,10 +796,10 @@ main() {
     # Get version (specific or latest)
     if [ -n "$FORCE_VERSION" ]; then
         text_title "Fetching Specific Release" " version $FORCE_VERSION"
-        _version=$(get_specific_release "$FORCE_VERSION")
+        _version=$(get_specific_release "$FORCE_VERSION") || exit 1
     else
         text_title "Fetching Latest Production Release"
-        _version=$(get_latest_release)
+        _version=$(get_latest_release) || exit 1
     fi
 
     # Check for existing installation before proceeding

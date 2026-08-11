@@ -110,6 +110,11 @@ jobs:
           - { os: ubuntu-24.04-arm, platform: linux,   artifact-name: hcli-linux-aarch64 }
           - { os: windows-latest,   platform: windows, artifact-name: hcli-windows-x86_64 }
           - { os: macos-latest,     platform: macos,   artifact-name: hcli-mac-arm64 }
+          # Built on the same free arm64 runner as hcli-mac-arm64, but under an x86_64
+          # Python via Rosetta 2 emulation, so PyInstaller produces a genuine x86_64
+          # binary. Avoids GitHub's paid "larger runner" tier needed for a native
+          # Intel macOS runner.
+          - { os: macos-latest,     platform: macos,   artifact-name: hcli-mac-x86_64, emulated-arch: x86_64 }
 
     steps:
       - name: Checkout
@@ -118,12 +123,21 @@ jobs:
           ref: ${{ needs.publish.outputs.tag }}
           persist-credentials: false
 
+      - name: Install Rosetta 2
+        if: matrix.emulated-arch == 'x86_64'
+        run: softwareupdate --install-rosetta --agree-to-license
+
       - name: Setup Python with uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
           cache-dependency-glob: "uv.lock"
+
+      - name: Select emulated x86_64 Python
+        if: matrix.emulated-arch == 'x86_64'
+        shell: bash
+        run: echo "UV_PYTHON=cpython-${UV_PYTHON}-macos-x86_64-none" >> "$GITHUB_ENV"
 
       - name: Install Python and dependencies
         run: |
