@@ -21,6 +21,7 @@ from fixtures import (
 from hcli.lib.console import stderr_console
 from hcli.lib.ida.plugin.exceptions import (
     BrokenPluginInstallationError,
+    DependencyInstallationError,
     PluginAlreadyInstalledError,
     PluginInUseError,
     PluginNotInstalledError,
@@ -38,6 +39,7 @@ from hcli.lib.ida.plugin.install import (
     upgrade_plugin_archive,
     validate_archive_entry,
 )
+from hcli.lib.ida.python import IdatProbe, ResolvedPython
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +155,39 @@ def test_plugin_python_dependencies(virtual_ida_environment_with_venv):
 
     freeze = pip_freeze(Path(os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"]))
     assert "packaging==25.0" in freeze
+
+
+def test_plugin_python_dependencies_rejects_externally_managed_python_without_running_pip(
+    virtual_ida_environment, monkeypatch
+):
+    """PEP 668 detection must short-circuit before any pip subprocess runs."""
+    fake_python = Path("/opt/homebrew/bin/python3")
+    probe = IdatProbe(
+        prefix="/opt/homebrew",
+        base_prefix="/opt/homebrew",
+        executable=str(fake_python),
+        version_major=3,
+        version_minor=13,
+        externally_managed=True,
+    )
+    resolved = ResolvedPython(fake_python, "derived from idat probe", probe)
+
+    def _must_not_run_pip(*args, **kwargs):
+        raise AssertionError("pip should never be invoked once PEP 668 is detected")
+
+    monkeypatch.setattr("hcli.lib.ida.plugin.install.resolve_current_python", lambda: resolved)
+    monkeypatch.setattr("hcli.lib.ida.plugin.install.has_pip", _must_not_run_pip)
+    monkeypatch.setattr("hcli.lib.ida.plugin.install.verify_pip_can_install_packages", _must_not_run_pip)
+    monkeypatch.setattr("hcli.lib.ida.plugin.install.pip_install_packages", _must_not_run_pip)
+
+    plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v3.0.0.zip"
+    buf = plugin_path.read_bytes()
+
+    with pytest.raises(DependencyInstallationError) as exc_info:
+        install_plugin_archive(buf, "plugin1")
+
+    assert "PEP 668" in str(exc_info.value)
+    assert not is_plugin_installed("plugin1")
 
 
 def test_plugin_all(virtual_ida_environment_with_venv):

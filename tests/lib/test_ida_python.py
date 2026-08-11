@@ -11,12 +11,15 @@ from hcli.lib.ida.python import (
     CantInstallPackagesError,
     IdatProbe,
     PipOptions,
+    ResolvedPython,
     _derive_python_exe,
     find_current_python_executable,
     find_python_version_mismatches,
     format_python_version_mismatch_warning,
     has_pip,
+    is_externally_managed,
     merge_bundle_pip_options,
+    pip_install_packages,
     probe_current_python_info,
     resolve_current_python,
     verify_pip_can_install_packages,
@@ -77,6 +80,36 @@ def _prepare_isolated_idausr_for_python_detection(source_idausr: Path, target_id
 
     for license_file in source_idausr.glob("*.hexlic"):
         (target_idausr / license_file.name).write_bytes(license_file.read_bytes())
+
+
+def test_is_externally_managed_true_for_managed_base_install():
+    probe = _ida_info((3, 11), externally_managed=True)
+    resolved = ResolvedPython(Path("/opt/python3/bin/python3"), "derived from idat probe", probe)
+
+    assert is_externally_managed(resolved)
+
+
+def test_is_externally_managed_false_when_marker_absent():
+    probe = _ida_info((3, 11), externally_managed=False)
+    resolved = ResolvedPython(Path("/opt/python3/bin/python3"), "derived from idat probe", probe)
+
+    assert not is_externally_managed(resolved)
+
+
+def test_is_externally_managed_false_for_venv_even_when_base_is_managed(tmp_path):
+    """A venv on top of a managed install is exempt, matching pip's own PEP 668 behavior."""
+    venv_dir = tmp_path / "venv"
+    python = _write_fake_venv(venv_dir, "3.11.0")
+    probe = _ida_info((3, 11), externally_managed=True)
+    resolved = ResolvedPython(python, "derived from idat probe", probe)
+
+    assert not is_externally_managed(resolved)
+
+
+def test_is_externally_managed_false_without_probe():
+    resolved = ResolvedPython(Path("/opt/python3/bin/python3"), "$HCLI_CURRENT_IDA_PYTHON_EXE", None)
+
+    assert not is_externally_managed(resolved)
 
 
 def _assert_detected_venv_python(result: Path, venv_dir: Path) -> None:
@@ -314,6 +347,46 @@ def test_verify_pip_can_install_packages():
 
     with pytest.raises(CantInstallPackagesError):
         verify_pip_can_install_packages(python_exe, ["flare-capa==v1.2.0", "flare-capa<=v1.0.0"])
+
+
+def _fake_pip_result(returncode: int, stderr: str) -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=b"", stderr=stderr.encode())
+
+
+EXTERNALLY_MANAGED_STDERR = (
+    "error: externally-managed-environment\n\n"
+    "× This environment is externally managed\n"
+    "╰─> To install Python packages system-wide, try brew install xyz.\n"
+)
+
+
+def test_verify_pip_can_install_packages_explains_externally_managed_environment(tmp_path, monkeypatch):
+    python_exe = tmp_path / "python3"
+    monkeypatch.setattr(
+        "hcli.lib.ida.python.subprocess.run",
+        lambda *a, **k: _fake_pip_result(1, EXTERNALLY_MANAGED_STDERR),
+    )
+
+    with pytest.raises(CantInstallPackagesError) as exc_info:
+        verify_pip_can_install_packages(python_exe, ["ida-domain"])
+
+    message = str(exc_info.value)
+    assert "PEP 668" in message
+    assert "explain-environment" in message
+    assert str(python_exe) in message
+
+
+def test_pip_install_packages_explains_externally_managed_environment(tmp_path, monkeypatch):
+    python_exe = tmp_path / "python3"
+    monkeypatch.setattr(
+        "hcli.lib.ida.python.subprocess.run",
+        lambda *a, **k: _fake_pip_result(1, EXTERNALLY_MANAGED_STDERR),
+    )
+
+    with pytest.raises(CantInstallPackagesError) as exc_info:
+        pip_install_packages(python_exe, ["ida-domain"])
+
+    assert "PEP 668" in str(exc_info.value)
 
 
 @pytest.mark.parametrize(

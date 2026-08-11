@@ -28,6 +28,7 @@ from hcli.lib.ida.python import (
     find_current_python_executable,
     find_python_version_mismatches,
     format_python_version_mismatch_warning,
+    is_externally_managed,
     probe_current_python_info,
     resolve_current_python,
 )
@@ -84,6 +85,7 @@ class PythonEnvironmentReport(BaseModel):
     python_exe: str | None
     python_exe_source: str | None
     python_exe_error: str | None
+    externally_managed: bool
     idat_probe: IdatProbe | None
     idat_probe_error: str | None
 
@@ -227,6 +229,7 @@ def collect_python_environment() -> PythonEnvironmentReport:
     python_exe: str | None = None
     python_exe_source: str | None = None
     python_exe_error: str | None = None
+    externally_managed = False
     idat_probe: IdatProbe | None = None
     idat_probe_error: str | None = None
 
@@ -244,6 +247,7 @@ def collect_python_environment() -> PythonEnvironmentReport:
         python_exe = str(resolved.exe)
         python_exe_source = resolved.source
         idat_probe = resolved.probe
+        externally_managed = is_externally_managed(resolved)
 
     return PythonEnvironmentReport(
         virtual_env=process_virtual_env,
@@ -255,6 +259,7 @@ def collect_python_environment() -> PythonEnvironmentReport:
         python_exe=python_exe,
         python_exe_source=python_exe_source,
         python_exe_error=python_exe_error,
+        externally_managed=externally_managed,
         idat_probe=idat_probe,
         idat_probe_error=idat_probe_error,
     )
@@ -400,6 +405,18 @@ def collect_notes(
             EnvironmentNote(
                 kind="hint",
                 text="To change IDA's Python, use idapyswitch to point at a different interpreter.",
+            )
+        )
+
+    if python_environment.externally_managed:
+        notes.append(
+            EnvironmentNote(
+                kind="warning",
+                text=(
+                    f"{python_environment.python_exe} is an externally-managed Python (PEP 668); pip will refuse "
+                    "to install plugin dependencies into it directly. Point IDA at a virtual environment instead: "
+                    "https://community.hex-rays.com/t/using-a-virtualenv-for-idapython/261/5"
+                ),
             )
         )
 
@@ -565,6 +582,9 @@ def render_python_environment_text(report: PythonEnvironmentReport) -> None:
         _kv("python exe", _path(report.python_exe), report.python_exe_source)
     elif report.python_exe_error:
         _err("python exe", report.python_exe_error)
+
+    if report.externally_managed:
+        _kv("externally managed", "[red]yes (PEP 668)[/red]")
 
 
 def render_idapython_virtualenv_text(report: IdaPythonVirtualEnvReport | None, ida_python_version: str | None) -> None:
