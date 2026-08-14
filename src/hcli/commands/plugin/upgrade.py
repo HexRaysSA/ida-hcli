@@ -11,6 +11,7 @@ from hcli.lib.console import console
 from hcli.lib.ida import (
     FailedToDetectIDAVersion,
     MissingCurrentInstallationDirectory,
+    explain_externally_managed_environment,
     explain_failed_to_detect_ida_version,
     explain_missing_current_installation_directory,
     find_current_ida_platform,
@@ -18,7 +19,7 @@ from hcli.lib.ida import (
 )
 from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
 from hcli.lib.ida.plugin.bundle import bundle_dependency_source
-from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
+from hcli.lib.ida.plugin.exceptions import DependencyInstallationError, PluginNotInstalledError
 from hcli.lib.ida.plugin.install import find_installed_plugin, sweep_trash, upgrade_plugin_archive
 from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo
@@ -131,6 +132,14 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
 
     except click.Abort:
         raise
+
+    except DependencyInstallationError as e:
+        if e.is_externally_managed and e.python_exe is not None:
+            console.print(f"[red]Error[/red]: cannot install Python dependencies: {', '.join(e.dependencies)}")
+            explain_externally_managed_environment(console, e.python_exe)
+        else:
+            console.print(f"[red]Error[/red]: {e}")
+        raise click.Abort()
 
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)

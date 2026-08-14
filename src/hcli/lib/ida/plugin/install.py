@@ -517,7 +517,7 @@ def validate_can_install_python_dependencies(
             )
         except CantInstallPackagesError as e:
             logger.debug("can't install dependencies: %s", e)
-            raise DependencyInstallationError(python_dependencies, str(e)) from e
+            raise DependencyInstallationError(python_dependencies, str(e), python_exe) from e
 
         return python_exe
 
@@ -931,16 +931,19 @@ def install_plugin_directory_editable(
         try:
             verify_pip_can_install_packages(python_exe, all_python_dependencies, no_build_isolation=no_build_isolation)
         except CantInstallPackagesError as e:
-            raise DependencyInstallationError(python_dependencies, str(e)) from e
+            raise DependencyInstallationError(python_dependencies, str(e), python_exe) from e
 
         with rich.status.Status(
             f"installing Python dependencies: {', '.join(python_dependencies)}", console=stderr_console
         ):
             try:
                 pip_install_packages(python_exe, all_python_dependencies, no_build_isolation=no_build_isolation)
-            except CantInstallPackagesError:
+            except CantInstallPackagesError as e:
+                # The dry-run above normally catches this, but the real install
+                # can still fail on its own - report it the same way so the
+                # explanation isn't lost on the path that actually writes.
                 logger.debug("can't install dependencies")
-                raise
+                raise DependencyInstallationError(python_dependencies, str(e), python_exe) from e
 
     # Remove any existing install at the target. is_symlink() is checked
     # before exists() because a broken symlink fails exists() but should

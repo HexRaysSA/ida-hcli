@@ -14,6 +14,7 @@ from hcli.lib.console import console, stderr_console
 from hcli.lib.ida import (
     FailedToDetectIDAVersion,
     MissingCurrentInstallationDirectory,
+    explain_externally_managed_environment,
     explain_failed_to_detect_ida_version,
     explain_missing_current_installation_directory,
     find_current_ida_platform,
@@ -27,6 +28,7 @@ from hcli.lib.ida.plugin import (
 from hcli.lib.ida.plugin.bundle import bundle_dependency_source
 from hcli.lib.ida.plugin.exceptions import (
     AmbiguousPluginReferenceError,
+    DependencyInstallationError,
     IDAVersionIncompatibleError,
     InstalledPluginNameConflictError,
     PlatformIncompatibleError,
@@ -413,6 +415,17 @@ def install_plugin(
         )
         console.print(f"Only one plugin with the bare name '{e.requested_name}' can be installed at a time.")
         console.print("Uninstall the existing plugin first, then install the other qualified plugin.")
+        raise click.Abort()
+
+    except DependencyInstallationError as e:
+        if e.is_externally_managed and e.python_exe is not None:
+            # Replace pip's own output rather than print both: it is boilerplate
+            # here, and its only advice is --break-system-packages. It stays in
+            # the debug log, which run_pip already writes.
+            console.print(f"[red]Error[/red]: cannot install Python dependencies: {', '.join(e.dependencies)}")
+            explain_externally_managed_environment(console, e.python_exe)
+        else:
+            console.print(f"[red]Error[/red]: {e}")
         raise click.Abort()
 
     except Exception as e:

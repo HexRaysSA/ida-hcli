@@ -22,6 +22,7 @@ from hcli.commands.plugin import plugin as plugin_group
 from hcli.lib.ida.plugin import ALL_PLATFORMS
 from hcli.lib.ida.plugin.exceptions import (
     BrokenPluginInstallationError,
+    DependencyInstallationError,
     IDAVersionIncompatibleError,
     PlatformIncompatibleError,
     PluginAlreadyInstalledError,
@@ -42,7 +43,7 @@ from hcli.lib.ida.plugin.install import (
     validate_archive_entry,
 )
 from hcli.lib.ida.plugin.repo.fs import FileSystemPluginRepo
-from hcli.lib.ida.python import pip_freeze
+from hcli.lib.ida.python import CantInstallPackagesError, pip_freeze
 
 logger = logging.getLogger(__name__)
 
@@ -632,3 +633,83 @@ def test_uninstall_while_file_in_use_is_atomic(virtual_ida_environment):
 
     uninstall_plugin("plugin1")
     assert not is_plugin_installed("plugin1")
+
+
+# A verbatim pip refusal under PEP 668, as run_pip formats it.
+EXTERNALLY_MANAGED_PIP_ERROR = """\
+/usr/bin/python3.12 -m pip install --dry-run --no-deps packaging==25.0
+error: externally-managed-environment
+
+x This environment is externally managed
++-> This Python installation is managed by the operating system.
+
+note: If you believe this is a mistake, please contact your Python installation
+or OS distribution provider. You can override this, at the risk of breaking your
+Python installation or OS, by passing --break-system-packages.
+hint: See PEP 668 for the detailed specification.
+"""
+
+
+def test_dependency_error_recognizes_externally_managed():
+    e = DependencyInstallationError(["packaging==25.0"], EXTERNALLY_MANAGED_PIP_ERROR, Path("/usr/bin/python3.12"))
+    assert e.is_externally_managed
+    assert e.python_exe == Path("/usr/bin/python3.12")
+
+    # any other pip failure must not be reported as a managed environment
+    other = DependencyInstallationError(["packaging==25.0"], "No matching distribution found", Path("/x/python"))
+    assert not other.is_externally_managed
+
+    # and the reason is optional
+    assert not DependencyInstallationError(["packaging==25.0"]).is_externally_managed
+
+
+def test_cli_install_reports_externally_managed_environment(virtual_ida_environment, tmp_path, monkeypatch):
+    """A PEP 668 refusal must explain how to get a virtualenv IDA will use,
+    rather than leaving the user with pip's own --break-system-packages advice."""
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    # v3.0.0 declares pythonDependencies, so the pip path is exercised
+    (repo_dir / "plugin1-v3.0.0.zip").write_bytes((PLUGINS_DIR / "plugin1" / "plugin1-v3.0.0.zip").read_bytes())
+
+    python_exe = Path("/usr/bin/python3.12")
+    monkeypatch.setattr("hcli.lib.ida.plugin.install.find_current_ida_python_executable", lambda: python_exe)
+    monkeypatch.setattr("hcli.lib.ida.plugin.install.does_current_ida_have_pip", lambda _exe: True)
+
+    def refuse(*args, **kwargs):
+        raise CantInstallPackagesError(EXTERNALLY_MANAGED_PIP_ERROR)
+
+    monkeypatch.setattr("hcli.lib.ida.plugin.install.verify_pip_can_install_packages", refuse)
+
+    result = CliRunner().invoke(plugin_group, ["--repo", str(repo_dir), "install", "plugin1"], obj={})
+
+    assert result.exit_code != 0
+    assert not is_plugin_installed("plugin1")
+
+    # names the interpreter, and the way out of it
+    assert str(python_exe) in result.output
+    assert "-m venv" in result.output
+    assert "idapythonrc.py" in result.output
+    # never repeat pip's own advice to break the system environment
+    assert "--break-system-packages" not in result.output
+
+
+def test_cli_install_does_not_explain_unrelated_dependency_failures(virtual_ida_environment, tmp_path, monkeypatch):
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "plugin1-v3.0.0.zip").write_bytes((PLUGINS_DIR / "plugin1" / "plugin1-v3.0.0.zip").read_bytes())
+
+    monkeypatch.setattr(
+        "hcli.lib.ida.plugin.install.find_current_ida_python_executable", lambda: Path("/usr/bin/python3.12")
+    )
+    monkeypatch.setattr("hcli.lib.ida.plugin.install.does_current_ida_have_pip", lambda _exe: True)
+
+    def refuse(*args, **kwargs):
+        raise CantInstallPackagesError("ERROR: No matching distribution found for packaging==25.0")
+
+    monkeypatch.setattr("hcli.lib.ida.plugin.install.verify_pip_can_install_packages", refuse)
+
+    result = CliRunner().invoke(plugin_group, ["--repo", str(repo_dir), "install", "plugin1"], obj={})
+
+    assert result.exit_code != 0
+    assert "No matching distribution found" in result.output
+    assert "-m venv" not in result.output

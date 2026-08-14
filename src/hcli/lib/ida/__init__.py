@@ -956,6 +956,44 @@ def explain_failed_to_detect_ida_version(console: rich.console.Console):
     console.print("")
 
 
+def explain_externally_managed_environment(console: rich.console.Console, python_exe: Path):
+    """Explain a PEP 668 refusal, and how to get a virtualenv IDA will also use.
+
+    The venv is created with IDA's own interpreter so its Python version matches
+    by construction: a venv built on any other version is ignored, because IDA
+    loads the libpython named in its configuration regardless of the venv.
+    """
+    activate = ".venv\\Scripts\\activate" if os.name == "nt" else ". .venv/bin/activate"
+
+    def command(line: str) -> None:
+        # soft_wrap so a long interpreter path is not broken mid-word: these
+        # lines are meant to be copied and run.
+        console.print(f"     [grey69]{line}[/grey69]", soft_wrap=True)
+
+    console.print("")
+    console.print("IDA uses this Python interpreter:")
+    console.print("")
+    command(str(python_exe))
+    console.print("")
+    console.print("It does not allow installing packages into it.")
+    console.print("")
+    console.print("Use a virtualenv instead. Create it with IDA's own interpreter, so that")
+    console.print("the Python version matches, then activate it and retry:")
+    console.print("")
+    command(f"{python_exe} -m venv .venv")
+    command(activate)
+    command(f"{ENV.HCLI_BINARY_NAME} plugin install ...")
+    console.print("")
+    console.print("An existing virtualenv works too, as long as it was built on that same")
+    console.print("Python version. Plugin dependencies are then installed into it.")
+    console.print("")
+    console.print("IDA has to use that same virtualenv to load them: start IDA from the")
+    console.print("terminal where it is activated, or set it up via idapythonrc.py:")
+    console.print("")
+    command("https://community.hex-rays.com/t/using-a-virtualenv-for-idapython/261/5")
+    console.print("")
+
+
 def find_current_ida_executable(suffix: str = "") -> Path:
     install_directory = find_current_ida_install_directory()
     return get_ida_binary_path(install_directory, suffix)

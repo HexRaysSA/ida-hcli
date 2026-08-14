@@ -65,14 +65,28 @@ class PipNotAvailableError(PluginInstallationError):
 class DependencyInstallationError(PluginInstallationError):
     """Python dependencies cannot be installed."""
 
-    def __init__(self, dependencies: Sequence[str], reason: str | None = None):
+    # pip's marker for a PEP 668 environment. Present in its stderr, which is
+    # what `reason` carries.
+    EXTERNALLY_MANAGED_MARKER = "externally-managed-environment"
+
+    def __init__(self, dependencies: Sequence[str], reason: str | None = None, python_exe: Path | None = None):
         self.dependencies = dependencies
         self.reason = reason
+        self.python_exe = python_exe
         deps_str = ", ".join(dependencies)
         msg = f"Cannot install required Python dependencies: {deps_str}"
         if reason:
             msg += f". Reason: {reason}"
         super().__init__(msg)
+
+    @property
+    def is_externally_managed(self) -> bool:
+        """Whether pip refused because the target interpreter is PEP 668 managed.
+
+        True for the default Linux setup, where idapyswitch points IDA at a
+        distro interpreter that pip may not write to.
+        """
+        return self.EXTERNALLY_MANAGED_MARKER in (self.reason or "")
 
 
 class InvalidPluginNameError(PluginInstallationError):
