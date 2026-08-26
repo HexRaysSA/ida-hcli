@@ -19,7 +19,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - { os: ubuntu-latest,    install-id: release/9.2/ida-essential/ida-essential_92_x64linux.run }
+          - { os: ubuntu-24.04-arm, install-id: release/9.2/ida-essential/ida-essential_92_arm64linux.run }
+          - { os: macos-latest,     install-id: release/9.2/ida-essential/ida-essential_92_armmac.app.zip }
+          - { os: windows-latest,   install-id: release/9.2/ida-essential/ida-essential_92_x64win.exe }
+          - { os: windows-11-arm,   install-id: release/9.2/ida-essential/ida-essential_92_arm64win.exe }
 
     steps:
       - name: Checkout
@@ -45,24 +50,17 @@ jobs:
         run: |
           hcli --version
 
-      - name: Test IDA installation command (Linux)
-        if: runner.os == 'Linux'
+      - name: Test IDA installation command (Unix)
+        if: runner.os != 'Windows'
         run: |
-          hcli --disable-updates ida install --yes --download-id release/9.2/ida-essential/ida-essential_92_x64linux.run --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
-        env:
-          HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
-
-      - name: Test IDA installation command (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          hcli --disable-updates ida install --yes --download-id release/9.2/ida-essential/ida-essential_92_armmac.app.zip --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
+          hcli --disable-updates ida install --yes --download-id ${{ matrix.install-id }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
 
       - name: Test IDA installation command (Windows)
         if: runner.os == 'Windows'
         run: |
-          hcli --disable-updates ida install --yes --download-id release/9.2/ida-essential/ida-essential_92_x64win.exe --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
+          hcli --disable-updates ida install --yes --download-id ${{ matrix.install-id }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --set-default
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
 
