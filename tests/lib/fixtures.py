@@ -98,21 +98,18 @@ def temp_hcli_idausr_dir():
 
 @pytest.fixture
 def hook_current_platform():
-    """pytest fixture to set HCLI_CURRENT_IDA_PLATFORM to a temp directory.
-    Useful so IDA doesn't need to be installed to test the the installation of plugins.
+    """pytest fixture to set HCLI_CURRENT_IDA_PLATFORM.
+    Useful so IDA doesn't need to be installed to test the installation of plugins.
+
+    On macOS the fixture reads the kernel release to distinguish ARM from Intel.
+    On Windows and Linux it defaults to x86_64; the real arch detection in
+    find_current_ida_platform() reads the IDA binary header instead.
     """
     system = platform.system()
-    machine = platform.machine().lower()
     if system == "Windows":
-        if machine in ("arm64", "aarch64"):
-            plat = "windows-aarch64"
-        else:
-            plat = "windows-x86_64"
+        plat = "windows-x86_64"
     elif system == "Linux":
-        if machine == "aarch64":
-            plat = "linux-aarch64"
-        else:
-            plat = "linux-x86_64"
+        plat = "linux-x86_64"
     elif system == "Darwin":
         # via: https://stackoverflow.com/questions/7491391/
         version = platform.uname().version
