@@ -109,6 +109,7 @@ jobs:
           - { os: ubuntu-latest,    platform: linux,   artifact-name: hcli-linux-x86_64 }
           - { os: ubuntu-24.04-arm, platform: linux,   artifact-name: hcli-linux-aarch64 }
           - { os: windows-latest,   platform: windows, artifact-name: hcli-windows-x86_64 }
+          - { os: windows-11-arm,   platform: windows, artifact-name: hcli-windows-aarch64 }
           - { os: macos-latest,     platform: macos,   artifact-name: hcli-mac-arm64 }
           # Built on the same free arm64 runner as hcli-mac-arm64, but under an x86_64
           # Python via Rosetta 2 emulation, so PyInstaller produces a genuine x86_64
