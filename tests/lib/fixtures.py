@@ -102,10 +102,17 @@ def hook_current_platform():
     Useful so IDA doesn't need to be installed to test the the installation of plugins.
     """
     system = platform.system()
+    machine = platform.machine().lower()
     if system == "Windows":
-        plat = "windows-x86_64"
+        if machine in ("arm64", "aarch64"):
+            plat = "windows-aarch64"
+        else:
+            plat = "windows-x86_64"
     elif system == "Linux":
-        plat = "linux-x86_64"
+        if machine == "aarch64":
+            plat = "linux-aarch64"
+        else:
+            plat = "linux-x86_64"
     elif system == "Darwin":
         # via: https://stackoverflow.com/questions/7491391/
         version = platform.uname().version
