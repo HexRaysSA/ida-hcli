@@ -294,17 +294,6 @@ jobs:
         include:
           - python-version: "3.13"
             os_ida:
-              name: IDA Free 9.4 on macOS (ARM)
-              arch: arm
-              os: macos-latest
-              ida_version: "9.4"
-              slug: "release/9.4/ida-free/ida-free-pc_94_armmac.app.zip"
-              idat_path: ""
-              default_path: "/Applications/IDA Free 9.4.app"
-              supports_idalib: false  # IDA Free doesn't include idalib
-
-          - python-version: "3.13"
-            os_ida:
               name: IDA Pro 9.4 on macOS (ARM)
               arch: arm
               os: macos-latest
