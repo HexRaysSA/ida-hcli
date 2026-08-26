@@ -9,6 +9,19 @@
 
 A modern command-line interface for managing IDA Pro licenses, downloads, ...
 
+# Quickstart
+
+```console
+curl -LsSf https://hcli.docs.hex-rays.com/install | sh
+# or on Windows
+iwr -useb https://hcli.docs.hex-rays.com/install.ps1 | iex
+
+hcli login
+hcli license list
+```
+
+See [Installation](https://hcli.docs.hex-rays.com/getting-started/installation/) for more details.
+
 # Documentation
 
 See [https://hcli.docs.hex-rays.com/](https://hcli.docs.hex-rays.com/)
