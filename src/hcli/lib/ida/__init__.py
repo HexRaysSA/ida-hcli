@@ -1142,11 +1142,11 @@ def run_py_in_current_idapython(src: str) -> dict:
 def detect_binary_arch(path: Path) -> str | None:
     """Detect the CPU architecture of a native binary by reading its header.
 
-    Supports ELF (Linux) and Mach-O (macOS) formats.
+    Supports PE (Windows), ELF (Linux), and Mach-O (macOS) formats.
     Returns "x86_64" or "aarch64", or None if unrecognized.
     """
     with open(path, "rb") as f:
-        header = f.read(20)
+        header = f.read(64)
 
     if len(header) < 20:
         return None
@@ -1155,6 +1155,16 @@ def detect_binary_arch(path: Path) -> str | None:
     if header[:4] == b"\x7fELF":
         e_machine = struct.unpack_from("<H", header, 18)[0]
         return {0x3E: "x86_64", 0xB7: "aarch64"}.get(e_machine)
+
+    # PE: DOS MZ header
+    if header[:2] == b"MZ" and len(header) >= 0x40:
+        pe_offset = struct.unpack_from("<I", header, 0x3C)[0]
+        with open(path, "rb") as f:
+            f.seek(pe_offset)
+            pe_header = f.read(6)
+        if len(pe_header) >= 6 and pe_header[:4] == b"PE\0\0":
+            machine = struct.unpack_from("<H", pe_header, 4)[0]
+            return {0x8664: "x86_64", 0xAA64: "aarch64"}.get(machine)
 
     # Mach-O 64-bit
     magic = struct.unpack_from("<I", header, 0)[0]
@@ -1175,9 +1185,29 @@ def find_current_ida_platform() -> str:
 
     os_ = get_os()
     if os_ == "windows":
-        return "windows-x86_64"
+        ida_path = find_current_ida_executable()
+        if not ida_path.exists():
+            raise RuntimeError(f"failed to determine current IDA platform: can't find ida: {ida_path}")
+
+        arch = detect_binary_arch(ida_path)
+        if arch == "x86_64":
+            return "windows-x86_64"
+        elif arch == "aarch64":
+            return "windows-aarch64"
+        else:
+            raise RuntimeError(f"failed to determine current IDA platform: unrecognized architecture in {ida_path}")
     elif os_ == "linux":
-        return "linux-x86_64"
+        ida_path = find_current_ida_executable()
+        if not ida_path.exists():
+            raise RuntimeError(f"failed to determine current IDA platform: can't find ida: {ida_path}")
+
+        arch = detect_binary_arch(ida_path)
+        if arch == "x86_64":
+            return "linux-x86_64"
+        elif arch == "aarch64":
+            return "linux-aarch64"
+        else:
+            raise RuntimeError(f"failed to determine current IDA platform: unrecognized architecture in {ida_path}")
     elif os_ == "mac":
         ida_path = find_current_ida_executable()
         if not ida_path.exists():

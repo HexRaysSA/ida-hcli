@@ -281,6 +281,16 @@ def _macho_header(cpu_type: int) -> bytes:
     return bytes(header)
 
 
+def _pe_binary(machine: int) -> bytes:
+    pe_offset = 0x80
+    dos_header = bytearray(pe_offset + 6)
+    dos_header[0:2] = b"MZ"
+    struct.pack_into("<I", dos_header, 0x3C, pe_offset)
+    dos_header[pe_offset : pe_offset + 4] = b"PE\0\0"
+    struct.pack_into("<H", dos_header, pe_offset + 4, machine)
+    return bytes(dos_header)
+
+
 @pytest.mark.parametrize(
     ("header", "expected"),
     [
@@ -288,9 +298,11 @@ def _macho_header(cpu_type: int) -> bytes:
         (_elf_header(0xB7), "aarch64"),  # EM_AARCH64
         (_macho_header(0x01000007), "x86_64"),  # CPU_TYPE_X86_64
         (_macho_header(0x0100000C), "aarch64"),  # CPU_TYPE_ARM64
+        (_pe_binary(0x8664), "x86_64"),  # IMAGE_FILE_MACHINE_AMD64
+        (_pe_binary(0xAA64), "aarch64"),  # IMAGE_FILE_MACHINE_ARM64
         (b"not a binary format at all!", None),
     ],
-    ids=["elf-x86_64", "elf-aarch64", "macho-x86_64", "macho-aarch64", "unrecognized"],
+    ids=["elf-x86_64", "elf-aarch64", "macho-x86_64", "macho-aarch64", "pe-x86_64", "pe-aarch64", "unrecognized"],
 )
 def test_detect_binary_arch(tmp_path, header, expected):
     binary = tmp_path / "ida"

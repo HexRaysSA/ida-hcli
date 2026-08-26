@@ -48,13 +48,17 @@ class ChoiceValueError(ValueError):
 
 
 PLATFORM_WINDOWS = "windows-x86_64"
+PLATFORM_WINDOWS_ARM = "windows-aarch64"
 PLATFORM_LINUX = "linux-x86_64"
+PLATFORM_LINUX_ARM = "linux-aarch64"
 PLATFORM_MACOS_INTEL = "macos-x86_64"
 PLATFORM_MACOS_ARM = "macos-aarch64"
 
 Platform = Literal[
     "windows-x86_64",
+    "windows-aarch64",
     "linux-x86_64",
+    "linux-aarch64",
     "macos-x86_64",
     "macos-aarch64",
 ]
@@ -841,7 +845,9 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata_path: Path, me
         if has_bare_name:
             extensions = [
                 (".so", PLATFORM_LINUX),
+                (".so", PLATFORM_LINUX_ARM),
                 (".dll", PLATFORM_WINDOWS),
+                (".dll", PLATFORM_WINDOWS_ARM),
                 (".dylib", PLATFORM_MACOS_ARM),
                 (".dylib", PLATFORM_MACOS_INTEL),
             ]

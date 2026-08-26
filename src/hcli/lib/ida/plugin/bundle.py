@@ -21,7 +21,9 @@ SUPPORTED_PYTHON_VERSIONS: tuple[str, ...] = ("3.10", "3.11", "3.12", "3.13", "3
 
 PLATFORM_ALIASES: dict[str, list[str]] = {
     "windows-x86_64": ["windows", "win", "win64"],
+    "windows-aarch64": ["windows-arm64", "win-arm64"],
     "linux-x86_64": ["linux", "linux64"],
+    "linux-aarch64": ["linux-arm64"],
     "macos-aarch64": ["macos-arm64", "macos-arm", "mac-arm64"],
     "macos-x86_64": ["macos-intel", "mac-intel", "macos-x64"],
 }
@@ -51,9 +53,16 @@ _PLATFORM_CONFIG: dict[str, dict] = {
     "windows-x86_64": {
         "pip_platform_tags": ("win_amd64",),
     },
+    "windows-aarch64": {
+        "pip_platform_tags": ("win_arm64",),
+    },
     "linux-x86_64": {
         "max_glibc": (2, 28),
         "arch": "x86_64",
+    },
+    "linux-aarch64": {
+        "max_glibc": (2, 28),
+        "arch": "aarch64",
     },
     "macos-aarch64": {
         "mac_version": (11, 0),
