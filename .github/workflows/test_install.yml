@@ -20,11 +20,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,    install-id: release/9.2/ida-essential/ida-essential_92_x64linux.run }
-          - { os: ubuntu-24.04-arm, install-id: release/9.2/ida-essential/ida-essential_92_arm64linux.run }
-          - { os: macos-latest,     install-id: release/9.2/ida-essential/ida-essential_92_armmac.app.zip }
-          - { os: windows-latest,   install-id: release/9.2/ida-essential/ida-essential_92_x64win.exe }
-          - { os: windows-11-arm,   install-id: release/9.2/ida-essential/ida-essential_92_arm64win.exe }
+          - { os: ubuntu-latest,    install-id: release/9.4/ida-essential/ida-essential_94_x64linux.run }
+          - { os: ubuntu-24.04-arm, install-id: release/9.4/ida-essential/ida-essential_94_arm64linux.run }
+          - { os: macos-latest,     install-id: release/9.4/ida-essential/ida-essential_94_armmac.app.zip }
+          - { os: windows-latest,   install-id: release/9.4/ida-essential/ida-essential_94_x64win.exe }
+          - { os: windows-11-arm,   install-id: release/9.4/ida-essential/ida-essential_94_arm64win.exe }
 
     steps:
       - name: Checkout
