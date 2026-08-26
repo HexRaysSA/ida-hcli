@@ -207,24 +207,20 @@ Please download and install it first:
 function Get-Architecture {
     <#
     .SYNOPSIS
-    Validates system architecture for hcli installation
-    .DESCRIPTION
-    Since hcli only supports x86_64, this function validates the system is 64-bit
-    and returns the appropriate architecture string.
+    Detects system architecture for hcli installation
     #>
     [CmdletBinding()]
     param()
 
     Write-Verbose "Validating system architecture for hcli compatibility..."
 
-    # Simple 64-bit check - sufficient since we only support x86_64
     if (-not [System.Environment]::Is64BitOperatingSystem) {
         throw "Error: hcli requires a 64-bit system. 32-bit systems are not supported."
     }
 
-    # Additional check for ARM64 systems (which report as 64-bit but aren't x86_64)
     if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64" -or $env:PROCESSOR_ARCHITEW6432 -eq "ARM64") {
-        throw "Error: ARM64 systems are not currently supported. Only x86_64 (64-bit Intel/AMD) systems are supported."
+        Write-Verbose "System validated as ARM64"
+        return "aarch64"
     }
 
     Write-Verbose "System validated as x86_64 compatible"
@@ -392,11 +388,7 @@ function Get-AssetDownloadInfo {
         [string]$Architecture
     )
     
-    # Determine platform name and filename
-    $platform_name = switch ($Architecture) {
-        "x86_64" { "windows" }
-        default { throw "Unsupported architecture for download: $Architecture" }
-    }
+    $platform_name = "windows"
     
     $filename = "$app_name-$platform_name-$Architecture-$Version.exe"
     $releases_url = "$github_api_base/repos/$Repository/releases/tags/v$Version"
