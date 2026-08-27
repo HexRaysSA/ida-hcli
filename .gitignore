@@ -20,3 +20,4 @@ CLAUDE.md
 .env
 .envrc
 .DS_Store
+.env.dev

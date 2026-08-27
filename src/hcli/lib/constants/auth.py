@@ -27,15 +27,36 @@ class Credentials(BaseModel):
     created_at: str
     last_used: str
 
-    # Type-specific data
-    token: str | None = None  # For INTERACTIVE type
+    # Type-specific data. For KEY this is the API key; for INTERACTIVE it is the
+    # OAuth access token, accompanied by a refresh token and an absolute expiry
+    # (epoch seconds) so the session can be renewed without re-login.
+    token: str | None = None
+    refresh_token: str | None = None
+    expires_at: float | None = None
 
     @classmethod
-    def create_credentials(cls, name: str, credential_type: str, token: str, email: str | None = None) -> "Credentials":
-        """Create a new API key credentials."""
+    def create_credentials(
+        cls,
+        name: str,
+        credential_type: str,
+        token: str,
+        email: str | None = None,
+        refresh_token: str | None = None,
+        expires_at: float | None = None,
+    ) -> "Credentials":
+        """Create a new credentials entry."""
         now = datetime.now(tz=timezone.utc).isoformat() + "Z"
 
-        return cls(name=name, type=credential_type, email=email or "", token=token, created_at=now, last_used=now)
+        return cls(
+            name=name,
+            type=credential_type,
+            email=email or "",
+            token=token,
+            refresh_token=refresh_token,
+            expires_at=expires_at,
+            created_at=now,
+            last_used=now,
+        )
 
     @property
     def label(self) -> str:

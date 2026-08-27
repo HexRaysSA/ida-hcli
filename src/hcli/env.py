@@ -51,11 +51,18 @@ class ENV:
     HCLI_GITHUB_API_URL: str = os.getenv("GITHUB_API_URL", "https://api.github.com")
     HCLI_GITHUB_URL: str = os.getenv("HCLI_GITHUB_URL", "https://github.com/HexRaysSA/ida-hcli")
 
-    HCLI_SUPABASE_ANON_KEY: str = os.getenv(
-        "HCLI_SUPABASE_ANON_KEY",
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF0aGF3ZXRjYW9zb2Zyd29vaXhsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjYxNDAxNzYsImV4cCI6MjA0MTcxNjE3Nn0.cOkB4DJ-jeT2aSItfSFsk2C6wtJ2f1UfErWzsf8144o",
-    )
-    HCLI_SUPABASE_URL: str = os.getenv("HCLI_SUPABASE_URL", "https://auth.hex-rays.com")
+    # OAuth 2.1 / OIDC authorization server (Ory Hydra). The issuer's
+    # .well-known document is used to discover the authorize/token endpoints,
+    # so only the issuer, client_id and scope need configuring. Point these at
+    # the .io environment for dev.
+    HCLI_OAUTH_ISSUER: str = os.getenv("HCLI_OAUTH_ISSUER", "https://oauth.hex-rays.com")
+    HCLI_OAUTH_CLIENT_ID: str = os.getenv("HCLI_OAUTH_CLIENT_ID", "74a4232c-af42-4974-90c4-3d0f8f83303d")
+    HCLI_OAUTH_SCOPE: str = os.getenv("HCLI_OAUTH_SCOPE", "openid offline_access email profile licenses:read")
+    # Out-of-band redirect for headless (--no-browser) logins: the portal consent
+    # page renders the authorization code for the user to paste back. It is a
+    # pre-registered OAuth redirect URI, so it must move in lockstep with the
+    # client registration when pointing HCLI_OAUTH_ISSUER at another environment.
+    HCLI_OAUTH_OOB_REDIRECT_URL: str = os.getenv("HCLI_OAUTH_OOB_REDIRECT_URL", f"{HCLI_PORTAL_URL}/oauth/consent")
 
     HCLI_VERSION: str = os.getenv("HCLI_VERSION", __version__)
     HCLI_BINARY_NAME: str = os.getenv("HCLI_BINARY_NAME", "hcli")
@@ -98,5 +105,8 @@ class ENV:
 
 # Constants
 CONFIG_API_KEY = "apiKey"
-OAUTH_REDIRECT_URL = "http://localhost:9999/callback"
 OAUTH_SERVER_PORT = 9999
+# Loopback redirect for the browser flow. Ory Hydra matches redirect URIs
+# exactly, so this must be pre-registered on the client verbatim (127.0.0.1,
+# not localhost).
+OAUTH_REDIRECT_URL = f"http://127.0.0.1:{OAUTH_SERVER_PORT}/callback"

@@ -1,25 +1,58 @@
 from __future__ import annotations
 
+import os
+import sys
+import webbrowser
+
 import questionary
 import rich_click as click
 
 from hcli.commands.common import safe_ask_async
 from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command
-from hcli.lib.config import config_store
 from hcli.lib.console import console
-from hcli.lib.constants import cli
-from hcli.lib.constants.auth import CONFIG_LOGIN_EMAIL
+
+
+def _running_headless() -> bool:
+    """Return True when the browser+loopback flow cannot work here.
+
+    The loopback redirect targets 127.0.0.1, which is only reachable from the
+    machine hcli runs on. In a remote shell the browser lives elsewhere, so the
+    out-of-band paste-the-code flow is the only option. We treat a session as
+    headless when it is an SSH connection, a Linux box with no display server,
+    or a host with no registered web browser.
+    """
+    if os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"):
+        return True
+    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        return True
+    try:
+        webbrowser.get()
+    except webbrowser.Error:
+        return True
+    return False
 
 
 @click.command()
 @click.option("-f", "--force", is_flag=True, help="Force account selection.")
 @click.option("-n", "--name", help="Custom name for the credentials")
+@click.option(
+    "--browser/--no-browser",
+    "browser",
+    default=None,
+    help="Force (--browser) or skip (--no-browser) the local browser flow. "
+    "Auto-detected for SSH/headless sessions when omitted.",
+)
 @async_command
-async def login(force: bool, name: str | None) -> None:
+async def login(force: bool, name: str | None, browser: bool | None) -> None:
     """Log in to the Hex-Rays portal and create new credentials."""
     auth_service = get_auth_service()
     auth_service.init()
+
+    # Decide between the browser+loopback flow and the headless paste-the-code
+    # (out-of-band) flow. An explicit --browser/--no-browser wins; otherwise we
+    # auto-detect remote/headless sessions.
+    use_oob = _running_headless() if browser is None else not browser
 
     # Show current login status
     if auth_service.is_logged_in() and not force:
@@ -47,41 +80,22 @@ async def login(force: bool, name: str | None) -> None:
         if not add_another:
             return
 
-    # Get the last used email for suggestions
-    current_email = config_store.get_string(CONFIG_LOGIN_EMAIL, "")
-
-    # Choose authentication method
-    choices = ["Google OAuth", "Email (OTP)"]
-    selected = await safe_ask_async(
-        questionary.select("Choose login method:", choices=choices, default="Google OAuth", style=cli.SELECT_STYLE)
-    )
-
-    source = None
-
-    if selected == "Google OAuth":
-        # Google OAuth login
-        console.print("[blue]Starting OAuth login...[/blue]")
-        source = await auth_service.login_interactive(name=name, force=force)
-
-    elif selected == "Email (OTP)":
-        # Email OTP login
-        email = await safe_ask_async(questionary.text("Email address", default=current_email if current_email else ""))
-
+    # Run the OAuth Authorization Code + PKCE flow.
+    if use_oob:
         try:
-            console.print(f"[blue]Sending OTP to {email}...[/blue]")
-            await auth_service.login_otp(email, name=name, force=force)
-
-            otp = await safe_ask_async(questionary.text("Enter the code received by email"))
-
-            source = auth_service.verify_otp(email, otp, name=name)
-            if source:
-                config_store.set_string(CONFIG_LOGIN_EMAIL, email)
-                console.print("[green]Login successful![/green]")
-            else:
-                console.print("[red]Login failed. Invalid OTP.[/red]")
+            authorize_url = auth_service.begin_oob_login(force=force)
         except Exception as e:
-            console.print(f"[red]Login failed: {e}[/red]")
+            console.print(f"[red]Could not reach the authorization server: {e}[/red]")
             raise click.Abort()
+
+        if browser is None:
+            console.print("[yellow]No local browser detected; using paste-the-code login.[/yellow]")
+        console.print("Open this URL in a browser, approve the request, then paste the code below:")
+        console.print(authorize_url)
+        code = await safe_ask_async(questionary.text("Authorization code"))
+        source = auth_service.complete_oob_login(code, name=name)
+    else:
+        source = await auth_service.login_interactive(name=name, force=force)
 
     # Show results
     if source:

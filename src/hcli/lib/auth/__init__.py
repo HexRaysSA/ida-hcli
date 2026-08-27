@@ -1,15 +1,23 @@
 import asyncio
+import base64
+import hashlib
 import json
 import logging
+import secrets
+import time
 import webbrowser
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 
-from hcli.env import ENV, OAUTH_REDIRECT_URL, OAUTH_SERVER_PORT
+from hcli.env import (
+    ENV,
+    OAUTH_REDIRECT_URL,
+    OAUTH_SERVER_PORT,
+)
 from hcli.lib.config import config_store
 from hcli.lib.constants.auth import (
     CONFIG_CREDENTIALS,
@@ -20,94 +28,211 @@ from hcli.lib.constants.auth import (
 
 logger = logging.getLogger(__name__)
 
+# Renew the access token this many seconds before it actually expires, so a
+# request never races the expiry boundary.
+_EXPIRY_SKEW_SECONDS = 60
 
-# Lightweight replacements for supabase-auth SDK types
+
+def _b64url(data: bytes) -> str:
+    """URL-safe base64 without padding, as required by PKCE (RFC 7636)."""
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
 @dataclass
-class GoTrueUser:
+class User:
     email: str
 
 
 @dataclass
-class GoTrueUserResponse:
-    user: GoTrueUser | None
-
-
-@dataclass
-class GoTrueSession:
+class OAuthTokens:
     access_token: str
-    refresh_token: str
-    user: GoTrueUser | None = None
+    refresh_token: str | None = None
+    expires_at: float | None = None
+    id_token: str | None = None
 
 
 @dataclass
-class GoTrueOAuthResponse:
-    url: str
+class Session:
+    access_token: str
+    refresh_token: str | None = None
+    expires_at: float | None = None  # epoch seconds
+    user: User | None = None
+
+    @classmethod
+    def from_tokens(cls, tokens: OAuthTokens, user: User | None) -> "Session":
+        return cls(
+            access_token=tokens.access_token,
+            refresh_token=tokens.refresh_token,
+            expires_at=tokens.expires_at,
+            user=user,
+        )
 
 
 @dataclass
-class GoTrueClient:
-    """Minimal GoTrue HTTP client — replaces the supabase-auth SDK."""
+class Discovery:
+    authorization_endpoint: str
+    token_endpoint: str
+    userinfo_endpoint: str | None = None
+    revocation_endpoint: str | None = None
 
-    base_url: str
-    anon_key: str
-    _session: GoTrueSession | None = field(default=None, repr=False)
 
-    def _headers(self, token: str | None = None) -> dict[str, str]:
-        bearer = token or (self._session.access_token if self._session else None) or self.anon_key
-        return {
-            "apikey": self.anon_key,
-            "Authorization": f"Bearer {bearer}",
-            "Content-Type": "application/json",
-        }
+class OAuthClient:
+    """Minimal OAuth 2.1 / OIDC public client (Authorization Code + PKCE).
 
-    def get_user(self, token: str | None = None) -> GoTrueUserResponse:
-        resp = httpx.get(f"{self.base_url}/user", headers=self._headers(token))
-        resp.raise_for_status()
-        data = resp.json()
-        if data and data.get("email"):
-            return GoTrueUserResponse(user=GoTrueUser(email=data["email"]))
-        return GoTrueUserResponse(user=None)
+    Endpoints are discovered from the issuer's well-known document, so the
+    client stays provider-agnostic. No client secret is used.
+    """
 
-    def get_session(self) -> GoTrueSession | None:
-        return self._session
+    def __init__(self, issuer: str, client_id: str, scope: str):
+        self.issuer = issuer.rstrip("/")
+        self.client_id = client_id
+        self.scope = scope
+        self._discovery: Discovery | None = None
 
-    def set_session(self, access_token: str, refresh_token: str) -> None:
-        self._session = GoTrueSession(access_token=access_token, refresh_token=refresh_token)
-        try:
-            user_resp = self.get_user(access_token)
-            if user_resp.user:
-                self._session.user = user_resp.user
-        except Exception:
-            pass
+    def discover(self) -> Discovery:
+        """Resolve and cache the authorization server metadata."""
+        if self._discovery is not None:
+            return self._discovery
 
-    def sign_in_with_oauth(self, params: dict) -> GoTrueOAuthResponse:
-        provider = params["provider"]
-        options = params.get("options", {})
-        redirect_to = options.get("redirect_to", "")
-        query_params = options.get("query_params", {})
-        qs = {"provider": provider, "redirect_to": redirect_to, **query_params}
-        return GoTrueOAuthResponse(url=f"{self.base_url}/authorize?{urlencode(qs)}")
-
-    def sign_in_with_otp(self, params: dict) -> None:
-        resp = httpx.post(f"{self.base_url}/otp", json=params, headers=self._headers())
-        resp.raise_for_status()
-
-    def verify_otp(self, params: dict) -> None:
-        resp = httpx.post(f"{self.base_url}/verify", json=params, headers=self._headers())
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get("access_token"):
-            self.set_session(data["access_token"], data.get("refresh_token", ""))
-
-    def sign_out(self) -> None:
-        if self._session:
+        candidates = [
+            f"{self.issuer}/.well-known/oauth-authorization-server",
+            f"{self.issuer}/.well-known/openid-configuration",
+        ]
+        errors = []
+        for url in candidates:
             try:
-                httpx.post(f"{self.base_url}/logout", headers=self._headers())
-            except Exception:
-                pass
-        self._session = None
+                resp = httpx.get(url, headers={"Accept": "application/json"}, timeout=30.0)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    self._discovery = Discovery(
+                        authorization_endpoint=data["authorization_endpoint"],
+                        token_endpoint=data["token_endpoint"],
+                        userinfo_endpoint=data.get("userinfo_endpoint"),
+                        revocation_endpoint=data.get("revocation_endpoint"),
+                    )
+                    return self._discovery
+                errors.append(f"{url} -> HTTP {resp.status_code}")
+            except Exception as e:
+                errors.append(f"{url} -> {e}")
+        raise RuntimeError(f"OAuth discovery failed for {self.issuer}: {'; '.join(errors)}")
+
+    @staticmethod
+    def generate_pkce() -> tuple[str, str]:
+        """Return an (verifier, challenge) PKCE pair using S256."""
+        verifier = _b64url(secrets.token_bytes(48))
+        challenge = _b64url(hashlib.sha256(verifier.encode("ascii")).digest())
+        return verifier, challenge
+
+    def build_authorize_url(self, redirect_uri: str, state: str, challenge: str, prompt: str | None = None) -> str:
+        discovery = self.discover()
+        params = {
+            "response_type": "code",
+            "client_id": self.client_id,
+            "redirect_uri": redirect_uri,
+            "scope": self.scope,
+            "state": state,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        }
+        if prompt:
+            params["prompt"] = prompt
+        return f"{discovery.authorization_endpoint}?{urlencode(params)}"
+
+    def _form_post(self, endpoint: str, data: dict[str, str]) -> httpx.Response:
+        """POST a form-encoded body to an OAuth endpoint."""
+        return httpx.post(
+            endpoint,
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=30.0,
+        )
+
+    def exchange_code(self, code: str, verifier: str, redirect_uri: str) -> OAuthTokens:
+        resp = self._form_post(
+            self.discover().token_endpoint,
+            {
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": self.client_id,
+                "code_verifier": verifier,
+            },
+        )
+        resp.raise_for_status()
+        return self._parse_token_response(resp.json())
+
+    def refresh(self, refresh_token: str) -> OAuthTokens:
+        resp = self._form_post(
+            self.discover().token_endpoint,
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": self.client_id,
+            },
+        )
+        resp.raise_for_status()
+        return self._parse_token_response(resp.json())
+
+    def revoke(self, token: str) -> None:
+        """Best-effort token revocation (RFC 7009)."""
+        discovery = self.discover()
+        if not discovery.revocation_endpoint:
+            return
+        self._form_post(discovery.revocation_endpoint, {"token": token, "client_id": self.client_id})
+
+    def get_userinfo(self, access_token: str) -> dict | None:
+        discovery = self.discover()
+        if not discovery.userinfo_endpoint:
+            return None
+        resp = httpx.get(
+            discovery.userinfo_endpoint,
+            headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    @staticmethod
+    def _parse_token_response(data: dict) -> OAuthTokens:
+        expires_in = data.get("expires_in")
+        # `expires_in is not None` (not truthiness): a literal 0 means the token
+        # is already expired, which must not be read as "no expiry / never stale".
+        expires_at = time.time() + float(expires_in) - _EXPIRY_SKEW_SECONDS if expires_in is not None else None
+        return OAuthTokens(
+            access_token=data["access_token"],
+            refresh_token=data.get("refresh_token"),
+            expires_at=expires_at,
+            id_token=data.get("id_token"),
+        )
+
+
+def _email_from_id_token(id_token: str | None) -> str | None:
+    """Extract the email claim from an id_token without verifying its signature."""
+    if not id_token:
+        return None
+    parts = id_token.split(".")
+    if len(parts) < 2:
+        return None
+    payload = parts[1]
+    try:
+        padded = payload + "=" * ((4 - len(payload) % 4) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
+        return claims.get("email")
+    except Exception:
+        return None
+
+
+@dataclass
+class _PendingFlow:
+    """Client-side state for an in-progress OOB login.
+
+    Only the PKCE verifier and redirect URI are kept: `state` protects the
+    loopback callback, but in the OOB flow the code is pasted by the user
+    rather than delivered on a redirect, so there is nothing to match it against.
+    """
+
+    verifier: str
+    redirect_uri: str
 
 
 class AuthService:
@@ -119,21 +244,31 @@ class AuthService:
         if AuthService._instance is not None:
             raise RuntimeError("AuthService is a singleton. Use AuthService.instance")
 
-        self.supabase_auth = GoTrueClient(
-            base_url=f"{ENV.HCLI_SUPABASE_URL}/auth/v1",
-            anon_key=ENV.HCLI_SUPABASE_ANON_KEY,
+        self.oauth = OAuthClient(
+            issuer=ENV.HCLI_OAUTH_ISSUER,
+            client_id=ENV.HCLI_OAUTH_CLIENT_ID,
+            scope=ENV.HCLI_OAUTH_SCOPE,
         )
 
         # Current session state (for active interactive auth)
-        self.session: GoTrueSession | None = None
-        self.user: GoTrueUser | None = None
+        self.session: Session | None = None
         self._server_thread: Thread | None = None
-        self._oauth_result: dict[str, str] | None = None
+        self._oauth_code: str | None = None
+        self._oauth_error: str | None = None
+        self._pending_oob: _PendingFlow | None = None
+        # Set once a refresh attempt fails this process, so repeated auth checks
+        # in a single command don't each re-hit the token endpoint.
+        self._refresh_failed: bool = False
 
         # Multi-source auth state
         self._auth_config: CredentialsConfig | None = None
         self._current_source: Credentials | None = None
         self._forced_credentials: str | None = None  # For --auth-source override
+
+    @property
+    def user(self) -> "User | None":
+        """The current session's user, derived from the active session."""
+        return self.session.user if self.session else None
 
     @classmethod
     def instance(cls) -> "AuthService":
@@ -181,21 +316,30 @@ class AuthService:
             # Use default source
             self._current_source = self._auth_config.get_default_credentials()
 
-        # Initialize session for interactive sources
-        if self._current_source and self._current_source.type == CredentialType.INTERACTIVE:
-            try:
-                if self._current_source.token:
-                    # Validate the stored token against the server
-                    user_response = self.supabase_auth.get_user(self._current_source.token)
-                    if user_response and user_response.user:
-                        self.user = user_response.user
-                        self.session = GoTrueSession(
-                            access_token=self._current_source.token,
-                            refresh_token="",
-                            user=user_response.user,
-                        )
-            except Exception:
-                pass
+        # Rebuild the in-memory session for interactive sources from stored
+        # tokens. This is offline: validation/refresh happens lazily when a
+        # token is actually needed.
+        #
+        # A trustworthy OAuth credential always carries validity metadata: an
+        # `expires_at` and/or a `refresh_token`. A stored interactive token with
+        # neither is a pre-migration (Supabase) credential the new API will only
+        # ever 401 on — leave the session unset so the user is cleanly prompted
+        # to log in again rather than being reported logged-in forever.
+        self.session = None
+        self._refresh_failed = False
+        source = self._current_source
+        if (
+            source
+            and source.type == CredentialType.INTERACTIVE
+            and source.token
+            and (source.expires_at is not None or source.refresh_token)
+        ):
+            self.session = Session(
+                access_token=source.token,
+                refresh_token=source.refresh_token,
+                expires_at=source.expires_at,
+                user=User(email=source.email),
+            )
 
     def force_credentials(self, name: str) -> bool:
         """Force a specific credentials for this session."""
@@ -236,7 +380,11 @@ class AuthService:
         self._save_auth_config()
 
     def remove_credentials(self, name: str) -> bool:
-        """Remove an credentials."""
+        """Remove a credentials, revoking its OAuth tokens best-effort."""
+        if self._auth_config and name in self._auth_config.credentials:
+            source = self._auth_config.credentials[name]
+            self._revoke_interactive_tokens(source)
+
         if self._auth_config and self._auth_config.remove_credentials(name):
             self._save_auth_config()
             # Reload current source if we removed the active one
@@ -244,6 +392,21 @@ class AuthService:
                 self._load_current_credentials()
             return True
         return False
+
+    def _revoke_interactive_tokens(self, source: Credentials) -> None:
+        """Revoke an interactive credential's grant at the AS (best-effort)."""
+        if source.type != CredentialType.INTERACTIVE:
+            return
+        # Revoking the refresh token invalidates the whole grant (access token
+        # included), so only fall back to the access token when there is no
+        # refresh token — one request, not two sequential 30s-timeout calls.
+        token = source.refresh_token or source.token
+        if not token:
+            return
+        try:
+            self.oauth.revoke(token)
+        except Exception:
+            pass
 
     def generate_unique_name(self, base_name: str) -> str:
         """Generate a unique name for an credentials."""
@@ -259,7 +422,7 @@ class AuthService:
         """Return True if multi-auth UI should be shown (2+ sources)."""
         return len(self.list_credentials()) > 1
 
-    # Legacy compatibility methods
+    # Auth-status queries used by the API client and command guards.
     def is_logged_in(self) -> bool:
         """Check if user is authenticated via any method."""
         # Check environment variable first (always available)
@@ -267,7 +430,7 @@ class AuthService:
             return True
 
         # Check if we have a fresh session from OAuth flow (before source creation)
-        if self.session is not None and self.session.user is not None:
+        if self.session is not None and self.session.user is not None and self._current_source is None:
             return True
 
         if not self._current_source:
@@ -276,52 +439,18 @@ class AuthService:
         if self._current_source.type == CredentialType.KEY:
             return bool(self._current_source.token)
         elif self._current_source.type == CredentialType.INTERACTIVE:
-            # For interactive auth, check if session is valid by attempting to get user
-            if self.session is not None and self.session.user is not None:
-                return True
-            # If we have credentials but no valid session, try to refresh
-            if self._current_source.token:
-                try:
-                    user_response = self.supabase_auth.get_user(self._current_source.token)
-                    if user_response and user_response.user:
-                        self.user = user_response.user
-                        self.session = GoTrueSession(
-                            access_token=self._current_source.token,
-                            refresh_token="",
-                            user=user_response.user,
-                        )
-                        return True
-                except Exception:
-                    # Token exists but is expired/invalid
-                    return False
-            return False
+            # Valid if we can produce a (possibly refreshed) access token.
+            return self._ensure_valid_token() is not None
 
         return False
 
     def has_expired_session(self) -> bool:
-        """Check if user has credentials but session is expired."""
-        # No expired session for environment API key
-        if ENV.HCLI_API_KEY:
+        """True when an interactive credential has a stored token that can no longer be used."""
+        source = self._current_source
+        if ENV.HCLI_API_KEY or not source or source.type != CredentialType.INTERACTIVE:
             return False
-
-        # No expired session if no credentials exist
-        if not self._current_source:
-            return False
-
-        # Only interactive auth can have expired sessions
-        if self._current_source.type != CredentialType.INTERACTIVE:
-            return False
-
-        # Has credentials but session is invalid/expired
-        if self._current_source.token and (self.session is None or self.session.user is None):
-            try:
-                # Try to verify if token is actually expired
-                user_response = self.supabase_auth.get_user(self._current_source.token)
-                return user_response is None or user_response.user is None
-            except Exception:
-                return True
-
-        return False
+        # A stored token that is_logged_in() can neither use nor refresh is expired.
+        return bool(source.token) and not self.is_logged_in()
 
     def get_auth_type(self) -> dict[str, str]:
         """Get the type of authentication being used."""
@@ -373,12 +502,54 @@ class AuthService:
         return {"email": self._current_source.email}
 
     def get_access_token(self) -> str | None:
-        """Get access token from current session."""
-        return self.session.access_token if self.session else None
+        """Get a valid access token for the current session, refreshing if needed."""
+        return self._ensure_valid_token()
+
+    def _ensure_valid_token(self) -> str | None:
+        """Return a non-expired access token, refreshing via the refresh token if necessary."""
+        if not self.session:
+            return None
+
+        now = time.time()
+        if self.session.expires_at is None or self.session.expires_at > now:
+            return self.session.access_token
+
+        # Access token expired: try to refresh, at most once per process.
+        if self._refresh_failed or not self.session.refresh_token:
+            return None
+        try:
+            tokens = self.oauth.refresh(self.session.refresh_token)
+        except Exception:
+            self._refresh_failed = True
+            return None
+
+        self._store_session_tokens(tokens)
+        return self.session.access_token
+
+    def _persist_tokens(self, source: Credentials, tokens: OAuthTokens) -> None:
+        """Copy an OAuthTokens triple onto a credential and save the config."""
+        source.token = tokens.access_token
+        source.refresh_token = tokens.refresh_token
+        source.expires_at = tokens.expires_at
+        source.update_last_used()
+        self._save_auth_config()
+
+    def _store_session_tokens(self, tokens: OAuthTokens) -> None:
+        """Update the in-memory session and persist tokens to the active credential."""
+        user = self.user
+        # A refresh response may omit a rotated refresh token; keep the old one.
+        if not tokens.refresh_token and self.session and self.session.refresh_token:
+            tokens = replace(tokens, refresh_token=self.session.refresh_token)
+
+        self._refresh_failed = False
+        self.session = Session.from_tokens(tokens, user)
+
+        if self._current_source and self._current_source.type == CredentialType.INTERACTIVE:
+            self._persist_tokens(self._current_source, tokens)
 
     # Auth flow methods (updated for multi-source)
     def _create_or_update_interactive_credentials(
-        self, email: str, token: str, name: str | None = None
+        self, email: str, tokens: OAuthTokens, name: str | None = None
     ) -> Credentials | None:
         """Create new or update existing interactive credentials for the given email."""
         # Check if interactive credentials already exist for this email
@@ -387,10 +558,8 @@ class AuthService:
             existing_source = self._auth_config.find_credentials_by_email_and_type(email, CredentialType.INTERACTIVE)
 
         if existing_source:
-            # Update existing credentials with new token
-            existing_source.token = token
-            existing_source.update_last_used()
-            self._save_auth_config()
+            # Update existing credentials with new tokens
+            self._persist_tokens(existing_source, tokens)
 
             # Set as current/default
             self._current_source = existing_source
@@ -402,8 +571,14 @@ class AuthService:
             source_name = name or email
             source_name = self.generate_unique_name(source_name)
 
-            # Create new credentials
-            source = Credentials.create_credentials(source_name, CredentialType.INTERACTIVE, token, email)
+            source = Credentials.create_credentials(
+                source_name,
+                CredentialType.INTERACTIVE,
+                tokens.access_token,
+                email,
+                refresh_token=tokens.refresh_token,
+                expires_at=tokens.expires_at,
+            )
             self.add_credentials(source)
 
             # Set as current/default
@@ -412,39 +587,61 @@ class AuthService:
 
             return source
 
+    def _apply_tokens(self, tokens: OAuthTokens) -> User | None:
+        """Resolve the user for freshly obtained tokens and set the active session."""
+        # The scope requests `email`, so the id_token carries it locally; decode
+        # that first and only fall back to a userinfo round-trip when it doesn't.
+        email = _email_from_id_token(tokens.id_token)
+        if not email:
+            try:
+                userinfo = self.oauth.get_userinfo(tokens.access_token)
+                if userinfo:
+                    email = userinfo.get("email")
+            except Exception:
+                pass
+
+        user = User(email=email) if email else None
+        self._refresh_failed = False
+        self.session = Session.from_tokens(tokens, user)
+        return user
+
     async def login_interactive(self, name: str | None = None, force: bool = False) -> Credentials | None:
-        """Login using OAuth flow and create new credentials."""
-        await self._login_flow(prompt=force)
-        if self.is_logged_in() and self.session and self.session.user:
-            email = self.session.user.email
-            token = self.session.access_token if self.session else ""
-            return self._create_or_update_interactive_credentials(email, token, name)
+        """Login using the browser-based Authorization Code + PKCE flow."""
+        tokens = await self._login_flow(prompt="login" if force else None)
+        if tokens and self.session and self.session.user:
+            return self._create_or_update_interactive_credentials(self.session.user.email, tokens, name)
         return None
 
-    async def login_otp(self, email: str, name: str | None = None, force: bool = False) -> bool:
-        """Login using OTP and create credentials."""
-        if force:
-            self.logout_current()
+    def begin_oob_login(self, force: bool = False) -> str:
+        """Start a headless (out-of-band) login and return the authorization URL.
 
-        self.supabase_auth.sign_in_with_otp({"email": email})
-        return True
+        The caller shows the URL to the user, collects the pasted code, and
+        passes it to :meth:`complete_oob_login`.
+        """
+        verifier, challenge = OAuthClient.generate_pkce()
+        state = secrets.token_urlsafe(24)
+        redirect_uri = ENV.HCLI_OAUTH_OOB_REDIRECT_URL
+        url = self.oauth.build_authorize_url(redirect_uri, state, challenge, prompt="login" if force else None)
+        self._pending_oob = _PendingFlow(verifier=verifier, redirect_uri=redirect_uri)
+        return url
 
-    def verify_otp(self, email: str, otp: str, name: str | None = None) -> Credentials | None:
-        """Verify OTP and create credentials."""
+    def complete_oob_login(self, code: str, name: str | None = None) -> Credentials | None:
+        """Complete a headless login by exchanging the pasted authorization code."""
+        flow = self._pending_oob
+        self._pending_oob = None
+        if not flow:
+            return None
+
         try:
-            self.supabase_auth.verify_otp({"email": email, "token": otp, "type": "email"})
+            tokens = self.oauth.exchange_code(code.strip(), flow.verifier, flow.redirect_uri)
+        except Exception as e:
+            logger.warning(f"OOB token exchange failed: {e}")
+            return None
 
-            # Refresh session after OTP verification
-            session = self.supabase_auth.get_session()
-            if session and session.user:
-                self.user = session.user
-                self.session = session
-
-                token = session.access_token
-                return self._create_or_update_interactive_credentials(email, token, name)
-        except Exception:
-            pass
-        return None
+        user = self._apply_tokens(tokens)
+        if not user:
+            return None
+        return self._create_or_update_interactive_credentials(user.email, tokens, name)
 
     async def add_api_key_credentials(self, name: str, token: str) -> Credentials | None:
         """Add a new API key credentials."""
@@ -476,10 +673,9 @@ class AuthService:
     def logout_current(self) -> None:
         """Logout from current session (for interactive auth)."""
         if self._current_source and self._current_source.type == CredentialType.INTERACTIVE:
-            self.supabase_auth.sign_out()
+            self._revoke_interactive_tokens(self._current_source)
 
         self.session = None
-        self.user = None
 
     def show_login_info(self) -> None:
         """Display current login status and user information."""
@@ -522,122 +718,106 @@ class AuthService:
         label = getattr(source, "label", source.email)
         console.print(f"You are logged in as {label}{auth_info}{default_info}")
 
-    # OAuth flow implementation (unchanged)
-    async def _login_flow(self, prompt: bool = False):
-        """Handle OAuth login flow with local HTTP server."""
+    # OAuth Authorization Code + PKCE flow (loopback)
+    async def _login_flow(self, prompt: str | None = None) -> OAuthTokens | None:
+        """Handle browser-based OAuth login with a loopback HTTP server."""
         from hcli.lib.console import console
 
-        console.print(f"Starting Google OAuth login{'with prompt' if prompt else ''}...")
+        console.print("Starting browser login...")
 
-        # Build OAuth URL with optional prompt parameter
-        query_params = {}
-        if prompt:
-            query_params["prompt"] = "login"
+        verifier, challenge = OAuthClient.generate_pkce()
+        state = secrets.token_urlsafe(24)
 
-        # Start OAuth flow
-        auth_response = self.supabase_auth.sign_in_with_oauth(
-            {
-                "provider": "google",
-                "options": {
-                    "redirect_to": OAUTH_REDIRECT_URL,
-                    "query_params": query_params,
-                },
-            }
-        )
-
-        oauth_url = auth_response.url
-        if not oauth_url:
-            console.print("No OAuth URL received")
-            return
+        try:
+            oauth_url = self.oauth.build_authorize_url(OAUTH_REDIRECT_URL, state, challenge, prompt)
+        except Exception as e:
+            console.print(f"[red]Could not reach the authorization server: {e}[/red]")
+            return None
 
         console.print(f"Open this URL in your browser to continue login: {oauth_url}")
         webbrowser.open(oauth_url)
 
-        # Start local HTTP server to handle callback
-        await self._start_oauth_server()
+        # Start local HTTP server to handle callback and wait for the code.
+        code = await self._start_oauth_server(state)
+        if self._oauth_error:
+            console.print(f"[red]Authorization failed: {self._oauth_error}[/red]")
+            return None
+        if not code:
+            console.print("Login timeout or failed")
+            return None
 
-    async def _start_oauth_server(self):
-        """Start local HTTP server to handle OAuth callback."""
-        self._oauth_result = None
+        try:
+            tokens = self.oauth.exchange_code(code, verifier, OAUTH_REDIRECT_URL)
+        except Exception as e:
+            console.print(f"[red]Token exchange failed: {e}[/red]")
+            return None
+
+        user = self._apply_tokens(tokens)
+        if not user:
+            console.print("[red]Signed in, but could not determine your account email from the token.[/red]")
+            return None
+        console.print(f"{user.email} logged in successfully!")
+        return tokens
+
+    async def _start_oauth_server(self, expected_state: str) -> str | None:
+        """Start a loopback HTTP server, wait for the OAuth callback, return the code."""
+        self._oauth_code = None
+        self._oauth_error = None
+
+        service = self
 
         class OAuthHandler(BaseHTTPRequestHandler):
             def do_GET(handler_self):
-                if handler_self.path.startswith("/callback"):
-                    # Serve HTML page to extract tokens from URL hash
-                    handler_self.send_response(200)
-                    handler_self.send_header("Content-Type", "text/html")
-                    handler_self.end_headers()
-                    handler_self.wfile.write(HTML_PAGE.encode())
-                else:
+                parsed = urlparse(handler_self.path)
+                if parsed.path != "/callback":
                     handler_self.send_response(404)
                     handler_self.end_headers()
+                    return
 
-            def do_POST(handler_self):
-                if handler_self.path == "/token":
-                    # Handle token submission from browser
-                    content_length = int(handler_self.headers["Content-Length"])
-                    post_data = handler_self.rfile.read(content_length)
+                params = parse_qs(parsed.query)
+                error = params.get("error", [None])[0]
+                code = params.get("code", [None])[0]
+                state = params.get("state", [None])[0]
 
-                    try:
-                        token_data = json.loads(post_data.decode())
-                        access_token = token_data.get("access_token")
-                        refresh_token = token_data.get("refresh_token")
-
-                        if access_token:
-                            self._oauth_result = {
-                                "access_token": access_token,
-                                "refresh_token": refresh_token,
-                            }
-
-                            handler_self.send_response(200)
-                            handler_self.send_header("Content-Type", "text/plain")
-                            handler_self.end_headers()
-                            handler_self.wfile.write(b"Token received and saved.")
-                        else:
-                            handler_self.send_response(400)
-                            handler_self.end_headers()
-                    except Exception as e:
-                        logger.warning(f"Failed to process token: {e}")
-                        handler_self.send_response(500)
-                        handler_self.end_headers()
+                if error:
+                    service._oauth_error = params.get("error_description", [error])[0]
+                    handler_self._respond(HTML_FAILURE)
+                elif code and state == expected_state:
+                    service._oauth_code = code
+                    handler_self._respond(HTML_SUCCESS)
                 else:
-                    handler_self.send_response(404)
-                    handler_self.end_headers()
+                    # A stray or duplicate hit on the callback (browser prefetch,
+                    # reload, link scanner) without a matching code+state: respond
+                    # but keep waiting for the real redirect rather than latching a
+                    # terminal error that would abort the still-pending login.
+                    handler_self._respond(HTML_FAILURE)
+
+            def _respond(handler_self, body: str):
+                handler_self.send_response(200)
+                handler_self.send_header("Content-Type", "text/html")
+                handler_self.end_headers()
+                handler_self.wfile.write(body.encode())
 
             def log_message(self, format, *args):
                 pass  # Suppress server logs
 
         # Start server in a separate thread
-        server = HTTPServer(("localhost", OAUTH_SERVER_PORT), OAuthHandler)
+        server = HTTPServer(("127.0.0.1", OAUTH_SERVER_PORT), OAuthHandler)
         self._server_thread = Thread(target=server.serve_forever)
         self._server_thread.daemon = True
         self._server_thread.start()
 
-        # Wait for OAuth result
-        max_wait = 120  # 2 minutes timeout
+        # Wait for the callback (2 minute timeout)
+        max_wait = 120
         wait_count = 0
-        while wait_count < max_wait and self._oauth_result is None:
+        while wait_count < max_wait and self._oauth_code is None and self._oauth_error is None:
             await asyncio.sleep(1)
             wait_count += 1
 
         server.shutdown()
         server.server_close()
 
-        if self._oauth_result:
-            from hcli.lib.console import console
-
-            # Set session with received tokens
-            self.supabase_auth.set_session(self._oauth_result["access_token"], self._oauth_result["refresh_token"])
-
-            # Refresh user and session info
-            self.session = self.supabase_auth.get_session()
-            if self.session and self.session.user:
-                self.user = self.session.user
-                console.print(f"{self.user.email} logged in successfully!")
-        else:
-            from hcli.lib.console import console
-
-            console.print("Login timeout or failed")
+        return self._oauth_code
 
 
 # Global auth service instance accessor
@@ -646,39 +826,18 @@ def get_auth_service() -> AuthService:
     return AuthService.instance()
 
 
-HTML_PAGE = """
+HTML_SUCCESS = """
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login</title>
-</head>
-<body>
-  <script>
-    // Extract token from hash
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const accessToken = hashParams.get("access_token");
-    const refreshToken = hashParams.get("refresh_token");
+<head><meta charset="UTF-8"><title>Login</title></head>
+<body><p>Login successful! You can close this tab.</p></body>
+</html>
+"""
 
-    if (accessToken) {
-      // Send token back to server
-      fetch("http://localhost:9999/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken }),
-      })
-      .then(() => {
-        document.body.innerHTML = "Login successful! You can close this tab.";
-      })
-      .catch((e) => {
-        console.error("Error saving token:", e);
-        document.body.innerHTML = "Error saving token.";
-      });
-    } else {
-      document.body.innerHTML = "No token found in URL.";
-    }
-  </script>
-</body>
+HTML_FAILURE = """
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Login</title></head>
+<body><p>Login failed. You can close this tab and try again.</p></body>
 </html>
 """
