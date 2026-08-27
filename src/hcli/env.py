@@ -57,7 +57,9 @@ class ENV:
     # the .io environment for dev.
     HCLI_OAUTH_ISSUER: str = os.getenv("HCLI_OAUTH_ISSUER", "https://oauth.hex-rays.com")
     HCLI_OAUTH_CLIENT_ID: str = os.getenv("HCLI_OAUTH_CLIENT_ID", "74a4232c-af42-4974-90c4-3d0f8f83303d")
-    HCLI_OAUTH_SCOPE: str = os.getenv("HCLI_OAUTH_SCOPE", "openid offline_access email profile licenses:read")
+    HCLI_OAUTH_SCOPE: str = os.getenv(
+        "HCLI_OAUTH_SCOPE", "openid offline_access email profile licenses:read downloads:read"
+    )
     # Out-of-band redirect for headless (--no-browser) logins: the portal consent
     # page renders the authorization code for the user to paste back. It is a
     # pre-registered OAuth redirect URI, so it must move in lockstep with the
