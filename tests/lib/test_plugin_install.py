@@ -34,6 +34,7 @@ from hcli.lib.ida.plugin.install import (
     get_trash_directory,
     install_plugin_archive,
     is_plugin_installed,
+    is_vcs_or_url_dependency,
     sweep_trash,
     uninstall_plugin,
     upgrade_plugin_archive,
@@ -155,6 +156,68 @@ def test_plugin_python_dependencies(virtual_ida_environment_with_venv):
 
     freeze = pip_freeze(Path(os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"]))
     assert "packaging==25.0" in freeze
+
+
+@pytest.mark.parametrize(
+    "dependency,expected",
+    [
+        ("packaging==25.0", False),
+        ("packaging>=1.0,<3", False),
+        ("git+https://github.com/HexRaysSA/speakeasy.git@gdb-improvements", True),
+        ("hg+https://example.com/repo@tip", True),
+        ("speakeasy @ git+https://github.com/HexRaysSA/speakeasy.git@gdb-improvements", True),
+        ("some-pkg @ https://example.com/some-pkg-1.0.whl", True),
+        ("https://example.com/some-pkg-1.0.whl", True),
+    ],
+)
+def test_is_vcs_or_url_dependency(dependency: str, expected: bool):
+    assert is_vcs_or_url_dependency(dependency) is expected
+
+
+def test_installing_a_plugin_does_not_refetch_another_plugins_vcs_dependency(
+    virtual_ida_environment_with_venv, monkeypatch
+):
+    """Merging in other installed plugins' deps is for conflict detection only.
+
+    VCS/URL deps can't be cheaply checked for "already satisfied" (e.g. a git
+    branch ref has no stable version), so pip re-fetches them - clone,
+    submodules and all - on every unrelated plugin install unless we exclude
+    them from the merge.
+    """
+    existing_plugin_dir = get_plugin_directory("existing-plugin")
+    existing_plugin_dir.mkdir(parents=True)
+    (existing_plugin_dir / "existing_plugin.py").write_text("# plugin code")
+    (existing_plugin_dir / "ida-plugin.json").write_text(
+        json.dumps(
+            {
+                "IDAMetadataDescriptorVersion": 1,
+                "plugin": {
+                    "name": "existing-plugin",
+                    "version": "1.0.0",
+                    "entryPoint": "existing_plugin.py",
+                    "pythonDependencies": ["git+https://github.com/HexRaysSA/speakeasy.git@gdb-improvements"],
+                },
+            }
+        )
+    )
+
+    installed_packages: list[list[str]] = []
+    monkeypatch.setattr(
+        "hcli.lib.ida.plugin.install.verify_pip_can_install_packages",
+        lambda python_exe, packages, pip_options=None: installed_packages.append(list(packages)),
+    )
+    monkeypatch.setattr(
+        "hcli.lib.ida.plugin.install.pip_install_packages",
+        lambda python_exe, packages, pip_options=None: installed_packages.append(list(packages)),
+    )
+
+    plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v3.0.0.zip"
+    buf = plugin_path.read_bytes()
+    install_plugin_archive(buf, "plugin1")
+
+    for packages in installed_packages:
+        assert "packaging==25.0" in packages
+        assert not any(is_vcs_or_url_dependency(p) for p in packages)
 
 
 def test_plugin_python_dependencies_rejects_externally_managed_python_without_running_pip(
