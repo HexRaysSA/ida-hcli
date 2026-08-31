@@ -128,7 +128,7 @@ async def perform_download_action(selected_files: list[Asset]) -> None:
             console.print(f"\n[blue]Downloading {file.filename}...[/blue]")
 
             # Get download URL
-            file_info = await asset.get_shared_file_by_code(file.code if file.code else "", file.version)
+            file_info = await asset.get_shared_file_by_code(file.code or "", file.version)
 
             if not file_info:
                 console.print(f"[red]✗ Failed to get download info for {file.filename}[/red]")

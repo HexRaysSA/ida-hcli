@@ -86,7 +86,7 @@ async def select_asset(nodes: list[TreeNode], current_path: str = "") -> Asset |
             return None
         elif selected_node.type == "file":
             # File selected - return the asset key
-            return selected_node.asset if selected_node.asset else None
+            return selected_node.asset or None
 
         return None
 

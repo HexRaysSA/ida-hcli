@@ -69,7 +69,7 @@ class IdaProduct:
         product_part = match.group(1)  # like: pro, home-pc, essential
         version_major = int(match.group(2)[0])  # like: 9
         version_minor = int(match.group(2)[1])  # like: 1
-        suffix = match.group(3) if match.group(3) else None  # like: sp1
+        suffix = match.group(3) or None  # like: sp1
 
         product_mapping = {
             "pro": "IDA Professional",
@@ -286,10 +286,10 @@ def _dedupe_paths(paths: list[Path]) -> list[Path]:
 
 
 def _find_windows_registry_installations() -> list[_WindowsRegistryInstallation]:
-    """Read IDA installation metadata from the Add/Remove Programs registry under HKLM.
+    r"""Read IDA installation metadata from the Add/Remove Programs registry under HKLM.
 
     The installer writes a key per install under
-    ``HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IDA <edition> <version>``.
+    ``HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\IDA <edition> <version>``.
     """
     try:
         import winreg as _winreg  # type: ignore[import-not-found]
@@ -380,8 +380,7 @@ def _find_linux_installs_from_desktop_files() -> list[Path]:
     xdg = os.environ.get("XDG_DATA_HOME")
     if xdg:
         search_dirs.append(Path(xdg) / "applications")
-    search_dirs.append(get_user_home_dir() / ".local" / "share" / "applications")
-    search_dirs.append(Path("/usr/share/applications"))
+    search_dirs.extend((get_user_home_dir() / ".local" / "share" / "applications", Path("/usr/share/applications")))
 
     for app_dir in search_dirs:
         if not app_dir.exists():
@@ -562,7 +561,7 @@ def accept_eula(install_dir: Path) -> None:
 
 
 def install_ida(installer: Path, install_dir: Path):
-    """
+    r"""
     Install IDA Pro from an installer.
 
     Args:
@@ -570,7 +569,7 @@ def install_ida(installer: Path, install_dir: Path):
       install_dir: path to the installation directory, which should not already exist.
 
     Installation directory should look like:
-      - %Program Files%\\IDA Professional 9.1\\
+      - %Program Files%\IDA Professional 9.1\
       - /Applications/IDA Professional 9.1.app/
       - /opt/ida-9.1/
       - /tmp/ida-9.1/
@@ -767,9 +766,7 @@ class PluginRepositoryConfig(BaseModel):
 class SettingsConfig(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
 
-    plugin_repository: PluginRepositoryConfig = Field(
-        alias="plugin-repository", default_factory=lambda: PluginRepositoryConfig()
-    )
+    plugin_repository: PluginRepositoryConfig = Field(alias="plugin-repository", default_factory=PluginRepositoryConfig)
 
 
 class PluginConfig(BaseModel):
@@ -784,8 +781,8 @@ class IDAConfigJson(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
 
     version: Literal[1] | None = Field(alias="Version", default=1)
-    paths: PathsConfig = Field(alias="Paths", default_factory=lambda: PathsConfig())
-    settings: SettingsConfig = Field(alias="Settings", default_factory=lambda: SettingsConfig())
+    paths: PathsConfig = Field(alias="Paths", default_factory=PathsConfig)
+    settings: SettingsConfig = Field(alias="Settings", default_factory=SettingsConfig)
     # from plugin name to config.
     # NOTE: keyed by bare plugin name for now. Two plugins with the same bare
     # name but different repository URLs will share the same settings entry;
