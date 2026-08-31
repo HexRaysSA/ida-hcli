@@ -185,7 +185,7 @@ class IDALauncher:
             # e.g., /Applications/IDA.app/Contents/MacOS/ida -> /Applications/IDA.app
             ida_bin_str = str(ida_bin)
             if "/Contents/MacOS/" in ida_bin_str:
-                return Path(ida_bin_str.split("/Contents/MacOS/")[0])
+                return Path(ida_bin_str.split("/Contents/MacOS/", maxsplit=1)[0])
         # Linux/Windows: binary is directly in the install dir
         return ida_bin.parent
 
@@ -244,7 +244,7 @@ class IDALauncher:
         if sys.platform == "darwin":
             ida_bin_str = str(ida_bin)
             if "/Contents/MacOS/" in ida_bin_str:
-                app_bundle = ida_bin_str.split("/Contents/MacOS/")[0]
+                app_bundle = ida_bin_str.split("/Contents/MacOS/", maxsplit=1)[0]
                 if app_bundle.endswith(".app"):
                     cmd = ["open", "-n", "-a", app_bundle, "--args", str(idb_path)]
                 else:
@@ -313,7 +313,7 @@ class IDALauncher:
             # e.g., /Applications/IDA.app/Contents/MacOS/ida -> /Applications/IDA.app
             ida_bin_str = str(ida_bin)
             if "/Contents/MacOS/" in ida_bin_str:
-                app_bundle = ida_bin_str.split("/Contents/MacOS/")[0]
+                app_bundle = ida_bin_str.split("/Contents/MacOS/", maxsplit=1)[0]
                 if app_bundle.endswith(".app"):
                     # Use -n to force a new instance, --args to pass the IDB path
                     cmd = ["open", "-n", "-a", app_bundle, "--args", str(idb_path)]

@@ -65,7 +65,7 @@ async def login(force: bool, name: str | None) -> None:
 
     elif selected == "Email (OTP)":
         # Email OTP login
-        email = await safe_ask_async(questionary.text("Email address", default=current_email if current_email else ""))
+        email = await safe_ask_async(questionary.text("Email address", default=current_email or ""))
 
         try:
             console.print(f"[blue]Sending OTP to {email}...[/blue]")

@@ -46,8 +46,7 @@ def _get_uv_cache_dirs() -> list[Path]:
     home = Path.home()
     system = platform.system()
     if system == "Darwin":
-        dirs.append(home / "Library" / "Caches" / "uv")
-        dirs.append(home / ".cache" / "uv")
+        dirs.extend((home / "Library" / "Caches" / "uv", home / ".cache" / "uv"))
     elif system == "Windows":
         local_app_data = os.environ.get("LOCALAPPDATA")
         if local_app_data:
@@ -93,10 +92,7 @@ def _has_uv_internal_parent(path: Path) -> bool:
     ephemeral environments regardless of where the cache root is
     (``~/.cache/uv/``, ``$TMPDIR``, ``--no-cache`` temp dirs, etc.).
     """
-    for parent in path.resolve().parents:
-        if parent.name in _UV_INTERNAL_DIRS:
-            return True
-    return False
+    return any(parent.name in _UV_INTERNAL_DIRS for parent in path.resolve().parents)
 
 
 def is_uv_cache_virtual_env(virtual_env: str | Path) -> bool:

@@ -217,10 +217,10 @@ class TestDownloadFileDiskGuard:
                 return_value=SimpleNamespace(total=0, used=0, free=1024),  # only 1 KB free
             ),
             patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env,
-            pytest.raises(click.ClickException, match="disk space"),
         ):
             mock_env.HCLI_KE_MAX_DOWNLOAD_MB = 0
-            ke_url_handler._download_file(_client(_stream_cm(b"x" * 4096)), "https://h/a/download", dest, None)
+            with pytest.raises(click.ClickException, match="disk space"):
+                ke_url_handler._download_file(_client(_stream_cm(b"x" * 4096)), "https://h/a/download", dest, None)
 
         assert not dest.exists()  # partial file removed
 
@@ -230,10 +230,11 @@ class TestDownloadFileDiskGuard:
         dest = tmp_path / "cached.i64"
         dest.write_bytes(b"GOOD CACHED COPY")
 
-        with patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env, pytest.raises(click.ClickException):
+        with patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env:
             mock_env.HCLI_KE_MAX_DOWNLOAD_MB = 0
             client = _client(_stream_cm(b"", status=500))  # transient server failure
-            ke_url_handler._download_file(client, "https://h/a/download", dest, None)
+            with pytest.raises(click.ClickException):
+                ke_url_handler._download_file(client, "https://h/a/download", dest, None)
 
         assert dest.read_bytes() == b"GOOD CACHED COPY"  # untouched
         assert not (tmp_path / "cached.i64.part").exists()  # partial cleaned up

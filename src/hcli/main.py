@@ -72,17 +72,29 @@ def _get_status_section() -> str:
                 ver = f" {version}" if version else ""
                 lines.append(f"  IDA:   [green]IDA{ver}[/green] at {path}")
             else:
-                lines.append(f"  IDA:   [red]Not found[/red] at {path}")
-                lines.append(f"         → {ENV.HCLI_BINARY_NAME} ida install -d ida-pro:latest -y")
+                lines.extend(
+                    (
+                        f"  IDA:   [red]Not found[/red] at {path}",
+                        f"         → {ENV.HCLI_BINARY_NAME} ida install -d ida-pro:latest -y",
+                    )
+                )
         elif not instances:
-            lines.append("  IDA:   [yellow]Not installed[/yellow]")
-            lines.append(f"         → {ENV.HCLI_BINARY_NAME} ida install -d ida-pro:latest -l LICENSE_ID -y")
-            lines.append(f"         [dim]Find your license ID with: {ENV.HCLI_BINARY_NAME} license list[/dim]")
-            lines.append("         [dim]Installing also activates idalib for Python (import idapro).[/dim]")
+            lines.extend(
+                (
+                    "  IDA:   [yellow]Not installed[/yellow]",
+                    f"         → {ENV.HCLI_BINARY_NAME} ida install -d ida-pro:latest -l LICENSE_ID -y",
+                    f"         [dim]Find your license ID with: {ENV.HCLI_BINARY_NAME} license list[/dim]",
+                    "         [dim]Installing also activates idalib for Python (import idapro).[/dim]",
+                )
+            )
         else:
             valid = sum(1 for p in instances.values() if Path(p).exists() and is_ida_dir(Path(p)))
-            lines.append(f"  IDA:   [yellow]{len(instances)} instance(s), no default set[/yellow] ({valid} valid)")
-            lines.append(f"         → {ENV.HCLI_BINARY_NAME} ida switch")
+            lines.extend(
+                (
+                    f"  IDA:   [yellow]{len(instances)} instance(s), no default set[/yellow] ({valid} valid)",
+                    f"         → {ENV.HCLI_BINARY_NAME} ida switch",
+                )
+            )
 
         # -- idalib (from ida-config.json, independent of hcli default) --
         try:
