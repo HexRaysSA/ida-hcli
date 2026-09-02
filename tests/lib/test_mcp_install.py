@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from hcli.commands.mcp.install import Agent, Scope, _find_agents, _install_agent
+from hcli.commands.mcp.install import Agent, Scope, _find_agents, _install_agent, _install_ida_plugin
 
 
 def make_fake_agent(
@@ -158,3 +158,17 @@ def test_omp_updates_existing_local_plugin(tmp_path: Path) -> None:
         ["plugin", "list", "--json", "--scope", "project"],
         ["plugin", "upgrade", "ida-mcp", "--scope", "project"],
     ]
+
+
+def test_ida_plugin_install_upgrades_when_already_installed() -> None:
+    """Re-running `hcli mcp install` must upgrade the plugin, not abort on it."""
+    calls: list[dict[str, object]] = []
+
+    class FakeContext:
+        def invoke(self, command: object, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    _install_ida_plugin(FakeContext())  # type: ignore[arg-type]
+
+    assert len(calls) == 1
+    assert calls[0]["upgrade"] is True

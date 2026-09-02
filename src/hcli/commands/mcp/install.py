@@ -217,12 +217,16 @@ def _install_agent(agent: Agent, scope: Scope) -> None:
 
 
 def _install_ida_plugin(ctx: click.Context) -> None:
+    # `upgrade=True`: this command is the entry point users re-run to (re)wire
+    # an agent, so an already-installed ida-mcp must upgrade in place rather
+    # than abort before the agent integration below ever runs.
     ctx.invoke(
         install_plugin,
         plugin=IDA_MCP_PLUGIN,
         editable=False,
         config=(),
         no_build_isolation=False,
+        upgrade=True,
     )
 
 
