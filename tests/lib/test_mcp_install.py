@@ -47,6 +47,7 @@ def make_fake_agent(
     names = {
         "claude": ("Claude Code", True),
         "codex": ("Codex CLI", False),
+        "copilot": ("GitHub Copilot CLI", False),
         "pi": ("Pi", True),
         "omp": ("Oh My Pi", True),
     }
@@ -109,6 +110,68 @@ def test_codex_adds_marketplace_then_installs(tmp_path: Path) -> None:
         ["plugin", "marketplace", "list", "--json"],
         ["plugin", "marketplace", "add", "HexRaysSA/codex-marketplace"],
         ["plugin", "add", "ida-mcp@HexRaysSA"],
+    ]
+
+
+def test_copilot_adds_marketplace_then_installs(tmp_path: Path) -> None:
+    agent, log_path = make_fake_agent(
+        tmp_path,
+        "copilot",
+        {
+            ("plugin", "list"): "No plugins installed.\n",
+            ("plugin", "marketplace", "list"): (
+                "Included with GitHub Copilot:\n  ◆ copilot-plugins (GitHub: github/copilot-plugins)\n"
+            ),
+        },
+    )
+
+    _install_agent(agent, "global")
+
+    assert read_commands(log_path) == [
+        ["plugin", "list"],
+        ["plugin", "marketplace", "list"],
+        ["plugin", "marketplace", "add", "HexRaysSA/copilot-marketplace"],
+        ["plugin", "install", "ida-mcp@HexRaysSA"],
+    ]
+
+
+def test_copilot_updates_existing_marketplace_then_installs(tmp_path: Path) -> None:
+    agent, log_path = make_fake_agent(
+        tmp_path,
+        "copilot",
+        {
+            ("plugin", "list"): "No plugins installed.\n",
+            ("plugin", "marketplace", "list"): (
+                "Included with GitHub Copilot:\n  ◆ HexRaysSA (GitHub: HexRaysSA/copilot-marketplace)\n"
+            ),
+        },
+    )
+
+    _install_agent(agent, "global")
+
+    assert read_commands(log_path) == [
+        ["plugin", "list"],
+        ["plugin", "marketplace", "list"],
+        ["plugin", "marketplace", "update", "HexRaysSA"],
+        ["plugin", "install", "ida-mcp@HexRaysSA"],
+    ]
+
+
+def test_copilot_updates_existing_plugin_and_marketplace(tmp_path: Path) -> None:
+    agent, log_path = make_fake_agent(
+        tmp_path,
+        "copilot",
+        {
+            ("plugin", "list"): "Installed plugins:\n  • ida-mcp (v0.8.1)\n",
+        },
+    )
+
+    _install_agent(agent, "global")
+
+    assert read_commands(log_path) == [
+        ["plugin", "list"],
+        ["plugin", "marketplace", "update", "HexRaysSA"],
+        ["plugin", "update", "ida-mcp"],
     ]
 
 

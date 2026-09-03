@@ -5,6 +5,7 @@
 ### Added
 - Warn when IDA's Python version (registered by idapyswitch) doesn't match the active virtualenv, in `explain-environment` and before installing plugin dependencies
 - Honor `$IDAPYTHON_VENV_EXECUTABLE` for plugin dependency management
+- Add GitHub Copilot CLI support to `hcli mcp install`
 
 ### Fixed
 - Pass every argument through to the program in `ida python exec` and `ida python run-script`, so `hcli ida python exec -m pip --help` describes pip (#287)
