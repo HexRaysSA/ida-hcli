@@ -19,6 +19,7 @@ from hcli.lib.constants import cli
 IDA_MCP_PLUGIN = "https://github.com/HexRaysSA/ida-mcp"
 CLAUDE_MARKETPLACE = "HexRaysSA/claude-marketplace"
 CODEX_MARKETPLACE = "HexRaysSA/codex-marketplace"
+COPILOT_MARKETPLACE = "HexRaysSA/copilot-marketplace"
 PLUGIN_ID = "ida-mcp@HexRaysSA"
 PI_SOURCE = "git:github.com/HexRaysSA/ida-mcp@latest"
 OMP_SOURCE = "github:HexRaysSA/ida-mcp#latest"
@@ -43,6 +44,7 @@ class AgentDefinition:
 _AGENT_DEFINITIONS = {
     "claude": AgentDefinition(name="Claude Code", supports_local=True),
     "codex": AgentDefinition(name="Codex CLI", supports_local=False),
+    "copilot": AgentDefinition(name="GitHub Copilot CLI", supports_local=False),
     "pi": AgentDefinition(name="Pi", supports_local=True),
     "omp": AgentDefinition(name="Oh My Pi", supports_local=True),
 }
@@ -98,6 +100,24 @@ def _query_json(agent: Agent, args: list[str]) -> Any | None:
         return json.loads(result.stdout)
     except (json.JSONDecodeError, TypeError):
         return None
+
+
+def _query_text(agent: Agent, args: list[str]) -> str | None:
+    result = _run(agent, args, capture=True)
+    return result.stdout if result.returncode == 0 else None
+
+
+def _has_named_line(value: str | None, name: str) -> bool:
+    """Find an exact item name in a human-readable CLI listing."""
+    if value is None:
+        return False
+    expected = name.casefold()
+    for line in value.splitlines():
+        normalized = line.strip().lstrip("•◆*-").strip()
+        listed_name = normalized.split(maxsplit=1)[0] if normalized else ""
+        if listed_name.casefold() == expected:
+            return True
+    return False
 
 
 def _has_named_item(value: Any, name: str) -> bool:
@@ -162,6 +182,29 @@ def _install_codex(agent: Agent) -> None:
     _run_checked(agent, ["plugin", "add", PLUGIN_ID])
 
 
+def _is_copilot_installed(agent: Agent) -> bool:
+    return _has_named_line(_query_text(agent, ["plugin", "list"]), "ida-mcp")
+
+
+def _has_copilot_marketplace(agent: Agent) -> bool:
+    return _has_named_line(
+        _query_text(agent, ["plugin", "marketplace", "list"]),
+        "HexRaysSA",
+    )
+
+
+def _install_copilot(agent: Agent) -> None:
+    if _is_copilot_installed(agent):
+        _run_checked(agent, ["plugin", "marketplace", "update", "HexRaysSA"])
+        _run_checked(agent, ["plugin", "update", "ida-mcp"])
+        return
+    if _has_copilot_marketplace(agent):
+        _run_checked(agent, ["plugin", "marketplace", "update", "HexRaysSA"])
+    else:
+        _run_checked(agent, ["plugin", "marketplace", "add", COPILOT_MARKETPLACE])
+    _run_checked(agent, ["plugin", "install", PLUGIN_ID])
+
+
 def _is_pi_installed(agent: Agent, scope: Scope) -> bool:
     result = _run(agent, ["list", "--no-approve"], capture=True)
     if result.returncode != 0:
@@ -208,6 +251,8 @@ def _install_agent(agent: Agent, scope: Scope) -> None:
         _install_claude(agent, scope)
     elif agent.command == "codex":
         _install_codex(agent)
+    elif agent.command == "copilot":
+        _install_copilot(agent)
     elif agent.command == "pi":
         _install_pi(agent, scope)
     elif agent.command == "omp":
@@ -233,12 +278,12 @@ def _install_ida_plugin(ctx: click.Context) -> None:
 @click.command()
 @click.pass_context
 def install(ctx: click.Context) -> None:
-    """Install the IDA MCP plugin and integrate it with a detected agent."""
+    """Install IDA MCP for Claude, Codex, Copilot, Pi, or Oh My Pi."""
     _install_ida_plugin(ctx)
 
     agents = _find_agents()
     if not agents:
-        raise click.ClickException("no supported agent command found on PATH (claude, codex, pi, or omp)")
+        raise click.ClickException("no supported agent command found on PATH (claude, codex, copilot, pi, or omp)")
 
     selected = questionary.select(
         "Select an agent:",
