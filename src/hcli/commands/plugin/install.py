@@ -258,8 +258,12 @@ def install_plugin(
             install_plugin_directory_editable(source_dir, plugin_name, pip_options=pip_options)
         else:
             assert buf is not None
-            write_archive = upgrade_plugin_archive if is_upgrade else install_plugin_archive
-            status_text = "upgrading plugin" if is_upgrade else "installing plugin"
+            if is_upgrade:
+                write_archive = upgrade_plugin_archive
+                status_text = "upgrading plugin"
+            else:
+                write_archive = install_plugin_archive
+                status_text = "installing plugin"
             if isinstance(plugin_repo_obj, PluginBundleRepo) and not pip_options.has_custom_sources:
                 current_python_version = detect_current_python_version()
                 with bundle_dependency_source(
