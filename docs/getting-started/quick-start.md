@@ -54,6 +54,7 @@ $ hcli commands
 │ hcli license list         │ List available licenses with rich formatting.                    │
 │ hcli login                │ Log in to the Hex-Rays portal and create new credentials.        │
 │ hcli logout               │ Log out and remove stored credentials.                           │
+│ hcli mcp install          │ Install IDA MCP for a detected coding agent.                     │
 │ hcli plugin config del    │ Delete a plugin configuration setting.                           │
 │ hcli plugin config export │ Export plugin configuration settings as JSON.                    │
 │ hcli plugin config get    │ Get a plugin configuration setting.                              │

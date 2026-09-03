@@ -23,6 +23,7 @@ from hcli.lib.ida import (
 from hcli.lib.ida.plugin import (
     get_metadata_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
+    parse_plugin_version,
 )
 from hcli.lib.ida.plugin.bundle import bundle_dependency_source
 from hcli.lib.ida.plugin.exceptions import (
@@ -38,6 +39,7 @@ from hcli.lib.ida.plugin.install import (
     pack_plugin_directory_to_zip,
     sweep_trash,
     uninstall_plugin,
+    upgrade_plugin_archive,
 )
 from hcli.lib.ida.plugin.reference import (
     format_qualified_plugin_reference,
@@ -74,7 +76,17 @@ logger = logging.getLogger(__name__)
     default=False,
     help="Disable pip build isolation when installing Python dependencies",
 )
-def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no_build_isolation: bool) -> None:
+@click.option(
+    "-U",
+    "--upgrade",
+    is_flag=True,
+    default=False,
+    help="Upgrade the plugin when it is already installed, instead of failing. "
+    "Does nothing when the installed version is already up to date.",
+)
+def install_plugin(
+    ctx, plugin: str, editable: bool, config: tuple[str, ...], no_build_isolation: bool, upgrade: bool
+) -> None:
     """Install a plugin from a repository, local directory, local .zip file, or URL."""
     pip_options: PipOptions = ctx.obj.get("pip_options", PIP_OPTIONS_DEFAULT)
     if no_build_isolation:
@@ -219,6 +231,20 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                 installed_path=installed.path,
             )
 
+        # `--upgrade` turns an already-installed plugin from an error into an
+        # in-place upgrade, so callers that just want the plugin present (e.g.
+        # `hcli mcp install`) can be run repeatedly. Editable installs already
+        # replace whatever is at the destination, so there's nothing to do
+        # there. Nothing newer to install is success, not an error.
+        is_upgrade = False
+        if upgrade and installed is not None and not editable:
+            if parse_plugin_version(metadata.plugin.version) <= parse_plugin_version(installed.version):
+                console.print(
+                    f"[green]Already installed[/green] plugin: [blue]{plugin_name}[/blue]=={installed.version}"
+                )
+                return
+            is_upgrade = True
+
         if metadata.plugin.settings:
             for config_item in config:
                 if "=" not in config_item:
@@ -232,6 +258,12 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
             install_plugin_directory_editable(source_dir, plugin_name, pip_options=pip_options)
         else:
             assert buf is not None
+            if is_upgrade:
+                write_archive = upgrade_plugin_archive
+                status_text = "upgrading plugin"
+            else:
+                write_archive = install_plugin_archive
+                status_text = "installing plugin"
             if isinstance(plugin_repo_obj, PluginBundleRepo) and not pip_options.has_custom_sources:
                 current_python_version = detect_current_python_version()
                 with bundle_dependency_source(
@@ -246,11 +278,11 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                         console.print(f"Available targets in this bundle: {available}")
                         raise click.Abort()
                     effective_pip_options = merge_bundle_pip_options(pip_options, bundle_opts)
-                    with rich.status.Status("installing plugin", console=stderr_console):
-                        install_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
+                    with rich.status.Status(status_text, console=stderr_console):
+                        write_archive(buf, plugin_name, pip_options=effective_pip_options)
             else:
-                with rich.status.Status("installing plugin", console=stderr_console):
-                    install_plugin_archive(buf, plugin_name, pip_options=pip_options)
+                with rich.status.Status(status_text, console=stderr_console):
+                    write_archive(buf, plugin_name, pip_options=pip_options)
 
         try:
             if metadata.plugin.settings:
@@ -302,13 +334,20 @@ def install_plugin(ctx, plugin: str, editable: bool, config: tuple[str, ...], no
                         set_plugin_setting(metadata.plugin.name, descr.key, answer)
 
         except Exception:
+            if is_upgrade:
+                # The upgrade itself succeeded; the plugin the user already had
+                # is now at the new version. Uninstalling it here would be a
+                # worse outcome than leaving the settings unconfigured.
+                logger.warning("failed to configure settings")
+                raise
             logger.warning("failed to configure settings, removing installation...")
             with rich.status.Status("rolling back installation", console=stderr_console):
                 uninstall_plugin(plugin_name)
             raise
 
         suffix = " [yellow](editable)[/yellow]" if editable else ""
-        console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}{suffix}")
+        verb = "Upgraded" if is_upgrade else "Installed"
+        console.print(f"[green]{verb}[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}{suffix}")
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
         raise click.Abort()

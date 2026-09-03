@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 import rich.status
+from click.testing import CliRunner
 from fixtures import *
 from fixtures import (
     PLUGINS_DIR,
@@ -18,6 +19,7 @@ from fixtures import (
     temp_env_var,
 )
 
+from hcli.commands.plugin import plugin as plugin_group
 from hcli.lib.console import stderr_console
 from hcli.lib.ida.plugin.exceptions import (
     BrokenPluginInstallationError,
@@ -350,6 +352,41 @@ def test_install_already_installed(virtual_ida_environment):
     install_plugin_archive(buf, "plugin1")
     with pytest.raises(PluginAlreadyInstalledError):
         install_plugin_archive(buf, "plugin1")
+
+
+def test_install_upgrade_flag(virtual_ida_environment):
+    """`install --upgrade` upgrades an existing install instead of failing."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==1.0.0"])
+    assert result.exit_code == 0, result.output
+    assert ("plugin1", "1.0.0") in get_installed_plugins()
+
+    # without the flag the install still fails, leaving the old version in place
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==2.0.0"])
+    assert result.exit_code != 0
+    # rich wraps the message to the console width, so compare against unwrapped output
+    assert "Plugin 'plugin1' is already installed" in " ".join(result.output.split())
+    assert ("plugin1", "1.0.0") in get_installed_plugins()
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "--upgrade", "plugin1==2.0.0"])
+    assert result.exit_code == 0, result.output
+    assert "Upgraded plugin: plugin1==2.0.0" in " ".join(result.output.split())
+    assert ("plugin1", "2.0.0") in get_installed_plugins()
+
+
+@pytest.mark.parametrize("spec", ["plugin1==2.0.0", "plugin1==1.0.0"])
+def test_install_upgrade_flag_when_already_up_to_date(virtual_ida_environment, spec):
+    """`install --upgrade` succeeds without touching an install that is already current."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==2.0.0"])
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "-U", spec])
+    assert result.exit_code == 0, result.output
+    assert "Already installed plugin: plugin1==2.0.0" in " ".join(result.output.split())
+    assert ("plugin1", "2.0.0") in get_installed_plugins()
 
 
 def test_uninstall_not_installed(virtual_ida_environment):
