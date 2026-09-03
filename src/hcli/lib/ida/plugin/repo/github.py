@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from tenacity import RetryCallState, retry, retry_if_exception, stop_after_attempt, wait_exponential
 from tenacity.wait import wait_base
 
+from hcli import USER_AGENT
 from hcli.lib.console import stderr_console
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveIndex
 from hcli.lib.util.cache import get_cache_directory
@@ -77,7 +78,7 @@ def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None
         ValueError: If no .zip asset or multiple .zip assets found.
         httpx.HTTPError: If API request fails.
     """
-    headers = {"Accept": "application/vnd.github.v3+json"}
+    headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": USER_AGENT}
 
     # Fetch release metadata
     if tag:
@@ -119,7 +120,7 @@ def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None
 
     logger.info(f"downloading asset: {asset_name} ({asset_size} bytes) from {download_url}")
     download_url_scheme = urllib.parse.urlparse(download_url).scheme
-    asset_response = httpx.get(download_url, timeout=60.0, follow_redirects=True)
+    asset_response = httpx.get(download_url, timeout=60.0, headers={"User-Agent": USER_AGENT}, follow_redirects=True)
     asset_response.raise_for_status()
     if download_url_scheme == "https" and asset_response.url.scheme != "https":
         raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {asset_response.url}")
@@ -731,7 +732,7 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "ida-hcli",
+            "User-Agent": USER_AGENT,
         }
 
         page = 1

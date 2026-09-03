@@ -11,6 +11,8 @@ import rich_click as click
 import semantic_version
 from pydantic import BaseModel
 
+from hcli.env import ENV
+from hcli.lib.auth import get_auth_service
 from hcli.lib.console import console, print_json
 from hcli.lib.ida import (
     FailedToDetectIDAVersion,
@@ -560,6 +562,10 @@ def search_plugins(ctx, query: str | None = None, json_output: bool = False) -> 
                 print_json(_dump_result(keyword_result))
             else:
                 render_keyword_query_text(keyword_result)
+                if ctx.obj.get("using_default_plugin_repo") and not get_auth_service().is_logged_in():
+                    console.print(
+                        f"[grey69]log in ({ENV.HCLI_BINARY_NAME} login) to also see private plugins you are entitled to[/grey69]"
+                    )
             return
 
         try:

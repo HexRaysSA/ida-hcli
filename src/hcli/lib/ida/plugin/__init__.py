@@ -205,8 +205,11 @@ class Contact(BaseModel):
 
 class URLs(BaseModel):
     repository: str = Field(
-        description="URL of the GitHub repository containing the source code for the plugin.",
-        examples=["https://github.com/org/project"],
+        description=(
+            "Canonical URL identifying the plugin: the GitHub repository containing its source code, "
+            "or, for portal-hosted plugins, its plugins.hex-rays.com page."
+        ),
+        examples=["https://github.com/org/project", "https://plugins.hex-rays.com/HexRaysSA/hcli-plugin-manager"],
     )
 
     homepage: str | None = Field(
@@ -216,10 +219,18 @@ class URLs(BaseModel):
 
     @field_validator("repository", mode="after")
     @classmethod
-    def validate_github_url(cls, v: str) -> str:
+    def validate_repository_url(cls, v: str) -> str:
+        # This URL is the plugin's identity host (together with its name), so
+        # the namespace stays closed: public plugins live on GitHub, private
+        # portal-hosted plugins under plugins.hex-rays.com (org/name, or the
+        # site's org/repo/name form).
         github_pattern = r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/?$"
-        if not re.match(github_pattern, v):
-            raise ValueError("Repository must be a valid GitHub URL in the format: https://github.com/org/project")
+        portal_pattern = r"^https://plugins\.hex-rays\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(/[a-zA-Z0-9._-]+)?/?$"
+        if not re.match(github_pattern, v) and not re.match(portal_pattern, v):
+            raise ValueError(
+                "Repository must be a GitHub URL (https://github.com/org/project) "
+                "or a Hex-Rays plugin page (https://plugins.hex-rays.com/org/name)"
+            )
         return v
 
 

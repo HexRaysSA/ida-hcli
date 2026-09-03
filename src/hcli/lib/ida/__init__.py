@@ -746,8 +746,14 @@ def _copy_dir(src_path: Path, dest_path: Path) -> None:
                 raise
 
 
+# extra="allow" on every model in the ida-config.json tree: the file is IDA's
+# own, so keys hcli does not model must survive a read → mutate → write
+# round-trip (pydantic's default extra="ignore" would silently drop them on
+# every writer: plugin config set/delete, ida switch, the URL migration).
+
+
 class PathsConfig(BaseModel):
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+    model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
     # like: "/Applications/IDA Professional 9.1.app" (macOS)
     # Note: IDA itself may write the inner "Contents/MacOS" path here;
@@ -755,21 +761,50 @@ class PathsConfig(BaseModel):
     installation_directory: Path | None = Field(alias="ida-install-dir", default=None)
 
 
+# The registry served by the Hex-Rays API: the proxied public GitHub registry,
+# plus — for authenticated requests — the private plugins the caller is
+# entitled to, merged into the same document.
+PLUGIN_REPOSITORY_PATH = "/api/plugins/plugin-repository.json"
+
+# The canonical production URL — the only form ever persisted into
+# ida-config.json. The *effective* default is resolved per-process by
+# get_default_plugin_repository_url() so it follows an HCLI_API_URL override.
+DEFAULT_PLUGIN_REPOSITORY_URL = f"https://api.eu.hex-rays.com{PLUGIN_REPOSITORY_PATH}"
+
+# The pre-proxy default, persisted into ida-config.json by older releases.
+LEGACY_PLUGIN_REPOSITORY_URL = (
+    "https://raw.githubusercontent.com/HexRaysSA/plugin-repository/refs/heads/v1/plugin-repository.json"
+)
+
+
+def get_default_plugin_repository_url() -> str:
+    """The effective default registry URL, on the configured API host.
+
+    Derived from ENV.HCLI_API_URL so an override (staging, testing) keeps the
+    registry fetch on the same host credentials are scoped to — a hard-coded
+    production URL would silently detach auth from every fetch under an
+    override.
+    """
+    return ENV.HCLI_API_URL.rstrip("/") + PLUGIN_REPOSITORY_PATH
+
+
 class PluginRepositoryConfig(BaseModel):
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+    model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
     url: str = Field(
-        default="https://raw.githubusercontent.com/HexRaysSA/plugin-repository/refs/heads/v1/plugin-repository.json",
+        default=DEFAULT_PLUGIN_REPOSITORY_URL,
     )
 
 
 class SettingsConfig(BaseModel):
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+    model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
     plugin_repository: PluginRepositoryConfig = Field(alias="plugin-repository", default_factory=PluginRepositoryConfig)
 
 
 class PluginConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")  # type: ignore
+
     # `ida-plugin.json` `.plugin.settings` describes the schema for these settings.
     settings: dict[str, str | bool] = Field(default_factory=dict)
 
@@ -778,7 +813,7 @@ class PluginConfig(BaseModel):
 class IDAConfigJson(BaseModel):
     """IDA configuration $IDAUSR/ida-config.json"""
 
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+    model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
     version: Literal[1] | None = Field(alias="Version", default=1)
     paths: PathsConfig = Field(alias="Paths", default_factory=PathsConfig)
@@ -812,6 +847,39 @@ def set_ida_config(config: IDAConfigJson):
         ida_config_path.parent.mkdir(parents=True, exist_ok=True)
 
     _ = ida_config_path.write_text(config.model_dump_json(), encoding="utf-8")
+
+
+def get_plugin_repository_url() -> str:
+    """Resolve the configured plugin repository URL, migrating the legacy default.
+
+    Older releases persisted the raw.githubusercontent default into
+    ida-config.json, so those users would keep bypassing the API-served
+    registry — and never see their private plugins. That one value is rewritten
+    in place (keys hcli does not model survive the round-trip: the config
+    models carry extra="allow"). A failed write (read-only $IDAUSR) is logged,
+    not fatal — the new default still applies in memory.
+
+    The legacy and canonical defaults both resolve through
+    get_default_plugin_repository_url() so an HCLI_API_URL override stays
+    consistent with credential scoping. Any other custom URL is respected
+    untouched.
+    """
+    config = get_ida_config()
+    url = config.settings.plugin_repository.url
+
+    if url == LEGACY_PLUGIN_REPOSITORY_URL:
+        logger.info("migrating plugin repository URL to %s", DEFAULT_PLUGIN_REPOSITORY_URL)
+        config.settings.plugin_repository.url = DEFAULT_PLUGIN_REPOSITORY_URL
+        try:
+            set_ida_config(config)
+        except OSError as e:
+            logger.warning("could not persist plugin repository URL migration to %s: %s", get_ida_config_path(), e)
+        url = DEFAULT_PLUGIN_REPOSITORY_URL
+
+    if not url or url == DEFAULT_PLUGIN_REPOSITORY_URL:
+        return get_default_plugin_repository_url()
+
+    return url
 
 
 class MissingCurrentInstallationDirectory(ValueError):

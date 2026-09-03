@@ -10,6 +10,7 @@ import httpx
 import semantic_version
 from pydantic import BaseModel, ConfigDict
 
+from hcli import USER_AGENT
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
     IdaVersion,
@@ -20,11 +21,90 @@ from hcli.lib.ida.plugin import (
     split_plugin_version_spec,
     validate_metadata_in_plugin_archive,
 )
-from hcli.lib.ida.plugin.exceptions import AmbiguousPluginReferenceError
+from hcli.lib.ida.plugin.exceptions import AmbiguousPluginReferenceError, PluginAccessDeniedError
 from hcli.lib.ida.plugin.reference import normalize_plugin_host
 from hcli.lib.util.logging import m
 
 logger = logging.getLogger(__name__)
+
+MAX_REDIRECTS = 10
+
+
+def _is_api_host(url: str) -> bool:
+    """Whether this URL points at the Hex-Rays API origin.
+
+    Decides where credentials may be sent and which denials are
+    entitlement-shaped — delegated to lib.auth.may_send_credentials, THE
+    single credential-scoping predicate.
+    """
+    from hcli.lib.auth import may_send_credentials
+
+    return may_send_credentials(url)
+
+
+def fetch_plugin_repo_bytes(url: str) -> bytes:
+    """Fetch plugin repository content (index or archive) over http(s).
+
+    Sends the hcli User-Agent, and attaches credentials only when a hop points
+    at the Hex-Rays API host — where they unlock private, entitlement-gated
+    plugins — never to third-party hosts (GitHub release assets, mirrors,
+    presigned S3 URLs).
+
+    Redirects are followed by hand so credentials are re-decided per hop:
+    httpx only strips the Authorization header cross-origin, so an x-api-key
+    would otherwise be forwarded to e.g. the presigned S3 URL behind the API's
+    download 302. An https:// request must stay on https across every hop.
+    """
+    scheme = urlparse(url).scheme
+
+    # Resolved lazily, once per fetch, on the first API-host hop: computing the
+    # logged-in state can cost a network validation, so it must not repeat per
+    # redirect hop. Per-hop the decision is only WHETHER to attach it.
+    auth_headers: dict[str, str] | None = None
+
+    with httpx.Client(timeout=30.0, follow_redirects=False) as client:
+        current_url = url
+        # + 1: the initial request consumes an iteration; MAX_REDIRECTS counts
+        # redirects actually followed.
+        for _ in range(MAX_REDIRECTS + 1):
+            is_api_host = _is_api_host(current_url)
+            if is_api_host and auth_headers is None:
+                # Deferred import: the auth service is only needed for API-host fetches.
+                from hcli.lib.auth import get_optional_auth_headers
+
+                auth_headers = get_optional_auth_headers()
+
+            hop_headers = {"User-Agent": USER_AGENT}
+            if is_api_host and auth_headers:
+                hop_headers.update(auth_headers)
+
+            response = client.get(current_url, headers=hop_headers)
+
+            # has_redirect_location, not is_redirect: is_redirect matches ANY
+            # 3xx, but only 301/302/303/307/308 with a Location are followable.
+            # A 300/304 falls through to raise_for_status, which names the real
+            # status instead of a misleading "missing Location" error.
+            if response.has_redirect_location:
+                next_url = str(httpx.URL(current_url).join(response.headers["location"]))
+                if scheme == "https" and urlparse(next_url).scheme != "https":
+                    raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {next_url}")
+                current_url = next_url
+                continue
+
+            # Only API-host denials are entitlement-shaped; anything else (e.g. a
+            # deleted GitHub release asset) keeps the generic HTTP error. A
+            # logged-in 404 stays generic too: it means "no such archive", not
+            # "log in first".
+            if is_api_host:
+                authenticated = bool(auth_headers)
+                denied_statuses = (401, 403) if authenticated else (401, 403, 404)
+                if response.status_code in denied_statuses:
+                    raise PluginAccessDeniedError(url, response.status_code, authenticated=authenticated)
+
+            response.raise_for_status()
+            return response.content
+
+    raise ValueError(f"too many redirects while fetching: {url}")
 
 
 def fetch_plugin_archive(url: str) -> bytes:
@@ -37,11 +117,7 @@ def fetch_plugin_archive(url: str) -> bytes:
         return file_path.read_bytes()
 
     elif parsed_url.scheme in ("http", "https"):
-        response = httpx.get(url, timeout=30.0, follow_redirects=True)
-        response.raise_for_status()
-        if parsed_url.scheme == "https" and response.url.scheme != "https":
-            raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {response.url}")
-        return response.content
+        return fetch_plugin_repo_bytes(url)
 
     else:
         raise ValueError(f"Unsupported URL scheme: {parsed_url.scheme}")

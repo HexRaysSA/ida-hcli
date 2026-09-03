@@ -1,18 +1,49 @@
 import json
+import logging
 import urllib.request
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-import httpx
-from pydantic import BaseModel
+import pydantic
+from pydantic import BaseModel, field_validator
 
-from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin
+from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, fetch_plugin_repo_bytes
+
+logger = logging.getLogger(__name__)
 
 
 class StaticPluginRepo(BaseModel):
     version: Literal[1] = 1
     plugins: list[Plugin]
+
+    @field_validator("plugins", mode="before")
+    @classmethod
+    def _skip_invalid_entries(cls, value: object) -> object:
+        """Tolerate individual bad entries: one malformed plugin (e.g. a bad
+        descriptor merged into the API-served registry) must not make the whole
+        registry unusable. Every entry failing is a different situation — a
+        repository format newer than this hcli — and stays loud rather than
+        surfacing as an empty "No plugins found"."""
+        if not isinstance(value, list):
+            return value  # let pydantic report the type error
+
+        plugins: list[object] = []
+        skipped = 0
+        for entry in value:
+            try:
+                plugins.append(Plugin.model_validate(entry))
+            except pydantic.ValidationError as e:
+                name = entry.get("name", "<unknown>") if isinstance(entry, dict) else "<unknown>"
+                logger.warning("skipping invalid plugin repository entry %r: %s", name, e)
+                skipped += 1
+
+        if skipped and not plugins:
+            raise ValueError(
+                f"all {skipped} plugin entries failed validation; "
+                f"the repository format may be newer than this hcli — try upgrading"
+            )
+        return plugins
 
 
 class JSONFilePluginRepo(BasePluginRepo):
@@ -56,11 +87,8 @@ class JSONFilePluginRepo(BasePluginRepo):
             return cls.from_bytes(file_path.read_bytes())
 
         elif parsed_url.scheme == "https":
-            response = httpx.get(url, timeout=30.0, follow_redirects=True)
-            response.raise_for_status()
-            if parsed_url.scheme == "https" and response.url.scheme != "https":
-                raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {response.url}")
-            return cls.from_bytes(response.content)
+            # host-scoped credentials personalize the registry with entitled private plugins
+            return cls.from_bytes(fetch_plugin_repo_bytes(url))
 
         else:
             raise ValueError(f"Unsupported URL scheme: {parsed_url.scheme}")

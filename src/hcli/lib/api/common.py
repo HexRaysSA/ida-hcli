@@ -13,11 +13,10 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
-from hcli import __version__
+from hcli import USER_AGENT
 from hcli.env import ENV
-from hcli.lib.auth import get_auth_service
+from hcli.lib.auth import get_auth_service, get_optional_auth_headers, may_send_credentials
 from hcli.lib.console import console, stderr_console
-from hcli.lib.constants.auth import CredentialType
 from hcli.lib.util.cache import get_cache_directory
 from hcli.lib.util.io import NoSpaceError, check_free_space
 
@@ -54,7 +53,7 @@ class APIClient:
         self.client = httpx.AsyncClient(
             base_url=ENV.HCLI_API_URL,
             timeout=httpx.Timeout(60.0, write=None),  # No timeout for uploads
-            headers={"User-Agent": f"hcli/{__version__}"},
+            headers={"User-Agent": USER_AGENT},
         )
 
     async def __aenter__(self):
@@ -68,19 +67,13 @@ class APIClient:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
 
         if auth:
-            auth_service = get_auth_service()
-            if auth_service.is_logged_in():
-                auth_type = auth_service.get_auth_type()
-                if auth_type["type"] == CredentialType.INTERACTIVE:
-                    token = auth_service.get_access_token()
-                    if token:
-                        headers["Authorization"] = f"Bearer {token}"
-                else:
-                    api_key = auth_service.get_api_key()
-                    if api_key:
-                        headers["x-api-key"] = api_key
-            else:
+            # Deliberate double check: get_optional_auth_headers() also consults
+            # is_logged_in(), but folding the two would change the
+            # logged-in-but-tokenless case from "no auth header" to a raise.
+            # The second call is cheap (session state cached after the first).
+            if not get_auth_service().is_logged_in():
                 raise NotLoggedInError("Authentication required but user is not logged in")
+            headers.update(get_optional_auth_headers())
 
         return headers
 
@@ -106,23 +99,61 @@ class APIClient:
 
         return response
 
+    def _headers_for_request(self, url: str, auth: bool) -> dict[str, str]:
+        """Headers for a request that may target an absolute URL.
+
+        Credentials only ever go to the configured API origin: relative URLs
+        resolve against it, but an absolute URL pointing anywhere else (e.g. a
+        presigned S3 link handed back by the API) gets no credentials
+        regardless of `auth`.
+        """
+        if not auth:
+            return {}
+        if "://" in url and not may_send_credentials(url):
+            return {}
+        return self._get_headers(auth=True)
+
+    async def _resolve_credentialed_redirects(self, url: str, headers: dict[str, str]) -> tuple[str, dict[str, str]]:
+        """Follow redirects manually while credentials are attached.
+
+        httpx only strips the Authorization header cross-origin — an x-api-key
+        would be forwarded to e.g. the presigned S3 host behind the API's
+        download 302. Walking the credentialed hops by hand re-decides per hop;
+        once no credentials apply, the caller can let httpx follow freely.
+        Returns the URL to fetch and the headers to send with it.
+        """
+        current = url
+        for _ in range(10):
+            if not headers:
+                return current, headers
+            request = self.client.build_request("GET", current, headers=headers)
+            response = await self.client.send(request, stream=True, follow_redirects=False)
+            try:
+                if not response.has_redirect_location:
+                    return current, headers
+                current = str(response.url.join(response.headers["location"]))
+            finally:
+                await response.aclose()
+            headers = headers if may_send_credentials(current) else {}
+        raise APIError(f"too many redirects while resolving: {url}")
+
     async def get_json(self, url: str, auth: bool = True) -> Any:
         """GET request returning JSON."""
-        headers = self._get_headers(auth)
+        headers = self._headers_for_request(url, auth)
         response = await self.client.get(url, headers=headers)
         await self._handle_response(response)
         return response.json()
 
     async def post_json(self, url: str, data: Any, auth: bool = True) -> Any:
         """POST request with JSON body."""
-        headers = self._get_headers(auth)
+        headers = self._headers_for_request(url, auth)
         response = await self.client.post(url, json=data, headers=headers)
         await self._handle_response(response)
         return response.json()
 
     async def delete_json(self, url: str, auth: bool = True) -> Any:
         """DELETE request returning JSON."""
-        headers = self._get_headers(auth)
+        headers = self._headers_for_request(url, auth)
         response = await self.client.delete(url, headers=headers)
         await self._handle_response(response)
         return response.json()
@@ -203,6 +234,14 @@ class APIClient:
             parsed = urlparse(url)
             filename = Path(parsed.path).name or "download"
 
+        # Credentials are scoped to the API origin, and credentialed redirects
+        # are pre-resolved by hand so a token or x-api-key never rides a 302 to
+        # e.g. a presigned S3 host. From here on, url + request_headers are safe
+        # to use with follow_redirects=True (remaining hops are credential-free).
+        request_headers = self._headers_for_request(url, auth)
+        if request_headers:
+            url, request_headers = await self._resolve_credentialed_redirects(url, request_headers)
+
         # Create cache path using XDG_CACHE_HOME with "downloads" key
         # Use the full asset_key if provided, otherwise fall back to filename
         cache_key = asset_key or filename
@@ -214,8 +253,7 @@ class APIClient:
         if cache_path.exists() and not force:
             try:
                 # Check if cached file matches remote size
-                headers = self._get_headers(auth) if auth else {}
-                head_response = await self.client.head(url, headers=headers, follow_redirects=True)
+                head_response = await self.client.head(url, headers=request_headers, follow_redirects=True)
                 await self._handle_response(head_response)
                 content_length = head_response.headers.get("content-length")
 
@@ -243,9 +281,7 @@ class APIClient:
                 pass
 
         # Download file
-        headers = self._get_headers(auth) if auth else {}
-
-        async with self.client.stream("GET", url, headers=headers, follow_redirects=True) as response:
+        async with self.client.stream("GET", url, headers=request_headers, follow_redirects=True) as response:
             await self._handle_response(response)
 
             total_size_str = response.headers.get("content-length")

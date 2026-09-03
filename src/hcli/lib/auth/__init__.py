@@ -5,7 +5,7 @@ import webbrowser
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import httpx
 
@@ -147,6 +147,17 @@ class AuthService:
         self._forced_credentials = forced_credentials
         self._load_auth_config()
         self._load_current_credentials()
+
+    def ensure_initialized(self) -> None:
+        """Initialize on first use; no-op once init() has run.
+
+        Lets optional-auth callers (e.g. the plugin registry fetch, which runs
+        outside @require_auth/AuthCommand) see the stored credentials without
+        every command wiring init() explicitly — while respecting an earlier
+        init(forced_credentials=...) from an auth-aware command.
+        """
+        if self._auth_config is None:
+            self.init()
 
     def _load_auth_config(self) -> None:
         """Load credentials configuration."""
@@ -644,6 +655,47 @@ class AuthService:
 def get_auth_service() -> AuthService:
     """Get the global AuthService instance."""
     return AuthService.instance()
+
+
+# ENV.HCLI_API_URL is frozen at import, so its parts are process constants.
+_API_URL = urlparse(ENV.HCLI_API_URL)
+
+
+def may_send_credentials(url: str) -> bool:
+    """Whether hcli credentials may be attached to a request for this URL.
+
+    THE predicate deciding where credentials go: the configured Hex-Rays API
+    origin (exact scheme + netloc of ENV.HCLI_API_URL) and nowhere else —
+    never third-party hosts (GitHub, mirrors, presigned S3 URLs), and never a
+    downgrade to plaintext HTTP when the configured API URL is HTTPS (the
+    production default). Netlocs compare case-insensitively per RFC 3986.
+    """
+    parsed = urlparse(url)
+    return parsed.scheme == _API_URL.scheme and parsed.netloc.lower() == _API_URL.netloc.lower()
+
+
+def get_optional_auth_headers() -> dict[str, str]:
+    """Authentication headers for the current credentials, or {} when logged out.
+
+    Unlike APIClient._get_headers, being logged out is not an error here:
+    callers use this for endpoints that serve both anonymous and personalized
+    responses (e.g. the plugin registry).
+    """
+    auth_service = get_auth_service()
+    auth_service.ensure_initialized()
+    if not auth_service.is_logged_in():
+        return {}
+
+    if auth_service.get_auth_type()["type"] == CredentialType.INTERACTIVE:
+        token = auth_service.get_access_token()
+        if token:
+            return {"Authorization": f"Bearer {token}"}
+    else:
+        api_key = auth_service.get_api_key()
+        if api_key:
+            return {"x-api-key": api_key}
+
+    return {}
 
 
 HTML_PAGE = """

@@ -11,7 +11,7 @@ import hcli.lib.ida.plugin.repo.file
 import hcli.lib.ida.plugin.repo.fs
 import hcli.lib.ida.plugin.repo.github
 from hcli.lib.console import console
-from hcli.lib.ida import get_ida_config
+from hcli.lib.ida import get_default_plugin_repository_url, get_plugin_repository_url
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo, is_plugin_bundle_zip
 from hcli.lib.ida.python import PipOptions
 
@@ -87,14 +87,18 @@ def plugin(
     plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo
     try:
         if repo is None:
-            config = get_ida_config()
-
-            url = config.settings.plugin_repository.url
+            # Also migrates the legacy raw.githubusercontent default persisted
+            # in ida-config.json by older releases.
+            url = get_plugin_repository_url()
             if not url:
                 console.print(
                     "[red]Missing plugin repository URL[/red]. Provide this in ida-config.json (.Settings.plugin-repository.url)"
                 )
                 raise click.Abort()
+
+            # Search uses this to hint that logging in reveals private plugins —
+            # only true for the API-served default registry.
+            ctx.obj["using_default_plugin_repo"] = url == get_default_plugin_repository_url()
 
             plugin_repo = hcli.lib.ida.plugin.repo.file.JSONFilePluginRepo.from_url(url)
 
@@ -146,8 +150,7 @@ def plugin(
         if repo == "github":
             console.print("[red]Cannot connect to GitHub - network unavailable.[/red]")
         elif repo is None:
-            config = get_ida_config()
-            url = config.settings.plugin_repository.url
+            url = get_plugin_repository_url()
             console.print(f"[red]Cannot connect to plugin repository at {url} - network unavailable.[/red]")
         else:
             console.print("[red]Cannot connect to plugin repository - network unavailable.[/red]")

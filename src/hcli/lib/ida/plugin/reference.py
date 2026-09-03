@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 # whole-string match for a GitHub repository URL in the shape allowed by
-# ``ida-plugin.json`` (see ``URLs.validate_github_url`` in
+# ``ida-plugin.json`` (see ``URLs.validate_repository_url`` in
 # ``src/hcli/lib/ida/plugin/__init__.py``). Trailing slash optional.
 _GITHUB_REPO_RE = re.compile(r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/?$", re.IGNORECASE)
 

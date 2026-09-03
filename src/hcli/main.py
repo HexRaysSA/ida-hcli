@@ -161,6 +161,7 @@ class MainGroup(click.RichGroup):
                 NotFoundError,
                 RateLimitError,
             )
+            from hcli.lib.ida.plugin.exceptions import PluginAccessDeniedError
             from hcli.lib.util.io import NoSpaceError
 
             if isinstance(e, NoSpaceError):
@@ -179,6 +180,8 @@ class MainGroup(click.RichGroup):
                     console.print(
                         f"\n[yellow]Suggestion:[/yellow] If your temporary directory is full, you can use a different one by setting the [bold]{env_var}[/bold] environment variable."
                     )
+            elif isinstance(e, PluginAccessDeniedError):
+                console.print(f"[red]{e}[/red]")
             elif isinstance(e, AuthenticationError):
                 console.print(
                     f"[red]Authentication failed. Please check your credentials or use '{ENV.HCLI_BINARY_NAME} login'.[/red]"

@@ -5,6 +5,7 @@
 1. **User-facing portal showcasing the plugins** - The [plugins.hex-rays.com](https://plugins.hex-rays.com/) is a web interface to the collection of available IDA Pro plugins.
 2. **JSON Index** - The new plugin repository publishes a JSON document within [github.com/HexRaysSA/plugin-repository](https://github.com/HexRaysSA/plugin-repository). This file is the index of all available plugins, their versions and metadata, and download URLs.
 3. **GitHub Actions** - GitHub Actions runs regularly to update the JSON document with plugins discovered across GitHub. The raw index data is available [here](https://raw.githubusercontent.com/HexRaysSA/plugin-repository/refs/heads/v1/plugin-repository.json).
+4. **Registry API** - By default HCLI fetches the index via the Hex-Rays API (`https://api.eu.hex-rays.com/api/plugins/plugin-repository.json`), which serves a cached copy of the GitHub index with stable download URLs. When the request is authenticated (`hcli login`), the response additionally includes the private, entitlement-gated plugins available to that account, merged into the same document. Custom URLs (mirrors, air-gapped copies) can still be configured via `.Settings.plugin-repository.url` in `ida-config.json`.
 
 
 ## How It Works

@@ -107,6 +107,30 @@ class BrokenPluginInstallationError(PluginInstallationError):
         )
 
 
+class PluginAccessDeniedError(Exception):
+    """The plugin repository refused to serve a resource (401/403/404).
+
+    Private, portal-hosted plugins are entitlement-gated by the Hex-Rays API:
+    anonymous callers get a login hint, authenticated callers an entitlement
+    message.
+    """
+
+    def __init__(self, url: str, status_code: int, authenticated: bool):
+        self.url = url
+        self.status_code = status_code
+        self.authenticated = authenticated
+        msg = f"Access denied (HTTP {status_code}) by the plugin repository. "
+        if authenticated and status_code == 401:
+            # 401 with credentials attached means they were rejected (expired
+            # session, revoked/mistyped API key) — not an entitlement problem.
+            msg += f"Your credentials were rejected — run '{ENV.HCLI_BINARY_NAME} login' again or check HCLI_API_KEY."
+        elif authenticated:
+            msg += "Your account is not entitled to this plugin."
+        else:
+            msg += f"If this is a private plugin, run '{ENV.HCLI_BINARY_NAME} login' and try again."
+        super().__init__(msg)
+
+
 class PluginNotInstalledError(Exception):
     """Plugin is not installed."""
 
