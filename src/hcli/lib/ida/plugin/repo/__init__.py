@@ -49,11 +49,6 @@ def fetch_plugin_repo_bytes(url: str) -> bytes:
     at the Hex-Rays API host — where they unlock private, entitlement-gated
     plugins — never to third-party hosts (GitHub release assets, mirrors,
     presigned S3 URLs).
-
-    Redirects are followed by hand so credentials are re-decided per hop:
-    httpx only strips the Authorization header cross-origin, so an x-api-key
-    would otherwise be forwarded to e.g. the presigned S3 URL behind the API's
-    download 302. An https:// request must stay on https across every hop.
     """
     scheme = urlparse(url).scheme
 
