@@ -95,7 +95,7 @@ class APIClient:
 
         return response
 
-    def _headers_for_request(self, url: str, auth: bool) -> dict[str, str]:
+    def _headers_for_url(self, url: str, auth: bool) -> dict[str, str]:
         """Headers for a request that may target an absolute URL.
 
         Credentials only ever go to the configured API origin: relative URLs
