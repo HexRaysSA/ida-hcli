@@ -67,10 +67,6 @@ class APIClient:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
 
         if auth:
-            # Deliberate double check: get_optional_auth_headers() also consults
-            # is_logged_in(), but folding the two would change the
-            # logged-in-but-tokenless case from "no auth header" to a raise.
-            # The second call is cheap (session state cached after the first).
             if not get_auth_service().is_logged_in():
                 raise NotLoggedInError("Authentication required but user is not logged in")
             headers.update(get_optional_auth_headers())
