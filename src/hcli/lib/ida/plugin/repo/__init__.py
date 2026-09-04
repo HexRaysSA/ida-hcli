@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 MAX_REDIRECTS = 10
 
 
-def _is_api_host(url: str) -> bool:
+def _is_hexrays_api_host(url: str) -> bool:
     """Whether this URL points at the Hex-Rays API origin.
 
     Decides where credentials may be sent and which denials are
