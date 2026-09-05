@@ -129,6 +129,17 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
     except click.Abort:
         raise
 
+    except KeyError as e:
+        # "plugin not found" from the repository lookup: for a logged-out user
+        # this can simply mean the plugin is private and absent from the
+        # anonymous registry.
+        logger.debug("error: %s", e, exc_info=True)
+        console.print(f"[red]Error[/red]: {e}")
+        from hcli.commands.plugin import print_private_plugin_login_hint
+
+        print_private_plugin_login_hint(ctx)
+        raise click.Abort()
+
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")

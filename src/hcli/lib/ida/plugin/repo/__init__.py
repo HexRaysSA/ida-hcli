@@ -62,7 +62,7 @@ def fetch_plugin_repo_bytes(url: str) -> bytes:
         # + 1: the initial request consumes an iteration; MAX_REDIRECTS counts
         # redirects actually followed.
         for _ in range(MAX_REDIRECTS + 1):
-            is_api_host = _is_api_host(current_url)
+            is_api_host = _is_hexrays_api_host(current_url)
             if is_api_host and auth_headers is None:
                 # Deferred import: the auth service is only needed for API-host fetches.
                 from hcli.lib.auth import get_optional_auth_headers

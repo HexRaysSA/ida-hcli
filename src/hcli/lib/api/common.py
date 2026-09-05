@@ -135,21 +135,21 @@ class APIClient:
 
     async def get_json(self, url: str, auth: bool = True) -> Any:
         """GET request returning JSON."""
-        headers = self._headers_for_request(url, auth)
+        headers = self._headers_for_url(url, auth)
         response = await self.client.get(url, headers=headers)
         await self._handle_response(response)
         return response.json()
 
     async def post_json(self, url: str, data: Any, auth: bool = True) -> Any:
         """POST request with JSON body."""
-        headers = self._headers_for_request(url, auth)
+        headers = self._headers_for_url(url, auth)
         response = await self.client.post(url, json=data, headers=headers)
         await self._handle_response(response)
         return response.json()
 
     async def delete_json(self, url: str, auth: bool = True) -> Any:
         """DELETE request returning JSON."""
-        headers = self._headers_for_request(url, auth)
+        headers = self._headers_for_url(url, auth)
         response = await self.client.delete(url, headers=headers)
         await self._handle_response(response)
         return response.json()
@@ -234,7 +234,7 @@ class APIClient:
         # are pre-resolved by hand so a token or x-api-key never rides a 302 to
         # e.g. a presigned S3 host. From here on, url + request_headers are safe
         # to use with follow_redirects=True (remaining hops are credential-free).
-        request_headers = self._headers_for_request(url, auth)
+        request_headers = self._headers_for_url(url, auth)
         if request_headers:
             url, request_headers = await self._resolve_credentialed_redirects(url, request_headers)
 

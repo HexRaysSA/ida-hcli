@@ -22,6 +22,7 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field
 
 from hcli.env import ENV
+from hcli.lib.console import stderr_console
 from hcli.lib.ida.version import parse_version_from_ida_binary
 from hcli.lib.util.io import NoSpaceError, check_free_space, get_os
 from hcli.lib.venv import resolve_user_virtual_env
@@ -794,6 +795,10 @@ class PluginRepositoryConfig(BaseModel):
     url: str = Field(
         default=DEFAULT_PLUGIN_REPOSITORY_URL,
     )
+    # Set once the legacy raw.githubusercontent default has been rewritten to
+    # the API URL, so a user who deliberately sets the GitHub URL back
+    # afterwards is not migrated again.
+    url_migrated: bool = Field(alias="url-migrated", default=False)
 
 
 class SettingsConfig(BaseModel):
@@ -855,9 +860,11 @@ def get_plugin_repository_url() -> str:
     Older releases persisted the raw.githubusercontent default into
     ida-config.json, so those users would keep bypassing the API-served
     registry — and never see their private plugins. That one value is rewritten
-    in place (keys hcli does not model survive the round-trip: the config
-    models carry extra="allow"). A failed write (read-only $IDAUSR) is logged,
-    not fatal — the new default still applies in memory.
+    in place, exactly once: url_migrated records that the rewrite happened, so
+    a user who deliberately sets the GitHub URL back afterwards keeps it. Keys
+    hcli does not model survive the round-trip (the config models carry
+    extra="allow"). A failed write (read-only $IDAUSR) is logged, not fatal —
+    the new default still applies in memory.
 
     The legacy and canonical defaults both resolve through
     get_default_plugin_repository_url() so an HCLI_API_URL override stays
@@ -865,15 +872,25 @@ def get_plugin_repository_url() -> str:
     untouched.
     """
     config = get_ida_config()
-    url = config.settings.plugin_repository.url
+    repo_config = config.settings.plugin_repository
+    url = repo_config.url
 
-    if url == LEGACY_PLUGIN_REPOSITORY_URL:
+    if url == LEGACY_PLUGIN_REPOSITORY_URL and not repo_config.url_migrated:
         logger.info("migrating plugin repository URL to %s", DEFAULT_PLUGIN_REPOSITORY_URL)
-        config.settings.plugin_repository.url = DEFAULT_PLUGIN_REPOSITORY_URL
+        repo_config.url = DEFAULT_PLUGIN_REPOSITORY_URL
+        repo_config.url_migrated = True
         try:
             set_ida_config(config)
         except OSError as e:
             logger.warning("could not persist plugin repository URL migration to %s: %s", get_ida_config_path(), e)
+        stderr_console.print(
+            f"[yellow]Note:[/yellow] the plugin repository URL in {get_ida_config_path()} was updated to\n"
+            f"  {DEFAULT_PLUGIN_REPOSITORY_URL}\n"
+            f"This Hex-Rays API endpoint serves the same public GitHub plugin index as before "
+            f"(plus your private plugins when you are logged in). "
+            f"If you prefer the previous GitHub URL (e.g. behind a firewall that blocks api.eu.hex-rays.com), "
+            f"set it back in that file — it will not be migrated again."
+        )
         url = DEFAULT_PLUGIN_REPOSITORY_URL
 
     if not url or url == DEFAULT_PLUGIN_REPOSITORY_URL:

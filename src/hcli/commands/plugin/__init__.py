@@ -27,6 +27,23 @@ from .uninstall import uninstall_plugin
 from .upgrade import upgrade_plugin
 
 
+def print_private_plugin_login_hint(ctx: click.Context) -> None:
+    """Hint that logging in may reveal the plugin, when that could be the cause.
+
+    A private plugin is simply absent from the anonymously-fetched default
+    registry, so a lookup fails with a plain "plugin not found" — which would
+    send a logged-out user debugging the wrong thing. Only fires for the
+    API-served default registry without credentials.
+    """
+    from hcli.env import ENV
+    from hcli.lib.auth import get_auth_service
+
+    if ctx.obj.get("using_default_plugin_repo") and not get_auth_service().is_logged_in():
+        console.print(
+            f"[grey69]If this is a private plugin, log in ({ENV.HCLI_BINARY_NAME} login) and try again.[/grey69]"
+        )
+
+
 def read_repos_file(path: Path) -> list[str]:
     if not path.exists():
         raise ValueError(f"file doesn't exist: {path}")
