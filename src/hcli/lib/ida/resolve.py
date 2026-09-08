@@ -6,6 +6,7 @@ by both the default and KE URL handlers.
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -32,6 +33,19 @@ def _strip_idb_extension(name: str) -> str:
     return name
 
 
+def _paths_match(instance_path: str, target: Path) -> bool:
+    """Exact-identity match: the instance's open IDB is *this* local file.
+
+    Resolved and case-normalized, so symlinked cache dirs and case-insensitive
+    filesystems (macOS, Windows) compare correctly. Any resolution error means
+    "not a match" — never a crash in the discovery loop.
+    """
+    try:
+        return os.path.normcase(str(Path(instance_path).resolve())) == os.path.normcase(str(target.resolve()))
+    except (OSError, ValueError):
+        return False
+
+
 def _idb_names_match(ida_idb_name: str, target_name: str) -> bool:
     """Check if IDA's IDB name matches the target name.
 
@@ -51,6 +65,7 @@ def resolve_and_navigate(
     skip_analysis: bool,
     navigate: bool = True,
     on_error: Callable[[str], None] | None = None,
+    require_path_match: bool = False,
 ) -> None:
     """Find a running IDA instance with *target_idb_name* or launch a new one, then navigate.
 
@@ -65,6 +80,11 @@ def resolve_and_navigate(
         navigate: Whether to send ``open_ida_link`` after resolving.
         on_error: Optional callback invoked with an error message string on
             launch failure (e.g. KE shows a native error dialog).
+        require_path_match: Match running instances by exact resolved *idb_path*
+            equality instead of by IDB basename. The KE handler sets this: a corpus
+            routinely holds two databases under one filename, and a basename match
+            routed navigation into the same-named twin the analyst already had open
+            instead of launching the downloaded one. Requires *idb_path*.
     """
     _print(f"[dim]Looking for IDA instance with '{target_idb_name}'...[/dim]")
 
@@ -78,7 +98,11 @@ def resolve_and_navigate(
         if info and info.has_idb:
             if info.idb_name:
                 all_idbs.append(info.idb_name)
-            if info.idb_name and _idb_names_match(info.idb_name, target_idb_name):
+            if require_path_match:
+                if info.idb_path and idb_path is not None and _paths_match(info.idb_path, idb_path):
+                    matching_instance = info
+                    break
+            elif info.idb_name and _idb_names_match(info.idb_name, target_idb_name):
                 matching_instance = info
                 break
 

@@ -1,14 +1,23 @@
-"""Handler for KE "open in IDA" deep links — download the asset, cache it, launch IDA, navigate.
+"""Handler for KE "open in IDA" deep links — download the content, verify it, launch IDA, navigate.
 
-KE emits IDA-native navigation links that carry the asset's download location as a
-``url=`` query parameter::
+KE links keep IDA's native navigation grammar and are content-addressed through their
+download location::
 
-    ida://ke/<idb>/<resource>?ea=0x<HEX>&view=<view>&url=<percent-encoded asset URL>
+    ida://ke/<filename>?ea=0x<HEX>&view=<view>&url=<percent-encoded content URL>
+
+- ``<filename>`` is the CLIENT-chosen save/display name (the file under the downloads
+  cache, and IDA's window title). It is metadata, the emitter's responsibility — this
+  handler only enforces that it is a safe bare filename (no separators/traversal).
+- ``url=`` carries the identity: it must be KE's native byte route,
+  ``…/objects/<sha256>/content`` (optionally with a capability ``token=``). The sha is
+  parsed from it, keys the local cache (``<downloads>/<sha>/<filename>``), and the
+  downloaded bytes are VERIFIED against it. The ``.ke.json`` metadata sidecar comes
+  from the same URL minus the ``/content`` suffix.
+- Instance dispatch is by exact local path — never by filename: a corpus routinely
+  holds two databases under one name.
 
 This handler matches on the presence of ``url=`` — plain navigation links without it
-fall through to the default handler. It downloads the IDB from ``url=`` (and the
-``.ke.json`` metadata sidecar from the same base), then relays the link, minus
-``url=``, to IDA for navigation. The scheme (http/https) comes from ``url=`` as KE
+fall through to the default handler. The scheme (http/https) comes from ``url=`` as KE
 emits it, so it matches however KE is served — this handler does no scheme probing.
 See the KE ``docs/deep-links.md``.
 """
@@ -43,22 +52,21 @@ console = Console()
 
 
 class KEURLHandler(URLHandler):
-    """Handler for KE deep links: ``ida://ke/<idb>/<resource>?…&url=<asset URL>``.
+    """Handler for KE deep links: ``ida://ke/<filename>?…&url=<content URL>``.
 
-    Downloads the asset from the ``url=`` location, caches it locally, then finds
+    Downloads the content from the ``url=`` location, caches it locally, then finds
     or launches an IDA instance and relays the link (minus ``url=``) for navigation.
     """
 
     def matches(self, parsed: ParseResult) -> bool:
-        # KE deep links have the documented shape ``ida://ke/<idb>/<resource>?…&url=``:
-        # the ``ida`` scheme, the ``ke`` host, at least an ``<idb>`` path segment, AND a
+        # KE deep links have the documented shape ``ida://ke/<filename>?…&url=``:
+        # the ``ida`` scheme, the ``ke`` host, a ``<filename>`` path segment, AND a
         # ``url=`` download parameter. Requiring all of them keeps the download path
         # from being reached by any other ``ida://...?url=`` link — those (and plain
-        # navigation links) fall through to DefaultURLHandler.
+        # navigation links) fall through to DefaultURLHandler. Matching is shape-level
+        # only; handle() enforces the strict contract (exactly one bare-name segment).
         if parsed.scheme != "ida" or parsed.hostname != "ke":
             return False
-        # At least the <idb> segment (handle() needs it); a missing resource is tolerated
-        # so open-only links (ida://ke/<idb>?...&url=) still route here.
         segments = [s for s in parsed.path.split("/") if s]
         if len(segments) < 1:
             return False
@@ -73,21 +81,27 @@ class KEURLHandler(URLHandler):
         skip_analysis: bool,
     ) -> None:
         params = dict(parse_qsl(parsed.query, keep_blank_values=True))
-        asset_url = params.get("url", "")
-        if not asset_url:
+        content_url = params.get("url", "")
+        if not content_url:
             _reject("KE URL is missing the 'url' download parameter")
 
-        # Validate the idb segment FIRST (cheap, no network) so a malformed link does
-        # not trigger a DNS lookup of the attacker-controlled url= host.
+        # Validate the link's own fields FIRST (cheap, no network) so a malformed link
+        # does not trigger a DNS lookup of the attacker-controlled url= host.
         idb_name = _idb_name_from_path(parsed.path)
         if not idb_name:
-            _reject("KE URL has no valid <idb> path segment")
+            _reject("KE URL has no valid <filename> path segment")
+        sha = _sha_from_content_url(content_url)
+        if not sha:
+            _reject(
+                "KE URL 'url=' is not an /objects/<sha256>/content route — the link was "
+                "minted by an outdated KE server or plugin. Update KE and retry."
+            )
 
-        # Compute the cache paths (under a hash of the asset URL so two assets that
-        # share a basename don't collide). No filesystem writes happen yet — these are
-        # pure path ops, and resolve() does not create anything.
+        # Cache is keyed by the content hash — collision-free by construction, and the
+        # same content re-linked from anywhere lands on the same cached copy. No
+        # filesystem writes happen yet — these are pure path ops.
         downloads_dir = Path(ENV.HCLI_KE_DOWNLOADS_DIR or _default_downloads_dir())
-        resource_path = downloads_dir / _ns(asset_url) / idb_name
+        resource_path = downloads_dir / sha / idb_name
         sidecar_path = resource_path.parent / f"{resource_path.name}.ke.json"
 
         # Defense in depth: never write outside the downloads directory, even if
@@ -106,8 +120,10 @@ class KEURLHandler(URLHandler):
         # cleanup, no dir creation, no download) without the user's consent. Skipped
         # only for --no-launch (an explicit local CLI invocation, not the drive-by
         # surface).
-        host = urlparse(asset_url).hostname or "an unknown host"
-        if not no_launch and not _confirm_open_dialog(idb_name, host):
+        host = urlparse(content_url).hostname or "an unknown host"
+        # ASCII only: the native dialog path (AppleScript/zenity) mangles non-ASCII
+        # (an ellipsis rendered as mojibake), and the sha prefix needs no decoration.
+        if not no_launch and not _confirm_open_dialog(f"{idb_name} ({sha[:8]})", host):
             console.print("[yellow]Cancelled — nothing downloaded.[/yellow]")
             console.print("[dim]Set HCLI_KE_SKIP_CONFIRM=1 to skip this prompt.[/dim]")
             return
@@ -118,7 +134,7 @@ class KEURLHandler(URLHandler):
         # defeats DNS rebinding between this check and the fetch. Rejections surface via
         # the native dialog (browser-launched: no visible console).
         try:
-            pinned_ips = _validate_asset_url(asset_url)
+            pinned_ips = _validate_content_url(content_url)
         except click.ClickException as e:
             _show_error_dialog(e.message or "Invalid KE link")
             raise
@@ -133,8 +149,8 @@ class KEURLHandler(URLHandler):
 
         try:
             with httpx.Client(timeout=300.0) as client:
-                _download_metadata(client, asset_url, sidecar_path, pinned_ips)
-                _download_file(client, _download_url(asset_url), resource_path, pinned_ips)
+                _download_metadata(client, _metadata_url(content_url), sidecar_path, pinned_ips)
+                _download_file(client, content_url, resource_path, pinned_ips, expected_sha256=sha)
         except click.ClickException as e:
             _dismiss_dialog(dialog)
             # Surface the specific reason (HTTP status, size limit, SSRF reject) in the
@@ -165,6 +181,9 @@ class KEURLHandler(URLHandler):
             skip_analysis=skip_analysis,
             navigate=_has_nav_params(parsed.query),
             on_error=_show_error_dialog,
+            # Identity dispatch: only the instance holding THIS local file matches. A
+            # basename match routed navigation into a same-named twin already open.
+            require_path_match=True,
         )
 
 
@@ -189,17 +208,21 @@ def _default_downloads_dir() -> str:
     return str(Path.home() / ".ke" / "downloads")
 
 
+_SHA256_HEX = frozenset("0123456789abcdef")
+
+
 def _idb_name_from_path(path: str) -> str:
-    """Return the ``<idb>`` segment (the first path segment) of an
-    ``ida://ke/<idb>/<resource>`` link — the IDB filename IDA reports.
+    r"""Return the ``<filename>`` segment of an ``ida://ke/<filename>`` link —
+    the client-chosen save/display name, and the link path's ONLY segment.
 
     The decoded segment MUST be a bare filename. An attacker controls the deep
     link and can percent-encode separators (``%2F``, ``%5C``) or ``..`` to smuggle
     traversal/absolute paths that would escape the downloads directory once used
-    in a path join, so reject anything that isn't a plain filename here.
+    in a path join, so reject anything that isn't a plain filename here. Extra
+    path segments are rejected too — the contract has none.
     """
     segments = [seg for seg in path.split("/") if seg]
-    if not segments:
+    if len(segments) != 1:
         return ""
     name = unquote(segments[0])
     # Reject separators, traversal, and NUL/control bytes (a NUL makes the later
@@ -211,13 +234,46 @@ def _idb_name_from_path(path: str) -> str:
     return name
 
 
+def _sha_from_content_url(content_url: str) -> str:
+    """The content identity, parsed from ``url=``'s path: ``…/objects/<sha256>/content``.
+
+    The single authoritative location of the identity — it keys the cache and the
+    downloaded bytes are verified against it. Note what verification is and is not:
+    it catches tampering or misconfiguration of a TRUSTED KE host; a hostile link
+    picks its own sha, so the gate against hostile links remains the confirm dialog
+    (name + sha + host) and the SSRF guard. Pure string parsing — never any network.
+    """
+    path = urlparse(content_url).path.rstrip("/")
+    parts = [seg for seg in path.split("/") if seg]
+    if len(parts) < 3 or parts[-1] != "content" or parts[-3] != "objects":
+        return ""
+    sha = parts[-2].lower()
+    if len(sha) != 64 or any(ch not in _SHA256_HEX for ch in sha):
+        return ""
+    return sha
+
+
+def _metadata_url(content_url: str) -> str:
+    """The object-metadata URL: the content URL minus its ``/content`` suffix.
+
+    The one documented derivation in the contract (``…/objects/<sha>/content`` →
+    ``…/objects/<sha>``), preserving any query (the capability token authorizes
+    both routes).
+    """
+    parsed = urlparse(content_url)
+    path = parsed.path.rstrip("/")
+    suffix = "/content"
+    new_path = path.removesuffix(suffix)
+    return urlunparse(parsed._replace(path=new_path))
+
+
 # RFC 6598 carrier-grade NAT shared address space — not flagged by any of the
 # ipaddress is_* properties, but must be treated as non-public for SSRF.
 _CGNAT_NET = ipaddress.ip_network("100.64.0.0/10")
 
 # RFC 4380 Teredo prefix. A Teredo address embeds a server/client IPv4 and the OS can
 # tunnel to it, but is_reserved/is_private don't classify the whole 2001::/32 range
-# before Python 3.11. Block the entire prefix — no public asset is served from it.
+# before Python 3.11. Block the entire prefix — no public content is served from it.
 _TEREDO_NET = ipaddress.ip_network("2001::/32")
 
 
@@ -239,7 +295,7 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified
 
 
-def _validate_asset_url(asset_url: str) -> list[str] | None:
+def _validate_content_url(content_url: str) -> list[str] | None:
     """Validate ``url=`` and return the IPs to pin the download connection to.
 
     KE links are attacker-reachable (any web page can launch ``ida://...``), so an
@@ -254,13 +310,13 @@ def _validate_asset_url(asset_url: str) -> list[str] | None:
     (private hosts allowed), leaving normal hostname resolution in place.
     """
     try:
-        parsed = urlparse(asset_url)
+        parsed = urlparse(content_url)
         port = parsed.port  # property access parses (and may reject) the port
     except ValueError as e:
-        raise click.ClickException(f"Invalid asset URL: {e}")
+        raise click.ClickException(f"Invalid content URL: {e}")
 
     if parsed.scheme not in ("http", "https"):
-        raise click.ClickException(f"Refusing non-HTTP(S) asset URL: {parsed.scheme or 'missing'}://")
+        raise click.ClickException(f"Refusing non-HTTP(S) content URL: {parsed.scheme or 'missing'}://")
 
     host = parsed.hostname
     if not host:
@@ -273,7 +329,7 @@ def _validate_asset_url(asset_url: str) -> list[str] | None:
     try:
         infos = socket.getaddrinfo(host, resolve_port, type=socket.SOCK_STREAM)
     except socket.gaierror as e:
-        raise click.ClickException(f"Cannot resolve asset host: {e}")
+        raise click.ClickException(f"Cannot resolve content host: {e}")
 
     pinned_ips: list[str] = []
     for *_, sockaddr in infos:
@@ -309,11 +365,6 @@ def _pinned_request_args(url: str, pinned_ip: str | None) -> tuple[str, dict]:
     return pinned_url, {"headers": {"Host": host_header}, "extensions": {"sni_hostname": host}}
 
 
-def _ns(url: str) -> str:
-    """Short stable hash of the asset URL, used to namespace local downloads."""
-    return hashlib.sha256(url.encode()).hexdigest()[:16]
-
-
 _NAV_PARAMS = frozenset({"ea", "rva", "name", "view"})
 
 
@@ -327,18 +378,6 @@ def _strip_query_param(uri: str, param: str) -> str:
     parsed = urlparse(uri)
     kept = [kv for kv in parsed.query.split("&") if kv and kv.split("=", 1)[0] != param]
     return urlunparse(parsed._replace(query="&".join(kept)))
-
-
-def _download_url(asset_url: str) -> str:
-    """Append the ``/download`` path segment to *asset_url*, preserving query/fragment.
-
-    KE serves the file at ``<asset>/download``. Plain ``f"{asset_url}/download"`` is
-    wrong when the asset URL carries a query or fragment (the segment would land in
-    the query string), so splice it into the path component instead.
-    """
-    parsed = urlparse(asset_url)
-    new_path = parsed.path.rstrip("/") + "/download"
-    return urlunparse(parsed._replace(path=new_path))
 
 
 # Hard ceiling on the metadata sidecar regardless of HCLI_KE_MAX_DOWNLOAD_MB: it is
@@ -363,7 +402,7 @@ def _pinned_attempts(pinned_ips: list[str] | None) -> list[str | None]:
     return list(pinned_ips) if pinned_ips else [None]
 
 
-# KE serves assets via a redirect (e.g. to object storage), so we must follow 3xx —
+# KE can serve content via a redirect (e.g. to object storage), so we must follow 3xx —
 # but httpx's own follow_redirects would connect straight to the Location host,
 # bypassing the SSRF pin. So we follow manually and re-validate/re-pin every hop.
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
@@ -394,7 +433,7 @@ def _open_validated_stream(client: httpx.Client, url: str, pinned_ips: list[str]
     """Stream a GET to *url*, following up to ``_MAX_REDIRECTS`` redirects safely.
 
     Each redirect ``Location`` is resolved and re-checked through
-    :func:`_validate_asset_url` (SSRF guard + fresh IP pin) before the next hop, so a
+    :func:`_validate_content_url` (SSRF guard + fresh IP pin) before the next hop, so a
     3xx — from KE or anything in the chain — can never steer the fetch to a private,
     loopback, or otherwise non-public address. Yields the final non-redirect response,
     still open for streaming; the connection is released when the ``with`` block exits.
@@ -406,7 +445,7 @@ def _open_validated_stream(client: httpx.Client, url: str, pinned_ips: list[str]
                 target = str(httpx.URL(url).join(response.headers["location"]))
                 stack.close()  # release the redirect response before fetching the next hop
                 # Re-validate (and re-pin) the new target exactly like the original url=.
-                pinned_ips = _validate_asset_url(target)
+                pinned_ips = _validate_content_url(target)
                 url = target
                 continue
             yield response
@@ -414,8 +453,8 @@ def _open_validated_stream(client: httpx.Client, url: str, pinned_ips: list[str]
         raise click.ClickException("Download failed: too many redirects")
 
 
-def _download_metadata(client: httpx.Client, asset_url: str, sidecar_path: Path, pinned_ips: list[str] | None) -> None:
-    """Download asset metadata and save as ``.ke.json`` sidecar (best-effort, bounded).
+def _download_metadata(client: httpx.Client, content_url: str, sidecar_path: Path, pinned_ips: list[str] | None) -> None:
+    """Download object metadata and save as ``.ke.json`` sidecar (best-effort, bounded).
 
     Tries each validated IP in turn when an IP won't accept a connection and follows
     redirects (re-validated per hop); any other failure (non-200, read error, timeout,
@@ -423,7 +462,7 @@ def _download_metadata(client: httpx.Client, asset_url: str, sidecar_path: Path,
     missing one never blocks the download.
     """
     try:
-        with _open_validated_stream(client, asset_url, pinned_ips) as response:
+        with _open_validated_stream(client, content_url, pinned_ips) as response:
             if response.status_code != 200:
                 _print(f"[yellow]Warning: Metadata fetch failed (HTTP {response.status_code})[/yellow]")
                 return
@@ -452,8 +491,14 @@ def _download_metadata(client: httpx.Client, asset_url: str, sidecar_path: Path,
         _print(f"[yellow]Warning: Metadata fetch failed: {e}[/yellow]")
 
 
-def _download_file(client: httpx.Client, download_url: str, resource_path: Path, pinned_ips: list[str] | None) -> None:
-    """Stream the resource file to disk.
+def _download_file(
+    client: httpx.Client,
+    download_url: str,
+    resource_path: Path,
+    pinned_ips: list[str] | None,
+    expected_sha256: str | None = None,
+) -> None:
+    """Stream the resource file to disk, verifying it against its content hash.
 
     Streams rather than buffering the whole body in memory, enforces the optional
     ``HCLI_KE_MAX_DOWNLOAD_MB`` cap, and — even without that cap — refuses to fill the
@@ -462,6 +507,10 @@ def _download_file(client: httpx.Client, download_url: str, resource_path: Path,
     accept a connection it tries the next validated IP, and redirects are followed
     (re-validated and re-pinned per hop).
 
+    With *expected_sha256*, the streamed bytes are hashed and a mismatch is rejected
+    before anything replaces the cache: the link declares an identity, the handler
+    holds it to it — a compromised or misconfigured server cannot substitute content.
+
     Downloads to a temporary ``.part`` file and atomically renames on success, so a
     failed re-download never destroys a previously-cached copy at *resource_path*.
     """
@@ -469,6 +518,7 @@ def _download_file(client: httpx.Client, download_url: str, resource_path: Path,
     tmp_path = resource_path.with_name(resource_path.name + ".part")
 
     try:
+        digest = hashlib.sha256()
         with _open_validated_stream(client, download_url, pinned_ips) as response:
             if response.status_code != 200:
                 raise click.ClickException(f"Download failed: HTTP {response.status_code}")
@@ -485,7 +535,10 @@ def _download_file(client: httpx.Client, download_url: str, resource_path: Path,
                         if shutil.disk_usage(resource_path.parent).free < _MIN_FREE_BYTES:
                             raise click.ClickException("Download aborted: insufficient free disk space")
                         next_space_check = written + _SPACE_CHECK_INTERVAL
+                    digest.update(chunk)
                     f.write(chunk)
+        if expected_sha256 is not None and digest.hexdigest() != expected_sha256:
+            raise click.ClickException("Download does not match the link's content hash — refusing to open it")
         # Only now replace any existing cached copy — atomic on the same filesystem.
         os.replace(tmp_path, resource_path)
     except httpx.TimeoutException:

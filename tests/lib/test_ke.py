@@ -1,5 +1,6 @@
 """Tests for KE deep-link handling in the ida:// protocol."""
 
+import hashlib
 import os
 import time
 from types import SimpleNamespace
@@ -15,23 +16,29 @@ from hcli.lib.ida.handler.ke_url_handler import (
     KEURLHandler,
     _cleanup_old_downloads,
     _confirm_open_dialog,
-    _download_url,
     _has_nav_params,
     _idb_name_from_path,
-    _ns,
+    _metadata_url,
     _pinned_request_args,
+    _sha_from_content_url,
     _strip_query_param,
-    _validate_asset_url,
+    _validate_content_url,
 )
 
-# A representative KE asset base — what KE percent-encodes into the ``url=`` parameter.
-ASSET_URL = "http://host:8080/api/v1/buckets/mybucket/assets/test.i64"
+# Content-true fixtures: the handler VERIFIES downloads against the link's sha, so the
+# fixture identity is the real hash of the fixture bytes.
+CONTENT = b"file content"
+SHA = hashlib.sha256(CONTENT).hexdigest()
+# What KE percent-encodes into url= — the native byte route; the sha in its path IS
+# the link's identity (the slot is only the client-chosen save/display filename).
+CONTENT_URL = f"http://host:8080/api/v1/buckets/mybucket/objects/{SHA}/content"
 
 
-def _ke_link(idb: str, resource: str, asset_url: str, *, nav: str = "") -> str:
-    """Build a KE deep link the way KE emits it (asset URL percent-encoded into url=)."""
-    query = (f"{nav}&" if nav else "") + f"url={quote(asset_url, safe='')}"
-    return f"ida://ke/{idb}/{resource}?{query}"
+def _ke_link(filename: str, content_url: str, *, nav: str = "") -> str:
+    """Build a KE deep link the way KE emits it: client-chosen filename slot, the
+    content-addressed download URL percent-encoded into url=."""
+    query = (f"{nav}&" if nav else "") + f"url={quote(content_url, safe='')}"
+    return f"ida://ke/{quote(filename, safe='')}?{query}"
 
 
 def _stream_cm(content: bytes, status: int = 200):
@@ -72,9 +79,9 @@ class TestMatches:
     @pytest.mark.parametrize(
         "uri, expected",
         [
-            (_ke_link("test.i64", "functions", ASSET_URL, nav="ea=0x1000&view=pseudocode"), True),
+            (_ke_link("test.i64", CONTENT_URL, nav="ea=0x1000&view=pseudocode"), True),
             # An open-only link with just the <idb> segment still routes to KE.
-            ("ida://ke/test.i64?url=" + quote(ASSET_URL, safe=""), True),
+            ("ida://ke/test.i64?url=" + quote(CONTENT_URL, safe=""), True),
             # No url= param → handled by DefaultURLHandler, not KE.
             ("ida://malwares/trojan.i64/functions?rva=0x1000", False),
             # The old download-locator form carried no url= param — it no longer matches.
@@ -93,16 +100,19 @@ class TestMatches:
 
 class TestDownloadUrl:
     @pytest.mark.parametrize(
-        "asset_url, expected",
+        "content_url, expected",
         [
-            ("https://host/a/b", "https://host/a/b/download"),
-            # Naive f"{url}/download" would put the segment inside the query string.
-            ("https://host/a?token=x", "https://host/a/download?token=x"),
-            ("https://host/a/", "https://host/a/download"),
+            # The one documented derivation: /content stripped, query (token) preserved.
+            (f"https://host/api/v1/buckets/b/objects/{SHA}/content", f"https://host/api/v1/buckets/b/objects/{SHA}"),
+            (
+                f"https://host/api/v1/buckets/b/objects/{SHA}/content?token=x",
+                f"https://host/api/v1/buckets/b/objects/{SHA}?token=x",
+            ),
+            (f"https://host/api/v1/buckets/b/objects/{SHA}/content/", f"https://host/api/v1/buckets/b/objects/{SHA}"),
         ],
     )
-    def test_download_url(self, asset_url, expected):
-        assert _download_url(asset_url) == expected
+    def test_metadata_url(self, content_url, expected):
+        assert _metadata_url(content_url) == expected
 
 
 class TestConfirmOpenDialog:
@@ -240,41 +250,58 @@ class TestDownloadFileDiskGuard:
         assert not (tmp_path / "cached.i64.part").exists()  # partial cleaned up
 
 
-class TestIdbNameFromPath:
+class TestIdentityAndFilename:
     @pytest.mark.parametrize(
         "path, expected",
         [
-            ("/test.i64/functions", "test.i64"),
-            ("/my%20file.i64/functions", "my file.i64"),
+            ("/test.i64", "test.i64"),
+            ("/my%20file.i64", "my file.i64"),
             ("", ""),
+            # The contract has exactly one path segment; extras are rejected.
+            ("/test.i64/functions", ""),
             # %2F-encoded separators survive urlparse and would escape the downloads dir.
-            ("/..%2F..%2F..%2Fhome%2Fvictim%2F.bashrc/functions", ""),
-            ("/%2Fetc%2Fcron.d%2Fevil/functions", ""),
-            ("/../functions", ""),
-            ("/a%5Cb/functions", ""),
+            ("/..%2F..%2F..%2Fhome%2Fvictim%2F.bashrc", ""),
+            ("/%2Fetc%2Fcron.d%2Fevil", ""),
+            ("/..", ""),
+            ("/a%5Cb", ""),
             # A NUL would make the later Path.resolve() raise ValueError; reject up front.
-            ("/foo%00.i64/functions", ""),
+            ("/foo%00.i64", ""),
         ],
     )
     def test_idb_name_from_path(self, path, expected):
         assert _idb_name_from_path(path) == expected
 
+    @pytest.mark.parametrize(
+        "content_url, expected",
+        [
+            (f"http://h/api/v1/buckets/b/objects/{SHA}/content", SHA),
+            (f"http://h/api/v1/buckets/b/objects/{SHA}/content?token=x", SHA),
+            (f"http://h/api/v1/buckets/b/objects/{SHA.upper()}/content", SHA),  # case-normalized
+            # The retired assets shape is not an identity-bearing route.
+            (f"http://h/api/v1/buckets/b/assets/{SHA}/x.i64", ""),
+            (f"http://h/api/v1/buckets/b/objects/{SHA}", ""),  # metadata route, not bytes
+            ("http://h/objects/nothex/content", ""),
+        ],
+    )
+    def test_sha_from_content_url(self, content_url, expected):
+        assert _sha_from_content_url(content_url) == expected
 
-class TestValidateAssetUrl:
-    """Tests for the SSRF guard / DNS-rebinding pin in _validate_asset_url."""
+
+class TestValidateContentUrl:
+    """Tests for the SSRF guard / DNS-rebinding pin in _validate_content_url."""
 
     @pytest.mark.parametrize(
-        "asset_url, match",
+        "content_url, match",
         [
             ("file:///etc/passwd", "non-HTTP"),
             ("http:///path/only", "no host"),
             # parsed.port raises ValueError — must surface as a clean ClickException.
-            ("http://host:notaport/x", "Invalid asset URL"),
+            ("http://host:notaport/x", "Invalid content URL"),
         ],
     )
-    def test_rejects_malformed_url(self, asset_url, match):
+    def test_rejects_malformed_url(self, content_url, match):
         with pytest.raises(click.ClickException, match=match):
-            _validate_asset_url(asset_url)
+            _validate_content_url(content_url)
 
     @pytest.mark.parametrize(
         "ips",
@@ -300,19 +327,19 @@ class TestValidateAssetUrl:
             patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False),
             pytest.raises(click.ClickException, match="non-public"),
         ):
-            _validate_asset_url("http://evil.example/x")
+            _validate_content_url("http://evil.example/x")
 
     @patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo")
     def test_returns_all_public_ips_deduped_for_failover(self, mock_gai):
         # All validated IPs are returned (deduped) so the download can fail over.
         mock_gai.return_value = _addrinfo("93.184.216.34", "93.184.216.35", "93.184.216.34")
         with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", False):
-            assert _validate_asset_url("https://public.example/x") == ["93.184.216.34", "93.184.216.35"]
+            assert _validate_content_url("https://public.example/x") == ["93.184.216.34", "93.184.216.35"]
 
     def test_returns_none_when_private_hosts_allowed(self):
         # Opt-out: no resolution, no pinning — preserves self-hosted/internal KE.
         with patch.object(ENV_CLS, "HCLI_KE_ALLOW_PRIVATE_HOSTS", True):
-            assert _validate_asset_url("http://internal-ke.lan:8080/x") is None
+            assert _validate_content_url("http://internal-ke.lan:8080/x") is None
 
 
 class TestPinnedRequestArgs:
@@ -366,11 +393,11 @@ class TestStripQueryParam:
         "uri, expected",
         [
             (
-                "ida://ke/test.i64/functions?ea=0x1000&view=pseudocode&url=" + quote(ASSET_URL, safe=""),
-                "ida://ke/test.i64/functions?ea=0x1000&view=pseudocode",
+                "ida://ke/test.i64?ea=0x1000&view=pseudocode&url=" + quote(CONTENT_URL, safe=""),
+                "ida://ke/test.i64?ea=0x1000&view=pseudocode",
             ),
             # Open-only: dropping the only param leaves no query string at all.
-            ("ida://ke/test.i64/addresses?url=" + quote(ASSET_URL, safe=""), "ida://ke/test.i64/addresses"),
+            ("ida://ke/test.i64?url=" + quote(CONTENT_URL, safe=""), "ida://ke/test.i64"),
         ],
     )
     def test_drops_url_keeps_the_rest(self, uri, expected):
@@ -446,10 +473,10 @@ class TestDownloadRedirects:
                 ke_url_handler._download_file(client, "https://host/a/download", dest, ["93.184.216.34"])
 
 
-def _mock_httpx_client(content: bytes = b"file content", meta_content: bytes = b'{"meta":true}', status: int = 200):
+def _mock_httpx_client(content: bytes = CONTENT, meta_content: bytes = b'{"meta":true}', status: int = 200):
     """A mock httpx client whose .stream yields the metadata body then the file body.
 
-    handle() streams metadata first (asset_url) then the file (<asset_url>/download),
+    handle() streams metadata first (content_url) then the file (<content_url>/download),
     so distinct bodies let tests verify each independently.
     """
     return _client(_stream_cm(meta_content), _stream_cm(content, status))
@@ -469,14 +496,14 @@ class TestHandleKeUrl:
     @patch("hcli.lib.ida.handler.ke_url_handler._dismiss_dialog")
     @patch("hcli.lib.ida.handler.ke_url_handler._cleanup_old_downloads")
     @patch("hcli.lib.ida.handler.ke_url_handler.httpx.Client")
-    def test_no_launch_downloads_to_hashed_dir(
+    def test_no_launch_downloads_to_content_addressed_dir(
         self, mock_client_cls, mock_cleanup, mock_dismiss, mock_dialog, tmp_path
     ):
-        mock_client = _mock_httpx_client(b"file content")
+        mock_client = _mock_httpx_client(CONTENT)
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        uri = _ke_link("test.i64", "addresses", ASSET_URL)
+        uri = _ke_link("test.i64", CONTENT_URL)
         parsed = urlparse(uri)
 
         with (
@@ -486,11 +513,11 @@ class TestHandleKeUrl:
             _set_handler_env(mock_env, tmp_path)
             KEURLHandler().handle(uri, parsed, no_launch=True, timeout=120.0, skip_analysis=False)
 
-        # File and its .ke.json sidecar land under the url-hash namespace dir, each
-        # with its own body (so a broken metadata path can't masquerade as the file).
-        downloaded = tmp_path / _ns(ASSET_URL) / "test.i64"
-        sidecar = tmp_path / _ns(ASSET_URL) / "test.i64.ke.json"
-        assert downloaded.read_bytes() == b"file content"
+        # File and its .ke.json sidecar land under the CONTENT-hash dir, each with
+        # its own body (so a broken metadata path can't masquerade as the file).
+        downloaded = tmp_path / SHA / "test.i64"
+        sidecar = tmp_path / SHA / "test.i64.ke.json"
+        assert downloaded.read_bytes() == CONTENT
         assert sidecar.read_bytes() == b'{"meta":true}'
 
     @patch("hcli.lib.ida.handler.ke_url_handler._show_download_dialog", return_value=None)
@@ -504,16 +531,22 @@ class TestHandleKeUrl:
         """The link relayed to IDA must be the url=-stripped nav URI (the IDA 9.4 fix)."""
         from hcli.lib.ida.ipc import IDAInstance
 
-        running_instance = IDAInstance(pid=1234, socket_path="/tmp/ida_ipc_1234", idb_name="test.i64", has_idb=True)
+        running_instance = IDAInstance(
+            pid=1234,
+            socket_path="/tmp/ida_ipc_1234",
+            idb_path=str(tmp_path / SHA / "test.i64"),
+            idb_name="test.i64",
+            has_idb=True,
+        )
         mock_ipc.discover_instances.return_value = [running_instance]
         mock_ipc.query_instance.return_value = running_instance
         mock_ipc.send_open_ida_link.return_value = (True, "OK")
 
-        mock_client = _mock_httpx_client(b"file content")
+        mock_client = _mock_httpx_client(CONTENT)
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        uri = _ke_link("test.i64", "functions", ASSET_URL, nav="ea=0x1000&view=pseudocode")
+        uri = _ke_link("test.i64", CONTENT_URL, nav="ea=0x1000&view=pseudocode")
         parsed = urlparse(uri)
 
         with (
@@ -524,9 +557,10 @@ class TestHandleKeUrl:
             _set_handler_env(mock_env, tmp_path)
             KEURLHandler().handle(uri, parsed, no_launch=False, timeout=120.0, skip_analysis=False)
 
-        # Reuse the running instance and forward the nav link WITHOUT url=.
+        # Reuse the running instance (matched by EXACT PATH, not name) and forward the
+        # nav link in IDA's dialect: filename slot, url= and filename= stripped.
         mock_ipc.send_open_ida_link.assert_called_once_with(
-            "/tmp/ida_ipc_1234", "ida://ke/test.i64/functions?ea=0x1000&view=pseudocode"
+            "/tmp/ida_ipc_1234", "ida://ke/test.i64?ea=0x1000&view=pseudocode"
         )
 
     @patch("hcli.lib.ida.handler.ke_url_handler._confirm_open_dialog", return_value=True)
@@ -546,16 +580,22 @@ class TestHandleKeUrl:
         # url= host resolves to a public IP, so the SSRF guard passes and pinning engages.
         mock_gai.return_value = _addrinfo("93.184.216.34")
 
-        running = IDAInstance(pid=1234, socket_path="/tmp/ida_ipc_1234", idb_name="test.i64", has_idb=True)
+        running = IDAInstance(
+            pid=1234,
+            socket_path="/tmp/ida_ipc_1234",
+            idb_path=str(tmp_path / SHA / "test.i64"),
+            idb_name="test.i64",
+            has_idb=True,
+        )
         mock_ipc.discover_instances.return_value = [running]
         mock_ipc.query_instance.return_value = running
         mock_ipc.send_open_ida_link.return_value = (True, "OK")
 
-        mock_client = _mock_httpx_client(b"file content")
+        mock_client = _mock_httpx_client(CONTENT)
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        uri = _ke_link("test.i64", "functions", ASSET_URL, nav="ea=0x1000")
+        uri = _ke_link("test.i64", CONTENT_URL, nav="ea=0x1000")
         parsed = urlparse(uri)
 
         with (
@@ -577,7 +617,7 @@ class TestHandleKeUrl:
         assert file_call.kwargs["extensions"]["sni_hostname"] == "host"
 
         # And it still downloaded to the hashed dir.
-        assert (tmp_path / _ns(ASSET_URL) / "test.i64").read_bytes() == b"file content"
+        assert (tmp_path / SHA / "test.i64").read_bytes() == CONTENT
 
     @patch("hcli.lib.ida.handler.ke_url_handler._confirm_open_dialog", return_value=False)
     @patch("hcli.lib.ida.handler.ke_url_handler._show_download_dialog", return_value=None)
@@ -589,11 +629,11 @@ class TestHandleKeUrl:
     ):
         """A passive (declined) ida://ke/... click must write NOTHING to disk — the
         confirm gate runs before any download, killing the drive-by disk-fill."""
-        mock_client = _mock_httpx_client(b"file content")
+        mock_client = _mock_httpx_client(CONTENT)
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        uri = _ke_link("test.i64", "functions", ASSET_URL, nav="ea=0x1000")
+        uri = _ke_link("test.i64", CONTENT_URL, nav="ea=0x1000")
         parsed = urlparse(uri)
 
         with (
@@ -601,7 +641,7 @@ class TestHandleKeUrl:
             patch("hcli.lib.ida.handler.ke_url_handler.time.sleep"),
             patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo") as mock_gai,
         ):
-            # allow_private=False so a reached _validate_asset_url WOULD resolve — proving
+            # allow_private=False so a reached _validate_content_url WOULD resolve — proving
             # the decline path never gets there (no DNS beacon to the attacker host).
             _set_handler_env(mock_env, tmp_path, allow_private=False, skip_confirm=False)
             KEURLHandler().handle(uri, parsed, no_launch=False, timeout=120.0, skip_analysis=False)
@@ -611,14 +651,45 @@ class TestHandleKeUrl:
         mock_gai.assert_not_called()
         mock_client.stream.assert_not_called()
         mock_cleanup.assert_not_called()
-        assert not (tmp_path / _ns(ASSET_URL)).exists()
+        assert not (tmp_path / SHA).exists()
 
     @patch("hcli.lib.ida.handler.ke_url_handler._show_error_dialog")
     def test_missing_url_param_aborts(self, mock_error_dialog):
         # Patch the native dialog so the rejection path doesn't spawn a real
         # notify-send/osascript/PowerShell during the test run.
-        uri = "ida://ke/test.i64/functions?ea=0x1000"
+        uri = "ida://ke/test.i64?ea=0x1000"
         parsed = urlparse(uri)
         with pytest.raises(click.Abort):
             KEURLHandler().handle(uri, parsed, False, 120.0, False)
         mock_error_dialog.assert_called_once()
+
+
+class TestContentContract:
+    def test_download_that_mismatches_the_hash_is_refused(self, tmp_path):
+        """The link declares an identity; the handler holds the server to it."""
+        dest = tmp_path / "test.i64"
+        with patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env:
+            mock_env.HCLI_KE_MAX_DOWNLOAD_MB = 0
+            client = _client(_stream_cm(b"substituted bytes"))
+            with pytest.raises(click.ClickException, match="content hash"):
+                ke_url_handler._download_file(client, CONTENT_URL, dest, None, expected_sha256=SHA)
+        assert not dest.exists()
+        assert not (tmp_path / "test.i64.part").exists()
+
+    def test_matching_download_passes_verification(self, tmp_path):
+        dest = tmp_path / "test.i64"
+        with patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env:
+            mock_env.HCLI_KE_MAX_DOWNLOAD_MB = 0
+            ke_url_handler._download_file(_client(_stream_cm(CONTENT)), CONTENT_URL, dest, None, expected_sha256=SHA)
+        assert dest.read_bytes() == CONTENT
+
+    @patch("hcli.lib.ida.handler.ke_url_handler._show_error_dialog")
+    def test_outdated_asset_shape_link_is_rejected_with_guidance(self, mock_dialog):
+        """A link whose url= is not the /objects/<sha>/content route (e.g. the retired
+        assets shape) is rejected before any network activity, with an actionable
+        message."""
+        legacy = f"http://host:8080/api/v1/buckets/mybucket/assets/{SHA}/test.i64"
+        uri = _ke_link("test.i64", legacy, nav="ea=0x1000")
+        with pytest.raises(click.Abort):
+            KEURLHandler().handle(uri, urlparse(uri), no_launch=True, timeout=10.0, skip_analysis=False)
+        assert "outdated" in mock_dialog.call_args.args[0]
