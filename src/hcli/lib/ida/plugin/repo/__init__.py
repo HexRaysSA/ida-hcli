@@ -10,6 +10,7 @@ import httpx
 import semantic_version
 from pydantic import BaseModel, ConfigDict
 
+from hcli import USER_AGENT
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
     IdaVersion,
@@ -20,11 +21,97 @@ from hcli.lib.ida.plugin import (
     split_plugin_version_spec,
     validate_metadata_in_plugin_archive,
 )
-from hcli.lib.ida.plugin.exceptions import AmbiguousPluginReferenceError
+from hcli.lib.ida.plugin.exceptions import AmbiguousPluginReferenceError, PluginAccessDeniedError
 from hcli.lib.ida.plugin.reference import normalize_plugin_host
 from hcli.lib.util.logging import m
 
 logger = logging.getLogger(__name__)
+
+MAX_REDIRECTS = 10
+
+# Hex-Rays serves plugin repository documents and their archives from
+# subdomains of this host. It is the sole destination hcli credentials may go
+# in the plugin path -- deliberately a constant, and deliberately NOT
+# ENV.HCLI_API_URL, which scopes the API client and answers a different
+# question. Widening either one must not widen the other.
+PLUGIN_REPO_HOST = "plugins.hex-rays.com"
+
+
+def is_plugin_repo_host(url: str) -> bool:
+    """Whether hcli credentials may be attached to a request for this URL.
+
+    True only for HTTPS on PLUGIN_REPO_HOST or a subdomain of it. The leading
+    dot in the suffix test is what keeps "evilplugins.hex-rays.com" and
+    "plugins.hex-rays.com.attacker.tld" out. Never plaintext HTTP, so a
+    downgrade cannot carry a credential.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").lower()
+    return host == PLUGIN_REPO_HOST or host.endswith("." + PLUGIN_REPO_HOST)
+
+
+def fetch_plugin_repo_bytes(url: str, repo_name: str | None = None) -> bytes:
+    """Fetch plugin repository content (an index document or an archive) over https.
+
+    Credentials are attached only on hops that land on a Hex-Rays plugin
+    repository host, where they unlock entitled private plugins -- never to
+    third parties (GitHub release assets, mirrors, presigned S3 URLs). Because
+    httpx only strips Authorization across origins and would happily forward an
+    x-api-key, redirects are walked by hand so the decision is remade per hop.
+    """
+    scheme = urlparse(url).scheme
+
+    # Resolved lazily on the first credential-eligible hop and reused: deciding
+    # whether we are logged in can cost a network round-trip for interactive
+    # credentials, so it must not repeat per redirect. Per hop we only decide
+    # whether to attach what was already resolved.
+    auth_headers: dict[str, str] | None = None
+
+    with httpx.Client(timeout=30.0, follow_redirects=False) as client:
+        current_url = url
+        # +1 because the initial request consumes an iteration; MAX_REDIRECTS
+        # counts redirects actually followed.
+        for _ in range(MAX_REDIRECTS + 1):
+            credentialed = is_plugin_repo_host(current_url)
+            if credentialed and auth_headers is None:
+                # Deferred import: the auth service is only needed for our own hosts.
+                from hcli.lib.auth import get_optional_auth_headers
+
+                auth_headers = get_optional_auth_headers()
+
+            headers = {"User-Agent": USER_AGENT}
+            if credentialed and auth_headers:
+                headers.update(auth_headers)
+
+            response = client.get(current_url, headers=headers)
+
+            # has_redirect_location, not is_redirect: is_redirect matches any
+            # 3xx, but only those carrying a Location are followable. A 300 or
+            # 304 falls through to raise_for_status, which names the real
+            # status instead of a misleading missing-Location error.
+            if response.has_redirect_location:
+                next_url = str(httpx.URL(current_url).join(response.headers["location"]))
+                if scheme == "https" and urlparse(next_url).scheme != "https":
+                    raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {next_url}")
+                current_url = next_url
+                continue
+
+            # Only denials by our own hosts are entitlement-shaped. A logged-in
+            # 404 stays generic: it means no such archive, not "log in first".
+            if credentialed:
+                authenticated = bool(auth_headers)
+                denied = (401, 403) if authenticated else (401, 403, 404)
+                if response.status_code in denied:
+                    raise PluginAccessDeniedError(
+                        url, response.status_code, authenticated=authenticated, repo_name=repo_name
+                    )
+
+            response.raise_for_status()
+            return response.content
+
+    raise ValueError(f"too many redirects while fetching: {url}")
 
 
 def fetch_plugin_archive(url: str) -> bytes:
@@ -37,11 +124,7 @@ def fetch_plugin_archive(url: str) -> bytes:
         return file_path.read_bytes()
 
     elif parsed_url.scheme in ("http", "https"):
-        response = httpx.get(url, timeout=30.0, follow_redirects=True)
-        response.raise_for_status()
-        if parsed_url.scheme == "https" and response.url.scheme != "https":
-            raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {response.url}")
-        return response.content
+        return fetch_plugin_repo_bytes(url)
 
     else:
         raise ValueError(f"Unsupported URL scheme: {parsed_url.scheme}")
