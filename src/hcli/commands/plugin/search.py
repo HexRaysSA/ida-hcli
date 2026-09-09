@@ -96,9 +96,10 @@ class KeywordMatchEntry(BaseModel):
 class KeywordQueryResult(BaseModel):
     query: str | None
     results: list[KeywordMatchEntry]
-    # Repositories that could not be consulted for this search, as short
-    # human-readable reasons. Additive: absent means nothing was skipped.
-    skipped: list[str] = []
+    # What to know about the repositories consulted: one unreachable, or one
+    # that served plugins it is not entitled to. Additive: empty means the
+    # results are the whole picture.
+    repository_notes: list[str] = []
 
 
 class AmbiguityErrorResult(BaseModel):
@@ -469,14 +470,14 @@ def collect_keyword_query_result(
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
     repo_of: Callable[[Plugin], str | None] | None = None,
-    skipped: list[str] | None = None,
+    repository_notes: list[str] | None = None,
 ) -> KeywordQueryResult:
     return KeywordQueryResult(
         query=query or None,
         results=collect_keyword_matches(
             plugins, query, current_version, current_platform, installed_records, repo_of=repo_of
         ),
-        skipped=skipped or [],
+        repository_notes=repository_notes or [],
     )
 
 
@@ -497,7 +498,7 @@ def render_keyword_query_text(result: KeywordQueryResult, default_repo: str | No
 
     if not matches:
         console.print("[grey69]No plugins found[/grey69]")
-        _render_skipped(result)
+        _render_repository_notes(result)
         return
 
     table = rich.table.Table(show_header=False, box=None)
@@ -526,18 +527,19 @@ def render_keyword_query_text(result: KeywordQueryResult, default_repo: str | No
         table.add_row(f"[blue]{label}[/blue]", match.version, status, match.repository)
 
     console.print(table)
-    _render_skipped(result)
+    _render_repository_notes(result)
 
 
-def _render_skipped(result: KeywordQueryResult) -> None:
+def _render_repository_notes(result: KeywordQueryResult) -> None:
     """Say which repositories did not contribute, after the results.
 
     Silence would misrepresent an incomplete search as an empty one -- the
     common case being a logged-out user, for whom the private repository simply
     is not there.
     """
-    for reason in result.skipped:
-        console.print(f"[grey69]repository skipped -- {reason}[/grey69]")
+
+    for note in result.repository_notes:
+        console.print(f"[grey69]repository {note}[/grey69]")
 
 
 def _has_exact_name_match(plugins: list[Plugin], name: str) -> bool:
@@ -596,7 +598,7 @@ def search_plugins(ctx, query: str | None = None, json_output: bool = False) -> 
         # failing on them.
         plugins: list[Plugin] = plugin_repo.get_plugins()
         repo_of = aggregate.repo_of if aggregate is not None else None
-        skipped = [f.describe() for f in aggregate.failures()] if aggregate is not None else []
+        repository_notes = aggregate.notes() if aggregate is not None else []
         installed_records = get_installed_plugin_records()
 
         ref = resolve_query_reference(plugins, query)
@@ -609,7 +611,7 @@ def search_plugins(ctx, query: str | None = None, json_output: bool = False) -> 
                 current_platform,
                 installed_records,
                 repo_of=repo_of,
-                skipped=skipped,
+                repository_notes=repository_notes,
             )
             if json_output:
                 print_json(_dump_result(keyword_result))

@@ -14,6 +14,7 @@ from hcli.lib.ida import (
     COMMUNITY_REPO_NAME,
     PLUGIN_REPOSITORY_NAME_RE,
     RESERVED_PLUGIN_REPOSITORIES,
+    IDAConfigJson,
     PluginRepositoryConfig,
     get_default_plugin_repository_name,
     get_ida_config,
@@ -31,8 +32,8 @@ def repo(ctx) -> None:
     """Manage plugin repositories."""
 
 
-def _save_repositories(repos: dict[str, PluginRepositoryConfig], default: str | None) -> None:
-    config = get_ida_config()
+def _save_repositories(config: IDAConfigJson, repos: dict[str, PluginRepositoryConfig], default: str | None) -> None:
+    """Write back the config already in hand, rather than re-reading it."""
     config.settings.plugin_repositories = repos
     if default is not None:
         config.settings.default_plugin_repository = default
@@ -43,8 +44,9 @@ def _save_repositories(repos: dict[str, PluginRepositoryConfig], default: str | 
 @click.pass_context
 def list_repos(ctx) -> None:
     """List the configured plugin repositories."""
-    repos = get_plugin_repositories()
-    default = get_default_plugin_repository_name()
+    config = get_ida_config()
+    repos = get_plugin_repositories(config)
+    default = get_default_plugin_repository_name(config)
 
     table = rich.table.Table(show_header=True, box=None)
     table.add_column("name", style="blue")
@@ -85,7 +87,7 @@ def add_repo(ctx, name: str, url: str) -> None:
     repos = dict(config.settings.plugin_repositories)
     existing = repos.get(name)
     repos[name] = PluginRepositoryConfig(url=url)
-    _save_repositories(repos, None)
+    _save_repositories(config, repos, None)
 
     verb = "updated" if existing else "added"
     console.print(f"{verb} plugin repository '{name}' -> {url}")
@@ -115,9 +117,9 @@ def remove_repo(ctx, name: str) -> None:
             f"[yellow]'{name}' was the default repository[/yellow]; unprefixed installs now use "
             f"'{COMMUNITY_REPO_NAME}'."
         )
-        _save_repositories(repos, COMMUNITY_REPO_NAME)
+        _save_repositories(config, repos, COMMUNITY_REPO_NAME)
     else:
-        _save_repositories(repos, None)
+        _save_repositories(config, repos, None)
 
     console.print(f"removed plugin repository '{name}'")
 
@@ -127,13 +129,13 @@ def remove_repo(ctx, name: str) -> None:
 @click.pass_context
 def set_default_repo(ctx, name: str) -> None:
     """Set the repository used for references with no repo/ prefix."""
-    repos = get_plugin_repositories()
+    config = get_ida_config()
+    repos = get_plugin_repositories(config)
     if name not in repos:
         known = ", ".join(sorted(repos)) or "none"
         console.print(f"[red]No such plugin repository '{name}'[/red]. Configured: {known}")
         raise click.Abort()
 
-    config = get_ida_config()
     config.settings.default_plugin_repository = name
     set_ida_config(config)
     console.print(f"default plugin repository is now '{name}'")

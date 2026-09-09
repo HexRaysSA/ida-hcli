@@ -19,7 +19,7 @@ from typing import Any, Literal, NamedTuple
 
 import rich.console
 from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 from rich.markup import escape
 
 from hcli.env import ENV
@@ -780,8 +780,10 @@ RESERVED_PLUGIN_REPOSITORIES = {
 }
 
 # Repository names appear as a "repo/" prefix on plugin references, so they must
-# not collide with the plugin-name grammar or need quoting.
-PLUGIN_REPOSITORY_NAME_RE = re.compile(r"^[a-z0-9-]+$")
+# not collide with the plugin-name grammar or need quoting. The character class
+# is shared with the reference parser, which peels that prefix.
+PLUGIN_REPOSITORY_NAME_CHARS = "a-z0-9-"
+PLUGIN_REPOSITORY_NAME_RE = re.compile(rf"^[{PLUGIN_REPOSITORY_NAME_CHARS}]+$")
 
 
 class PluginRepositoryConfig(BaseModel):
@@ -803,6 +805,21 @@ class SettingsConfig(BaseModel):
     # A sibling key rather than a member of the map, so a repository may
     # legitimately be called "default".
     default_plugin_repository: str | None = Field(alias="default-plugin-repository", default=None)
+
+    @model_serializer(mode="wrap")
+    def _drop_retired_keys(self, handler):
+        """Omit the retired single-repository key instead of writing it as null.
+
+        plugin_repository is Optional only so the migration can read it. Once
+        it holds nothing it should leave the file entirely, rather than linger
+        as a dead `"plugin-repository": null` in IDA's own config. Keeping this
+        on the model means set_ida_config stays a generic writer that knows
+        nothing about individual settings.
+        """
+        doc = handler(self)
+        if doc.get("plugin-repository") is None:
+            doc.pop("plugin-repository", None)
+        return doc
 
 
 class PluginConfig(BaseModel):
@@ -849,17 +866,7 @@ def set_ida_config(config: IDAConfigJson):
         logger.debug("creating $IDAUSR directory")
         ida_config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    doc = config.model_dump(mode="json", by_alias=True)
-
-    # The pre-0.23 single-repository setting is modelled as Optional purely so
-    # the migration can read it. Serializing it back as null would leave a dead
-    # key in IDA's own config file, so drop it once it holds nothing. Every
-    # other None is a real value that must round-trip.
-    settings = doc.get("Settings")
-    if isinstance(settings, dict) and settings.get("plugin-repository") is None:
-        settings.pop("plugin-repository", None)
-
-    _ = ida_config_path.write_text(json.dumps(doc), encoding="utf-8")
+    _ = ida_config_path.write_text(config.model_dump_json(), encoding="utf-8")
 
 
 @dataclass(frozen=True)
@@ -909,7 +916,7 @@ def _migrate_plugin_repositories(config: IDAConfigJson) -> bool:
     return True
 
 
-def get_plugin_repositories() -> dict[str, PluginRepository]:
+def get_plugin_repositories(config: IDAConfigJson | None = None) -> dict[str, PluginRepository]:
     """The configured plugin repositories, keyed by name.
 
     Migrates a pre-0.23 config on first read. The two reserved repositories are
@@ -917,7 +924,8 @@ def get_plugin_repositories() -> dict[str, PluginRepository]:
     is ignored on that point and told so, since the whole value of a reserved
     name is that it cannot be pointed somewhere else.
     """
-    config = get_ida_config()
+    if config is None:
+        config = get_ida_config()
 
     if _migrate_plugin_repositories(config):
         logger.info("migrating ida-config.json to named plugin repositories")
@@ -960,10 +968,11 @@ def get_plugin_repositories() -> dict[str, PluginRepository]:
     return repos
 
 
-def get_default_plugin_repository_name() -> str:
+def get_default_plugin_repository_name(config: IDAConfigJson | None = None) -> str:
     """The repository resolving references that carry no ``repo/`` prefix."""
-    name = get_ida_config().settings.default_plugin_repository
-    return name or COMMUNITY_REPO_NAME
+    if config is None:
+        config = get_ida_config()
+    return config.settings.default_plugin_repository or COMMUNITY_REPO_NAME
 
 
 class MissingCurrentInstallationDirectory(ValueError):

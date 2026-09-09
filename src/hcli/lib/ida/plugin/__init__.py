@@ -206,7 +206,7 @@ class Contact(BaseModel):
 # Together with the plugin name, this URL IS the plugin's identity, so the
 # namespace has to stay closed: a public plugin is identified by its GitHub
 # repository, a private one by its page on the Hex-Rays plugin portal.
-_GITHUB_REPOSITORY_PATTERN = r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/?$"
+GITHUB_REPOSITORY_PATTERN = r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/?$"
 
 # The portal's canonical shape is three segments, <org>/<repo>/<name>, which the
 # server enforces. hcli also accepts two because production predates that rule
@@ -214,12 +214,12 @@ _GITHUB_REPOSITORY_PATTERN = r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._
 # user machines, and still served until those plugins are republished.
 # Rejecting them here would break status and upgrade for exactly the users who
 # already have private plugins.
-_PORTAL_REPOSITORY_PATTERN = r"^https://plugins\.hex-rays\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(?:/[a-zA-Z0-9._-]+)?/?$"
+PORTAL_REPOSITORY_PATTERN = r"^https://plugins\.hex-rays\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(?:/[a-zA-Z0-9._-]+)?/?$"
 
 
 def is_plugin_repository_url(value: str) -> bool:
     """Whether this URL may identify a plugin (GitHub repo, or portal page)."""
-    return bool(re.match(_GITHUB_REPOSITORY_PATTERN, value) or re.match(_PORTAL_REPOSITORY_PATTERN, value))
+    return bool(re.match(GITHUB_REPOSITORY_PATTERN, value) or re.match(PORTAL_REPOSITORY_PATTERN, value))
 
 
 class URLs(BaseModel):

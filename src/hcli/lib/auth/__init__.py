@@ -652,17 +652,15 @@ class AuthService:
 
 
 # Global auth service instance accessor
-def get_optional_auth_headers() -> dict[str, str]:
-    """Authentication headers for the current credentials, or {} when logged out.
+def get_credential_headers() -> dict[str, str]:
+    """Map the current credentials onto request headers.
 
-    Unlike APIClient._get_headers, being logged out is not an error here:
-    callers use this for endpoints that serve both anonymous and personalized
-    responses, such as a plugin repository document.
+    The one place that knows which header shape each credential type uses.
+    Says nothing about whether being logged out is acceptable -- that is the
+    caller's policy, and it differs: an API call requires credentials, while a
+    plugin repository serves anonymous and personalized responses alike.
     """
     auth_service = get_auth_service()
-    auth_service.ensure_initialized()
-    if not auth_service.is_logged_in():
-        return {}
 
     if auth_service.get_auth_type()["type"] == CredentialType.INTERACTIVE:
         token = auth_service.get_access_token()
@@ -674,6 +672,19 @@ def get_optional_auth_headers() -> dict[str, str]:
             return {"x-api-key": api_key}
 
     return {}
+
+
+def get_optional_auth_headers() -> dict[str, str]:
+    """Credential headers, or {} when logged out.
+
+    For endpoints that answer both anonymously and personally, where being
+    logged out is an ordinary state rather than an error.
+    """
+    auth_service = get_auth_service()
+    auth_service.ensure_initialized()
+    if not auth_service.is_logged_in():
+        return {}
+    return get_credential_headers()
 
 
 def get_auth_service() -> AuthService:
