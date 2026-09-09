@@ -746,8 +746,14 @@ def _copy_dir(src_path: Path, dest_path: Path) -> None:
                 raise
 
 
+# extra="allow" on every model in the ida-config.json tree: the file is IDA's
+# own, so keys hcli does not model must survive a read -> mutate -> write
+# round-trip. pydantic's default extra="ignore" would silently drop them on
+# every writer (plugin config set/delete, ida switch, the repo migration).
+
+
 class PathsConfig(BaseModel):
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+    model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
     # like: "/Applications/IDA Professional 9.1.app" (macOS)
     # Note: IDA itself may write the inner "Contents/MacOS" path here;
@@ -756,7 +762,7 @@ class PathsConfig(BaseModel):
 
 
 class PluginRepositoryConfig(BaseModel):
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+    model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
     url: str = Field(
         default="https://raw.githubusercontent.com/HexRaysSA/plugin-repository/refs/heads/v1/plugin-repository.json",
@@ -764,12 +770,14 @@ class PluginRepositoryConfig(BaseModel):
 
 
 class SettingsConfig(BaseModel):
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+    model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
     plugin_repository: PluginRepositoryConfig = Field(alias="plugin-repository", default_factory=PluginRepositoryConfig)
 
 
 class PluginConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")  # type: ignore
+
     # `ida-plugin.json` `.plugin.settings` describes the schema for these settings.
     settings: dict[str, str | bool] = Field(default_factory=dict)
 
@@ -778,7 +786,7 @@ class PluginConfig(BaseModel):
 class IDAConfigJson(BaseModel):
     """IDA configuration $IDAUSR/ida-config.json"""
 
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+    model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
     version: Literal[1] | None = Field(alias="Version", default=1)
     paths: PathsConfig = Field(alias="Paths", default_factory=PathsConfig)
