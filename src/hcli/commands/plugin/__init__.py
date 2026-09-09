@@ -11,7 +11,7 @@ import hcli.lib.ida.plugin.repo.file
 import hcli.lib.ida.plugin.repo.fs
 import hcli.lib.ida.plugin.repo.github
 from hcli.lib.console import console
-from hcli.lib.ida import get_default_plugin_repository_name, get_plugin_repositories
+from hcli.lib.ida import get_default_plugin_repository_name, get_ida_config, get_plugin_repositories
 from hcli.lib.ida.plugin.reference import PluginReference
 from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo, is_plugin_bundle_zip
@@ -98,7 +98,9 @@ def plugin(
     plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo
     try:
         if repo is None:
-            repositories = get_plugin_repositories()
+            # One read of ida-config.json for both the map and the default.
+            ida_config = get_ida_config()
+            repositories = get_plugin_repositories(ida_config)
             if not repositories:
                 console.print(
                     "[red]No plugin repositories configured[/red]. "
@@ -110,7 +112,7 @@ def plugin(
             # nothing until a command actually looks something up.
             aggregate = AggregatePluginRepo(repositories)
             ctx.obj["plugin_repos"] = aggregate
-            ctx.obj["default_plugin_repo"] = get_default_plugin_repository_name()
+            ctx.obj["default_plugin_repo"] = get_default_plugin_repository_name(ida_config)
             plugin_repo = aggregate
 
         elif repo == "github":
@@ -208,7 +210,15 @@ def repo_for_reference(ctx: click.Context, ref: PluginReference) -> hcli.lib.ida
 
     # A named scope is a request for THAT repository: if it cannot be reached,
     # that is the answer, not a quietly smaller search.
-    return hcli.lib.ida.plugin.repo.file.JSONFilePluginRepo(aggregate.get_plugins_in(name))
+    plugins = aggregate.get_plugins_in(name)
+
+    # The survey path reports these through the search result; on this path
+    # there is no result to carry them, so say it here rather than drop a
+    # plugin silently.
+    for note in aggregate.notes():
+        console.print(f"[yellow]Warning:[/yellow] repository {note}")
+
+    return hcli.lib.ida.plugin.repo.file.JSONFilePluginRepo(plugins)
 
 
 plugin.add_command(get_plugin_status, name="status")

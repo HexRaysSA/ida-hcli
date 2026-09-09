@@ -13,11 +13,10 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
-from hcli import __version__
+from hcli import USER_AGENT
 from hcli.env import ENV
-from hcli.lib.auth import get_auth_service
+from hcli.lib.auth import get_auth_service, get_credential_headers
 from hcli.lib.console import console, stderr_console
-from hcli.lib.constants.auth import CredentialType
 from hcli.lib.util.cache import get_cache_directory
 from hcli.lib.util.io import NoSpaceError, check_free_space
 
@@ -54,7 +53,7 @@ class APIClient:
         self.client = httpx.AsyncClient(
             base_url=ENV.HCLI_API_URL,
             timeout=httpx.Timeout(60.0, write=None),  # No timeout for uploads
-            headers={"User-Agent": f"hcli/{__version__}"},
+            headers={"User-Agent": USER_AGENT},
         )
 
     async def __aenter__(self):
@@ -68,19 +67,9 @@ class APIClient:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
 
         if auth:
-            auth_service = get_auth_service()
-            if auth_service.is_logged_in():
-                auth_type = auth_service.get_auth_type()
-                if auth_type["type"] == CredentialType.INTERACTIVE:
-                    token = auth_service.get_access_token()
-                    if token:
-                        headers["Authorization"] = f"Bearer {token}"
-                else:
-                    api_key = auth_service.get_api_key()
-                    if api_key:
-                        headers["x-api-key"] = api_key
-            else:
+            if not get_auth_service().is_logged_in():
                 raise NotLoggedInError("Authentication required but user is not logged in")
+            headers.update(get_credential_headers())
 
         return headers
 

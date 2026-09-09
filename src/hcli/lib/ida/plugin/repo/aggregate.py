@@ -8,46 +8,28 @@ which would hand back one anonymous document.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from urllib.parse import urlparse
 
 import httpx
 
-from hcli.lib.ida import PluginRepository
+from hcli.lib.ida import HEXRAYS_REPO_NAME, PluginRepository
 from hcli.lib.ida.plugin.exceptions import PluginAccessDeniedError
-from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin
+from hcli.lib.ida.plugin.repo import PLUGIN_REPO_HOST, BasePluginRepo, Plugin
 from hcli.lib.ida.plugin.repo.file import JSONFilePluginRepo
 
 logger = logging.getLogger(__name__)
 
-# Identities under this host are Hex-Rays', and only the repository Hex-Rays
-# serves may assert them. Adding a repository must not confer the power to
-# impersonate us: without this, a repository the user added could claim
-# "plugins.hex-rays.com/HexRaysSA/..." and, because `upgrade` resolves an
-# installed plugin by host across every configured repository, take over
-# upgrades of a genuinely installed private plugin.
-PORTAL_IDENTITY_HOST = "plugins.hex-rays.com"
-PORTAL_IDENTITY_REPO = "hexrays"
 
-
-@dataclass(frozen=True)
-class RepoFailure:
-    """Why a repository could not be consulted."""
-
-    name: str
-    error: Exception
-
-    def describe(self) -> str:
-        e = self.error
-        if isinstance(e, PluginAccessDeniedError):
-            if not e.authenticated:
-                return f"{self.name}: not logged in"
-            return f"{self.name}: {'credentials rejected' if e.status_code == 401 else 'not entitled'}"
-        if isinstance(e, (httpx.ConnectError, httpx.TimeoutException)):
-            return f"{self.name}: unreachable"
-        if isinstance(e, httpx.HTTPStatusError):
-            return f"{self.name}: HTTP {e.response.status_code}"
-        return f"{self.name}: {e}"
+def _describe_failure(name: str, error: Exception) -> str:
+    if isinstance(error, PluginAccessDeniedError):
+        if not error.authenticated:
+            return f"{name}: not logged in"
+        return f"{name}: {'credentials rejected' if error.status_code == 401 else 'not entitled'}"
+    if isinstance(error, (httpx.ConnectError, httpx.TimeoutException)):
+        return f"{name}: unreachable"
+    if isinstance(error, httpx.HTTPStatusError):
+        return f"{name}: HTTP {error.response.status_code}"
+    return f"{name}: {error}"
 
 
 def _identity_host(plugin: Plugin) -> str:
@@ -66,51 +48,64 @@ class AggregatePluginRepo(BasePluginRepo):
         super().__init__()
         self.repositories = repositories
         self._plugins: dict[str, list[Plugin]] = {}
-        self._failures: dict[str, RepoFailure] = {}
+        self._failures: dict[str, Exception] = {}
+        self._dropped: dict[str, int] = {}
+        # Which repository served which plugin, remembered at load time rather
+        # than reconstructed later by scanning every loaded list.
+        self._owner: dict[int, str] = {}
 
     def _load(self, name: str) -> list[Plugin]:
         """Fetch one repository, at most once, remembering failure as well as success."""
         if name in self._plugins:
             return self._plugins[name]
         if name in self._failures:
-            raise self._failures[name].error
+            raise self._failures[name]
 
         repo = self.repositories[name]
         try:
             plugins = JSONFilePluginRepo.from_url(repo.url, repo_name=name).get_plugins()
         except Exception as e:
             logger.debug("failed to fetch plugin repository %s (%s): %s", name, repo.url, e)
-            self._failures[name] = RepoFailure(name=name, error=e)
+            self._failures[name] = e
             raise
 
-        self._plugins[name] = self._filter_entitled(name, plugins)
-        return self._plugins[name]
-
-    def _filter_entitled(self, name: str, plugins: list[Plugin]) -> list[Plugin]:
-        """Drop plugins claiming an identity this repository may not assert."""
-        if name == PORTAL_IDENTITY_REPO:
-            return plugins
-
-        kept = [p for p in plugins if _identity_host(p) != PORTAL_IDENTITY_HOST]
-        dropped = len(plugins) - len(kept)
-        if dropped:
-            # Loud enough to debug a misconfigured repository -- by far the
-            # likelier cause than a hostile one -- without narrating details
-            # back to whoever served it.
-            from hcli.lib.console import stderr_console
-
-            stderr_console.print(
-                f"[yellow]Warning:[/yellow] repository {name!r} served {dropped} plugin(s) claiming "
-                f"Hex-Rays identities; ignored"
-            )
+        kept = self._filter_entitled(name, plugins)
+        self._plugins[name] = kept
+        for plugin in kept:
+            self._owner[id(plugin)] = name
         return kept
 
-    def names(self) -> list[str]:
-        return list(self.repositories)
+    def _filter_entitled(self, name: str, plugins: list[Plugin]) -> list[Plugin]:
+        """Drop plugins claiming an identity this repository may not assert.
 
-    def failures(self) -> list[RepoFailure]:
-        """Repositories that could not be consulted during this run."""
-        return [self._failures[n] for n in self.repositories if n in self._failures]
+        Recorded rather than printed: a repository that could not fully answer
+        is reported through notes(), the same way an unreachable one is, so
+        --json callers see it too instead of only text-mode users.
+        """
+        if name == HEXRAYS_REPO_NAME:
+            return plugins
+
+        kept = [p for p in plugins if _identity_host(p) != PLUGIN_REPO_HOST]
+        dropped = len(plugins) - len(kept)
+        if dropped:
+            logger.debug("repository %s served %d plugin(s) claiming Hex-Rays identities", name, dropped)
+            self._dropped[name] = dropped
+        return kept
+
+    def notes(self) -> list[str]:
+        """What the caller should know about repositories consulted so far.
+
+        Covers both a repository that could not be reached and one that was
+        reached but served plugins it is not entitled to. Both mean the answer
+        is not the whole picture, so both belong in the same report.
+        """
+        notes = []
+        for name in self.repositories:
+            if name in self._failures:
+                notes.append(f"skipped -- {_describe_failure(name, self._failures[name])}")
+            if name in self._dropped:
+                notes.append(f"{name}: ignored {self._dropped[name]} plugin(s) claiming Hex-Rays identities")
+        return notes
 
     def get_plugins_in(self, name: str) -> list[Plugin]:
         """Plugins from one named repository. Propagates that repository's failure."""
@@ -118,30 +113,21 @@ class AggregatePluginRepo(BasePluginRepo):
             raise KeyError(f"unknown plugin repository: {name}")
         return list(self._load(name))
 
-    def get_plugins_across(self, names: list[str]) -> list[Plugin]:
-        """Plugins from several repositories, skipping those that cannot be fetched.
+    def get_plugins(self) -> list[Plugin]:
+        """Every plugin hcli can see, across every configured repository.
 
-        Surveying is best-effort by design: one unreachable or unauthorized
-        repository must not hide the results of the others. Callers report the
-        skips via failures().
+        Best-effort by design: one unreachable or unauthorized repository must
+        not hide the results of the others, so failures are recorded and
+        reported through notes() rather than raised.
         """
         plugins: list[Plugin] = []
-        for name in names:
+        for name in self.repositories:
             try:
                 plugins.extend(self._load(name))
             except Exception as e:
-                # Recorded by _load() and reported by failures(); the point of a
-                # survey is that the reachable repositories still answer.
                 logger.debug("skipping plugin repository %s: %s", name, e)
         return plugins
 
-    def get_plugins(self) -> list[Plugin]:
-        """Every plugin hcli can see, across every configured repository."""
-        return self.get_plugins_across(self.names())
-
     def repo_of(self, plugin: Plugin) -> str | None:
         """Which loaded repository served this plugin."""
-        for name, plugins in self._plugins.items():
-            if any(p is plugin for p in plugins):
-                return name
-        return None
+        return self._owner.get(id(plugin))

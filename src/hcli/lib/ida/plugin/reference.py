@@ -20,19 +20,15 @@ import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-# whole-string match for a GitHub repository URL in the shape allowed by
-# ``ida-plugin.json`` (see ``URLs.validate_repository_url`` in
-# ``src/hcli/lib/ida/plugin/__init__.py``). Trailing slash optional.
-_GITHUB_REPO_RE = re.compile(r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/?$", re.IGNORECASE)
+from hcli.lib.ida import PLUGIN_REPOSITORY_NAME_CHARS
+from hcli.lib.ida.plugin import GITHUB_REPOSITORY_PATTERN, PORTAL_REPOSITORY_PATTERN
 
-# ...and the Hex-Rays portal page identifying a privately distributed plugin.
-# Must stay in lockstep with ``_PORTAL_REPOSITORY_PATTERN``: that one validates
-# an identity, this one parses a reference to it, and a reference hcli cannot
-# parse is a plugin the user cannot name.
-_PORTAL_REPO_RE = re.compile(
-    r"^https://plugins\.hex-rays\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(?:/[a-zA-Z0-9._-]+)?/?$",
-    re.IGNORECASE,
-)
+# The shapes that may identify a plugin, taken from the schema module that
+# validates them: one definition, so a reference hcli parses and an identity
+# hcli accepts can never drift apart. Compiled case-insensitively here because
+# a user typing a reference is not held to the casing a descriptor declares.
+_GITHUB_REPO_RE = re.compile(GITHUB_REPOSITORY_PATTERN, re.IGNORECASE)
+_PORTAL_REPO_RE = re.compile(PORTAL_REPOSITORY_PATTERN, re.IGNORECASE)
 
 # broader match that also accepts ``.git`` suffix and ``@tag`` for direct
 # installs (e.g. ``https://github.com/org/repo.git@v1.0``).
@@ -43,10 +39,11 @@ _GITHUB_DIRECT_INSTALL_RE = re.compile(
 )
 
 
-# A leading "repo/" scopes the lookup. Same grammar as a configured repository
-# name, which is what makes the reference unambiguous: plugin names are
-# ``^[a-zA-Z0-9_-]+$``, so a "/" can only ever be this separator.
-_REPO_PREFIX_RE = re.compile(r"^([a-z0-9-]+)/(.+)$")
+# A leading "repo/" scopes the lookup. The character class comes from the
+# config module that validates repository names, so a name hcli accepts is
+# always a prefix hcli can parse. Plugin names are ``^[a-zA-Z0-9_-]+$``, so a
+# "/" can only ever be this separator.
+_REPO_PREFIX_RE = re.compile(rf"^([{PLUGIN_REPOSITORY_NAME_CHARS}]+)/(.+)$")
 
 
 @dataclass(frozen=True)
