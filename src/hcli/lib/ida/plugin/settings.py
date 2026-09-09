@@ -183,12 +183,23 @@ def get_current_plugin() -> str:
 
     try:
         # Compare against both the symlink-preserving and resolved forms of the
-        # plugins directory. This lets editable installs that symlink the plugin
-        # directory into $IDAUSR/plugins/ work: Python's frame `co_filename` is
-        # whatever path was used to import (the symlink), while `Path.resolve()`
-        # follows symlinks. We try every combination so either layout matches.
+        # plugins directory. Also retain every editable plugin's resolved target:
+        # an editable plugin commonly adds its resolved checkout to sys.path, so
+        # callbacks imported later have a co_filename under the checkout rather
+        # than under $IDAUSR/plugins/<plugin>. Resolving only the plugins directory
+        # cannot recover the plugin name when the child directory is the symlink.
         plugins_path = get_plugins_directory()
         plugin_root_candidates = {plugins_path, plugins_path.resolve()}
+        editable_plugin_roots: list[tuple[Path, Path]] = []
+        for candidate_directory in plugins_path.iterdir():
+            try:
+                if candidate_directory.is_symlink() and candidate_directory.is_dir():
+                    editable_plugin_roots.append((candidate_directory, candidate_directory.resolve()))
+            except OSError:
+                logger.debug("could not inspect possible editable plugin: %s", candidate_directory, exc_info=True)
+
+        # Prefer the most specific target if unusual nested editable roots exist.
+        editable_plugin_roots.sort(key=lambda item: len(item[1].parts), reverse=True)
 
         current_frame = frame.f_back
         while current_frame is not None:
@@ -209,11 +220,24 @@ def get_current_plugin() -> str:
                 if plugin_directory_name is not None:
                     break
 
-            if plugin_directory_name is None:
+            plugin_directory = plugins_path / plugin_directory_name if plugin_directory_name is not None else None
+
+            # If the frame is in an editable checkout, map the resolved source
+            # path back to the symlink entry in the plugins directory.
+            if plugin_directory is None:
+                resolved_module_path = module_path.resolve()
+                for editable_directory, editable_root in editable_plugin_roots:
+                    try:
+                        resolved_module_path.relative_to(editable_root)
+                    except ValueError:
+                        continue
+                    plugin_directory = editable_directory
+                    break
+
+            if plugin_directory is None:
                 current_frame = current_frame.f_back
                 continue
 
-            plugin_directory = plugins_path / plugin_directory_name
             metadata = get_metadata_from_plugin_directory(plugin_directory)
             plugin_name = metadata.plugin.name
             logger.debug("found plugin by path: %s %s", module_filename, plugin_name)
