@@ -453,7 +453,9 @@ def _open_validated_stream(client: httpx.Client, url: str, pinned_ips: list[str]
         raise click.ClickException("Download failed: too many redirects")
 
 
-def _download_metadata(client: httpx.Client, content_url: str, sidecar_path: Path, pinned_ips: list[str] | None) -> None:
+def _download_metadata(
+    client: httpx.Client, content_url: str, sidecar_path: Path, pinned_ips: list[str] | None
+) -> None:
     """Download object metadata and save as ``.ke.json`` sidecar (best-effort, bounded).
 
     Tries each validated IP in turn when an IP won't accept a connection and follows
