@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import rich.table
@@ -84,6 +84,9 @@ class KeywordMatchEntry(BaseModel):
     name: str
     version: str
     repository: str | None
+    # Which configured repository served this plugin. None under --repo, where
+    # there is only one and naming it would be noise.
+    repo: str | None = None
     compatible: bool
     installed: bool
     installed_version: str | None
@@ -93,6 +96,9 @@ class KeywordMatchEntry(BaseModel):
 class KeywordQueryResult(BaseModel):
     query: str | None
     results: list[KeywordMatchEntry]
+    # Repositories that could not be consulted for this search, as short
+    # human-readable reasons. Additive: absent means nothing was skipped.
+    skipped: list[str] = []
 
 
 class AmbiguityErrorResult(BaseModel):
@@ -407,6 +413,7 @@ def collect_keyword_matches(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
+    repo_of: Callable[[Plugin], str | None] | None = None,
 ) -> list[KeywordMatchEntry]:
     matches: list[KeywordMatchEntry] = []
 
@@ -415,6 +422,7 @@ def collect_keyword_matches(
             continue
 
         latest_metadata = get_latest_plugin_metadata(plugin)
+        repo = repo_of(plugin) if repo_of is not None else None
 
         if not is_compatible_plugin(plugin, current_platform, current_version):
             matches.append(
@@ -422,6 +430,7 @@ def collect_keyword_matches(
                     name=latest_metadata.plugin.name,
                     version=latest_metadata.plugin.version,
                     repository=latest_metadata.plugin.urls.repository,
+                    repo=repo,
                     compatible=False,
                     installed=False,
                     installed_version=None,
@@ -442,6 +451,7 @@ def collect_keyword_matches(
                 name=latest_metadata.plugin.name,
                 version=latest_metadata.plugin.version,
                 repository=latest_metadata.plugin.urls.repository,
+                repo=repo,
                 compatible=True,
                 installed=installed_record is not None,
                 installed_version=installed_version,
@@ -458,18 +468,36 @@ def collect_keyword_query_result(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
+    repo_of: Callable[[Plugin], str | None] | None = None,
+    skipped: list[str] | None = None,
 ) -> KeywordQueryResult:
     return KeywordQueryResult(
         query=query or None,
-        results=collect_keyword_matches(plugins, query, current_version, current_platform, installed_records),
+        results=collect_keyword_matches(
+            plugins, query, current_version, current_platform, installed_records, repo_of=repo_of
+        ),
+        skipped=skipped or [],
     )
 
 
-def render_keyword_query_text(result: KeywordQueryResult) -> None:
+def _display_name(match: KeywordMatchEntry, default_repo: str | None) -> str:
+    """The string a user must type to install this result.
+
+    A plugin from the default repository installs by bare name; anything else
+    needs its "repo/" prefix, so showing the prefix here is not decoration, it
+    is the command.
+    """
+    if match.repo and match.repo != default_repo:
+        return f"{match.repo}/{match.name}"
+    return match.name
+
+
+def render_keyword_query_text(result: KeywordQueryResult, default_repo: str | None = None) -> None:
     matches = result.results
 
     if not matches:
         console.print("[grey69]No plugins found[/grey69]")
+        _render_skipped(result)
         return
 
     table = rich.table.Table(show_header=False, box=None)
@@ -479,9 +507,10 @@ def render_keyword_query_text(result: KeywordQueryResult) -> None:
     table.add_column("repo", style="grey69")
 
     for match in matches:
+        label = _display_name(match, default_repo)
         if not match.compatible:
             table.add_row(
-                f"[grey69]{match.name} (incompatible)[/grey69]",
+                f"[grey69]{label} (incompatible)[/grey69]",
                 f"[grey69]{match.version}[/grey69]",
                 "",
                 match.repository,
@@ -494,9 +523,21 @@ def render_keyword_query_text(result: KeywordQueryResult) -> None:
         elif match.installed:
             status = "installed"
 
-        table.add_row(f"[blue]{match.name}[/blue]", match.version, status, match.repository)
+        table.add_row(f"[blue]{label}[/blue]", match.version, status, match.repository)
 
     console.print(table)
+    _render_skipped(result)
+
+
+def _render_skipped(result: KeywordQueryResult) -> None:
+    """Say which repositories did not contribute, after the results.
+
+    Silence would misrepresent an incomplete search as an empty one -- the
+    common case being a logged-out user, for whom the private repository simply
+    is not there.
+    """
+    for reason in result.skipped:
+        console.print(f"[grey69]repository skipped -- {reason}[/grey69]")
 
 
 def _has_exact_name_match(plugins: list[Plugin], name: str) -> bool:
@@ -547,19 +588,33 @@ def search_plugins(ctx, query: str | None = None, json_output: bool = False) -> 
             console.print()
 
         plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
+        aggregate = ctx.obj.get("plugin_repos")
+        default_repo = ctx.obj.get("default_plugin_repo")
+
+        # Searching is a survey: it spans every configured repository, ignoring
+        # the default, and reports the ones it could not reach rather than
+        # failing on them.
         plugins: list[Plugin] = plugin_repo.get_plugins()
+        repo_of = aggregate.repo_of if aggregate is not None else None
+        skipped = [f.describe() for f in aggregate.failures()] if aggregate is not None else []
         installed_records = get_installed_plugin_records()
 
         ref = resolve_query_reference(plugins, query)
 
         if ref is None:
             keyword_result = collect_keyword_query_result(
-                plugins, query or "", current_version, current_platform, installed_records
+                plugins,
+                query or "",
+                current_version,
+                current_platform,
+                installed_records,
+                repo_of=repo_of,
+                skipped=skipped,
             )
             if json_output:
                 print_json(_dump_result(keyword_result))
             else:
-                render_keyword_query_text(keyword_result)
+                render_keyword_query_text(keyword_result, default_repo=default_repo)
             return
 
         try:

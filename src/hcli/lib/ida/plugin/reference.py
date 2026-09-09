@@ -8,6 +8,8 @@ Accepted forms:
     name==1.2.3
     name@https://github.com/org/repo
     name==1.2.3@https://github.com/org/repo
+    repo/name
+    repo/name==1.2.3@https://github.com/org/repo
 
 The module is intentionally free of Click/Rich so it can be unit tested easily.
 """
@@ -41,6 +43,12 @@ _GITHUB_DIRECT_INSTALL_RE = re.compile(
 )
 
 
+# A leading "repo/" scopes the lookup. Same grammar as a configured repository
+# name, which is what makes the reference unambiguous: plugin names are
+# ``^[a-zA-Z0-9_-]+$``, so a "/" can only ever be this separator.
+_REPO_PREFIX_RE = re.compile(r"^([a-z0-9-]+)/(.+)$")
+
+
 @dataclass(frozen=True)
 class PluginReference:
     """A parsed plugin reference.
@@ -49,11 +57,16 @@ class PluginReference:
         name: bare plugin name.
         version_spec: version specifier with operator (``"==1.2.3"``), or ``""`` when absent.
         host: normalized repository URL, or ``None`` when unqualified.
+        repo: configured repository name to search, or ``None`` for the default.
+            Lookup scope only: it is dropped once the plugin is resolved and is
+            never stored, because where a plugin was found is not part of what
+            it is.
     """
 
     name: str
     version_spec: str
     host: str | None
+    repo: str | None = None
 
 
 def is_github_repository_url(value: str) -> bool:
@@ -178,6 +191,15 @@ def parse_plugin_reference(value: str) -> PluginReference:
     if is_github_direct_install_url(value):
         raise ValueError(f"value is a GitHub URL, not a plugin reference: {value!r}")
 
+    # Peel the repository prefix first. No URL can be mistaken for one: the
+    # pattern requires every character before the first "/" to be [a-z0-9-],
+    # which "https://..." (colon) and "name@https://..." (at-sign, colon) both
+    # fail, so a scheme can never parse as a repository name.
+    repo: str | None = None
+    prefix_match = _REPO_PREFIX_RE.match(value)
+    if prefix_match:
+        repo, value = prefix_match.group(1), prefix_match.group(2)
+
     host: str | None = None
     remaining = value
     if "@" in value:
@@ -196,21 +218,23 @@ def parse_plugin_reference(value: str) -> PluginReference:
     if not name:
         raise ValueError(f"plugin reference has empty name: {value!r}")
 
-    return PluginReference(name=name, version_spec=version_spec, host=host)
+    if "/" in name:
+        raise ValueError(f"plugin reference name must not contain '/': {name!r}")
+
+    return PluginReference(name=name, version_spec=version_spec, host=host, repo=repo)
 
 
 def format_qualified_plugin_reference(ref: PluginReference) -> str:
     """Render a plugin reference in its canonical user-facing string form.
 
     Formats:
-        name@repo
-        name==1.2.3@repo
+        name@host
+        name==1.2.3@host
+        repo/name==1.2.3@host
     """
-    if not ref.host:
-        if ref.version_spec:
-            return f"{ref.name}{ref.version_spec}"
-        return ref.name
+    prefix = f"{ref.repo}/" if ref.repo else ""
 
-    if ref.version_spec:
-        return f"{ref.name}{ref.version_spec}@{ref.host}"
-    return f"{ref.name}@{ref.host}"
+    if not ref.host:
+        return f"{prefix}{ref.name}{ref.version_spec}"
+
+    return f"{prefix}{ref.name}{ref.version_spec}@{ref.host}"
