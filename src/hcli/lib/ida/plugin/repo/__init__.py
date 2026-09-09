@@ -98,12 +98,14 @@ def fetch_plugin_repo_bytes(url: str, repo_name: str | None = None) -> bytes:
                 current_url = next_url
                 continue
 
-            # Only denials by our own hosts are entitlement-shaped. A logged-in
-            # 404 stays generic: it means no such archive, not "log in first".
+            # Only denials by our own hosts are entitlement-shaped, and only
+            # 401/403: these hosts answer 401 for anything they will not serve,
+            # so a 404 means the resource genuinely is not there and keeps its
+            # own error. Mapping 404 to "log in" would tell a user to
+            # authenticate against `community`, which needs no credentials.
             if credentialed:
                 authenticated = bool(auth_headers)
-                denied = (401, 403) if authenticated else (401, 403, 404)
-                if response.status_code in denied:
+                if response.status_code in (401, 403):
                     raise PluginAccessDeniedError(
                         url, response.status_code, authenticated=authenticated, repo_name=repo_name
                     )

@@ -135,6 +135,17 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         explain_failed_to_detect_ida_version(console)
         raise click.Abort()
 
+    except KeyError as e:
+        # get_plugins() drops repositories it could not consult, so a miss here
+        # may mean "your session expired", not "no such plugin". Say which.
+        logger.debug("error: %s", e, exc_info=True)
+        console.print(f"[red]Error[/red]: {e}")
+        aggregate = ctx.obj.get("plugin_repos")
+        if aggregate is not None:
+            for note in aggregate.notes():
+                console.print(f"[yellow]Warning:[/yellow] repository {note}")
+        raise click.Abort()
+
     except click.Abort:
         raise
 

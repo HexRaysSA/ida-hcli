@@ -895,7 +895,15 @@ def _migrate_plugin_repositories(config: IDAConfigJson) -> bool:
         return False
 
     legacy = settings.plugin_repository
-    legacy_url = legacy.url if legacy else ""
+    if legacy is None:
+        # Nothing to migrate: a fresh install with no config file, or a config
+        # that never carried the setting. The reserved repositories are
+        # synthesized on read, so there is no reason to create or rewrite the
+        # file -- a read-only command must not announce a change it had no
+        # cause to make.
+        return False
+
+    legacy_url = legacy.url
     customised = bool(legacy_url) and legacy_url != LEGACY_PLUGIN_REPOSITORY_URL
 
     repos = {name: PluginRepositoryConfig(url=url) for name, url in RESERVED_PLUGIN_REPOSITORIES.items()}
@@ -933,11 +941,15 @@ def get_plugin_repositories(config: IDAConfigJson | None = None) -> dict[str, Pl
             set_ida_config(config)
         except OSError as e:
             # A read-only $IDAUSR must not break every plugin command; the new
-            # layout still applies in memory for this process.
+            # layout still applies in memory for this process. Deliberately
+            # quiet: the migration is retried on the next command, and
+            # announcing a change that did not happen -- every time -- is worse
+            # than saying nothing.
             logger.warning("could not persist plugin repository migration to %s: %s", get_ida_config_path(), e)
-        stderr_console.print(
-            f"[yellow]Note:[/yellow] {get_ida_config_path()} was updated to the new named plugin repository layout."
-        )
+        else:
+            stderr_console.print(
+                f"[yellow]Note:[/yellow] {get_ida_config_path()} was updated to the new named plugin repository layout."
+            )
 
     repos: dict[str, PluginRepository] = {}
     for name, entry in config.settings.plugin_repositories.items():
