@@ -849,7 +849,17 @@ def set_ida_config(config: IDAConfigJson):
         logger.debug("creating $IDAUSR directory")
         ida_config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    _ = ida_config_path.write_text(config.model_dump_json(), encoding="utf-8")
+    doc = config.model_dump(mode="json", by_alias=True)
+
+    # The pre-0.23 single-repository setting is modelled as Optional purely so
+    # the migration can read it. Serializing it back as null would leave a dead
+    # key in IDA's own config file, so drop it once it holds nothing. Every
+    # other None is a real value that must round-trip.
+    settings = doc.get("Settings")
+    if isinstance(settings, dict) and settings.get("plugin-repository") is None:
+        settings.pop("plugin-repository", None)
+
+    _ = ida_config_path.write_text(json.dumps(doc), encoding="utf-8")
 
 
 @dataclass(frozen=True)
