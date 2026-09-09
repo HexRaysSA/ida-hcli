@@ -87,7 +87,16 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         # when the repository has a colliding name.
         bare_spec = ref.name + ref.version_spec
         logger.info("finding plugin in repository")
-        plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
+        # An upgrade is anchored to the installed name@host, so it may resolve
+        # across every configured repository -- the plugin's identity, not the
+        # default scope, decides which one answers. An explicit prefix narrows
+        # that to one repository, mirroring the @host check above.
+        if ref.repo:
+            from hcli.commands.plugin import repo_for_reference
+
+            plugin_repo: BasePluginRepo = repo_for_reference(ctx, ref)
+        else:
+            plugin_repo = ctx.obj["plugin_repo"]
         try:
             plugin_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
                 bare_spec, current_ida_platform, current_ida_version, host=installed.host

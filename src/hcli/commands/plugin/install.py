@@ -183,11 +183,16 @@ def install_plugin(
 
         else:
             logger.info("finding plugin in repository")
-            plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
             try:
                 ref = parse_plugin_reference(plugin_spec)
             except ValueError as e:
                 raise click.BadParameter(f"invalid plugin reference: {plugin_spec!r}: {e}")
+
+            from hcli.commands.plugin import repo_for_reference
+
+            # Installing is a choice, not a survey: resolve in exactly one
+            # repository -- the one named by the prefix, else the default.
+            plugin_repo: BasePluginRepo = repo_for_reference(ctx, ref)
 
             # reconstruct the plugin_spec for repo lookup without the @host suffix
             bare_spec = ref.name + ref.version_spec
@@ -365,6 +370,11 @@ def install_plugin(
         console.print(f"Only one plugin with the bare name '{e.requested_name}' can be installed at a time.")
         console.print("Uninstall the existing plugin first, then install the other qualified plugin.")
         raise click.Abort()
+
+    except click.Abort:
+        # Already reported by whoever raised it; re-wrapping would print a
+        # second, empty "Error:" line.
+        raise
 
     except Exception as e:
         logger.debug("error: %s", e, exc_info=True)
