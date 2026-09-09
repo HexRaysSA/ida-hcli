@@ -19,9 +19,18 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 # whole-string match for a GitHub repository URL in the shape allowed by
-# ``ida-plugin.json`` (see ``URLs.validate_github_url`` in
+# ``ida-plugin.json`` (see ``URLs.validate_repository_url`` in
 # ``src/hcli/lib/ida/plugin/__init__.py``). Trailing slash optional.
 _GITHUB_REPO_RE = re.compile(r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/?$", re.IGNORECASE)
+
+# ...and the Hex-Rays portal page identifying a privately distributed plugin.
+# Must stay in lockstep with ``_PORTAL_REPOSITORY_PATTERN``: that one validates
+# an identity, this one parses a reference to it, and a reference hcli cannot
+# parse is a plugin the user cannot name.
+_PORTAL_REPO_RE = re.compile(
+    r"^https://plugins\.hex-rays\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(?:/[a-zA-Z0-9._-]+)?/?$",
+    re.IGNORECASE,
+)
 
 # broader match that also accepts ``.git`` suffix and ``@tag`` for direct
 # installs (e.g. ``https://github.com/org/repo.git@v1.0``).
@@ -56,6 +65,17 @@ def is_github_repository_url(value: str) -> bool:
     a reference, not a raw URL, so we use a strict whole-string match here.
     """
     return bool(_GITHUB_REPO_RE.match(value))
+
+
+def is_plugin_host_url(value: str) -> bool:
+    """Return True if ``value`` can appear after ``@`` in a plugin reference.
+
+    Accepts every shape that can identify a plugin: a GitHub repository, or a
+    Hex-Rays portal page. Note this is deliberately wider than
+    ``is_github_direct_install_url``, which stays GitHub-only because it guards
+    "this string is a raw URL, not a reference".
+    """
+    return bool(_GITHUB_REPO_RE.match(value) or _PORTAL_REPO_RE.match(value))
 
 
 def is_github_direct_install_url(value: str) -> bool:
@@ -162,9 +182,9 @@ def parse_plugin_reference(value: str) -> PluginReference:
     remaining = value
     if "@" in value:
         left, _, right = value.rpartition("@")
-        if not is_github_repository_url(right):
+        if not is_plugin_host_url(right):
             raise ValueError(
-                f"plugin reference has an '@' but the suffix is not a valid GitHub repository URL: {value!r}"
+                f"plugin reference has an '@' but the suffix is not a valid plugin repository URL: {value!r}"
             )
         host = normalize_plugin_host(right)
         remaining = left

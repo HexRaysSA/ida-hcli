@@ -413,9 +413,10 @@
     "URLs": {
       "properties": {
         "repository": {
-          "description": "URL of the GitHub repository containing the source code for the plugin.",
+          "description": "Canonical URL identifying the plugin: the GitHub repository containing its source code, or, for plugins distributed through the Hex-Rays portal, its page there.",
           "examples": [
-            "https://github.com/org/project"
+            "https://github.com/org/project",
+            "https://plugins.hex-rays.com/org/repo/name"
           ],
           "title": "Repository",
           "type": "string"
@@ -430,7 +431,7 @@
             }
           ],
           "default": null,
-          "description": "URL of a website describing the plugin, if different from the GitHub repo.",
+          "description": "URL of a website describing the plugin, if different from the repository.",
           "title": "Homepage"
         }
       },

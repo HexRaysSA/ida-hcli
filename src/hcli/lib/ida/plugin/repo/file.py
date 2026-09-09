@@ -4,10 +4,9 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-import httpx
 from pydantic import BaseModel
 
-from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin
+from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, fetch_plugin_repo_bytes
 
 
 class StaticPluginRepo(BaseModel):
@@ -46,7 +45,7 @@ class JSONFilePluginRepo(BasePluginRepo):
         return cls.from_bytes(path.read_bytes())
 
     @classmethod
-    def from_url(cls, url: str):
+    def from_url(cls, url: str, repo_name: str | None = None):
         parsed_url = urlparse(url)
 
         if parsed_url.scheme == "file":
@@ -56,11 +55,8 @@ class JSONFilePluginRepo(BasePluginRepo):
             return cls.from_bytes(file_path.read_bytes())
 
         elif parsed_url.scheme == "https":
-            response = httpx.get(url, timeout=30.0, follow_redirects=True)
-            response.raise_for_status()
-            if parsed_url.scheme == "https" and response.url.scheme != "https":
-                raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {response.url}")
-            return cls.from_bytes(response.content)
+            # host-scoped credentials personalize the document with entitled private plugins
+            return cls.from_bytes(fetch_plugin_repo_bytes(url, repo_name=repo_name))
 
         else:
             raise ValueError(f"Unsupported URL scheme: {parsed_url.scheme}")

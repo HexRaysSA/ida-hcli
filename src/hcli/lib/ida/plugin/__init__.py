@@ -203,23 +203,50 @@ class Contact(BaseModel):
     name: str | None = Field(default=None, description="Contact name.")
 
 
+# Together with the plugin name, this URL IS the plugin's identity, so the
+# namespace has to stay closed: a public plugin is identified by its GitHub
+# repository, a private one by its page on the Hex-Rays plugin portal.
+_GITHUB_REPOSITORY_PATTERN = r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/?$"
+
+# The portal's canonical shape is three segments, <org>/<repo>/<name>, which the
+# server enforces. hcli also accepts two because production predates that rule
+# and already contains <org>/<repo> and <org>/<name> identities -- installed on
+# user machines, and still served until those plugins are republished.
+# Rejecting them here would break status and upgrade for exactly the users who
+# already have private plugins.
+_PORTAL_REPOSITORY_PATTERN = r"^https://plugins\.hex-rays\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(?:/[a-zA-Z0-9._-]+)?/?$"
+
+
+def is_plugin_repository_url(value: str) -> bool:
+    """Whether this URL may identify a plugin (GitHub repo, or portal page)."""
+    return bool(re.match(_GITHUB_REPOSITORY_PATTERN, value) or re.match(_PORTAL_REPOSITORY_PATTERN, value))
+
+
 class URLs(BaseModel):
     repository: str = Field(
-        description="URL of the GitHub repository containing the source code for the plugin.",
-        examples=["https://github.com/org/project"],
+        description=(
+            "Canonical URL identifying the plugin: the GitHub repository containing its source code, "
+            "or, for plugins distributed through the Hex-Rays portal, its page there."
+        ),
+        examples=[
+            "https://github.com/org/project",
+            "https://plugins.hex-rays.com/org/repo/name",
+        ],
     )
 
     homepage: str | None = Field(
         default=None,
-        description="URL of a website describing the plugin, if different from the GitHub repo.",
+        description="URL of a website describing the plugin, if different from the repository.",
     )
 
     @field_validator("repository", mode="after")
     @classmethod
-    def validate_github_url(cls, v: str) -> str:
-        github_pattern = r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/?$"
-        if not re.match(github_pattern, v):
-            raise ValueError("Repository must be a valid GitHub URL in the format: https://github.com/org/project")
+    def validate_repository_url(cls, v: str) -> str:
+        if not is_plugin_repository_url(v):
+            raise ValueError(
+                "Repository must be a GitHub URL (https://github.com/org/project) "
+                "or a Hex-Rays plugin page (https://plugins.hex-rays.com/org/repo/name)"
+            )
         return v
 
 
