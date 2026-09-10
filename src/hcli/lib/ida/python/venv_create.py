@@ -23,7 +23,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from hcli.lib.ida.python import IdatProbe, _is_windows_store_shim, has_pip, probe_current_python_info
+from hcli.lib.ida.python import (
+    IdatProbe,
+    _is_python_executable_name,
+    _is_windows_store_shim,
+    has_pip,
+    probe_current_python_info,
+)
 from hcli.lib.ida.python.environment import System, get_venv_python_path
 from hcli.lib.venv import find_virtual_env_python, get_python_exe_candidates, probe_python_version
 
@@ -56,7 +62,7 @@ class TargetInspection:
 def inspect_target(target: Path, wanted_version: str | None) -> TargetInspection:
     """Classify whatever is at `target` so the caller can refuse to overwrite it.
 
-    hcli never deletes or replaces an existing directory here; the classification
+    HCLI never deletes or replaces an existing directory here; the classification
     tells the user what to do instead.
     """
     if not target.exists():
@@ -228,7 +234,7 @@ def get_registered_python_exe(probe: IdatProbe | None) -> Path | None:
 
     if probe.executable and not probe.virtual_env:
         exe = Path(probe.executable)
-        if exe.is_file() and not _is_windows_store_shim(str(exe)):
+        if exe.is_file() and _is_python_executable_name(str(exe)) and not _is_windows_store_shim(str(exe)):
             return exe
 
     version = f"{probe.version_major}.{probe.version_minor}"
