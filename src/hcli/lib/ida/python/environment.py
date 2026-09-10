@@ -386,12 +386,13 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
                 summary=f"IDA's Python interpreter does not exist: {exe}",
                 detail=(
                     f"The interpreter was selected by {state.source}, but the file is not on disk. "
-                    "All other checks are skipped because nothing can be determined about a missing interpreter."
+                    "HCLI cannot install packages or run scripts with a missing interpreter."
                 ),
                 fix_hint=_render_create_environment_hint(state),
             )
         )
-        return findings
+        if state.source == "$HCLI_CURRENT_IDA_PYTHON_EXE":
+            return findings
 
     if state.venv_root is None:
         summary = f"IDA's Python is not a virtual environment: {exe}"
