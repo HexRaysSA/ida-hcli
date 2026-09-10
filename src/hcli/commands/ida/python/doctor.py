@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+from pathlib import Path
 
 import rich.status
 import rich_click as click
@@ -138,7 +139,25 @@ def build_doctor_report() -> DoctorReport:
         idausr = None
 
     if resolved is None:
-        findings = [
+        findings: list[EnvironmentFinding] = []
+        venv_exe = ENV.IDAPYTHON_VENV_EXECUTABLE
+        if venv_exe and not Path(venv_exe).is_file():
+            findings.append(
+                EnvironmentFinding(
+                    id="venv-exe-not-found",
+                    severity="error",
+                    summary=(f"$IDAPYTHON_VENV_EXECUTABLE points to a file that does not exist: {venv_exe}"),
+                    detail=(
+                        "The variable is set, but the interpreter it names is not on disk. "
+                        "The virtual environment may have been deleted, moved, or not yet created."
+                    ),
+                    fix_hint=(
+                        f"Run `{ENV.HCLI_BINARY_NAME} ida python create-environment` to create a virtual "
+                        "environment and configure $IDAPYTHON_VENV_EXECUTABLE."
+                    ),
+                )
+            )
+        findings.append(
             EnvironmentFinding(
                 id="python-not-found",
                 severity="error",
@@ -150,7 +169,7 @@ def build_doctor_report() -> DoctorReport:
                     "that IDA uses."
                 ),
             )
-        ]
+        )
         return DoctorReport(
             ida_install_dir=selected.install_dir,
             ida_install_dir_source=selected.install_dir_source,

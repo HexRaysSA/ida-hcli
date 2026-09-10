@@ -41,6 +41,7 @@ RECOMMENDED_STATE = PythonEnvironmentState(
     externally_managed=False,
     uv_ephemeral=False,
     idapython_venv_executable=VENV_PYTHON,
+    idapython_venv_executable_exists=True,
     shell_virtual_env=None,
     idapythonrc_path=None,
     idapythonrc_activates_venv=False,
@@ -102,6 +103,37 @@ def test_venv_exe_var_pointing_at_a_different_venv_warns():
     findings = check_python_environment(state)
     assert finding_ids(findings) == ["no-venv-exe-var"]
     assert str(other) in findings[0].summary
+
+
+def test_dangling_venv_exe_var_is_an_error_when_probe_falls_through():
+    gone = Path("/home/user/.idapro/venv/bin/python")
+    state = make_state(
+        python_exe=Path("/usr/bin/python3"),
+        source="derived from idat probe",
+        venv_root=None,
+        idapython_venv_executable=gone,
+        idapython_venv_executable_exists=False,
+    )
+    findings = check_python_environment(state)
+    ids = finding_ids(findings)
+    assert "venv-exe-not-found" in ids
+    assert "no-venv" in ids
+    assert ids.index("venv-exe-not-found") < ids.index("no-venv")
+    assert findings[0].severity == "error"
+    assert str(gone) in findings[0].summary
+    assert "create-environment" in findings[0].fix_hint
+    assert identify_setup_pattern(state).id == "dangling-venv-exe"
+
+
+def test_dangling_venv_exe_var_suppresses_no_venv_exe_var_warning():
+    gone = Path("/home/user/.idapro/old-venv/bin/python")
+    state = make_state(
+        idapython_venv_executable=gone,
+        idapython_venv_executable_exists=False,
+    )
+    ids = finding_ids(check_python_environment(state))
+    assert "venv-exe-not-found" in ids
+    assert "no-venv-exe-var" not in ids
 
 
 def test_venv_exe_var_matches_when_naming_a_different_interpreter_alias():
@@ -303,6 +335,7 @@ def test_collect_state_from_a_real_venv_via_venv_executable_var(real_venv: Path,
     assert not state.externally_managed
     assert not state.uv_ephemeral
     assert state.idapython_venv_executable == exe
+    assert state.idapython_venv_executable_exists
     assert state.idapythonrc_activates_venv
     assert venv_executable_points_at(state)
 
