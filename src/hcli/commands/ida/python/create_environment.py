@@ -47,7 +47,7 @@ class CreateEnvironmentResult(BaseModel):
     tool: str | None
     # the command that makes IDA use the venv
     set_command: str
-    # whether hcli persisted the variable (shell profile or setx)
+    # whether HCLI persisted the variable (shell profile or setx)
     configured: bool
     configured_via: str | None
 
@@ -275,7 +275,7 @@ def create_environment(path: Path | None, python_version: str | None, no_configu
     idapyswitch registered for IDA, and seeded with pip. Existing directories
     are never modified or replaced.
 
-    Nothing outside the target directory changes without your consent. hcli
+    Nothing outside the target directory changes without your consent. HCLI
     shows the exact shell profile line (or setx command on Windows) first.
     You can decline and apply it yourself.
     """

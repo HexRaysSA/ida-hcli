@@ -142,7 +142,7 @@ def build_doctor_report() -> DoctorReport:
             EnvironmentFinding(
                 id="python-not-found",
                 severity="error",
-                summary="hcli cannot determine IDA's Python interpreter",
+                summary="HCLI cannot determine IDA's Python interpreter",
                 detail=python_exe_error or "",
                 fix_hint=(
                     f"Run `{ENV.HCLI_BINARY_NAME} ida python create-environment` to create a virtual environment "
