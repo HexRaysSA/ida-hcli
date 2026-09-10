@@ -148,8 +148,8 @@ def determine_target_python_version(explicit: str | None) -> TargetPythonVersion
         probed = f"{probe.version_major}.{probe.version_minor}"
         if explicit is not None and explicit != probed:
             logger.warning(
-                "IDA runs Python %s but --python-version %s was requested; using %s. "
-                "Run idapyswitch first if you want IDA to use Python %s.",
+                "IDA runs Python %s, but --python-version %s was requested. Using %s. "
+                "Run idapyswitch first if IDA must use Python %s.",
                 probed,
                 explicit,
                 probed,
@@ -161,8 +161,8 @@ def determine_target_python_version(explicit: str | None) -> TargetPythonVersion
         return TargetPythonVersion(explicit, "--python-version", None)
 
     raise VenvCreationError(
-        "could not determine which Python version IDA uses: running idat failed and no --python-version was given. "
-        "Pass --python-version X.Y matching the Python that idapyswitch registered for IDA."
+        "cannot determine which Python version IDA uses: idat did not run, and no --python-version was given. "
+        "Pass --python-version X.Y with the Python version that idapyswitch registered for IDA."
     )
 
 
@@ -266,8 +266,8 @@ def plan_virtual_environment(
         return VenvPlan(target=target, version=version, tool="venv", tool_exe=base, base_python=base)
 
     raise VenvCreationError(
-        f"no Python {version} interpreter was found on PATH and uv is not installed. "
-        f"Install uv (https://docs.astral.sh/uv/) or install Python {version}, then retry."
+        f"no Python {version} interpreter found on PATH, and uv is not installed. "
+        f"Install uv (https://docs.astral.sh/uv/) or Python {version}, then try again."
     )
 
 
@@ -308,7 +308,7 @@ def validate_created_virtual_environment(target: Path, version: str) -> Path:
     VenvCreationError: when `target` lacks pyvenv.cfg, a working interpreter of `version`, or pip.
     """
     if not (target / "pyvenv.cfg").is_file():
-        raise VenvCreationError(f"{target} was created but has no pyvenv.cfg; it is not a virtual environment")
+        raise VenvCreationError(f"{target} was created but has no pyvenv.cfg, so it is not a virtual environment")
 
     python_exe = find_virtual_env_python(target)
     if python_exe is None:
@@ -321,7 +321,7 @@ def validate_created_virtual_environment(target: Path, version: str) -> Path:
         )
 
     if not has_pip(python_exe):
-        raise VenvCreationError(f"{target} was created but pip is not importable from {python_exe}")
+        raise VenvCreationError(f"{target} was created but pip is not available in {python_exe}")
 
     return python_exe
 

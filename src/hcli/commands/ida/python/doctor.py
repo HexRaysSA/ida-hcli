@@ -94,27 +94,27 @@ def collect_context_notes(state: PythonEnvironmentState) -> list[str]:
             set_var = render_set_env_var_command("IDAPYTHON_VENV_EXECUTABLE", str(python_exe), state.system)
             notes.append(
                 f"A virtual environment already exists at {recommended}"
-                f"{f' (Python {version})' if version else ''} but IDA is not configured to use it. "
-                f"If it is the right version, set: {set_var}"
+                f"{f' (Python {version})' if version else ''}, but IDA is not configured to use it. "
+                f"If its version is correct, set: {set_var}"
             )
 
     if shutil.which("uv"):
-        notes.append("uv is on PATH; `create-environment` will use `uv venv --seed`, which can also download Python.")
+        notes.append("uv is on PATH. `create-environment` uses `uv venv --seed`, which can also download Python.")
     else:
         notes.append(
-            "uv is not on PATH; `create-environment` will use the stdlib venv module and needs a matching "
-            "Python installed. See https://docs.astral.sh/uv/ to install uv."
+            "uv is not on PATH. `create-environment` uses the stdlib venv module and needs a matching Python "
+            "installation. To install uv, see https://docs.astral.sh/uv/."
         )
 
     if state.system == "mac":
         notes.append(
-            "On macOS, variables exported in a shell profile apply to IDA started from that shell, not from "
-            "Finder or the Dock. Set IDAPYTHON_VENV_EXECUTABLE via launchctl setenv, or start IDA from a terminal."
+            "On macOS, a shell profile applies only to IDA started from that shell, not from Finder or the Dock. "
+            "Use `launchctl setenv IDAPYTHON_VENV_EXECUTABLE <path>`, or start IDA from a terminal."
         )
     elif state.system == "windows":
         notes.append(
-            "On Windows, `setx` writes the variable for your user account; programs started afterwards, "
-            "including IDA from the Start menu, see it."
+            "On Windows, `setx` sets the variable for your user account. Programs started afterwards, including "
+            "IDA from the Start menu, see it."
         )
 
     return notes
@@ -142,12 +142,12 @@ def build_doctor_report() -> DoctorReport:
             EnvironmentFinding(
                 id="python-not-found",
                 severity="error",
-                summary="IDA's Python interpreter could not be determined",
+                summary="hcli cannot determine IDA's Python interpreter",
                 detail=python_exe_error or "",
                 fix_hint=(
                     f"Run `{ENV.HCLI_BINARY_NAME} ida python create-environment` to create a virtual environment "
-                    "and set IDAPYTHON_VENV_EXECUTABLE, or set HCLI_CURRENT_IDA_PYTHON_EXE to the interpreter "
-                    "IDA uses."
+                    "and set IDAPYTHON_VENV_EXECUTABLE. Or set HCLI_CURRENT_IDA_PYTHON_EXE to the interpreter "
+                    "that IDA uses."
                 ),
             )
         ]
@@ -243,9 +243,7 @@ def render_doctor_report_text(report: DoctorReport) -> None:
 
     if not report.findings:
         console.print("[green]IDA's Python environment matches the recommended setup.[/green]")
-        console.print(
-            f"Plugins with Python dependencies can be installed with `{ENV.HCLI_BINARY_NAME} plugin install`."
-        )
+        console.print(f"You can install plugins with Python dependencies with `{ENV.HCLI_BINARY_NAME} plugin install`.")
     else:
         errors = [f for f in report.findings if f.severity == "error"]
         warnings = [f for f in report.findings if f.severity == "warning"]
@@ -277,13 +275,13 @@ def _render_finding(finding: FindingModel, color: str) -> None:
 @click.command()
 @click.option("--json", "json_output", is_flag=True, help="Output the report as JSON.")
 def doctor(json_output: bool) -> None:
-    """Check IDA's Python environment against the recommended setup and explain how to fix it.
+    """Check IDA's Python environment against the recommended setup.
 
     The recommended setup is a virtual environment with pip, selected by
-    IDAPYTHON_VENV_EXECUTABLE, whose Python version matches the one
-    idapyswitch registered for IDA.
+    IDAPYTHON_VENV_EXECUTABLE. Its Python version must match the one that
+    idapyswitch registered for IDA. Each problem comes with a fix.
 
-    Exits with status 1 when a problem would prevent installing plugin dependencies.
+    Exits with status 1 when a problem prevents installing plugin dependencies.
     """
     with rich.status.Status("inspecting IDA's Python environment", console=stderr_console):
         report = build_doctor_report()

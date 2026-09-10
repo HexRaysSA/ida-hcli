@@ -49,7 +49,7 @@ from hcli.lib.util.io import get_os
     "--create-python-environment",
     is_flag=True,
     default=False,
-    help="After installing, create a virtual environment for IDA's Python at $IDAUSR/venv "
+    help="After installing IDA, create a virtual environment for its Python at $IDAUSR/venv "
     "(see `ida python create-environment`).",
 )
 @click.argument("installer", required=False)
@@ -300,7 +300,7 @@ def create_python_environment_for_install(install_dir_path: Path, *, interactive
     except click.ClickException as e:
         console.print(f"[red]Could not create the Python environment: {e.message}[/red]")
         console.print(
-            f"IDA is installed. Run `{ENV.HCLI_BINARY_NAME} ida python create-environment` to retry, "
+            f"IDA is installed. Run `{ENV.HCLI_BINARY_NAME} ida python create-environment` to try again, "
             f"or `{ENV.HCLI_BINARY_NAME} ida python doctor` to inspect the environment."
         )
         raise click.exceptions.Exit(1)

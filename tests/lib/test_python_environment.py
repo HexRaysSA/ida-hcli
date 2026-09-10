@@ -249,7 +249,7 @@ def test_format_environment_warnings_distinguishes_errors_from_warnings():
     text = format_environment_warnings(warnings_only)
     assert text.startswith("[bold yellow]Warning:")
     assert "IDAPYTHON_VENV_EXECUTABLE is not set" in text
-    assert text.endswith("ida python doctor` for details and how to fix this.")
+    assert text.endswith("ida python doctor` for details and fixes.")
 
     with_errors = check_python_environment(make_state(pip_available=False, idapython_venv_executable=None))
     text = format_environment_warnings(with_errors)
