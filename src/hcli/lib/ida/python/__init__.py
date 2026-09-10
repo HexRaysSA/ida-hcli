@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 # Script run inside IDA's embedded Python via idat.
-# Returns enough sys/env info to detect the Python executable on the hcli side.
+# Returns enough sys/env info to detect the Python executable on the HCLI side.
 GET_PYTHON_INFO_PY = """
 import sys
 import io
@@ -205,7 +205,7 @@ def probe_current_python_info() -> IdatProbe:
 
     The probe launches IDA in batch mode via idat, which takes seconds, and its
     inputs (the IDA installation and process environment) don't change within a
-    single hcli invocation, so the result is cached.  Failures are not cached:
+    single HCLI invocation, so the result is cached.  Failures are not cached:
     an exception propagates and the next call retries.
 
     Raises:
@@ -438,7 +438,7 @@ def detect_current_python_version() -> str:
 
     Raises:
         PythonNotFoundError: if the interpreter can't be found or its version
-            can't be probed. Never silently falls back to the hcli
+            can't be probed. Never silently falls back to the HCLI
             interpreter's version, which may differ from IDA's Python.
     """
     logger.debug("detecting IDA Python executable...")
@@ -480,7 +480,7 @@ def find_python_version_mismatches(info: IdatProbe, python_exe: Path | None) -> 
     `info` is the result of running GET_PYTHON_INFO_PY inside IDA, which reports
     both `sys.version_info` and the virtualenv IDA activated for itself.
 
-    `python_exe` is the interpreter hcli would use to install plugin
+    `python_exe` is the interpreter HCLI would use to install plugin
     dependencies, or None when it couldn't be detected, in which case only the
     virtualenvs described by `info` are checked.
 
@@ -522,7 +522,7 @@ def find_python_version_mismatches(info: IdatProbe, python_exe: Path | None) -> 
                 )
             )
 
-    # The interpreter hcli installs plugin dependencies with. When it's a venv
+    # The interpreter HCLI installs plugin dependencies with. When it's a venv
     # python, this usually restates a mismatch found above; when detection fell
     # back to a base interpreter, it can differ from IDA's Python on its own.
     if python_exe is None:
@@ -537,7 +537,7 @@ def find_python_version_mismatches(info: IdatProbe, python_exe: Path | None) -> 
                     ida_version=ida_version,
                     other_version=version,
                     other_path=python_exe,
-                    other_source="the interpreter hcli would install plugin dependencies into",
+                    other_source="the interpreter HCLI would install plugin dependencies into",
                 )
             )
 
@@ -789,8 +789,8 @@ class ScriptInfo:
 def get_environment_for_python(python_exe: Path) -> dict[str, str]:
     """Build the environment for a process run against the given Python.
 
-    hcli may itself run inside a virtualenv (or a uv cache overlay), so the
-    inherited VIRTUAL_ENV/PYTHONHOME describe hcli's environment, not IDA's.
+    HCLI may itself run inside a virtualenv (or a uv cache overlay), so the
+    inherited VIRTUAL_ENV/PYTHONHOME describe HCLI's environment, not IDA's.
     """
     env = os.environ.copy()
 

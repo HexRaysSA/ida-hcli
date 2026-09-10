@@ -273,7 +273,7 @@ async def install(
 def create_python_environment_for_install(install_dir_path: Path, *, interactive: bool) -> None:
     """Create $IDAUSR/venv for the IDA that was just installed.
 
-    The installed IDA is made hcli's current installation for the duration, so
+    The installed IDA is made HCLI's current installation for the duration, so
     the Python version probe targets it rather than whichever IDA was the
     default before.  Shell profiles are only modified when `interactive` and
     the user agrees.
