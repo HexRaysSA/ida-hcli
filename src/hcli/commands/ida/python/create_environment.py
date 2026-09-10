@@ -61,23 +61,23 @@ def _explain_existing_target(inspection: TargetInspection) -> str:
     if inspection.kind == "wrong-version-venv":
         return (
             f"{target} {inspection.reason}.\n"
-            f"A virtual environment can't change its Python version, so it has to be recreated. "
-            f"{ENV.HCLI_BINARY_NAME} never deletes it for you. To recreate it:\n"
-            f"  1. remove the directory: {target}\n"
-            f"     (packages installed in it are lost; reinstall plugins afterwards with "
-            f"`{ENV.HCLI_BINARY_NAME} plugin install`)\n"
-            f"  2. run `{ENV.HCLI_BINARY_NAME} ida python create-environment` again"
+            f"A virtual environment cannot change its Python version. You must recreate it. "
+            f"{ENV.HCLI_BINARY_NAME} never deletes it for you.\n"
+            f"  1. Remove the directory: {target}\n"
+            f"     This deletes the packages installed in it. Reinstall plugins afterwards with "
+            f"`{ENV.HCLI_BINARY_NAME} plugin install`.\n"
+            f"  2. Run `{ENV.HCLI_BINARY_NAME} ida python create-environment` again."
         )
     if inspection.kind == "broken-venv":
         return (
             f"{target} {inspection.reason}.\n"
-            f"Remove the directory and run `{ENV.HCLI_BINARY_NAME} ida python create-environment` again, "
-            f"or pass --path to use a different location."
+            f"Remove the directory and run `{ENV.HCLI_BINARY_NAME} ida python create-environment` again. "
+            f"Or pass --path to use a different location."
         )
     return (
         f"{target} {inspection.reason}.\n"
-        f"{ENV.HCLI_BINARY_NAME} does not overwrite existing files. Move them out of the way, or pass "
-        f"--path to create the virtual environment somewhere else."
+        f"{ENV.HCLI_BINARY_NAME} does not overwrite existing files. Move them away, or pass --path to create "
+        f"the virtual environment somewhere else."
     )
 
 
@@ -88,7 +88,7 @@ def _is_interactive() -> bool:
 def configure_env_var(python_exe: Path, *, interactive: bool, quiet: bool) -> tuple[bool, str | None]:
     """Make `IDAPYTHON_VENV_EXECUTABLE` point at `python_exe`, with the user's consent.
 
-    Prints the exact change before asking.  Returns (configured, how).
+    Prints the exact change before asking. Returns (configured, how).
     When not interactive, nothing is written and instructions are printed instead.
     """
     system = get_system()
@@ -98,18 +98,16 @@ def configure_env_var(python_exe: Path, *, interactive: bool, quiet: bool) -> tu
 
     current = ENV.IDAPYTHON_VENV_EXECUTABLE
     if current and Path(current) != python_exe:
-        out.print(f"[yellow]${ENV_VAR} is currently {escape(current)}; it needs to change.[/yellow]")
+        out.print(f"[yellow]${ENV_VAR} is currently {escape(current)}. It must change.[/yellow]")
 
     if system == "windows":
         out.print(f"To make IDA use this environment, set {ENV_VAR} for your user account:")
         out.print(f"  {escape(set_command)}", highlight=False)
         if interactive and Confirm.ask("Run this setx command now?", default=False, console=console):
             set_windows_user_env_var(ENV_VAR, value)
-            out.print(
-                f"[green]Set {ENV_VAR} for your user. Restart IDA (and any open terminals) to pick it up.[/green]"
-            )
+            out.print(f"[green]Set {ENV_VAR} for your user account. Restart IDA and any open terminals.[/green]")
             return True, "setx"
-        out.print("Then restart IDA (and any open terminals).")
+        out.print("Then restart IDA and any open terminals.")
         return False, None
 
     shell = detect_shell(os.environ.get("SHELL"))
@@ -134,9 +132,9 @@ def configure_env_var(python_exe: Path, *, interactive: bool, quiet: bool) -> tu
         return True, str(profile)
 
     if profile is not None:
-        out.print(f"Add it to {escape(str(profile))}, open a new terminal, then start IDA from it.")
+        out.print(f"Add it to {escape(str(profile))}. Open a new terminal, then start IDA from it.")
     else:
-        out.print("Add it to your shell's startup file, open a new terminal, then start IDA from it.")
+        out.print("Add it to your shell's startup file. Open a new terminal, then start IDA from it.")
     _print_mac_launch_note(out, system)
     return False, None
 
@@ -144,8 +142,8 @@ def configure_env_var(python_exe: Path, *, interactive: bool, quiet: bool) -> tu
 def _print_mac_launch_note(out, system: str) -> None:
     if system == "mac":
         out.print(
-            "[dim]Shell profiles don't apply to IDA started from Finder or the Dock. For that, run "
-            f"`launchctl setenv {ENV_VAR} <path>` or start IDA from a terminal.[/dim]"
+            "[dim]Shell profiles do not apply to IDA started from Finder or the Dock. For that, run "
+            f"`launchctl setenv {ENV_VAR} <path>`, or start IDA from a terminal.[/dim]"
         )
 
 
@@ -178,7 +176,7 @@ def run_create_environment(
         try:
             idausr = get_ida_user_dir()
         except ValueError as e:
-            raise CreateEnvironmentError(f"cannot determine $IDAUSR ({e}); pass --path") from e
+            raise CreateEnvironmentError(f"cannot determine $IDAUSR ({e}). Pass --path.") from e
         target = get_recommended_venv_dir(idausr)
     else:
         target = path.expanduser().absolute()
@@ -231,7 +229,7 @@ def run_create_environment(
     current = ENV.IDAPYTHON_VENV_EXECUTABLE
     already_configured = bool(current) and Path(current or "").resolve() == python_exe.resolve()
     if configure and already_configured:
-        out.print(f"[green]${ENV_VAR} already points at this environment.[/green]")
+        out.print(f"[green]${ENV_VAR} already points to this environment.[/green]")
     elif configure:
         configured, configured_via = configure_env_var(python_exe, interactive=interactive, quiet=quiet)
     else:
@@ -262,24 +260,24 @@ def run_create_environment(
     "--python-version",
     default=None,
     metavar="X.Y",
-    help="Python version to use when IDA can't be asked (idat unavailable). IDA's own version wins when known.",
+    help="Python version to use when idat is not available. IDA's own version wins when known.",
 )
 @click.option(
     "--no-configure",
     is_flag=True,
-    help=f"Do not offer to set {ENV_VAR}; only create the environment.",
+    help=f"Do not offer to set {ENV_VAR}. Only create the environment.",
 )
 @click.option("--json", "json_output", is_flag=True, help="Output the result as JSON.")
 def create_environment(path: Path | None, python_version: str | None, no_configure: bool, json_output: bool) -> None:
     """Create a virtual environment for IDA's Python and configure IDA to use it.
 
     The environment is created at $IDAUSR/venv with the Python version that
-    idapyswitch registered for IDA, and seeded with pip.  Existing directories
+    idapyswitch registered for IDA, and seeded with pip. Existing directories
     are never modified or replaced.
 
-    Nothing outside the target directory is changed without asking: the exact
-    line to add to your shell profile (or the setx command on Windows) is shown
-    first, and you can decline and apply it yourself.
+    Nothing outside the target directory changes without your consent. hcli
+    shows the exact shell profile line (or setx command on Windows) first.
+    You can decline and apply it yourself.
     """
     result = run_create_environment(
         path=path,

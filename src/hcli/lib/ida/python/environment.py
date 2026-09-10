@@ -316,9 +316,9 @@ def _render_create_environment_hint(state: PythonEnvironmentState) -> str:
     version = state.ida_python_version or state.python_version or "3.X"
     set_var = render_set_env_var_command("IDAPYTHON_VENV_EXECUTABLE", str(venv_python), state.system)
     return (
-        f"Run `{ENV.HCLI_BINARY_NAME} ida python create-environment` to create a virtual environment at {venv_dir} "
-        f"using Python {version} and configure IDA to use it.\n"
-        f"Or do it by hand:\n"
+        f"Run `{ENV.HCLI_BINARY_NAME} ida python create-environment`. It creates a virtual environment at "
+        f"{venv_dir} with Python {version} and configures IDA to use it.\n"
+        f"Or do it yourself:\n"
         f"  uv venv --seed --python {version} {venv_dir}\n"
         f"  {set_var}"
     )
@@ -342,13 +342,12 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
                 severity="error",
                 summary=f"IDA's Python resolved to a temporary uv environment: {state.venv_root}",
                 detail=(
-                    "This virtualenv is a cache overlay that `uv run --with` creates for a single command and "
-                    "discards afterwards.  It is never the environment IDA loads, and packages installed into it "
-                    "are gone as soon as the command exits."
+                    "`uv run --with` creates this virtualenv for one command and discards it afterwards. "
+                    "IDA never loads it. Packages installed into it are lost when the command exits."
                 ),
                 fix_hint=(
-                    f"Install hcli normally (for example `uv tool install ida-hcli`) instead of running it via "
-                    f"`uv run --with`, or point $IDAPYTHON_VENV_EXECUTABLE at IDA's real virtualenv.\n"
+                    f"Install hcli permanently, for example with `uv tool install ida-hcli`. "
+                    f"Or set $IDAPYTHON_VENV_EXECUTABLE to IDA's real virtualenv.\n"
                     f"{_render_create_environment_hint(state)}"
                 ),
             )
@@ -357,15 +356,14 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
     if state.venv_root is None:
         summary = f"IDA's Python is not a virtual environment: {exe}"
         detail = (
-            "IDA loads a global interpreter (system, Homebrew, python.org, or Windows Store Python).  Plugin "
-            "dependencies installed there mix with OS-managed packages, may need administrator rights, and are "
-            "refused outright on Debian, Ubuntu 24.04+, and Homebrew (PEP 668).  A dedicated virtual environment "
-            "avoids all of this."
+            "IDA loads a global Python (system, Homebrew, python.org, or Windows Store). Plugin dependencies "
+            "installed there mix with OS packages and may need administrator rights. Debian, Ubuntu 24.04+, and "
+            "Homebrew refuse such installs (PEP 668). A dedicated virtual environment avoids these problems."
         )
         if state.conda:
             detail += (
-                "\nThis looks like a conda environment.  conda environments are not standard virtual environments "
-                "(no pyvenv.cfg), so hcli cannot verify or manage them the same way."
+                "\nThis looks like a conda environment. conda environments have no pyvenv.cfg, so hcli cannot "
+                "check or manage them like a virtualenv."
             )
         findings.append(
             EnvironmentFinding(
@@ -384,9 +382,9 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
                 severity="error",
                 summary=f"IDA's Python is externally managed (PEP 668): {exe}",
                 detail=(
-                    "The distribution that installed this Python marked it EXTERNALLY-MANAGED, so pip refuses to "
-                    "install packages into it.  Removing the marker only postpones the problem: OS updates can "
-                    "overwrite or break whatever pip installs there."
+                    "The distributor marked this Python as EXTERNALLY-MANAGED, so pip refuses to install packages "
+                    "into it. Do not remove the marker: OS updates can overwrite or break packages that pip "
+                    "installs there."
                 ),
                 fix_hint=_render_create_environment_hint(state),
             )
@@ -396,20 +394,20 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
         venv_hint = ""
         if state.venv_root is not None:
             venv_hint = (
-                f"If this virtualenv was created with `uv venv` (without `--seed`), recreate it with "
-                f"`uv venv --seed --python {state.python_version or '3.X'} {state.venv_root}`, "
-                f"or add pip to it with `{exe} -m ensurepip --upgrade`."
+                f"If you created this virtualenv with `uv venv` without `--seed`, recreate it with "
+                f"`uv venv --seed --python {state.python_version or '3.X'} {state.venv_root}`. "
+                f"Or add pip with `{exe} -m ensurepip --upgrade`."
             )
         else:
-            venv_hint = f"Install pip with `{exe} -m ensurepip --upgrade`, or better, use a virtual environment."
+            venv_hint = f"Install pip with `{exe} -m ensurepip --upgrade`. Better: use a virtual environment."
         findings.append(
             EnvironmentFinding(
                 id="no-pip",
                 severity="error",
                 summary=f"pip is not available in IDA's Python: {exe}",
                 detail=(
-                    "hcli installs plugin dependencies with pip, running inside IDA's Python.  Without pip there, "
-                    "no plugin that declares Python dependencies can be installed."
+                    "hcli installs plugin dependencies with pip inside IDA's Python. Without pip, hcli cannot "
+                    "install any plugin that has Python dependencies."
                 ),
                 fix_hint=venv_hint,
             )
@@ -426,19 +424,18 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
                 severity="error",
                 summary=(
                     f"Python version mismatch: IDA runs Python {state.ida_python_version}, "
-                    f"but plugin dependencies would be installed for Python {state.python_version} ({exe})"
+                    f"but hcli would install dependencies for Python {state.python_version} ({exe})"
                 ),
                 detail=(
-                    "idapyswitch records which libpython IDA loads, and that alone decides the Python version "
-                    "inside IDA.  A virtualenv only redirects sys.path; it cannot change the version.  Packages "
-                    f"installed for {state.python_version} land in a site-packages directory that IDA's "
-                    f"{state.ida_python_version} interpreter never looks at, and extension modules would not load "
-                    "even if it did."
+                    "idapyswitch selects the libpython that IDA loads, and that alone sets the Python version "
+                    "inside IDA. A virtualenv only changes sys.path, not the version. Packages installed for "
+                    f"{state.python_version} go to a site-packages directory that IDA's Python "
+                    f"{state.ida_python_version} never reads."
                 ),
                 fix_hint=(
-                    f"Either run idapyswitch to point IDA at a Python {state.python_version} installation, or "
-                    f"recreate the virtualenv with Python {state.ida_python_version} "
-                    f"(`{ENV.HCLI_BINARY_NAME} ida python create-environment` picks the matching version)."
+                    f"Run idapyswitch to select a Python {state.python_version} installation for IDA. "
+                    f"Or recreate the virtualenv with Python {state.ida_python_version}: "
+                    f"`{ENV.HCLI_BINARY_NAME} ida python create-environment` selects the matching version."
                 ),
             )
         )
@@ -450,7 +447,8 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
             summary = "$IDAPYTHON_VENV_EXECUTABLE is not set"
         else:
             summary = (
-                f"$IDAPYTHON_VENV_EXECUTABLE points elsewhere: {state.idapython_venv_executable} (hcli resolved {exe})"
+                f"$IDAPYTHON_VENV_EXECUTABLE points to a different environment: {state.idapython_venv_executable} "
+                f"(hcli resolved {exe})"
             )
         findings.append(
             EnvironmentFinding(
@@ -458,12 +456,11 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
                 severity="warning",
                 summary=summary,
                 detail=(
-                    "IDAPYTHON_VENV_EXECUTABLE is how IDA itself learns which virtualenv to use, regardless of how "
-                    "it was launched (terminal, Dock, file association).  Other ways of activating a venv, such as "
-                    "idapythonrc.py or launching IDA from an activated shell, work in some situations and not "
-                    "others, and hcli has to guess which environment IDA will end up with."
+                    "IDAPYTHON_VENV_EXECUTABLE tells IDA which virtualenv to use, however IDA starts (terminal, "
+                    "Dock, or file association). Other methods, such as idapythonrc.py or an activated shell, work "
+                    "only in some situations. hcli then has to guess which environment IDA uses."
                 ),
-                fix_hint=f"Set it persistently for your user, then restart IDA:\n  {set_var}",
+                fix_hint=f"Set it for your user account, then restart IDA:\n  {set_var}",
             )
         )
 
@@ -474,14 +471,13 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
                 severity="warning",
                 summary=f"{state.idapythonrc_path} appears to activate a virtualenv at startup",
                 detail=(
-                    "Activating a virtualenv from idapythonrc.py works for interactive IDA, but batch-mode IDA "
-                    "(idat) and hcli's environment probe see the base interpreter, so hcli can install packages "
-                    "somewhere IDA never looks.  Because the script is arbitrary Python, hcli also can't tell "
-                    "which virtualenv it selects."
+                    "A virtualenv activated from idapythonrc.py works in interactive IDA only. idat and hcli's "
+                    "environment probe see the base interpreter, so hcli can install packages where IDA never "
+                    "looks. The script is arbitrary Python, so hcli cannot tell which virtualenv it selects."
                 ),
                 fix_hint=(
-                    "Set $IDAPYTHON_VENV_EXECUTABLE to the virtualenv's interpreter and remove the activation "
-                    "code from idapythonrc.py."
+                    "Set $IDAPYTHON_VENV_EXECUTABLE to the virtualenv's interpreter. "
+                    "Then remove the activation code from idapythonrc.py."
                 ),
             )
         )
@@ -503,7 +499,7 @@ def format_environment_warnings(findings: list[EnvironmentFinding]) -> str:
 
     errors = [f for f in findings if f.severity == "error"]
     if errors:
-        header = "[bold red]Error:[/bold red] IDA's Python environment cannot be used to install plugin dependencies."
+        header = "[bold red]Error:[/bold red] hcli cannot install plugin dependencies into IDA's Python environment."
     else:
         header = "[bold yellow]Warning:[/bold yellow] IDA's Python environment is not the recommended setup."
 
@@ -512,7 +508,7 @@ def format_environment_warnings(findings: list[EnvironmentFinding]) -> str:
         tag = "[red]error[/red]  " if finding.severity == "error" else "[yellow]warning[/yellow]"
         lines.append(f"  {tag} {escape(finding.summary)}")
 
-    lines.append(f"Run `{ENV.HCLI_BINARY_NAME} ida python doctor` for details and how to fix this.")
+    lines.append(f"Run `{ENV.HCLI_BINARY_NAME} ida python doctor` for details and fixes.")
     return "\n".join(lines)
 
 
@@ -521,7 +517,7 @@ def format_environment_findings_plain(findings: list[EnvironmentFinding]) -> str
     lines = []
     for finding in findings:
         lines.append(f"- [{finding.severity}] {finding.summary}")
-    lines.append(f"Run '{ENV.HCLI_BINARY_NAME} ida python doctor' for details and how to fix this.")
+    lines.append(f"Run '{ENV.HCLI_BINARY_NAME} ida python doctor' for details and fixes.")
     return "\n".join(lines)
 
 
@@ -531,7 +527,7 @@ class PythonEnvironmentError(CantInstallPackagesError):
     def __init__(self, findings: list[EnvironmentFinding]):
         self.findings = findings
         super().__init__(
-            "IDA's Python environment is not usable for plugin dependencies:\n"
+            "hcli cannot install plugin dependencies into IDA's Python environment:\n"
             + format_environment_findings_plain(findings)
         )
 
@@ -600,8 +596,8 @@ def identify_setup_pattern(state: PythonEnvironmentState) -> SetupPattern:
             id="properly-configured",
             name="Properly configured",
             description=(
-                "IDA loads a virtual environment selected by $IDAPYTHON_VENV_EXECUTABLE, it has pip, and its "
-                "Python version matches what idapyswitch registered."
+                "IDA loads a virtual environment selected by $IDAPYTHON_VENV_EXECUTABLE. It has pip, and its "
+                "Python version matches the one idapyswitch registered."
             ),
         )
 
@@ -610,8 +606,8 @@ def identify_setup_pattern(state: PythonEnvironmentState) -> SetupPattern:
             id="uv-ephemeral",
             name="Temporary uv environment",
             description=(
-                "hcli is running under `uv run --with`, and the virtualenv it sees is uv's throwaway overlay, "
-                "not IDA's environment."
+                "hcli runs under `uv run --with`. The virtualenv it sees is uv's temporary overlay, not IDA's "
+                "environment."
             ),
         )
 
@@ -620,8 +616,8 @@ def identify_setup_pattern(state: PythonEnvironmentState) -> SetupPattern:
             id="idapythonrc-venv",
             name="idapythonrc.py virtualenv",
             description=(
-                "A virtualenv is activated from idapythonrc.py at IDA startup.  This works for interactive IDA "
-                "but is invisible to idat and unreliable for hcli."
+                "idapythonrc.py activates a virtualenv when IDA starts. This works in interactive IDA, but idat "
+                "and hcli do not see it."
             ),
         )
 
@@ -630,8 +626,8 @@ def identify_setup_pattern(state: PythonEnvironmentState) -> SetupPattern:
             id="shell-activated-venv",
             name="Shell-activated virtualenv",
             description=(
-                "A virtualenv is activated in this shell ($VIRTUAL_ENV) and IDA picks it up only when launched "
-                "from such a shell.  Desktop launchers and file associations start IDA with the base Python."
+                "A virtualenv is active in this shell ($VIRTUAL_ENV). IDA uses it only when started from such a "
+                "shell. Desktop launchers and file associations start IDA with the base Python."
             ),
         )
 
@@ -640,7 +636,7 @@ def identify_setup_pattern(state: PythonEnvironmentState) -> SetupPattern:
             id="configured-with-problems",
             name="Configured virtualenv with problems",
             description=(
-                "IDA is pointed at a virtualenv via $IDAPYTHON_VENV_EXECUTABLE, but the environment has problems "
+                "$IDAPYTHON_VENV_EXECUTABLE selects a virtualenv for IDA, but that environment has the problems "
                 "listed below."
             ),
         )
@@ -650,8 +646,8 @@ def identify_setup_pattern(state: PythonEnvironmentState) -> SetupPattern:
             id="venv-not-configured",
             name="Virtualenv not configured for IDA",
             description=(
-                "hcli found a virtualenv, but $IDAPYTHON_VENV_EXECUTABLE does not select it, so IDA may load a "
-                "different environment than hcli installs into."
+                "hcli found a virtualenv, but $IDAPYTHON_VENV_EXECUTABLE does not select it. IDA may load a "
+                "different environment than the one hcli installs into."
             ),
         )
 
@@ -660,8 +656,8 @@ def identify_setup_pattern(state: PythonEnvironmentState) -> SetupPattern:
             id="windows-store",
             name="Windows Store Python",
             description=(
-                "IDA's Python resolves to the Microsoft Store app-execution alias.  This shim is not a usable "
-                "interpreter for installing packages, and it may not be the Python that idapyswitch registered."
+                "IDA's Python resolves to the Microsoft Store app-execution alias. This alias cannot install "
+                "packages, and it may not be the Python that idapyswitch registered."
             ),
         )
 
@@ -670,8 +666,8 @@ def identify_setup_pattern(state: PythonEnvironmentState) -> SetupPattern:
             id="conda",
             name="Anaconda/conda Python",
             description=(
-                "IDA loads a conda environment.  conda environments are not standard virtualenvs, so hcli can't "
-                "verify them, and package installation mixes pip and conda-managed packages."
+                "IDA loads a conda environment. conda environments are not standard virtualenvs, so hcli cannot "
+                "check them. Installing packages mixes pip and conda packages."
             ),
         )
 
@@ -680,8 +676,9 @@ def identify_setup_pattern(state: PythonEnvironmentState) -> SetupPattern:
             id="homebrew",
             name="Homebrew Python",
             description=(
-                "IDA loads a Homebrew-installed Python.  Homebrew upgrades replace the interpreter (breaking "
-                "idapyswitch's registration) and mark it externally managed, so pip refuses to install into it."
+                "IDA loads a Homebrew Python. Homebrew upgrades replace the interpreter, which breaks the "
+                "idapyswitch registration. Homebrew also marks it externally managed, so pip refuses to install "
+                "into it."
             ),
         )
 
@@ -689,9 +686,9 @@ def identify_setup_pattern(state: PythonEnvironmentState) -> SetupPattern:
         id="default",
         name="Default (no setup)",
         description=(
-            "IDA loads a global Python with no virtual environment and no $IDAPYTHON_VENV_EXECUTABLE.  This is "
-            "what a fresh IDA installation looks like, and it is the most common source of plugin installation "
-            "problems."
+            "IDA loads a global Python. There is no virtual environment, and $IDAPYTHON_VENV_EXECUTABLE is not "
+            "set. This is how a fresh IDA installation looks, and it is the most common cause of plugin "
+            "installation problems."
         ),
     )
 

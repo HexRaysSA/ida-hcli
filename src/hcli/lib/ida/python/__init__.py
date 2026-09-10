@@ -189,8 +189,7 @@ def _derive_python_exe(info: IdatProbe) -> Path:
     raise PythonNotFoundError(
         "Could not detect IDA's Python executable.\n"
         f"Run '{ENV.HCLI_BINARY_NAME} ida python create-environment' to create a virtual environment for IDA and "
-        "set IDAPYTHON_VENV_EXECUTABLE to its interpreter, "
-        "or run idapyswitch to select a Python installation, then try again.\n"
+        "set IDAPYTHON_VENV_EXECUTABLE. Or run idapyswitch to select a Python installation. Then try again.\n"
         f"sys.prefix: {info.prefix}\n"
         f"sys.base_prefix: {info.base_prefix}\n"
         f"sys.executable: {info.executable}\n"
@@ -269,7 +268,7 @@ def resolve_current_python() -> ResolvedPython:
     except RuntimeError as e:
         raise PythonNotFoundError(
             "failed to run idat to detect IDA's Python interpreter. "
-            "If you already know the interpreter path, set HCLI_CURRENT_IDA_PYTHON_EXE=/path/to/python and retry."
+            "If you know the interpreter path, set HCLI_CURRENT_IDA_PYTHON_EXE=/path/to/python and try again."
         ) from e
 
     logger.debug("IDA Python info: %s", info)
@@ -366,10 +365,10 @@ def _format_pip_error(stdout: bytes, stderr: bytes) -> str:
 
 def externally_managed_environment_message(python_exe: Path) -> str:
     return (
-        f"{python_exe} is an externally-managed Python (PEP 668), so pip refuses to install into it directly. "
-        f"Point IDA at a virtual environment instead of the system/Homebrew Python: "
-        f"run '{ENV.HCLI_BINARY_NAME} ida python create-environment' to create one and configure IDA to use it, "
-        f"or '{ENV.HCLI_BINARY_NAME} ida python doctor' to inspect the current setup."
+        f"{python_exe} is an externally managed Python (PEP 668), so pip refuses to install into it. "
+        f"Point IDA to a virtual environment instead of the system or Homebrew Python: "
+        f"run '{ENV.HCLI_BINARY_NAME} ida python create-environment' to create one and configure IDA to use it. "
+        f"Run '{ENV.HCLI_BINARY_NAME} ida python doctor' to inspect the current setup."
     )
 
 
