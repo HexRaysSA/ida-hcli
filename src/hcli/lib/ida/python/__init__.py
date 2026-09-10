@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from rich.markup import escape
 
 from hcli.env import ENV
-from hcli.lib.console import stderr_console
+from hcli.lib.console import stderr_console as stderr_console
 from hcli.lib.ida import run_py_in_current_idapython
 from hcli.lib.venv import get_python_exe_candidates, get_virtual_env_version, probe_python_version
 
@@ -188,7 +188,9 @@ def _derive_python_exe(info: IdatProbe) -> Path:
 
     raise PythonNotFoundError(
         "Could not detect IDA's Python executable.\n"
-        "Please run idapyswitch to select a Python installation, then try again.\n"
+        f"Run '{ENV.HCLI_BINARY_NAME} ida python create-environment' to create a virtual environment for IDA and "
+        "set IDAPYTHON_VENV_EXECUTABLE to its interpreter, "
+        "or run idapyswitch to select a Python installation, then try again.\n"
         f"sys.prefix: {info.prefix}\n"
         f"sys.base_prefix: {info.base_prefix}\n"
         f"sys.executable: {info.executable}\n"
@@ -365,9 +367,9 @@ def _format_pip_error(stdout: bytes, stderr: bytes) -> str:
 def externally_managed_environment_message(python_exe: Path) -> str:
     return (
         f"{python_exe} is an externally-managed Python (PEP 668), so pip refuses to install into it directly. "
-        "Point IDA at a virtual environment instead of the system/Homebrew Python: "
-        "https://community.hex-rays.com/t/using-a-virtualenv-for-idapython/261/5 "
-        f"(run '{ENV.HCLI_BINARY_NAME} ida python explain-environment' to inspect the current setup)."
+        f"Point IDA at a virtual environment instead of the system/Homebrew Python: "
+        f"run '{ENV.HCLI_BINARY_NAME} ida python create-environment' to create one and configure IDA to use it, "
+        f"or '{ENV.HCLI_BINARY_NAME} ida python doctor' to inspect the current setup."
     )
 
 
@@ -579,27 +581,6 @@ def format_python_version_mismatch_warning(mismatches: list[PythonVersionMismatc
         )
 
     return "\n".join(lines)
-
-
-def warn_on_python_version_mismatch(info: IdatProbe | None, python_exe: Path) -> None:
-    """Warn on stderr when IDA's Python doesn't match the environment we'd install into.
-
-    `info` is the probe info from `resolve_current_python`, or None when IDA's
-    Python was not probed (so there's nothing to compare against).  Best-effort:
-    a failure to inspect the environment is never fatal.
-    """
-    if info is None:
-        return
-
-    try:
-        mismatches = find_python_version_mismatches(info, python_exe)
-    except Exception as e:
-        logger.debug("python version mismatch check failed: %s", e)
-        return
-
-    warning = format_python_version_mismatch_warning(mismatches)
-    if warning:
-        stderr_console.print(warning, highlight=False)
 
 
 class ProbeError(RuntimeError):

@@ -372,7 +372,7 @@ def test_verify_pip_can_install_packages_explains_externally_managed_environment
 
     message = str(exc_info.value)
     assert "PEP 668" in message
-    assert "explain-environment" in message
+    assert "create-environment" in message
     assert str(python_exe) in message
 
 

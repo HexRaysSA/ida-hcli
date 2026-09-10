@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from rich.prompt import Confirm
 
 from hcli.commands.download import download
 from hcli.commands.license.get import get_license
+from hcli.env import ENV
 from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command, enforce_login
 from hcli.lib.config import config_store
@@ -43,6 +45,13 @@ from hcli.lib.util.io import get_os
 @click.option("--set-default/--no-set-default", help="Mark this IDA installation as the default", default=True)
 @click.option("--dry-run", is_flag=True, help="Show what would be done without actually installing")
 @click.option("--yes", "-y", "auto_confirm", is_flag=True, help="Auto-accept confirmation prompts", default=False)
+@click.option(
+    "--create-python-environment",
+    is_flag=True,
+    default=False,
+    help="After installing, create a virtual environment for IDA's Python at $IDAUSR/venv "
+    "(see `ida python create-environment`).",
+)
 @click.argument("installer", required=False)
 @click.command()
 @click.pass_context
@@ -57,6 +66,7 @@ async def install(
     set_default: bool,
     dry_run: bool,
     auto_confirm: bool,
+    create_python_environment: bool,
 ) -> None:
     """Installs IDA unattended.
 
@@ -255,3 +265,45 @@ async def install(
     except Exception as e:
         console.print(f"[red]Install failed: {e}[/red]")
         raise
+
+    if create_python_environment and not dry_run:
+        create_python_environment_for_install(install_dir_path, interactive=not auto_confirm)
+
+
+def create_python_environment_for_install(install_dir_path: Path, *, interactive: bool) -> None:
+    """Create $IDAUSR/venv for the IDA that was just installed.
+
+    The installed IDA is made hcli's current installation for the duration, so
+    the Python version probe targets it rather than whichever IDA was the
+    default before.  Shell profiles are only modified when `interactive` and
+    the user agrees.
+
+    Raises:
+        click.exceptions.Exit: with status 1 when creation fails; IDA itself is already installed.
+    """
+    from hcli.commands.ida.python.create_environment import run_create_environment
+    from hcli.lib.ida.python import probe_current_python_info
+
+    console.print("[yellow]Creating Python environment for IDA...[/yellow]")
+
+    previous = ENV.HCLI_CURRENT_IDA_INSTALL_DIR
+    ENV.HCLI_CURRENT_IDA_INSTALL_DIR = str(install_dir_path)
+    probe_current_python_info.cache_clear()
+    try:
+        run_create_environment(
+            path=None,
+            python_version=None,
+            configure=True,
+            interactive=interactive and sys.stdin.isatty(),
+            quiet=False,
+        )
+    except click.ClickException as e:
+        console.print(f"[red]Could not create the Python environment: {e.message}[/red]")
+        console.print(
+            f"IDA is installed. Run `{ENV.HCLI_BINARY_NAME} ida python create-environment` to retry, "
+            f"or `{ENV.HCLI_BINARY_NAME} ida python doctor` to inspect the environment."
+        )
+        raise click.exceptions.Exit(1)
+    finally:
+        ENV.HCLI_CURRENT_IDA_INSTALL_DIR = previous
+        probe_current_python_info.cache_clear()

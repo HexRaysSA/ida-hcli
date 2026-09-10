@@ -1,6 +1,6 @@
 # How HCLI Finds IDA
 
-Most HCLI commands need to know which IDA installation to operate on, what version it is, and which Python interpreter it loads. Each of these is resolved by checking a fixed list of sources in order and taking the first answer. `hcli ida python explain-environment` shows every resolution along with the source that produced it, so run that first when detection does something surprising.
+Most HCLI commands need to know which IDA installation to operate on, what version it is, and which Python interpreter it loads. Each of these is resolved by checking a fixed list of sources in order and taking the first answer. `hcli ida python explain-environment` shows every resolution along with the source that produced it, so run that first when detection does something surprising. `hcli ida python doctor` builds on the same data and reports whether the resolved Python matches the recommended setup.
 
 ## Installation directory
 

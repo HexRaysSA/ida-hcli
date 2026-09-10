@@ -42,6 +42,7 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
     pip_options: PipOptions = ctx.obj.get("pip_options", PIP_OPTIONS_DEFAULT)
     if no_build_isolation:
         pip_options = dataclasses.replace(pip_options, no_build_isolation=True)
+    check_environment = not ctx.obj.get("no_python_environment_check", False)
     plugin_spec = plugin
     try:
         sweep_trash()
@@ -111,9 +112,11 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
                     console.print(f"Available targets in this bundle: {available}")
                     raise click.Abort()
                 effective_pip_options = merge_bundle_pip_options(pip_options, bundle_opts)
-                upgrade_plugin_archive(buf, plugin_name, pip_options=effective_pip_options)
+                upgrade_plugin_archive(
+                    buf, plugin_name, pip_options=effective_pip_options, check_environment=check_environment
+                )
         else:
-            upgrade_plugin_archive(buf, plugin_name, pip_options=pip_options)
+            upgrade_plugin_archive(buf, plugin_name, pip_options=pip_options, check_environment=check_environment)
 
         _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 
