@@ -57,6 +57,13 @@ def read_repos_file(path: Path) -> list[str]:
 @click.option(
     "--offline", is_flag=True, default=False, help="force pip to use only local sources (--no-index)", hidden=True
 )
+@click.option(
+    "--no-python-environment-check",
+    is_flag=True,
+    default=False,
+    help="Install Python dependencies even when IDA's Python environment fails the health check "
+    "(see `ida python doctor`).",
+)
 @click.pass_context
 def plugin(
     ctx,
@@ -67,10 +74,12 @@ def plugin(
     pip_extra_index_url: tuple[str, ...],
     pip_find_links: tuple[str, ...],
     offline: bool,
+    no_python_environment_check: bool,
 ) -> None:
     """Manage IDA Pro plugins."""
     # TODO: cleanup list and anything else touching github
     ctx.ensure_object(dict)
+    ctx.obj["no_python_environment_check"] = no_python_environment_check
 
     pip_options = PipOptions(
         index_url=pip_index_url,

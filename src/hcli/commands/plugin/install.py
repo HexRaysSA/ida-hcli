@@ -91,6 +91,7 @@ def install_plugin(
     pip_options: PipOptions = ctx.obj.get("pip_options", PIP_OPTIONS_DEFAULT)
     if no_build_isolation:
         pip_options = dataclasses.replace(pip_options, no_build_isolation=True)
+    check_environment = not ctx.obj.get("no_python_environment_check", False)
     plugin_repo_obj = ctx.obj.get("plugin_repo")
     plugin_spec = plugin
     try:
@@ -255,7 +256,9 @@ def install_plugin(
                 descr.validate_value(parsed_value)
 
         if editable:
-            install_plugin_directory_editable(source_dir, plugin_name, pip_options=pip_options)
+            install_plugin_directory_editable(
+                source_dir, plugin_name, pip_options=pip_options, check_environment=check_environment
+            )
         else:
             assert buf is not None
             if is_upgrade:
@@ -279,10 +282,12 @@ def install_plugin(
                         raise click.Abort()
                     effective_pip_options = merge_bundle_pip_options(pip_options, bundle_opts)
                     with rich.status.Status(status_text, console=stderr_console):
-                        write_archive(buf, plugin_name, pip_options=effective_pip_options)
+                        write_archive(
+                            buf, plugin_name, pip_options=effective_pip_options, check_environment=check_environment
+                        )
             else:
                 with rich.status.Status(status_text, console=stderr_console):
-                    write_archive(buf, plugin_name, pip_options=pip_options)
+                    write_archive(buf, plugin_name, pip_options=pip_options, check_environment=check_environment)
 
         try:
             if metadata.plugin.settings:

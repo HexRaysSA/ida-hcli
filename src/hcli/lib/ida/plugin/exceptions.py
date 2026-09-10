@@ -55,10 +55,10 @@ class PipNotAvailableError(PluginInstallationError):
 
     def __init__(self, python_exe: Path):
         super().__init__(
-            "Cannot install plugin: pip is not available in IDA's Python environment. "
-            "The plugin requires Python dependencies but pip cannot be found. "
-            "Please ensure your IDA installation includes pip support."
-            f"You can try installing pip manually by running: {python_exe} -m ensurepip"
+            f"pip is not available in IDA's Python environment at {python_exe}. "
+            "If your venv was created with `uv venv` (without `--seed`), recreate it with `uv venv --seed`, "
+            f"or add pip with `{python_exe} -m ensurepip --upgrade`. "
+            f"Run `{ENV.HCLI_BINARY_NAME} ida python doctor` for more details."
         )
 
 
