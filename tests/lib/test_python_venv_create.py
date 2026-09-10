@@ -83,42 +83,38 @@ def test_validate_python_version_string():
             validate_python_version_string(bad)
 
 
+TARGET = Path("/idausr/venv")
+REGISTERED = Path("/usr/bin/python3.12")
+UV = Path("/usr/local/bin/uv")
+
+
 def test_plan_prefers_uv_with_registered_python():
     plan = plan_virtual_environment(
-        Path("/idausr/venv"),
+        TARGET,
         "3.12",
-        registered_python=Path("/usr/bin/python3.12"),
-        uv_exe=Path("/usr/local/bin/uv"),
+        registered_python=REGISTERED,
+        uv_exe=UV,
         path_python=Path("/other/python3.12"),
     )
     assert plan.tool == "uv"
-    assert plan.build_command() == [
-        "/usr/local/bin/uv",
-        "venv",
-        "--seed",
-        "--python",
-        "/usr/bin/python3.12",
-        "/idausr/venv",
-    ]
+    assert plan.build_command() == [str(UV), "venv", "--seed", "--python", str(REGISTERED), str(TARGET)]
 
 
 def test_plan_uv_downloads_when_no_interpreter_is_known():
-    plan = plan_virtual_environment(
-        Path("/idausr/venv"), "3.12", registered_python=None, uv_exe=Path("uv"), path_python=None
-    )
-    assert plan.build_command() == ["uv", "venv", "--seed", "--python", "3.12", "/idausr/venv"]
+    plan = plan_virtual_environment(TARGET, "3.12", registered_python=None, uv_exe=Path("uv"), path_python=None)
+    assert plan.build_command() == ["uv", "venv", "--seed", "--python", "3.12", str(TARGET)]
 
 
 def test_plan_falls_back_to_stdlib_venv():
     plan = plan_virtual_environment(
-        Path("/idausr/venv"),
+        TARGET,
         "3.12",
         registered_python=None,
         uv_exe=None,
-        path_python=Path("/usr/bin/python3.12"),
+        path_python=REGISTERED,
     )
     assert plan.tool == "venv"
-    assert plan.build_command() == ["/usr/bin/python3.12", "-m", "venv", "/idausr/venv"]
+    assert plan.build_command() == [str(REGISTERED), "-m", "venv", str(TARGET)]
 
 
 def test_plan_fails_without_uv_or_interpreter():

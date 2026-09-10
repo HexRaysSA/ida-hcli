@@ -146,11 +146,12 @@ def is_conda_prefix(python_exe: Path) -> bool:
 def is_homebrew_path(path: Path | None) -> bool:
     if path is None:
         return False
+    candidates = {path.as_posix()}
     try:
-        resolved = str(path.resolve())
+        candidates.add(path.resolve().as_posix())
     except OSError:
-        resolved = str(path)
-    return any(resolved.startswith(prefix) for prefix in HOMEBREW_PREFIXES)
+        pass
+    return any(candidate.startswith(prefix) for candidate in candidates for prefix in HOMEBREW_PREFIXES)
 
 
 def does_idapythonrc_activate_venv(idapythonrc: Path) -> bool:
