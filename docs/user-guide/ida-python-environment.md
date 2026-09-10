@@ -69,7 +69,7 @@ Warnings (1)
         export IDAPYTHON_VENV_EXECUTABLE="/Users/user/.idapro/venv/bin/python"
 ```
 
-Errors are conditions where installing packages fails, or puts them where IDA cannot see them: no virtual environment, no `pip`, an externally managed system Python (PEP 668), a temporary `uv run` environment, or a version mismatch between the venv and IDA's `libpython`. Warnings are setups that work today but are fragile, such as a venv that `IDAPYTHON_VENV_EXECUTABLE` does not select, or a venv activated from `idapythonrc.py`. `doctor` exits non-zero when there are errors. `--json` prints the same report as JSON.
+Errors are conditions where installing packages fails, or puts them where IDA cannot see them: no virtual environment, no `pip`, an externally managed system Python (PEP 668), a temporary `uv run` environment, a version mismatch between the venv and IDA's `libpython`, or `IDAPYTHON_VENV_EXECUTABLE` pointing to a file that does not exist. Warnings are setups that work today but are fragile, such as a venv that `IDAPYTHON_VENV_EXECUTABLE` does not select, or a venv activated from `idapythonrc.py`. `doctor` exits non-zero when there are errors. `--json` prints the same report as JSON.
 
 `hcli plugin install` runs this check before it installs Python dependencies. Errors stop the install and print the findings. Warnings only print, and the install continues. The `ida python exec`, `run-script`, and `find-script` commands only print warnings, because you use them to repair the environment. To skip the check, pass `--no-python-environment-check` to the `plugin` or `ida python` group, for example `hcli plugin --no-python-environment-check install <name>`.
 
