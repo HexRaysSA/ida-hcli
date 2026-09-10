@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from fixtures import set_env_var, unset_env_var
+from fixtures import get_base_python_exe, set_env_var, unset_env_var
 
 from hcli.lib.ida.python import ResolvedPython
 from hcli.lib.ida.python.environment import (
@@ -332,9 +332,7 @@ def test_validate_python_environment_rejects_base_interpreter_without_venv(
     unset_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE")
     unset_env_var(monkeypatch, "VIRTUAL_ENV")
 
-    # the test interpreter's base prefix is not a venv, however tests are run
-    base_exe = Path(sys._base_executable)  # type: ignore[attr-defined]
-    resolved = ResolvedPython(base_exe, "$HCLI_CURRENT_IDA_PYTHON_EXE")
+    resolved = ResolvedPython(get_base_python_exe(), "$HCLI_CURRENT_IDA_PYTHON_EXE")
 
     with pytest.raises(PythonEnvironmentError) as excinfo:
         validate_python_environment(resolved)

@@ -5,6 +5,7 @@ import platform
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -146,6 +147,20 @@ def virtual_ida_environment(temp_hcli_idausr_dir, hook_current_platform, hook_cu
 
 def get_python_exe_for_venv(venv_path: Path) -> Path:
     return venv_path / "Scripts" / "python.exe" if os.name == "nt" else venv_path / "bin" / "python"
+
+
+def get_base_python_exe() -> Path:
+    """The interpreter that the test venv was created from, which itself is not in a venv.
+
+    Located via `sys.base_prefix` because `sys._base_executable` still names the venv
+    interpreter on Python 3.10.
+    """
+    base = Path(sys.base_prefix)
+    candidates = [base / "python.exe"] if os.name == "nt" else [base / "bin" / "python3", base / "bin" / "python"]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError(f"no base interpreter found under {base}")
 
 
 @pytest.fixture

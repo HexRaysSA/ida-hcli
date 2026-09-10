@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 from fixtures import *
-from fixtures import get_python_exe_for_venv, set_env_var, unset_env_var
+from fixtures import get_base_python_exe, get_python_exe_for_venv, set_env_var, unset_env_var
 
 from hcli.commands.ida.python import python as python_group
 from hcli.commands.ida.python.create_environment import CreateEnvironmentError, run_create_environment
@@ -61,8 +61,7 @@ def test_doctor_passes_a_properly_configured_environment(virtual_ida_environment
 
 
 def test_doctor_fails_for_a_base_interpreter(virtual_ida_environment, monkeypatch):
-    base_exe = Path(sys._base_executable)  # type: ignore[attr-defined]
-    set_env_var(monkeypatch, "HCLI_CURRENT_IDA_PYTHON_EXE", str(base_exe))
+    set_env_var(monkeypatch, "HCLI_CURRENT_IDA_PYTHON_EXE", str(get_base_python_exe()))
     unset_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE")
 
     result = _run(["doctor", "--json"])
