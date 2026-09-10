@@ -31,6 +31,7 @@ VENV_PYTHON = VENV / "bin" / "python"
 
 RECOMMENDED_STATE = PythonEnvironmentState(
     python_exe=VENV_PYTHON,
+    python_exe_exists=True,
     source="$IDAPYTHON_VENV_EXECUTABLE",
     system="linux",
     idausr=IDAUSR,
@@ -134,6 +135,26 @@ def test_dangling_venv_exe_var_suppresses_no_venv_exe_var_warning():
     ids = finding_ids(check_python_environment(state))
     assert "venv-exe-not-found" in ids
     assert "no-venv-exe-var" not in ids
+
+
+def test_missing_interpreter_is_an_error_and_skips_downstream_checks():
+    gone = Path("/opt/gone/bin/python3")
+    state = make_state(
+        python_exe=gone,
+        python_exe_exists=False,
+        source="$HCLI_CURRENT_IDA_PYTHON_EXE",
+        venv_root=None,
+        pip_available=False,
+        python_version=None,
+        idapython_venv_executable=None,
+    )
+    findings = check_python_environment(state)
+    ids = finding_ids(findings)
+    assert ids == ["python-exe-not-found"]
+    assert findings[0].severity == "error"
+    assert str(gone) in findings[0].summary
+    assert "$HCLI_CURRENT_IDA_PYTHON_EXE" in findings[0].detail
+    assert identify_setup_pattern(state).id == "missing-interpreter"
 
 
 def test_venv_exe_var_matches_when_naming_a_different_interpreter_alias():
@@ -327,6 +348,7 @@ def test_collect_state_from_a_real_venv_via_venv_executable_var(real_venv: Path,
     resolved = ResolvedPython(exe, "$IDAPYTHON_VENV_EXECUTABLE")
     state = collect_python_environment_state(resolved, probe_ida=False)
 
+    assert state.python_exe_exists
     assert state.venv_root is not None
     assert state.venv_root.resolve() == real_venv.resolve()
     assert state.pip_available is True

@@ -106,6 +106,8 @@ class PythonEnvironmentState:
 
     # the interpreter HCLI would install plugin dependencies with
     python_exe: Path
+    # whether python_exe exists on disk
+    python_exe_exists: bool
     # what selected it, like "$IDAPYTHON_VENV_EXECUTABLE" (see ResolvedPython.source)
     source: str
     system: System
@@ -278,6 +280,7 @@ def collect_python_environment_state(
 
     return PythonEnvironmentState(
         python_exe=python_exe,
+        python_exe_exists=python_exe.is_file(),
         source=resolved.source,
         system=system,
         idausr=idausr,
@@ -374,6 +377,21 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
                 fix_hint=_render_create_environment_hint(state),
             )
         )
+
+    if not state.python_exe_exists:
+        findings.append(
+            EnvironmentFinding(
+                id="python-exe-not-found",
+                severity="error",
+                summary=f"IDA's Python interpreter does not exist: {exe}",
+                detail=(
+                    f"The interpreter was selected by {state.source}, but the file is not on disk. "
+                    "All other checks are skipped because nothing can be determined about a missing interpreter."
+                ),
+                fix_hint=_render_create_environment_hint(state),
+            )
+        )
+        return findings
 
     if state.venv_root is None:
         summary = f"IDA's Python is not a virtual environment: {exe}"
@@ -631,6 +649,16 @@ def identify_setup_pattern(state: PythonEnvironmentState) -> SetupPattern:
             description=(
                 "HCLI runs under `uv run --with`. The virtualenv it sees is uv's temporary overlay, not IDA's "
                 "environment."
+            ),
+        )
+
+    if not state.python_exe_exists:
+        return SetupPattern(
+            id="missing-interpreter",
+            name="Missing interpreter",
+            description=(
+                f"The interpreter selected by {state.source} does not exist on disk. "
+                "No checks can run until this is corrected."
             ),
         )
 
