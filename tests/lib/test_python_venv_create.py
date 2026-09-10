@@ -7,6 +7,7 @@ import pytest
 
 from hcli.lib.ida.python import IdatProbe
 from hcli.lib.ida.python.environment import System, get_venv_python_path
+from hcli.lib.venv import get_python_exe_candidates
 from hcli.lib.ida.python.venv_create import (
     VenvCreationError,
     append_to_shell_profile,
@@ -198,8 +199,8 @@ def test_get_registered_python_exe_skips_non_python_executable(tmp_path: Path):
     idat = tmp_path / "idat"
     idat.write_text("", encoding="utf-8")
 
-    python = tmp_path / "bin" / "python3.13"
-    python.parent.mkdir(parents=True)
+    python = get_python_exe_candidates(tmp_path, "3.13")[0]
+    python.parent.mkdir(parents=True, exist_ok=True)
     python.write_text("", encoding="utf-8")
 
     probe = IdatProbe(
@@ -215,8 +216,8 @@ def test_get_registered_python_exe_skips_non_python_executable(tmp_path: Path):
 
 
 def test_get_registered_python_exe_accepts_real_python_executable(tmp_path: Path):
-    python = tmp_path / "bin" / "python3.12"
-    python.parent.mkdir(parents=True)
+    python = get_python_exe_candidates(tmp_path, "3.12")[0]
+    python.parent.mkdir(parents=True, exist_ok=True)
     python.write_text("", encoding="utf-8")
 
     probe = IdatProbe(
