@@ -5,12 +5,14 @@ from pathlib import Path
 
 import pytest
 
+from hcli.lib.ida.python import IdatProbe
 from hcli.lib.ida.python.environment import System, get_venv_python_path
 from hcli.lib.ida.python.venv_create import (
     VenvCreationError,
     append_to_shell_profile,
     create_virtual_environment,
     detect_shell,
+    get_registered_python_exe,
     get_shell_profile_path,
     inspect_target,
     plan_virtual_environment,
@@ -189,3 +191,41 @@ def test_append_to_shell_profile_creates_parent_dirs(tmp_path: Path):
     profile = tmp_path / ".config" / "fish" / "config.fish"
     assert append_to_shell_profile(profile, 'set -gx X "1"')
     assert profile.read_text() == 'set -gx X "1"\n'
+
+
+def test_get_registered_python_exe_skips_non_python_executable(tmp_path: Path):
+    """IDA 9.4 macOS: sys.executable is the idat binary, not a Python interpreter."""
+    idat = tmp_path / "idat"
+    idat.write_text("", encoding="utf-8")
+
+    python = tmp_path / "bin" / "python3.13"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+
+    probe = IdatProbe(
+        prefix=str(tmp_path),
+        base_prefix=str(tmp_path),
+        executable=str(idat),
+        version_major=3,
+        version_minor=13,
+    )
+
+    result = get_registered_python_exe(probe)
+    assert result == python
+
+
+def test_get_registered_python_exe_accepts_real_python_executable(tmp_path: Path):
+    python = tmp_path / "bin" / "python3.12"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+
+    probe = IdatProbe(
+        prefix=str(tmp_path),
+        base_prefix=str(tmp_path),
+        executable=str(python),
+        version_major=3,
+        version_minor=12,
+    )
+
+    result = get_registered_python_exe(probe)
+    assert result == python
