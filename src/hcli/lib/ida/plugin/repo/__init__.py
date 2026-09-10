@@ -53,7 +53,11 @@ def is_plugin_repo_host(url: str) -> bool:
 
 
 def fetch_plugin_repo_bytes(url: str, repo_name: str | None = None) -> bytes:
-    """Fetch plugin repository content (an index document or an archive) over https.
+    """Fetch plugin repository content: an index document or a plugin archive.
+
+    Accepts http and https, because fetch_plugin_archive routes both here; only
+    https can ever carry credentials, and an https request that redirects to
+    http is refused rather than downgraded.
 
     Credentials are attached only on hops that land on a Hex-Rays plugin
     repository host, where they unlock entitled private plugins -- never to

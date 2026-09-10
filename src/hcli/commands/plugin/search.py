@@ -9,7 +9,7 @@ from typing import Any
 import rich.table
 import rich_click as click
 import semantic_version
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from hcli.lib.console import console, print_json
 from hcli.lib.ida import (
@@ -99,7 +99,7 @@ class KeywordQueryResult(BaseModel):
     # What to know about the repositories consulted: one unreachable, or one
     # that served plugins it is not entitled to. Additive: empty means the
     # results are the whole picture.
-    repository_notes: list[str] = []
+    repository_notes: list[str] = Field(default_factory=list)
 
 
 class AmbiguityErrorResult(BaseModel):
@@ -227,7 +227,7 @@ def collect_version_entries(
                 compatible=is_compatible,
                 currently_installed=currently_installed,
                 upgradable=upgradable,
-            )
+            ),
         )
 
     return entries, (installed_record.version if installed_record is not None else None)
@@ -281,7 +281,11 @@ def collect_plugin_name_query_result(
 ) -> PluginNameQueryResult:
     plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
     entries, installed_version = collect_version_entries(
-        plugin, get_all_versions_newest_first(plugin), current_version, current_platform, installed_records
+        plugin,
+        get_all_versions_newest_first(plugin),
+        current_version,
+        current_platform,
+        installed_records,
     )
     return PluginNameQueryResult(
         plugin=collect_plugin_metadata(get_latest_plugin_metadata(plugin)),
@@ -369,7 +373,11 @@ def collect_plugin_version_range_query_result(
         raise KeyError(f"no versions matching {ref.version_spec!r} found for plugin {plugin.name!r}")
 
     entries, installed_version = collect_version_entries(
-        plugin, matching_versions, current_version, current_platform, installed_records
+        plugin,
+        matching_versions,
+        current_version,
+        current_platform,
+        installed_records,
     )
     return PluginVersionRangeQueryResult(
         plugin=collect_plugin_metadata(plugin.versions[matching_versions[0]][0].metadata),
@@ -436,7 +444,7 @@ def collect_keyword_matches(
                     installed=False,
                     installed_version=None,
                     upgradable=False,
-                )
+                ),
             )
             continue
 
@@ -444,7 +452,7 @@ def collect_keyword_matches(
         installed_record = find_installed_matching(plugin, installed_records)
         installed_version = installed_record.version if installed_record is not None else None
         upgradable = installed_version is not None and parse_plugin_version(
-            latest_compatible_metadata.plugin.version
+            latest_compatible_metadata.plugin.version,
         ) > parse_plugin_version(installed_version)
 
         matches.append(
@@ -457,7 +465,7 @@ def collect_keyword_matches(
                 installed=installed_record is not None,
                 installed_version=installed_version,
                 upgradable=upgradable,
-            )
+            ),
         )
 
     return matches
@@ -475,7 +483,12 @@ def collect_keyword_query_result(
     return KeywordQueryResult(
         query=query or None,
         results=collect_keyword_matches(
-            plugins, query, current_version, current_platform, installed_records, repo_of=repo_of
+            plugins,
+            query,
+            current_version,
+            current_platform,
+            installed_records,
+            repo_of=repo_of,
         ),
         repository_notes=repository_notes or [],
     )
@@ -537,7 +550,6 @@ def _render_repository_notes(result: KeywordQueryResult) -> None:
     common case being a logged-out user, for whom the private repository simply
     is not there.
     """
-
     for note in result.repository_notes:
         console.print(f"[grey69]repository {note}[/grey69]")
 
@@ -622,7 +634,11 @@ def search_plugins(ctx, query: str | None = None, json_output: bool = False) -> 
         try:
             if ref.version_spec:
                 spec_result = collect_plugin_spec_query_result(
-                    plugins, ref, current_version, current_platform, installed_records
+                    plugins,
+                    ref,
+                    current_version,
+                    current_platform,
+                    installed_records,
                 )
                 if json_output:
                     print_json(_dump_result(spec_result))
@@ -630,7 +646,11 @@ def search_plugins(ctx, query: str | None = None, json_output: bool = False) -> 
                     render_plugin_spec_query_text(spec_result)
             else:
                 name_result = collect_plugin_name_query_result(
-                    plugins, ref, current_version, current_platform, installed_records
+                    plugins,
+                    ref,
+                    current_version,
+                    current_platform,
+                    installed_records,
                 )
                 if json_output:
                     print_json(_dump_result(name_result))
