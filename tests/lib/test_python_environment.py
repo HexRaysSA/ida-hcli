@@ -157,6 +157,23 @@ def test_missing_interpreter_is_an_error_and_skips_downstream_checks():
     assert identify_setup_pattern(state).id == "missing-interpreter"
 
 
+def test_missing_probe_derived_interpreter_still_runs_downstream_checks():
+    gone = Path("/opt/homebrew/bin/python3.12")
+    state = make_state(
+        python_exe=gone,
+        python_exe_exists=False,
+        source="derived from idat probe",
+        venv_root=None,
+        pip_available=None,
+        externally_managed=True,
+        idapython_venv_executable=None,
+    )
+    findings = check_python_environment(state)
+    ids = finding_ids(findings)
+    assert "python-exe-not-found" in ids
+    assert "externally-managed" in ids
+
+
 def test_venv_exe_var_matches_when_naming_a_different_interpreter_alias():
     state = make_state(idapython_venv_executable=VENV / "bin" / "python3.12")
     assert venv_executable_points_at(state)
