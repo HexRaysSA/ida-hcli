@@ -32,7 +32,7 @@ Furthermore, HCLI reads the following IDA Pro-related environment variables:
 |-------------------------------|------------------------------------------------------------------|
 | IDAUSR                        | Standard IDA Pro user directory (checked if HCLI_IDAUSR not set) |
 | IDADIR                        | Set by HCLI during IDA Pro execution contexts                    |
-| IDAPYTHON_VENV_EXECUTABLE     | Python interpreter for IDA's virtualenv; used for plugin dependency management when the file exists (lower priority than `HCLI_CURRENT_IDA_PYTHON_EXE`) |
+| IDAPYTHON_VENV_EXECUTABLE     | Python interpreter for IDA's virtualenv. This is the recommended way to tell both IDA and HCLI which Python environment to use. `hcli ida python create-environment` sets it for you. See [IDA's Python Environment](../user-guide/ida-python-environment.md). Lower priority than `HCLI_CURRENT_IDA_PYTHON_EXE`. |
 
 ## Network & API Endpoints
 

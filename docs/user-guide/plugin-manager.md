@@ -48,6 +48,10 @@ They aren't managed by HCLI. Try finding an updated version in the plugin reposi
 
 
 
+## Python environment
+
+Plugins that declare Python dependencies need a working Python environment. HCLI checks this before installing dependencies. If something is wrong, the install stops and points you to `hcli ida python doctor` for details. See [IDA's Python Environment](ida-python-environment.md) for setup.
+
 ## As a user of IDA...
 
 You'll want to know the HCLI commands:

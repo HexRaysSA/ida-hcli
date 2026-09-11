@@ -110,9 +110,12 @@ jobs:
             --yes \
             --accept-eula \
             --set-default \
+            --create-python-environment \
             --license-id ${{ secrets.IDA_LICENSE_ID }} \
             --download-id release/9.2/ida-pro/ida-pro_92_x64linux.run
 ```
+
+`--create-python-environment` creates a virtualenv at `$IDAUSR/venv` and sets `IDAPYTHON_VENV_EXECUTABLE`. Without it, plugins that depend on Python packages will fail to install. See [IDA's Python Environment](../user-guide/ida-python-environment.md).
 
 #### GitHub Actions Secrets
 
@@ -271,6 +274,7 @@ jobs:
             --yes \
             --accept-eula \
             --set-default \
+            --create-python-environment \
             --license-id ${{ secrets.IDA_LICENSE_ID }} \
             --download-id release/${{ matrix.ida-version }}/ida-pro/$INSTALLER
 ```
