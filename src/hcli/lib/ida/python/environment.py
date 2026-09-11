@@ -394,7 +394,7 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
         if state.source == "$HCLI_CURRENT_IDA_PYTHON_EXE":
             return findings
 
-    if state.venv_root is None:
+    if state.venv_root is None and state.python_exe_exists:
         summary = f"IDA's Python is not a virtual environment: {exe}"
         detail = (
             "IDA loads a global Python (system, Homebrew, python.org, or Windows Store). Plugin dependencies "
@@ -431,7 +431,7 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
             )
         )
 
-    if state.pip_available is False:
+    if state.pip_available is False and state.python_exe_exists:
         venv_hint = ""
         if state.venv_root is not None:
             venv_hint = (
@@ -659,7 +659,7 @@ def identify_setup_pattern(state: PythonEnvironmentState) -> SetupPattern:
             name="Missing interpreter",
             description=(
                 f"The interpreter selected by {state.source} does not exist on disk. "
-                "No checks can run until this is corrected."
+                "HCLI cannot install packages or run scripts until this is corrected."
             ),
         )
 
