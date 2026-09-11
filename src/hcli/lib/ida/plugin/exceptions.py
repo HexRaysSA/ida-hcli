@@ -181,3 +181,31 @@ class InstalledPluginNameConflictError(PluginInstallationError):
             f"cannot install plugin '{requested_name}@{requested_host}' because "
             f"'{installed_name}@{installed_host}' is already installed at {installed_path}"
         )
+
+
+class PluginAccessDeniedError(Exception):
+    """A plugin repository refused to serve a resource.
+
+    Raised only for denials by a Hex-Rays plugin repository host, where the
+    status is entitlement-shaped: private plugins are gated on the caller's
+    account. A denial from anywhere else (a deleted GitHub release asset, say)
+    keeps its generic HTTP error, which names the real cause.
+    """
+
+    def __init__(self, url: str, status_code: int, authenticated: bool, repo_name: str | None = None):
+        self.url = url
+        self.status_code = status_code
+        self.authenticated = authenticated
+        self.repo_name = repo_name
+
+        where = f"repository '{repo_name}'" if repo_name else "the plugin repository"
+        msg = f"Access denied (HTTP {status_code}) by {where}. "
+        if not authenticated:
+            msg += f"Run '{ENV.HCLI_BINARY_NAME} login' and try again."
+        elif status_code == 401:
+            # 401 *with* credentials attached means they were rejected -- an
+            # expired session or a revoked key -- not an entitlement problem.
+            msg += f"Your credentials were rejected: run '{ENV.HCLI_BINARY_NAME} login' again, or check HCLI_API_KEY."
+        else:
+            msg += "Your account is not entitled to it."
+        super().__init__(msg)

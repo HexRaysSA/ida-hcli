@@ -88,7 +88,16 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         # when the repository has a colliding name.
         bare_spec = ref.name + ref.version_spec
         logger.info("finding plugin in repository")
-        plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
+        # An upgrade is anchored to the installed name@host, so it may resolve
+        # across every configured repository -- the plugin's identity, not the
+        # default scope, decides which one answers. An explicit prefix narrows
+        # that to one repository, mirroring the @host check above.
+        if ref.repo:
+            from hcli.commands.plugin import repo_for_reference
+
+            plugin_repo: BasePluginRepo = repo_for_reference(ctx, ref)
+        else:
+            plugin_repo = ctx.obj["plugin_repo"]
         try:
             plugin_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
                 bare_spec, current_ida_platform, current_ida_version, host=installed.host
@@ -127,6 +136,17 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
 
     except FailedToDetectIDAVersion:
         explain_failed_to_detect_ida_version(console)
+        raise click.Abort()
+
+    except KeyError as e:
+        # get_plugins() drops repositories it could not consult, so a miss here
+        # may mean "your session expired", not "no such plugin". Say which.
+        logger.debug("error: %s", e, exc_info=True)
+        console.print(f"[red]Error[/red]: {e}")
+        aggregate = ctx.obj.get("plugin_repos")
+        if aggregate is not None:
+            for note in aggregate.notes():
+                console.print(f"[yellow]Warning:[/yellow] repository {note}")
         raise click.Abort()
 
     except click.Abort:

@@ -148,6 +148,17 @@ class AuthService:
         self._load_auth_config()
         self._load_current_credentials()
 
+    def ensure_initialized(self) -> None:
+        """Initialize on first use; no-op once init() has run.
+
+        Lets optional-auth callers -- the plugin repository fetch, which runs
+        outside @require_auth/AuthCommand -- see the stored credentials without
+        every command wiring init() explicitly, while still respecting an
+        earlier init(forced_credentials=...) from an auth-aware command.
+        """
+        if self._auth_config is None:
+            self.init()
+
     def _load_auth_config(self) -> None:
         """Load credentials configuration."""
         config_data = config_store.get_object(CONFIG_CREDENTIALS)
@@ -641,6 +652,41 @@ class AuthService:
 
 
 # Global auth service instance accessor
+def get_credential_headers() -> dict[str, str]:
+    """Map the current credentials onto request headers.
+
+    The one place that knows which header shape each credential type uses.
+    Says nothing about whether being logged out is acceptable -- that is the
+    caller's policy, and it differs: an API call requires credentials, while a
+    plugin repository serves anonymous and personalized responses alike.
+    """
+    auth_service = get_auth_service()
+
+    if auth_service.get_auth_type()["type"] == CredentialType.INTERACTIVE:
+        token = auth_service.get_access_token()
+        if token:
+            return {"Authorization": f"Bearer {token}"}
+    else:
+        api_key = auth_service.get_api_key()
+        if api_key:
+            return {"x-api-key": api_key}
+
+    return {}
+
+
+def get_optional_auth_headers() -> dict[str, str]:
+    """Credential headers, or {} when logged out.
+
+    For endpoints that answer both anonymously and personally, where being
+    logged out is an ordinary state rather than an error.
+    """
+    auth_service = get_auth_service()
+    auth_service.ensure_initialized()
+    if not auth_service.is_logged_in():
+        return {}
+    return get_credential_headers()
+
+
 def get_auth_service() -> AuthService:
     """Get the global AuthService instance."""
     return AuthService.instance()

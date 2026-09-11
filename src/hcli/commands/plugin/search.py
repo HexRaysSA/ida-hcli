@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import rich.table
 import rich_click as click
 import semantic_version
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from hcli.lib.console import console, print_json
 from hcli.lib.ida import (
@@ -84,6 +84,9 @@ class KeywordMatchEntry(BaseModel):
     name: str
     version: str
     repository: str | None
+    # Which configured repository served this plugin. None under --repo, where
+    # there is only one and naming it would be noise.
+    repo: str | None = None
     compatible: bool
     installed: bool
     installed_version: str | None
@@ -93,6 +96,10 @@ class KeywordMatchEntry(BaseModel):
 class KeywordQueryResult(BaseModel):
     query: str | None
     results: list[KeywordMatchEntry]
+    # What to know about the repositories consulted: one unreachable, or one
+    # that served plugins it is not entitled to. Additive: empty means the
+    # results are the whole picture.
+    repository_notes: list[str] = Field(default_factory=list)
 
 
 class AmbiguityErrorResult(BaseModel):
@@ -220,7 +227,7 @@ def collect_version_entries(
                 compatible=is_compatible,
                 currently_installed=currently_installed,
                 upgradable=upgradable,
-            )
+            ),
         )
 
     return entries, (installed_record.version if installed_record is not None else None)
@@ -274,7 +281,11 @@ def collect_plugin_name_query_result(
 ) -> PluginNameQueryResult:
     plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
     entries, installed_version = collect_version_entries(
-        plugin, get_all_versions_newest_first(plugin), current_version, current_platform, installed_records
+        plugin,
+        get_all_versions_newest_first(plugin),
+        current_version,
+        current_platform,
+        installed_records,
     )
     return PluginNameQueryResult(
         plugin=collect_plugin_metadata(get_latest_plugin_metadata(plugin)),
@@ -362,7 +373,11 @@ def collect_plugin_version_range_query_result(
         raise KeyError(f"no versions matching {ref.version_spec!r} found for plugin {plugin.name!r}")
 
     entries, installed_version = collect_version_entries(
-        plugin, matching_versions, current_version, current_platform, installed_records
+        plugin,
+        matching_versions,
+        current_version,
+        current_platform,
+        installed_records,
     )
     return PluginVersionRangeQueryResult(
         plugin=collect_plugin_metadata(plugin.versions[matching_versions[0]][0].metadata),
@@ -407,6 +422,7 @@ def collect_keyword_matches(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
+    repo_of: Callable[[Plugin], str | None] | None = None,
 ) -> list[KeywordMatchEntry]:
     matches: list[KeywordMatchEntry] = []
 
@@ -415,6 +431,7 @@ def collect_keyword_matches(
             continue
 
         latest_metadata = get_latest_plugin_metadata(plugin)
+        repo = repo_of(plugin) if repo_of is not None else None
 
         if not is_compatible_plugin(plugin, current_platform, current_version):
             matches.append(
@@ -422,11 +439,12 @@ def collect_keyword_matches(
                     name=latest_metadata.plugin.name,
                     version=latest_metadata.plugin.version,
                     repository=latest_metadata.plugin.urls.repository,
+                    repo=repo,
                     compatible=False,
                     installed=False,
                     installed_version=None,
                     upgradable=False,
-                )
+                ),
             )
             continue
 
@@ -434,7 +452,7 @@ def collect_keyword_matches(
         installed_record = find_installed_matching(plugin, installed_records)
         installed_version = installed_record.version if installed_record is not None else None
         upgradable = installed_version is not None and parse_plugin_version(
-            latest_compatible_metadata.plugin.version
+            latest_compatible_metadata.plugin.version,
         ) > parse_plugin_version(installed_version)
 
         matches.append(
@@ -442,11 +460,12 @@ def collect_keyword_matches(
                 name=latest_metadata.plugin.name,
                 version=latest_metadata.plugin.version,
                 repository=latest_metadata.plugin.urls.repository,
+                repo=repo,
                 compatible=True,
                 installed=installed_record is not None,
                 installed_version=installed_version,
                 upgradable=upgradable,
-            )
+            ),
         )
 
     return matches
@@ -458,18 +477,41 @@ def collect_keyword_query_result(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
+    repo_of: Callable[[Plugin], str | None] | None = None,
+    repository_notes: list[str] | None = None,
 ) -> KeywordQueryResult:
     return KeywordQueryResult(
         query=query or None,
-        results=collect_keyword_matches(plugins, query, current_version, current_platform, installed_records),
+        results=collect_keyword_matches(
+            plugins,
+            query,
+            current_version,
+            current_platform,
+            installed_records,
+            repo_of=repo_of,
+        ),
+        repository_notes=repository_notes or [],
     )
 
 
-def render_keyword_query_text(result: KeywordQueryResult) -> None:
+def _display_name(match: KeywordMatchEntry, default_repo: str | None) -> str:
+    """The string a user must type to install this result.
+
+    A plugin from the default repository installs by bare name; anything else
+    needs its "repo/" prefix, so showing the prefix here is not decoration, it
+    is the command.
+    """
+    if match.repo and match.repo != default_repo:
+        return f"{match.repo}/{match.name}"
+    return match.name
+
+
+def render_keyword_query_text(result: KeywordQueryResult, default_repo: str | None = None) -> None:
     matches = result.results
 
     if not matches:
         console.print("[grey69]No plugins found[/grey69]")
+        _render_repository_notes(result)
         return
 
     table = rich.table.Table(show_header=False, box=None)
@@ -479,9 +521,10 @@ def render_keyword_query_text(result: KeywordQueryResult) -> None:
     table.add_column("repo", style="grey69")
 
     for match in matches:
+        label = _display_name(match, default_repo)
         if not match.compatible:
             table.add_row(
-                f"[grey69]{match.name} (incompatible)[/grey69]",
+                f"[grey69]{label} (incompatible)[/grey69]",
                 f"[grey69]{match.version}[/grey69]",
                 "",
                 match.repository,
@@ -494,9 +537,21 @@ def render_keyword_query_text(result: KeywordQueryResult) -> None:
         elif match.installed:
             status = "installed"
 
-        table.add_row(f"[blue]{match.name}[/blue]", match.version, status, match.repository)
+        table.add_row(f"[blue]{label}[/blue]", match.version, status, match.repository)
 
     console.print(table)
+    _render_repository_notes(result)
+
+
+def _render_repository_notes(result: KeywordQueryResult) -> None:
+    """Say which repositories did not contribute, after the results.
+
+    Silence would misrepresent an incomplete search as an empty one -- the
+    common case being a logged-out user, for whom the private repository simply
+    is not there.
+    """
+    for note in result.repository_notes:
+        console.print(f"[grey69]repository {note}[/grey69]")
 
 
 def _has_exact_name_match(plugins: list[Plugin], name: str) -> bool:
@@ -547,25 +602,43 @@ def search_plugins(ctx, query: str | None = None, json_output: bool = False) -> 
             console.print()
 
         plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
+        aggregate = ctx.obj.get("plugin_repos")
+        default_repo = ctx.obj.get("default_plugin_repo")
+
+        # Searching is a survey: it spans every configured repository, ignoring
+        # the default, and reports the ones it could not reach rather than
+        # failing on them.
         plugins: list[Plugin] = plugin_repo.get_plugins()
+        repo_of = aggregate.repo_of if aggregate is not None else None
+        repository_notes = aggregate.notes() if aggregate is not None else []
         installed_records = get_installed_plugin_records()
 
         ref = resolve_query_reference(plugins, query)
 
         if ref is None:
             keyword_result = collect_keyword_query_result(
-                plugins, query or "", current_version, current_platform, installed_records
+                plugins,
+                query or "",
+                current_version,
+                current_platform,
+                installed_records,
+                repo_of=repo_of,
+                repository_notes=repository_notes,
             )
             if json_output:
                 print_json(_dump_result(keyword_result))
             else:
-                render_keyword_query_text(keyword_result)
+                render_keyword_query_text(keyword_result, default_repo=default_repo)
             return
 
         try:
             if ref.version_spec:
                 spec_result = collect_plugin_spec_query_result(
-                    plugins, ref, current_version, current_platform, installed_records
+                    plugins,
+                    ref,
+                    current_version,
+                    current_platform,
+                    installed_records,
                 )
                 if json_output:
                     print_json(_dump_result(spec_result))
@@ -573,7 +646,11 @@ def search_plugins(ctx, query: str | None = None, json_output: bool = False) -> 
                     render_plugin_spec_query_text(spec_result)
             else:
                 name_result = collect_plugin_name_query_result(
-                    plugins, ref, current_version, current_platform, installed_records
+                    plugins,
+                    ref,
+                    current_version,
+                    current_platform,
+                    installed_records,
                 )
                 if json_output:
                     print_json(_dump_result(name_result))

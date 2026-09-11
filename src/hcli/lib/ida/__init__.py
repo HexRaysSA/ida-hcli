@@ -19,9 +19,11 @@ from typing import Any, Literal, NamedTuple
 
 import rich.console
 from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
+from rich.markup import escape
 
 from hcli.env import ENV
+from hcli.lib.console import stderr_console
 from hcli.lib.ida.version import parse_version_from_ida_binary
 from hcli.lib.util.io import NoSpaceError, check_free_space, get_os
 from hcli.lib.venv import resolve_user_virtual_env
@@ -746,8 +748,14 @@ def _copy_dir(src_path: Path, dest_path: Path) -> None:
                 raise
 
 
+# extra="allow" on every model in the ida-config.json tree: the file is IDA's
+# own, so keys hcli does not model must survive a read -> mutate -> write
+# round-trip. pydantic's default extra="ignore" would silently drop them on
+# every writer (plugin config set/delete, ida switch, the repo migration).
+
+
 class PathsConfig(BaseModel):
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+    model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
     # like: "/Applications/IDA Professional 9.1.app" (macOS)
     # Note: IDA itself may write the inner "Contents/MacOS" path here;
@@ -755,21 +763,68 @@ class PathsConfig(BaseModel):
     installation_directory: Path | None = Field(alias="ida-install-dir", default=None)
 
 
-class PluginRepositoryConfig(BaseModel):
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+# The single-repository setting written by hcli <= 0.22, kept only so the
+# migration can recognise and replace it.
+LEGACY_PLUGIN_REPOSITORY_URL = (
+    "https://raw.githubusercontent.com/HexRaysSA/plugin-repository/refs/heads/v1/plugin-repository.json"
+)
 
-    url: str = Field(
-        default="https://raw.githubusercontent.com/HexRaysSA/plugin-repository/refs/heads/v1/plugin-repository.json",
-    )
+# The two repositories hcli ships. Reserved: always present, always these URLs,
+# so a config file cannot repoint "hexrays" at a host of its own choosing and
+# harvest the credentials that name attracts.
+COMMUNITY_REPO_NAME = "community"
+HEXRAYS_REPO_NAME = "hexrays"
+RESERVED_PLUGIN_REPOSITORIES = {
+    COMMUNITY_REPO_NAME: "https://community.plugins.hex-rays.com/plugin-repository.json",
+    HEXRAYS_REPO_NAME: "https://hexrays.plugins.hex-rays.com/plugin-repository.json",
+}
+
+# Repository names appear as a "repo/" prefix on plugin references, so they must
+# not collide with the plugin-name grammar or need quoting. The character class
+# is shared with the reference parser, which peels that prefix.
+PLUGIN_REPOSITORY_NAME_CHARS = "a-z0-9-"
+PLUGIN_REPOSITORY_NAME_RE = re.compile(rf"^[{PLUGIN_REPOSITORY_NAME_CHARS}]+$")
+
+
+class PluginRepositoryConfig(BaseModel):
+    model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
+
+    url: str = Field(default="")
 
 
 class SettingsConfig(BaseModel):
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+    model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
-    plugin_repository: PluginRepositoryConfig = Field(alias="plugin-repository", default_factory=PluginRepositoryConfig)
+    # The pre-0.23 single-repository setting. Retained on the model so the
+    # migration can read it; removed from the file once migrated.
+    plugin_repository: PluginRepositoryConfig | None = Field(alias="plugin-repository", default=None)
+
+    plugin_repositories: dict[str, PluginRepositoryConfig] = Field(alias="plugin-repositories", default_factory=dict)
+
+    # Names the repository that resolves references carrying no "repo/" prefix.
+    # A sibling key rather than a member of the map, so a repository may
+    # legitimately be called "default".
+    default_plugin_repository: str | None = Field(alias="default-plugin-repository", default=None)
+
+    @model_serializer(mode="wrap")
+    def _drop_retired_keys(self, handler):
+        """Omit the retired single-repository key instead of writing it as null.
+
+        plugin_repository is Optional only so the migration can read it. Once
+        it holds nothing it should leave the file entirely, rather than linger
+        as a dead `"plugin-repository": null` in IDA's own config. Keeping this
+        on the model means set_ida_config stays a generic writer that knows
+        nothing about individual settings.
+        """
+        doc = handler(self)
+        if doc.get("plugin-repository") is None:
+            doc.pop("plugin-repository", None)
+        return doc
 
 
 class PluginConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")  # type: ignore
+
     # `ida-plugin.json` `.plugin.settings` describes the schema for these settings.
     settings: dict[str, str | bool] = Field(default_factory=dict)
 
@@ -778,7 +833,7 @@ class PluginConfig(BaseModel):
 class IDAConfigJson(BaseModel):
     """IDA configuration $IDAUSR/ida-config.json"""
 
-    model_config = ConfigDict(serialize_by_alias=True)  # type: ignore
+    model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
     version: Literal[1] | None = Field(alias="Version", default=1)
     paths: PathsConfig = Field(alias="Paths", default_factory=PathsConfig)
@@ -812,6 +867,124 @@ def set_ida_config(config: IDAConfigJson):
         ida_config_path.parent.mkdir(parents=True, exist_ok=True)
 
     _ = ida_config_path.write_text(config.model_dump_json(), encoding="utf-8")
+
+
+@dataclass(frozen=True)
+class PluginRepository:
+    """A named plugin repository: where to look, and what to call it."""
+
+    name: str
+    url: str
+    reserved: bool
+
+
+def _migrate_plugin_repositories(config: IDAConfigJson) -> bool:
+    """Bring a pre-0.23 single-repository config up to the named-repository map.
+
+    Returns True when the config was changed and should be written back.
+
+    One-shot by construction: the legacy ``plugin-repository`` key is removed by
+    the rewrite, so this cannot re-trigger and needs no marker. A user who had
+    customised that URL keeps it -- as a repository named "custom" that becomes
+    the default -- because it is far more likely to be a repository of their own
+    than a mirror of ours, and pointing the default at it is what preserves
+    their unprefixed installs.
+    """
+    settings = config.settings
+    if settings.plugin_repositories:
+        return False
+
+    legacy = settings.plugin_repository
+    if legacy is None:
+        # Nothing to migrate: a fresh install with no config file, or a config
+        # that never carried the setting. The reserved repositories are
+        # synthesized on read, so there is no reason to create or rewrite the
+        # file -- a read-only command must not announce a change it had no
+        # cause to make.
+        return False
+
+    legacy_url = legacy.url
+    customised = bool(legacy_url) and legacy_url != LEGACY_PLUGIN_REPOSITORY_URL
+
+    repos = {name: PluginRepositoryConfig(url=url) for name, url in RESERVED_PLUGIN_REPOSITORIES.items()}
+    default = COMMUNITY_REPO_NAME
+
+    if customised:
+        name = "custom"
+        suffix = 2
+        while name in repos:
+            name = f"custom-{suffix}"
+            suffix += 1
+        repos[name] = PluginRepositoryConfig(url=legacy_url)
+        default = name
+
+    settings.plugin_repositories = repos
+    settings.default_plugin_repository = default
+    settings.plugin_repository = None
+    return True
+
+
+def get_plugin_repositories(config: IDAConfigJson | None = None) -> dict[str, PluginRepository]:
+    """The configured plugin repositories, keyed by name.
+
+    Migrates a pre-0.23 config on first read. The two reserved repositories are
+    always present with their shipped URLs: a file that tries to redefine them
+    is ignored on that point and told so, since the whole value of a reserved
+    name is that it cannot be pointed somewhere else.
+    """
+    if config is None:
+        config = get_ida_config()
+
+    if _migrate_plugin_repositories(config):
+        logger.info("migrating ida-config.json to named plugin repositories")
+        try:
+            set_ida_config(config)
+        except OSError as e:
+            # A read-only $IDAUSR must not break every plugin command; the new
+            # layout still applies in memory for this process. Deliberately
+            # quiet: the migration is retried on the next command, and
+            # announcing a change that did not happen -- every time -- is worse
+            # than saying nothing.
+            logger.warning("could not persist plugin repository migration to %s: %s", get_ida_config_path(), e)
+        else:
+            stderr_console.print(
+                f"[yellow]Note:[/yellow] {get_ida_config_path()} was updated to the new named plugin repository layout."
+            )
+
+    repos: dict[str, PluginRepository] = {}
+    for name, entry in config.settings.plugin_repositories.items():
+        if name in RESERVED_PLUGIN_REPOSITORIES:
+            continue
+        if not PLUGIN_REPOSITORY_NAME_RE.match(name):
+            # escape(): the pattern contains a character class, which Rich
+            # would otherwise consume as markup and print as "^+$".
+            stderr_console.print(
+                f"[yellow]Warning:[/yellow] ignoring plugin repository {name!r}: "
+                f"names must match {escape(PLUGIN_REPOSITORY_NAME_RE.pattern)}"
+            )
+            continue
+        if not entry.url:
+            stderr_console.print(f"[yellow]Warning:[/yellow] ignoring plugin repository {name!r}: no url")
+            continue
+        repos[name] = PluginRepository(name=name, url=entry.url, reserved=False)
+
+    for name, url in RESERVED_PLUGIN_REPOSITORIES.items():
+        configured = config.settings.plugin_repositories.get(name)
+        if configured is not None and configured.url and configured.url != url:
+            stderr_console.print(
+                f"[yellow]Warning:[/yellow] ignoring the url configured for reserved plugin repository "
+                f"{name!r}; it always resolves to {url}"
+            )
+        repos[name] = PluginRepository(name=name, url=url, reserved=True)
+
+    return repos
+
+
+def get_default_plugin_repository_name(config: IDAConfigJson | None = None) -> str:
+    """The repository resolving references that carry no ``repo/`` prefix."""
+    if config is None:
+        config = get_ida_config()
+    return config.settings.default_plugin_repository or COMMUNITY_REPO_NAME
 
 
 class MissingCurrentInstallationDirectory(ValueError):

@@ -11,7 +11,9 @@ import hcli.lib.ida.plugin.repo.file
 import hcli.lib.ida.plugin.repo.fs
 import hcli.lib.ida.plugin.repo.github
 from hcli.lib.console import console
-from hcli.lib.ida import get_ida_config
+from hcli.lib.ida import get_default_plugin_repository_name, get_ida_config, get_plugin_repositories
+from hcli.lib.ida.plugin.reference import PluginReference
+from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo, is_plugin_bundle_zip
 from hcli.lib.ida.python import PipOptions
 
@@ -96,16 +98,22 @@ def plugin(
     plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo
     try:
         if repo is None:
-            config = get_ida_config()
-
-            url = config.settings.plugin_repository.url
-            if not url:
+            # One read of ida-config.json for both the map and the default.
+            ida_config = get_ida_config()
+            repositories = get_plugin_repositories(ida_config)
+            if not repositories:
                 console.print(
-                    "[red]Missing plugin repository URL[/red]. Provide this in ida-config.json (.Settings.plugin-repository.url)"
+                    "[red]No plugin repositories configured[/red]. "
+                    "Provide these in ida-config.json (.Settings.plugin-repositories)"
                 )
                 raise click.Abort()
 
-            plugin_repo = hcli.lib.ida.plugin.repo.file.JSONFilePluginRepo.from_url(url)
+            # Repositories are fetched lazily, so building the aggregate costs
+            # nothing until a command actually looks something up.
+            aggregate = AggregatePluginRepo(repositories)
+            ctx.obj["plugin_repos"] = aggregate
+            ctx.obj["default_plugin_repo"] = get_default_plugin_repository_name(ida_config)
+            plugin_repo = aggregate
 
         elif repo == "github":
             try:
@@ -155,19 +163,73 @@ def plugin(
         if repo == "github":
             console.print("[red]Cannot connect to GitHub - network unavailable.[/red]")
         elif repo is None:
-            config = get_ida_config()
-            url = config.settings.plugin_repository.url
-            console.print(f"[red]Cannot connect to plugin repository at {url} - network unavailable.[/red]")
+            console.print("[red]Cannot connect to the plugin repositories - network unavailable.[/red]")
         else:
             console.print("[red]Cannot connect to plugin repository - network unavailable.[/red]")
         console.print("Please check your internet connection.")
         raise click.Abort()
 
     ctx.obj["plugin_repo"] = plugin_repo
+    ctx.obj.setdefault("plugin_repos", None)
 
     if offline and not pip_find_links and not isinstance(plugin_repo, PluginBundleRepo):
         console.print("[red]--offline requires --pip-find-links or a plugin bundle repository[/red]")
         raise click.Abort()
+
+
+def repo_for_reference(ctx: click.Context, ref: PluginReference) -> hcli.lib.ida.plugin.repo.BasePluginRepo:
+    """The repository a reference should be resolved against.
+
+    Unprefixed references resolve in the default repository; a "repo/" prefix
+    resolves in that repository alone. Under an explicit --repo there is only
+    one repository to search, so a prefix has nothing to select and is refused
+    rather than silently ignored.
+    """
+    aggregate: AggregatePluginRepo | None = ctx.obj.get("plugin_repos")
+
+    if aggregate is None:
+        if ref.repo:
+            console.print(
+                f"[red]Cannot use the repository prefix '{ref.repo}/' with --repo[/red]: "
+                f"--repo already selects the only repository searched."
+            )
+            raise click.Abort()
+        return ctx.obj["plugin_repo"]
+
+    name = ref.repo or ctx.obj["default_plugin_repo"]
+    if name not in aggregate.repositories:
+        if ref.repo:
+            known = ", ".join(sorted(aggregate.repositories)) or "none"
+            console.print(f"[red]Unknown plugin repository '{ref.repo}'[/red]. Configured: {known}")
+        else:
+            console.print(
+                f"[red]The default plugin repository '{name}' is not configured[/red]. "
+                f"Fix .Settings.default-plugin-repository in ida-config.json."
+            )
+        raise click.Abort()
+
+    # A named scope is a request for THAT repository: if it cannot be reached,
+    # that is the answer, not a quietly smaller search.
+    try:
+        plugins = aggregate.get_plugins_in(name)
+    except (httpx.ConnectError, httpx.TimeoutException):
+        # The group callback used to catch this when it did the fetching. The
+        # fetch moved here, and httpx connection errors often stringify to "",
+        # so without this the user gets a bare "Error:".
+        console.print(
+            f"[red]Cannot connect to plugin repository '{name}' at "
+            f"{aggregate.repositories[name].url} - network unavailable.[/red]"
+        )
+        console.print("Please check your internet connection.")
+        raise click.Abort()
+
+    # The survey path reports these through the search result; on this path
+    # there is no result to carry them, so say it here rather than drop a
+    # plugin silently.
+    for note in aggregate.notes():
+        console.print(f"[yellow]Warning:[/yellow] repository {note}")
+
+    return hcli.lib.ida.plugin.repo.file.JSONFilePluginRepo(plugins)
 
 
 plugin.add_command(get_plugin_status, name="status")

@@ -8,6 +8,8 @@ Accepted forms:
     name==1.2.3
     name@https://github.com/org/repo
     name==1.2.3@https://github.com/org/repo
+    repo/name
+    repo/name==1.2.3@https://github.com/org/repo
 
 The module is intentionally free of Click/Rich so it can be unit tested easily.
 """
@@ -18,10 +20,15 @@ import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-# whole-string match for a GitHub repository URL in the shape allowed by
-# ``ida-plugin.json`` (see ``URLs.validate_github_url`` in
-# ``src/hcli/lib/ida/plugin/__init__.py``). Trailing slash optional.
-_GITHUB_REPO_RE = re.compile(r"^https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/?$", re.IGNORECASE)
+from hcli.lib.ida import PLUGIN_REPOSITORY_NAME_CHARS
+from hcli.lib.ida.plugin import GITHUB_REPOSITORY_PATTERN, PORTAL_REPOSITORY_PATTERN
+
+# The shapes that may identify a plugin, taken from the schema module that
+# validates them: one definition, so a reference hcli parses and an identity
+# hcli accepts can never drift apart. Compiled case-insensitively here because
+# a user typing a reference is not held to the casing a descriptor declares.
+_GITHUB_REPO_RE = re.compile(GITHUB_REPOSITORY_PATTERN, re.IGNORECASE)
+_PORTAL_REPO_RE = re.compile(PORTAL_REPOSITORY_PATTERN, re.IGNORECASE)
 
 # broader match that also accepts ``.git`` suffix and ``@tag`` for direct
 # installs (e.g. ``https://github.com/org/repo.git@v1.0``).
@@ -32,6 +39,13 @@ _GITHUB_DIRECT_INSTALL_RE = re.compile(
 )
 
 
+# A leading "repo/" scopes the lookup. The character class comes from the
+# config module that validates repository names, so a name hcli accepts is
+# always a prefix hcli can parse. Plugin names are ``^[a-zA-Z0-9_-]+$``, so a
+# "/" can only ever be this separator.
+_REPO_PREFIX_RE = re.compile(rf"^([{PLUGIN_REPOSITORY_NAME_CHARS}]+)/(.+)$")
+
+
 @dataclass(frozen=True)
 class PluginReference:
     """A parsed plugin reference.
@@ -39,12 +53,17 @@ class PluginReference:
     Attributes:
         name: bare plugin name.
         version_spec: version specifier with operator (``"==1.2.3"``), or ``""`` when absent.
-        host: normalized repository URL, or ``None`` when unqualified.
+        host: normalized code repository URL, or ``None`` when unqualified.
+        repo: configured plugin repository name to search, or ``None`` for the default.
+            Lookup scope only: it is dropped once the plugin is resolved and is
+            never stored, because where a plugin was found is not part of what
+            it is.
     """
 
     name: str
     version_spec: str
     host: str | None
+    repo: str | None = None
 
 
 def is_github_repository_url(value: str) -> bool:
@@ -56,6 +75,17 @@ def is_github_repository_url(value: str) -> bool:
     a reference, not a raw URL, so we use a strict whole-string match here.
     """
     return bool(_GITHUB_REPO_RE.match(value))
+
+
+def is_plugin_host_url(value: str) -> bool:
+    """Return True if ``value`` can appear after ``@`` in a plugin reference.
+
+    Accepts every shape that can identify a plugin: a GitHub repository, or a
+    Hex-Rays portal page. Note this is deliberately wider than
+    ``is_github_direct_install_url``, which stays GitHub-only because it guards
+    "this string is a raw URL, not a reference".
+    """
+    return bool(_GITHUB_REPO_RE.match(value) or _PORTAL_REPO_RE.match(value))
 
 
 def is_github_direct_install_url(value: str) -> bool:
@@ -158,13 +188,22 @@ def parse_plugin_reference(value: str) -> PluginReference:
     if is_github_direct_install_url(value):
         raise ValueError(f"value is a GitHub URL, not a plugin reference: {value!r}")
 
+    # Peel the repository prefix first. No URL can be mistaken for one: the
+    # pattern requires every character before the first "/" to be [a-z0-9-],
+    # which "https://..." (colon) and "name@https://..." (at-sign, colon) both
+    # fail, so a scheme can never parse as a repository name.
+    repo: str | None = None
+    prefix_match = _REPO_PREFIX_RE.match(value)
+    if prefix_match:
+        repo, value = prefix_match.group(1), prefix_match.group(2)
+
     host: str | None = None
     remaining = value
     if "@" in value:
         left, _, right = value.rpartition("@")
-        if not is_github_repository_url(right):
+        if not is_plugin_host_url(right):
             raise ValueError(
-                f"plugin reference has an '@' but the suffix is not a valid GitHub repository URL: {value!r}"
+                f"plugin reference has an '@' but the suffix is not a valid plugin repository URL: {value!r}"
             )
         host = normalize_plugin_host(right)
         remaining = left
@@ -176,21 +215,23 @@ def parse_plugin_reference(value: str) -> PluginReference:
     if not name:
         raise ValueError(f"plugin reference has empty name: {value!r}")
 
-    return PluginReference(name=name, version_spec=version_spec, host=host)
+    if "/" in name:
+        raise ValueError(f"plugin reference name must not contain '/': {name!r}")
+
+    return PluginReference(name=name, version_spec=version_spec, host=host, repo=repo)
 
 
 def format_qualified_plugin_reference(ref: PluginReference) -> str:
     """Render a plugin reference in its canonical user-facing string form.
 
     Formats:
-        name@repo
-        name==1.2.3@repo
+        name@host
+        name==1.2.3@host
+        repo/name==1.2.3@host
     """
-    if not ref.host:
-        if ref.version_spec:
-            return f"{ref.name}{ref.version_spec}"
-        return ref.name
+    prefix = f"{ref.repo}/" if ref.repo else ""
 
-    if ref.version_spec:
-        return f"{ref.name}{ref.version_spec}@{ref.host}"
-    return f"{ref.name}@{ref.host}"
+    if not ref.host:
+        return f"{prefix}{ref.name}{ref.version_spec}"
+
+    return f"{prefix}{ref.name}{ref.version_spec}@{ref.host}"
