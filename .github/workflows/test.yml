@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           bash .github/scripts/retry.sh 5 20 \
-            uv run hcli --disable-updates ida install --download-id "ida-pro:latest" --license-id "${IDA_LICENSE_ID}" --install-dir="${{ runner.temp }}/app/ida" --create-python-environment --set-default --accept-eula --yes
+            uv run hcli --disable-updates ida install --download-id "ida-pro:latest" --license-id "${IDA_LICENSE_ID}" --install-dir="${{ runner.temp }}/app/ida" --set-default --accept-eula --yes
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
