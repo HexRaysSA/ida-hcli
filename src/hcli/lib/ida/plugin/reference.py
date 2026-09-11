@@ -54,7 +54,7 @@ class PluginReference:
         name: bare plugin name.
         version_spec: version specifier with operator (``"==1.2.3"``), or ``""`` when absent.
         host: normalized code repository URL, or ``None`` when unqualified.
-        repo: configured repository name to search, or ``None`` for the default.
+        repo: configured plugin repository name to search, or ``None`` for the default.
             Lookup scope only: it is dropped once the plugin is resolved and is
             never stored, because where a plugin was found is not part of what
             it is.
