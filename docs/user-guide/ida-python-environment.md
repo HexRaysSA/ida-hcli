@@ -40,6 +40,8 @@ HCLI never deletes or modifies an existing directory. If `$IDAUSR/venv` is alrea
 
 On macOS, shell profiles do not apply to IDA started from Finder or the Dock. For that, run `launchctl setenv IDAPYTHON_VENV_EXECUTABLE <path>`, or start IDA from a terminal.
 
+In Docker containers, the system Python is not writable (PEP 668 externally-managed), so you still need a venv. Use `--create-python-environment` when installing IDA and set `IDAPYTHON_VENV_EXECUTABLE` in the Dockerfile. See [Docker](../advanced/docker/README.md) for a working example.
+
 ## Checking the setup
 
 `hcli ida python doctor` reports which IDA and which interpreter HCLI resolved. It names the setup it recognizes and lists each difference from the recommended setup, with a fix:

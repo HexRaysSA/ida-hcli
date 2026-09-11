@@ -140,14 +140,16 @@ $ hcli ida install --help
  Installs IDA unattended.
 
 ╭─ Options ──────────────────────────────────────────────────────────────────────────╮
-│ --yes          -y        Auto-accept confirmation prompts                          │
-│ --dry-run                Show what would be done without actually installing       │
-│ --set-default            Mark this IDA installation as the default                 │
-│ --accept-eula  -a        Accept EULA                                               │
-│ --install-dir  -i  TEXT  Install dir                                               │
-│ --license-id   -l  TEXT  License ID (e.g., 96-0000-0000-01)                        │
-│ --download-id  -d  TEXT  Installer slug                                            │
-│ --help                   Show this message and exit.                               │
+│ --create-python-environment  After installing IDA, create a virtual environment   │
+│                              for its Python at $IDAUSR/venv                        │
+│ --yes          -y            Auto-accept confirmation prompts                      │
+│ --dry-run                    Show what would be done without actually installing   │
+│ --set-default                Mark this IDA installation as the default             │
+│ --accept-eula  -a            Accept EULA                                           │
+│ --install-dir  -i  TEXT      Install dir                                           │
+│ --license-id   -l  TEXT      License ID (e.g., 96-0000-0000-01)                    │
+│ --download-id  -d  TEXT      Installer slug                                        │
+│ --help                       Show this message and exit.                           │
 ╰────────────────────────────────────────────────────────────────────────────────────╯
 ```
    
@@ -156,12 +158,13 @@ Now lets run the automated installer, which doesn't show any dialog or popups - 
 Note:
 
   - we're setting this as the "default" IDA installation, so this is what idalib and the plugin manager will use
+  - `--create-python-environment` sets up a virtualenv for IDAPython at `$IDAUSR/venv` and configures `IDAPYTHON_VENV_EXECUTABLE`; plugins that need Python packages are installed here
   - in this example we set `--dry-run`, but you should remove this in real-life
   - HCLI also fetches and installs the associated license key file so everything's ready to go
    
 
 ```bash
-$ hcli ida install --set-default --accept-eula --license-id 96-0000-0000-01 ida-pro_92_armmac.app.zip --dry-run
+$ hcli ida install --set-default --create-python-environment --accept-eula --license-id 96-0000-0000-01 ida-pro_92_armmac.app.zip --dry-run
 
 Installation details:
   Installer: /Users/user/code/hex-rays/ida-hcli/ida-pro_92_armmac.app.zip
@@ -183,7 +186,7 @@ Note the use of `--download-id release/9.2/ida-pro/ida-pro_92_armmac.app.zip`, t
   
 
 ```bash
-$ hcli ida install --set-default --license-id 96-0000-0000-01 --download-id release/9.2/ida-pro/ida-pro_92_armmac.app.zip --dry-run
+$ hcli ida install --set-default --create-python-environment --license-id 96-0000-0000-01 --download-id release/9.2/ida-pro/ida-pro_92_armmac.app.zip --dry-run
 
 Getting download URL for: release/9.2/ida-pro/ida-pro_92_armmac.app.zip
 Starting download of release/9.2/ida-pro/ida-pro_92_armmac.app.zip...
@@ -344,5 +347,6 @@ They aren't managed by hcli. Try finding an updated version in the plugin reposi
 
 ## Next Steps
 
+- [IDA's Python Environment](../user-guide/ida-python-environment.md) - Check and manage the Python environment that IDA and plugins use
 - [License Management](../user-guide/licenses.md) - Managing your IDA licenses
 - [File Sharing](../user-guide/file-sharing.md) - Share and collaborate on files
