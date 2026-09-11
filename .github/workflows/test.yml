@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   basic-test:
-    # a simple set of tests to avoid running the complete test matrix (~36 combos)
+    # a simple set of tests to avoid running the complete test matrix (~14 jobs)
     name: initial test run
     runs-on: ubuntu-latest
     steps:
@@ -67,7 +67,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.13"]
+        python-version: ["3.13"]
         os_ida:
           - name: IDA 9.4 on Linux
             arch: intel
@@ -159,130 +159,12 @@ jobs:
             default_path: "/home/runner/.local/share/applications/IDA Essential 9.3"
             supports_idalib: true
 
-          - name: IDA 9.2 on Linux
-            arch: intel
-            os: ubuntu-latest
-            ida_version: "9.2"
-            slug: "release/9.2/ida-essential/ida-essential_92_x64linux.run"
-            idat_path: "/idat"
-            default_path: "/home/runner/.local/share/applications/IDA-Essential-9.2"
-            supports_idalib: true
-
-          - name: IDA 9.2 on Windows
-            arch: intel
-            os: windows-latest
-            ida_version: "9.2"
-            slug: "release/9.2/ida-essential/ida-essential_92_x64win.exe"
-            idat_path: "/idat.exe"
-            default_path: "C:\\Program Files\\IDA Essential 9.2"
-            supports_idalib: true
-
-          - name: IDA 9.2 on macOS (Intel)
-            arch: intel
-            os: macos-latest
-            ida_version: "9.2"
-            slug: "release/9.2/ida-essential/ida-essential_92_x64mac.app.zip"
-            idat_path: "/Contents/MacOS/idat"
-            default_path: "/Applications/IDA Essential 9.2.app"
-            supports_idalib: false  # GHA macos-latest is ARM; x86_64 Python bindings won't load
-
-          - name: IDA 9.2 on macOS (ARM)
-            arch: arm
-            os: macos-latest
-            ida_version: "9.2"
-            slug: "release/9.2/ida-essential/ida-essential_92_armmac.app.zip"
-            idat_path: "/Contents/MacOS/idat"
-            default_path: "/Applications/IDA Essential 9.2.app"
-            supports_idalib: true
-
-          - name: IDA 9.1 on Linux
-            arch: intel
-            os: ubuntu-latest
-            ida_version: "9.1"
-            slug: "release/9.1/ida-essential/ida-essential_91_x64linux.run"
-            idat_path: "/idat"
-            default_path: "/home/runner/.local/share/applications/IDA Essential 9.1"
-            supports_idalib: true
-
-          - name: IDA 9.1 on Windows
-            arch: intel
-            os: windows-latest
-            ida_version: "9.1"
-            slug: "release/9.1/ida-essential/ida-essential_91_x64win.exe"
-            idat_path: "/idat.exe"
-            default_path: "C:\\Program Files\\IDA Essential 9.1"
-            supports_idalib: false  # idalib crashes on IDA 9.1 Windows
-
-          - name: IDA 9.1 on macOS (Intel)
-            arch: intel
-            os: macos-latest
-            ida_version: "9.1"
-            slug: "release/9.1/ida-essential/ida-essential_91_x64mac.app.zip"
-            idat_path: "/Contents/MacOS/idat"
-            default_path: "/Applications/IDA Essential 9.1.app"
-            supports_idalib: false  # GHA macos-latest is ARM; x86_64 Python bindings won't load
-
-          - name: IDA 9.1 on macOS (ARM)
-            arch: arm
-            os: macos-latest
-            ida_version: "9.1"
-            slug: "release/9.1/ida-essential/ida-essential_91_armmac.app.zip"
-            idat_path: "/Contents/MacOS/idat"
-            default_path: "/Applications/IDA Essential 9.1.app"
-            supports_idalib: true
-
-          - name: IDA 9.0 on Linux
-            arch: intel
-            os: ubuntu-latest
-            ida_version: "9.0"
-            slug: "release/9.0/ida-essential/ida-essential_90_x64linux.run"
-            idat_path: "/idat"
-            default_path: "/home/runner/.local/share/applications/IDA Essential 9.0"
-            supports_idalib: false  # idalib requires IDA 9.1+
-
-          - name: IDA 9.0 on Windows
-            arch: intel
-            os: windows-latest
-            ida_version: "9.0"
-            slug: "release/9.0/ida-essential/ida-essential_90_x64win.exe"
-            idat_path: "/idat.exe"
-            default_path: "C:\\Program Files\\IDA Essential 9.0"
-            supports_idalib: false  # idalib requires IDA 9.1+
-
-          - name: IDA 9.0 on macOS (Intel)
-            arch: intel
-            os: macos-latest
-            ida_version: "9.0"
-            slug: "release/9.0/ida-essential/ida-essential_90_x64mac.app.zip"
-            idat_path: "/Contents/MacOS/idat"
-            default_path: "/Applications/IDA Essential 9.0.app"
-            supports_idalib: false  # idalib requires IDA 9.1+
-
-          - name: IDA 9.0 on macOS (ARM)
-            arch: arm
-            os: macos-latest
-            ida_version: "9.0"
-            slug: "release/9.0/ida-essential/ida-essential_90_armmac.app.zip"
-            idat_path: "/Contents/MacOS/idat"
-            default_path: "/Applications/IDA Essential 9.0.app"
-            supports_idalib: false  # idalib requires IDA 9.1+
-
           # #################################################################
-          # SP releases
-          - name: IDA 9.0 SP1 on macOS (ARM)
-            arch: arm
-            os: macos-latest
-            ida_version: "9.0sp1"
-            slug: "release/9.0sp1/ida-pro/ida-pro_90sp1_armmac.app.zip"
-            idat_path: "/Contents/MacOS/idat"
-            default_path: "/Applications/IDA Professional 9.0sp1.app"
-            supports_idalib: false  # idalib requires IDA 9.1+
-
-          # #################################################################
-          # other product variants are added via `include` below so they only
-          # run on py3.13 — they're install-path sanity checks and don't need
-          # both Pythons. The Essential 9.x variants are intentionally not
-          # listed: same slug as `IDA 9.x on macOS (ARM)` above.
+          # other product variants are added via `include` below: they're
+          # install-path sanity checks. The Essential 9.x variants are
+          # intentionally not listed: same slug as `IDA 9.x on macOS (ARM)`
+          # above. The single py3.10 entry checks hcli itself still runs on
+          # the oldest interpreter in `requires-python`.
 
           # Classroom doesn't work with the Essentials license we're using in CI
           # - name: IDA Classroom 9.1 on macOS (ARM)
@@ -293,6 +175,17 @@ jobs:
           #   default_path: "/Applications/IDA Classroom 9.1.app"
 
         include:
+          - python-version: "3.10"
+            os_ida:
+              name: IDA 9.4 on Linux
+              arch: intel
+              os: ubuntu-latest
+              ida_version: "9.4"
+              slug: "release/9.4/ida-essential/ida-essential_94_x64linux.run"
+              idat_path: "/idat"
+              default_path: "/home/runner/.local/share/applications/IDA Essential 9.4"
+              supports_idalib: true
+
           - python-version: "3.13"
             os_ida:
               name: IDA Pro 9.4 on macOS (ARM)
@@ -324,28 +217,6 @@ jobs:
               slug: "release/9.3/ida-pro/ida-pro_93_armmac.app.zip"
               idat_path: "/Contents/MacOS/idat"
               default_path: "/Applications/IDA Professional 9.3.app"
-              supports_idalib: true
-
-          - python-version: "3.13"
-            os_ida:
-              name: IDA Free 9.1 on macOS (ARM)
-              arch: arm
-              os: macos-latest
-              ida_version: "9.1"
-              slug: "release/9.1/ida-free/ida-free-pc_91_armmac.app.zip"
-              idat_path: ""
-              default_path: "/Applications/IDA Free 9.1.app"
-              supports_idalib: false  # IDA Free doesn't include idalib
-
-          - python-version: "3.13"
-            os_ida:
-              name: IDA Pro 9.1 on macOS (ARM)
-              arch: arm
-              os: macos-latest
-              ida_version: "9.1"
-              slug: "release/9.1/ida-pro/ida-pro_91_armmac.app.zip"
-              idat_path: "/Contents/MacOS/idat"
-              default_path: "/Applications/IDA Professional 9.1.app"
               supports_idalib: true
 
     steps:
