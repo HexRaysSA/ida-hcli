@@ -94,20 +94,21 @@ Analysis complete!
 ### Installed Components
 - IDA Pro 9.2 Professional (x64 Linux) - installed to `/opt/ida`
 - IDA Pro license (`.hexlic` file) - copied to `/root/.idapro/`
-- Python packages:
+- Python virtualenv at `/root/.idapro/venv` with:
   - `idapro`: IDA Pro Python bindings
   - `ida-domain`: High-level IDA analysis API
 
 ### Environment Variables
 - `IDADIR=/opt/ida`: IDA installation directory
+- `IDAPYTHON_VENV_EXECUTABLE=/root/.idapro/venv/bin/python`: Python interpreter for IDA's virtualenv
 - `PATH`: Includes `/opt/ida` for IDA binaries
 
 ### Build Process
 The Dockerfile uses a multi-stage build:
 1. **base**: Python 3.13-slim with curl and ca-certificates
 2. **hcli-installer**: Downloads and installs hcli standalone binary
-3. **ida-installer**: Uses hcli to download and install IDA Pro, configures license
-4. **final**: Copies IDA installation and license, installs Python packages, adds entrypoint
+3. **ida-installer**: Uses hcli to download and install IDA Pro with `--create-python-environment`, configures license
+4. **final**: Copies IDA installation with its license and venv, installs Python packages into the venv, adds entrypoint
 
 ## Security Considerations
 

@@ -29,12 +29,13 @@ ARG IDA_INSTALL_DIR=/opt/ida
 RUN if [ -z "$HCLI_API_KEY" ]; then echo "Error: HCLI_API_KEY build argument is required" && exit 1; fi
 RUN if [ -z "$IDA_LICENSE_ID" ]; then echo "Error: IDA_LICENSE_ID build argument is required" && exit 1; fi
 
-# Install IDA Pro
+# Install IDA Pro and create the Python environment
 ENV HCLI_API_KEY=${HCLI_API_KEY}
 RUN hcli --disable-updates ida install \
     --download-id ${IDA_DOWNLOAD_ID} \
     --license-id ${IDA_LICENSE_ID} \
     --install-dir ${IDA_INSTALL_DIR} \
+    --create-python-environment \
     --yes && \
     mkdir -p /root/.idapro && \
     find /tmp -name "*.hexlic" -exec cp {} /root/.idapro/ \; && \
@@ -51,10 +52,11 @@ COPY --from=ida-installer /root/.idapro /root/.idapro
 # Set environment variables for IDA
 ENV PATH="${IDA_INSTALL_DIR}:${PATH}"
 ENV IDADIR="${IDA_INSTALL_DIR}"
+ENV IDAPYTHON_VENV_EXECUTABLE="/root/.idapro/venv/bin/python"
 ENV TVHEADLESS=1
 
-# Install Python dependencies
-RUN pip install --no-cache-dir \
+# Install Python dependencies into the IDA venv
+RUN /root/.idapro/venv/bin/python -m pip install --no-cache-dir \
     idapro \
     ida-domain
 
@@ -66,7 +68,7 @@ COPY entrypoint.py /usr/local/bin/entrypoint.py
 RUN chmod +x /usr/local/bin/entrypoint.py
 
 # Set entrypoint
-ENTRYPOINT ["python", "/usr/local/bin/entrypoint.py"]
+ENTRYPOINT ["/root/.idapro/venv/bin/python", "/usr/local/bin/entrypoint.py"]
 
 # Default: show help if no arguments provided
 CMD ["--help"]
