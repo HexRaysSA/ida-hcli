@@ -33,6 +33,12 @@ from hcli.lib.console import console
     help="Comma-separated list of allowed email addresses",
 )
 @click.option(
+    "--allowed-editions",
+    required=False,
+    default=None,
+    help="Comma-separated list of allowed editions (edition ids such as ida-pro, addon codes such as HEXX64, or any_edition)",
+)
+@click.option(
     "-f",
     "--force",
     is_flag=True,
@@ -45,6 +51,7 @@ async def put(
     metadata: tuple[str, ...],
     allowed_segments: str | None,
     allowed_emails: str | None,
+    allowed_editions: str | None,
     force: bool = False,
 ) -> None:
     """Upload an asset to a bucket."""
@@ -84,11 +91,13 @@ async def put(
 
     segments = allowed_segments.split(",") if allowed_segments else None
     emails = allowed_emails.split(",") if allowed_emails else None
+    editions = allowed_editions.split(",") if allowed_editions else None
     result = await asset.upload_asset(
         bucket=bucket,
         file_path=str(path),
         allowed_segments=segments,
         allowed_emails=emails,
+        allowed_editions=editions,
         metadata=metadata_dict,
         force=force,
     )
