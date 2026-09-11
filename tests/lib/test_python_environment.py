@@ -172,6 +172,8 @@ def test_missing_probe_derived_interpreter_still_runs_downstream_checks():
     ids = finding_ids(findings)
     assert "python-exe-not-found" in ids
     assert "externally-managed" in ids
+    assert "no-venv" not in ids
+    assert "no-pip" not in ids
 
 
 def test_venv_exe_var_matches_when_naming_a_different_interpreter_alias():
