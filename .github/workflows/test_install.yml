@@ -53,7 +53,7 @@ jobs:
       - name: Test IDA installation command (Unix)
         if: runner.os != 'Windows'
         run: |
-          hcli --disable-updates ida install --yes --download-id ${{ matrix.install-id }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --accept-eula --set-default
+          hcli --disable-updates ida install --yes --download-id ${{ matrix.install-id }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --create-python-environment --accept-eula --set-default
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
@@ -61,7 +61,7 @@ jobs:
       - name: Test IDA installation command (Windows)
         if: runner.os == 'Windows'
         run: |
-          hcli --disable-updates ida install --yes --download-id ${{ matrix.install-id }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --accept-eula --set-default
+          hcli --disable-updates ida install --yes --download-id ${{ matrix.install-id }} --license-id ${{ secrets.IDA_LICENSE_ID }} --install-dir "${{ runner.temp }}/app/ida/" --create-python-environment --accept-eula --set-default
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
