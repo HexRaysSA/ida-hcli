@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           bash .github/scripts/retry.sh 5 20 \
-            uv run hcli --disable-updates ida install --download-id "ida-pro:latest" --license-id "${IDA_LICENSE_ID}" --install-dir="${{ runner.temp }}/app/ida" --set-default --accept-eula --yes
+            uv run hcli --disable-updates ida install --download-id "ida-pro:latest" --license-id "${IDA_LICENSE_ID}" --install-dir="${{ runner.temp }}/app/ida" --create-python-environment --set-default --accept-eula --yes
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
@@ -379,7 +379,7 @@ jobs:
         shell: bash
         run: |
           bash .github/scripts/retry.sh 5 20 \
-            uv run hcli --disable-updates ida install --download-id "${{ matrix.os_ida.slug }}" --license-id "${IDA_LICENSE_ID}" --accept-eula --set-default --yes
+            uv run hcli --disable-updates ida install --download-id "${{ matrix.os_ida.slug }}" --license-id "${IDA_LICENSE_ID}" --create-python-environment --accept-eula --set-default --yes
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
@@ -404,7 +404,7 @@ jobs:
         shell: bash
         run: |
           bash .github/scripts/retry.sh 5 20 \
-            uv run hcli --disable-updates ida install --download-id "${{ matrix.os_ida.slug }}" --license-id "${IDA_LICENSE_ID}" --install-dir "${{ runner.temp }}/app/ida-${{ matrix.os_ida.ida_version }}/" --accept-eula --set-default --yes
+            uv run hcli --disable-updates ida install --download-id "${{ matrix.os_ida.slug }}" --license-id "${IDA_LICENSE_ID}" --install-dir "${{ runner.temp }}/app/ida-${{ matrix.os_ida.ida_version }}/" --create-python-environment --accept-eula --set-default --yes
         env:
           HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
