@@ -553,7 +553,7 @@ def format_environment_warnings(findings: list[EnvironmentFinding]) -> str:
     lines.extend(
         [
             f"Run `{ENV.HCLI_BINARY_NAME} ida python doctor` for details and fixes.",
-            "To skip this check, pass `--no-python-environment-check` to the command group.",
+            f"To skip this check: `{ENV.HCLI_BINARY_NAME} plugin --no-python-environment-check install <name>`",
         ]
     )
     return "\n".join(lines)
@@ -567,7 +567,7 @@ def format_environment_findings_plain(findings: list[EnvironmentFinding]) -> str
     lines.extend(
         [
             f"Run '{ENV.HCLI_BINARY_NAME} ida python doctor' for details and fixes.",
-            "To skip this check, pass --no-python-environment-check to the command group.",
+            f"To skip this check: {ENV.HCLI_BINARY_NAME} plugin --no-python-environment-check install <name>",
         ]
     )
     return "\n".join(lines)
