@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to HCLI are documented here and in the [GitHub Releases](https://github.com/HexRaysSA/ida-hcli/releases).
+All changes to HCLI are documented here and in the [GitHub Releases](https://github.com/HexRaysSA/ida-hcli/releases).
 
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -24,6 +24,17 @@ This changelog follows the [Keep a Changelog](https://keepachangelog.com/en/1.0.
 - **Security** - Security improvements and vulnerability fixes
 
 For complete details including contributors and full diffs, see the [GitHub Releases page](https://github.com/HexRaysSA/ida-hcli/releases).
+
+## [0.24.0]
+
+### Added
+- Named plugin repositories with two defaults: `community` (public, anonymous) and `hexrays` (private, requires login with an active IDA license). Custom repositories can be added with `hcli plugin repo add`.
+- `hcli plugin repo list | add | remove | set-default` commands for managing repositories.
+- `repo/name` syntax for installing plugins from a specific repository, e.g. `hcli plugin install hexrays/some-plugin`.
+
+### Changed
+- Community plugins are fetched from the Hex-Rays portal (`community.plugins.hex-rays.com`).
+- `hcli plugin search` spans all configured repositories and reports any it could not reach.
 
 ## [0.12.6] - 2025-10-23
 

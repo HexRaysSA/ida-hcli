@@ -2,12 +2,17 @@
 
 ## Core Components
 
-1. **User-facing portal showcasing the plugins** - The [plugins.hex-rays.com](https://plugins.hex-rays.com/) is a web interface to the collection of available IDA Pro plugins.
-2. **JSON Index** - The new plugin repository publishes a JSON document within [github.com/HexRaysSA/plugin-repository](https://github.com/HexRaysSA/plugin-repository). This file is the index of all available plugins, their versions and metadata, and download URLs.
-3. **GitHub Actions** - GitHub Actions runs regularly to update the JSON document with plugins discovered across GitHub. The raw index data is available [here](https://raw.githubusercontent.com/HexRaysSA/plugin-repository/refs/heads/v1/plugin-repository.json).
-4. **Named repositories** - hcli reads its repositories from `.Settings.plugin-repositories` in `ida-config.json` and merges them client-side, so it always knows which repository served a plugin. Two are shipped and reserved: `community` (`https://community.plugins.hex-rays.com/plugin-repository.json`, anonymous) and `hexrays` (`https://hexrays.plugins.hex-rays.com/plugin-repository.json`, which requires `hcli login` and serves only the private plugins your account is entitled to). Manage the rest with `hcli plugin repo list | add | remove | set-default`.
+The plugin system has several components:
 
-    A reference may name a repository: `hcli plugin install hexrays/<name>`. Without a prefix it resolves in the repository named by `.Settings.default-plugin-repository` (`community` by default), while `hcli plugin search` spans every configured repository and reports any it could not reach.
+[plugins.hex-rays.com](https://plugins.hex-rays.com/) is a web interface showing the available IDA plugins.
+
+A **GitHub indexer** ([github.com/HexRaysSA/plugin-repository](https://github.com/HexRaysSA/plugin-repository)) runs regularly, discovers plugins across public GitHub repositories, and publishes a JSON index. The raw index data is available [on GitHub](https://raw.githubusercontent.com/HexRaysSA/plugin-repository/refs/heads/v1/plugin-repository.json).
+
+The **community repository** at `community.plugins.hex-rays.com` mirrors this GitHub index. HCLI fetches from this URL by default. The **hexrays repository** at `hexrays.plugins.hex-rays.com` serves private plugins published by Hex-Rays, available to users with active IDA licenses. It requires authentication via `hcli login`.
+
+HCLI reads its repositories from `.Settings.plugin-repositories` in `ida-config.json` and merges them client-side, so it always knows which repository served a plugin. Two are shipped and reserved: `community` (anonymous) and `hexrays` (authenticated). Additional repositories can be managed with `hcli plugin repo list | add | remove | set-default`. See [Plugin Manager](../user-guide/plugin-manager.md#plugin-repositories) for usage.
+
+A reference may name a repository: `hcli plugin install hexrays/<name>`. Without a prefix, it resolves in the default repository (`community`). `hcli plugin search` spans every configured repository and reports any it could not reach.
 
 
 ## How It Works
@@ -25,7 +30,7 @@ The service will index all the found archives and their metadata, and expose thi
 
 ## IDA Plugin Manager
 
-HCLI uses the plugin repository JSON file to list/search for plugins and retrieve the download URL.
+HCLI fetches the plugin repository JSON from each configured repository to list/search for plugins and retrieve download URLs.
 After various validation steps, HCLI then extracts the archive subdirectory containing
  `ida-plugin.json` into `$IDAUSR/plugins/`, and the plugin is installed.
 If there are Python dependencies declared within the metadata file, then these are installed via pip first.

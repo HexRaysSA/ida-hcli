@@ -35,7 +35,7 @@ For further details on how your plugin fits into the greater ecosystem, you can 
   - [Plugin repository architecture](./plugin-repository-architecture.md)
 
 
-The plugin ecosystem is fully automated. After you publish a new GitHub release with updated metadata, your plugin will automatically be indexed and made available to IDA users.
+The community plugin ecosystem is fully automated. After you publish a new GitHub release with updated metadata, your plugin is automatically indexed and served through the `community` plugin repository.
 
 
 ### 1. Update or create `ida-plugin.json`
@@ -239,13 +239,11 @@ For example, we used it to kickstart the [build of the BinDiff plugin](https://g
 
 ### 3. Publish releases on GitHub
 
-In the near term, you must use GitHub Releases to tag releases, because the plugin repository backend (initially) uses GitHub to discover and index available plugins.
-You'll need to upload the plugin archives as attachments to the release (unless the default source archive is sufficient, which is usually true for pure-Python plugins).
+The community plugin index is built from GitHub. Publish releases on GitHub with valid `ida-plugin.json` files and the indexer will pick them up automatically.
 
-Each day, an indexer looks for GitHub repositories that contain `ida-plugin.json` and inspects the releases for candidate plugins.
-So once you've updated the metadata file and made a new release in GitHub, your plugin will soon show up automatically!
+Upload plugin archives as attachments to the release (unless the default source archive is sufficient, which is usually true for pure-Python plugins). Each day, the indexer scans GitHub for repositories containing `ida-plugin.json` and inspects their releases for candidate plugins. The indexed results are served through the `community` plugin repository at `community.plugins.hex-rays.com`.
 
-In other words, inclusion into the plugin repository is completely self-service - it's just a matter of putting a well-formed plugin in a place we can find it.
+Inclusion into the community repository is self-service: put a well-formed plugin in a place the indexer can find it.
 
 !!! tip "Test your plugin"
 
@@ -256,10 +254,7 @@ In other words, inclusion into the plugin repository is completely self-service 
 
 ### Do I need to submit my plugin anywhere?
 
-No, if you're using GitHub Releases to share plugin ZIP archives with valid `ida-plugin.json` files, then your plugins should be auto-included into the Hex-Rays plugin repository!
-While there used to be an explicit submission process via My Hex-Rays portal, we've moved to a self-service flow that's (hopefully) open and transparent.
-
-In the future, we may re-open a web form or accept PRs to add plugins not hosted on GitHub, but this isn't supported quite yet.
+No. If you publish GitHub Releases with valid `ida-plugin.json` files, your plugin is automatically indexed into the `community` repository. The flow is self-service and open.
 
 ### What do I do if my plugin doesn't show up in the repo?
 
