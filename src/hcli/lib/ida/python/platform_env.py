@@ -406,6 +406,19 @@ def _write_file_step(step: ConfigurationStep) -> StepResult:
     return StepResult(step, success=True, skipped=False, message=f"Created {step.file_path}")
 
 
+def _make_profile_prefix(line: str) -> str:
+    """Extract the assignment prefix so we can find stale lines for the same variable.
+
+    ``export FOO="bar"`` -> ``export FOO=``
+    ``set -gx FOO "bar"`` -> ``set -gx FOO ``
+    """
+    for sep in ("=", " "):
+        parts = line.split(sep, 2)
+        if len(parts) >= 2:
+            return parts[0] + sep
+    return line
+
+
 def _append_to_profile(step: ConfigurationStep) -> StepResult:
     assert step.file_path is not None
     assert step.file_content is not None
@@ -417,7 +430,19 @@ def _append_to_profile(step: ConfigurationStep) -> StepResult:
         if line in existing.splitlines():
             return StepResult(step, success=True, skipped=True, message=f"{step.file_path} already contains this line")
 
+    prefix = _make_profile_prefix(line)
+    old_lines = existing.splitlines(keepends=True) if existing else []
+    stale = [i for i, l in enumerate(old_lines) if l.rstrip("\n").startswith(prefix)]
+
     step.file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if stale:
+        old_lines[stale[0]] = line + "\n"
+        for i in reversed(stale[1:]):
+            del old_lines[i]
+        step.file_path.write_text("".join(old_lines), encoding="utf-8")
+        return StepResult(step, success=True, skipped=False, message=f"Updated {step.file_path}")
+
     with step.file_path.open("a", encoding="utf-8") as f:
         if existing and not existing.endswith("\n"):
             f.write("\n")
