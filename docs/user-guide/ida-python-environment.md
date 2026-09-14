@@ -32,11 +32,11 @@ HCLI will:
 Apply these changes? [y/n] (y):
 ```
 
-The command asks IDA, through `idat`, which Python version it runs. It then creates the venv with `uv venv --seed` when `uv` is installed. Otherwise it uses the standard library `venv` module and `ensurepip`. HCLI shows a plan of the changes it will make. In an interactive terminal it asks for confirmation; in scripts and CI it applies them automatically. Pass `--no-configure` to skip the configuration step entirely.
+The command asks IDA, through `idat`, which Python version it runs. It then creates the venv with `uv venv --seed` when `uv` is installed. Otherwise it uses the standard library `venv` module and `ensurepip`. HCLI shows a plan of the changes it will make. In an interactive terminal it asks for confirmation; in scripts and CI it applies them automatically. Pass `--no-configure-env-var` to skip the configuration step entirely.
 
 Options:
 
-- `--no-configure` skips the question about `IDAPYTHON_VENV_EXECUTABLE`.
+- `--no-configure-env-var` skips setting `IDAPYTHON_VENV_EXECUTABLE`. Only creates the virtual environment.
 - `--no-reinstall-plugins` skips reinstalling Python dependencies for existing plugins.
 - `--path` selects another location.
 - `--python-version X.Y` gives the version when `idat` is not available.
