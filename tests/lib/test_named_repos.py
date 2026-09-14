@@ -113,6 +113,33 @@ def _make_fs_repo(tmp_path: Path) -> Path:
     return d
 
 
+# --- block_network fixture sanity checks ---
+
+
+def test_block_network_blocks_in_process_http(block_network):
+    """The block_network fixture must prevent in-process HTTP requests (httpx)."""
+    import httpx
+
+    with pytest.raises((httpx.ConnectError, httpx.ProxyError)):
+        httpx.get("http://example.com", timeout=5)
+
+
+def test_block_network_blocks_subprocess_http(block_network):
+    """The block_network fixture must prevent subprocess HTTP requests (urllib)."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import urllib.request; urllib.request.urlopen('http://example.com', timeout=5)"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "ProxyError" in result.stderr or "URLError" in result.stderr or "ConnectionRefusedError" in result.stderr
+
+
 # --- repo_from_url dispatch ---
 
 
