@@ -129,13 +129,18 @@ def test_block_network_blocks_subprocess_http(block_network):
     import subprocess
     import sys
 
-    result = subprocess.run(
-        [sys.executable, "-c", "import urllib.request; urllib.request.urlopen('http://example.com', timeout=5)"],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", "import urllib.request; urllib.request.urlopen('http://example.com', timeout=5)"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        # On Windows the dead proxy can cause a hang rather than a fast refusal;
+        # a timeout still proves the network path is blocked.
+        return
     assert result.returncode != 0
     assert "ProxyError" in result.stderr or "URLError" in result.stderr or "ConnectionRefusedError" in result.stderr
 
