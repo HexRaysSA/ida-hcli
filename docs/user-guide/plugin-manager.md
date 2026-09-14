@@ -95,6 +95,13 @@ removed plugin repository 'my-team'
 
 The `community` and `hexrays` names are reserved and always point to their Hex-Rays URLs. Custom repositories can be added, renamed, or removed freely.
 
+For offline or air-gapped environments like FLARE-VM, you can point HCLI at a local [plugin bundle](../reference/plugin-bundle-spec.md) instead of the online repositories. Pass `--repo` with a path to the bundle archive, and `search`, `install`, and `upgrade` all resolve from that local file without network access.
+
+```console
+❯ hcli plugin --repo ./malware-vm-tools.hcli-plugin-bundle.zip search
+❯ hcli plugin --repo ./malware-vm-tools.hcli-plugin-bundle.zip install hint-calls
+```
+
 ## As a user of IDA...
 
 You'll want to know the HCLI commands:
