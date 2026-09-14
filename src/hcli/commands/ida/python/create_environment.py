@@ -438,8 +438,8 @@ def create_environment(
     --no-reinstall-plugins to skip this step.
 
     Nothing outside the target directory changes without your consent. HCLI
-    shows the exact shell profile line (or setx command on Windows) first.
-    You can decline and apply it yourself.
+    shows a plan of the changes it will make and asks for confirmation.
+    You can decline and apply them yourself.
     """
     result = run_create_environment(
         path=path,

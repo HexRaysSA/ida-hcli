@@ -4,51 +4,12 @@ HCLI sets IDAPYTHON_VENV_EXECUTABLE so that IDA loads the correct virtual
 environment regardless of how it starts: terminal, Dock, Start Menu, or
 desktop file.  The mechanism differs by OS and session type.
 
-The logic is split into three layers:
+Three layers:
 
-  1. **Platform detection** — pure predicates that inspect the runtime
-     environment: `is_windows`, `is_macos`, `is_linux`, `has_systemd_user`,
-     `detect_session_type`, `detect_login_shell`.
-
-  2. **Plan** — `build_configuration_plan` reads the predicates and returns a
-     `ConfigurationPlan`: steps to execute, warnings about coverage gaps, and
-     manual instructions for anything HCLI cannot automate.
-
-  3. **Execute** — `execute_configuration_plan` carries out the plan: writes
-     files, runs commands, and reports what happened.
-
-Why environment variables (not a config file):
-  IDA 9.0-9.4 has no config-file hook that is read before the Python
-  interpreter loads.  IDAPYTHON_VENV_EXECUTABLE is already recognized by IDA.
-  A config-file mechanism may arrive in IDA 9.5+; until then, env vars are the
-  only option that works across all IDA editions and launch contexts.
-
-Platform coverage:
-
-  Windows     — user environment variable via PowerShell .NET API.
-                Covers GUI and terminal.  No gaps.
-
-  macOS       — LaunchAgent plist (GUI) + shell login profile (terminal).
-                Gap: unknown shell -> no terminal profile written.
-
-  Linux       — Two independent mechanisms needed:
-                GUI:      ~/.config/environment.d/ on systemd distros.
-                          No reliable mechanism on non-systemd distros.
-                Terminal: shell login profile.
-                          Gap: unknown shell -> no profile written.
-
-Edge cases that produce warnings (HCLI tells the user what it cannot do):
-
-  - Unknown shell (any OS): HCLI cannot write a shell profile.  The user
-    must set the export in their shell's login file manually.
-
-  - Non-systemd Linux: environment.d is not written (nothing would read it).
-    The shell profile may or may not reach graphical sessions depending on
-    the display manager.  Under Wayland without systemd, there is no reliable
-    user-level mechanism; the user must configure their compositor.
-
-  - Non-systemd Linux + unknown shell: no automated mechanism at all.  HCLI
-    provides manual instructions only.
+  1. **Platform detection** — pure predicates (OS, shell, systemd, session).
+  2. **Plan** — `build_configuration_plan` returns steps, warnings, and
+     manual instructions without side effects.
+  3. **Execute** — `execute_configuration_plan` carries out the plan.
 """
 
 from __future__ import annotations
@@ -89,7 +50,7 @@ def detect_session_type() -> SessionType:
         return "wayland"
     if os.environ.get("DISPLAY"):
         return "x11"
-    if os.environ.get("TERM") and not os.environ.get("DISPLAY"):
+    if os.environ.get("TERM"):
         return "tty"
     return "unknown"
 
@@ -153,13 +114,6 @@ class ConfigurationStep:
     command: list[str] | None
     needs_logout: bool
 
-    def render_summary(self) -> str:
-        if self.file_path is not None:
-            return f"Write {self.file_path}"
-        if self.command is not None:
-            return f"Run: {' '.join(self.command)}"
-        return self.description
-
 
 @dataclass(frozen=True)
 class ConfigurationPlan:
@@ -181,7 +135,7 @@ LAUNCHAGENT_TEMPLATE = """\
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.hex-rays.idapython-venv</string>
+    <string>com.hex-rays.idapython-venv-executable</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/launchctl</string>
@@ -236,7 +190,7 @@ def _build_macos_plan(name: str, value: str, home: Path) -> ConfigurationPlan:
     shell = detect_login_shell()
     profile = get_login_profile_path(shell, home)
 
-    plist_path = home / "Library" / "LaunchAgents" / "com.hex-rays.idapython-venv.plist"
+    plist_path = home / "Library" / "LaunchAgents" / "com.hex-rays.idapython-venv-executable.plist"
     plist_content = LAUNCHAGENT_TEMPLATE.format(name=name, value=value)
 
     steps.extend(
@@ -502,7 +456,8 @@ def execute_configuration_plan(plan: ConfigurationPlan) -> list[StepResult]:
     results: list[StepResult] = []
     for step in plan.steps:
         results.append(execute_step(step))
-    os.environ[plan.env_var_name] = plan.env_var_value
+    if any(r.success for r in results):
+        os.environ[plan.env_var_name] = plan.env_var_value
     return results
 
 
@@ -531,7 +486,6 @@ def verify_env_var_in_subprocess(name: str, expected: str) -> bool | None:
             text=True,
             timeout=5.0,
             check=False,
-            env={**os.environ, name: expected},
         )
         return result.returncode == 0 and result.stdout.strip() == expected
     except (subprocess.SubprocessError, OSError):

@@ -107,7 +107,7 @@ def test_macos_plan_has_launchagent_launchctl_and_profile():
     assert "shell-profile" in kinds
 
     agent_step = next(s for s in plan.steps if s.kind == "macos-launchagent")
-    assert agent_step.file_path == home / "Library" / "LaunchAgents" / "com.hex-rays.idapython-venv.plist"
+    assert agent_step.file_path == home / "Library" / "LaunchAgents" / "com.hex-rays.idapython-venv-executable.plist"
     assert agent_step.file_content is not None
     assert "launchctl" in agent_step.file_content
     assert VALUE in agent_step.file_content
@@ -353,7 +353,7 @@ def test_execute_step_profile_idempotent(tmp_path: Path):
 
 
 def test_execute_step_creates_launchagent_plist(tmp_path: Path):
-    plist_path = tmp_path / "Library" / "LaunchAgents" / "com.hex-rays.idapython-venv.plist"
+    plist_path = tmp_path / "Library" / "LaunchAgents" / "com.hex-rays.idapython-venv-executable.plist"
     plist_content = "<plist>test</plist>"
     step = ConfigurationStep(
         kind="macos-launchagent",
@@ -369,7 +369,7 @@ def test_execute_step_creates_launchagent_plist(tmp_path: Path):
 
 
 def test_execute_step_updates_existing_launchagent(tmp_path: Path):
-    plist_path = tmp_path / "com.hex-rays.idapython-venv.plist"
+    plist_path = tmp_path / "com.hex-rays.idapython-venv-executable.plist"
     plist_path.write_text("<plist>old</plist>")
     step = ConfigurationStep(
         kind="macos-launchagent",
