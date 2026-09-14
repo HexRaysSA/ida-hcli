@@ -76,6 +76,7 @@ class DoctorReport(BaseModel):
     pip_available: bool | None
     externally_managed: bool | None
     idapython_venv_executable: str | None
+    hcli_current_ida_python_exe: str | None
     pattern: SetupPatternModel | None
     findings: list[FindingModel]
     notes: list[str]
@@ -186,6 +187,7 @@ def build_doctor_report() -> DoctorReport:
             pip_available=None,
             externally_managed=None,
             idapython_venv_executable=ENV.IDAPYTHON_VENV_EXECUTABLE,
+            hcli_current_ida_python_exe=ENV.HCLI_CURRENT_IDA_PYTHON_EXE,
             pattern=None,
             findings=[FindingModel.from_finding(f) for f in findings],
             notes=[],
@@ -212,6 +214,7 @@ def build_doctor_report() -> DoctorReport:
         pip_available=state.pip_available,
         externally_managed=state.externally_managed,
         idapython_venv_executable=str(state.idapython_venv_executable) if state.idapython_venv_executable else None,
+        hcli_current_ida_python_exe=ENV.HCLI_CURRENT_IDA_PYTHON_EXE,
         pattern=SetupPatternModel.from_pattern(pattern),
         findings=[FindingModel.from_finding(f) for f in findings],
         notes=collect_context_notes(state),
@@ -253,6 +256,8 @@ def render_doctor_report_text(report: DoctorReport) -> None:
     if report.externally_managed:
         _kv("externally managed (PEP 668)", "yes")
     _kv("$IDAPYTHON_VENV_EXECUTABLE", report.idapython_venv_executable or ("not set" if report.python_exe else None))
+    if report.hcli_current_ida_python_exe:
+        _kv("$HCLI_CURRENT_IDA_PYTHON_EXE", report.hcli_current_ida_python_exe)
     console.print()
 
     if report.pattern:

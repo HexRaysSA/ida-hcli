@@ -87,9 +87,26 @@ def test_default_setup_reports_no_venv_error():
 def test_no_venv_exe_var_is_only_a_warning_when_venv_is_in_use():
     state = make_state(source="$HCLI_CURRENT_IDA_PYTHON_EXE", idapython_venv_executable=None)
     findings = check_python_environment(state)
-    assert finding_ids(findings) == ["no-venv-exe-var"]
+    assert finding_ids(findings) == ["hcli-override-active", "no-venv-exe-var"]
     assert not has_errors(findings)
     assert identify_setup_pattern(state).id == "venv-not-configured"
+
+
+def test_hcli_override_warning_fires_when_source_is_hcli_var():
+    state = make_state(source="$HCLI_CURRENT_IDA_PYTHON_EXE")
+    findings = check_python_environment(state)
+    override = [f for f in findings if f.id == "hcli-override-active"]
+    assert len(override) == 1
+    assert override[0].severity == "warning"
+    assert "HCLI_CURRENT_IDA_PYTHON_EXE" in override[0].summary
+    assert "IDA does not read it" in override[0].detail
+    assert "IDAPYTHON_VENV_EXECUTABLE" in override[0].fix_hint
+
+
+def test_hcli_override_warning_does_not_fire_for_other_sources():
+    for source in ("$IDAPYTHON_VENV_EXECUTABLE", "derived from idat probe"):
+        state = make_state(source=source)
+        assert "hcli-override-active" not in finding_ids(check_python_environment(state))
 
 
 def test_no_venv_exe_var_is_not_reported_without_a_venv():
@@ -150,10 +167,10 @@ def test_missing_interpreter_is_an_error_and_skips_downstream_checks():
     )
     findings = check_python_environment(state)
     ids = finding_ids(findings)
-    assert ids == ["python-exe-not-found"]
-    assert findings[0].severity == "error"
-    assert str(gone) in findings[0].summary
-    assert "$HCLI_CURRENT_IDA_PYTHON_EXE" in findings[0].detail
+    assert ids == ["hcli-override-active", "python-exe-not-found"]
+    assert findings[1].severity == "error"
+    assert str(gone) in findings[1].summary
+    assert "$HCLI_CURRENT_IDA_PYTHON_EXE" in findings[1].detail
     assert identify_setup_pattern(state).id == "missing-interpreter"
 
 
@@ -396,7 +413,7 @@ def test_collect_state_flags_missing_var_for_hcli_override(real_venv: Path, monk
     resolved = ResolvedPython(exe, "$HCLI_CURRENT_IDA_PYTHON_EXE")
     state = collect_python_environment_state(resolved, probe_ida=True)
     assert state.ida_python_version is None
-    assert finding_ids(check_python_environment(state)) == ["no-venv-exe-var"]
+    assert finding_ids(check_python_environment(state)) == ["hcli-override-active", "no-venv-exe-var"]
 
     # warnings only: validation prints but does not raise
     validate_python_environment(resolved)
@@ -414,5 +431,7 @@ def test_validate_python_environment_rejects_base_interpreter_without_venv(
     with pytest.raises(PythonEnvironmentError) as excinfo:
         validate_python_environment(resolved)
 
-    assert "no-venv" in [f.id for f in excinfo.value.findings]
+    ids = [f.id for f in excinfo.value.findings]
+    assert "hcli-override-active" in ids
+    assert "no-venv" in ids
     assert "ida python doctor" in str(excinfo.value)

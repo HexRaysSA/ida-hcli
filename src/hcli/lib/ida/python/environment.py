@@ -378,6 +378,25 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
             )
         )
 
+    if state.source == "$HCLI_CURRENT_IDA_PYTHON_EXE":
+        unset_hint = (
+            "Unset HCLI_CURRENT_IDA_PYTHON_EXE and use $IDAPYTHON_VENV_EXECUTABLE instead.\n"
+            "That variable is read by both IDA and HCLI, so they stay in sync."
+        )
+        findings.append(
+            EnvironmentFinding(
+                id="hcli-override-active",
+                severity="warning",
+                summary=f"$HCLI_CURRENT_IDA_PYTHON_EXE overrides normal Python detection: {exe}",
+                detail=(
+                    "This variable makes HCLI use a specific interpreter without consulting IDA. "
+                    "IDA does not read it, so IDA may load a different Python than the one HCLI installs into. "
+                    "It is intended for test harnesses, not normal use."
+                ),
+                fix_hint=unset_hint,
+            )
+        )
+
     if not state.python_exe_exists:
         findings.append(
             EnvironmentFinding(
