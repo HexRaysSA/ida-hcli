@@ -1,16 +1,32 @@
 name: Security Review
 
-# Automatic AI security review on every PR to main. Advisory / non-blocking: it posts
-# its findings as a single PR comment and does not gate merge. To make it merge-blocking
-# later, add this job's check ("security-review") to the required status checks in the
-# branch-protection rule for `main` (see the PR description / repo docs).
+# AI security review of a pull request. Advisory / non-blocking: it posts its findings
+# as a single PR comment and does not gate merge.
+#
+# DISABLED on pull requests as of 2026-09-14. The review step failed on every PR --
+# the claude-code-action exited immediately with `is_error: true` and a zero cost,
+# which means it never reached the model (expired `CLAUDE_CODE_OAUTH_TOKEN` or
+# exhausted credits), so the check was red on changes that had nothing to do with it.
+# The workflow is kept runnable by hand (Actions -> Security Review -> Run workflow,
+# with a PR number) so it can be tested. To re-enable automatic reviews: fix the
+# `CLAUDE_CODE_OAUTH_TOKEN` secret, confirm a manual run is green, then uncomment the
+# `pull_request` trigger below.
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to review
+        required: true
+  # pull_request:
+  #   branches: [main]
+  #   types: [opened, synchronize, reopened]
+
+# Set by whichever trigger fired; `inputs.pr` is empty under `pull_request`.
+env:
+  PR_NUMBER: ${{ inputs.pr || github.event.pull_request.number }}
 
 concurrency:
-  group: security-review-${{ github.event.pull_request.number }}
+  group: security-review-${{ inputs.pr || github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
@@ -27,6 +43,9 @@ jobs:
       - name: Checkout PR
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Explicit merge ref so a manual run checks out the requested PR; this is
+          # also what the `pull_request` trigger checks out by default.
+          ref: refs/pull/${{ env.PR_NUMBER }}/merge
           fetch-depth: 0 # full history so the base..head diff is available
           persist-credentials: false
 
@@ -36,7 +55,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             You are a senior security engineer reviewing this pull request
-            (#${{ github.event.pull_request.number }}) in ${{ github.repository }}.
+            (#${{ env.PR_NUMBER }}) in ${{ github.repository }}.
             Review the DIFF of this PR — the added/changed code — for security
             vulnerabilities across the WHOLE change. Do not limit yourself to any one
             area or file.
@@ -89,7 +108,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
+          PR: ${{ env.PR_NUMBER }}
         run: |
           set -euo pipefail
           f="${{ github.workspace }}/security-review-report.md"
