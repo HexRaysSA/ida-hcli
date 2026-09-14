@@ -275,8 +275,9 @@ def create_python_environment_for_install(install_dir_path: Path, *, interactive
 
     The installed IDA is made HCLI's current installation for the duration, so
     the Python version probe targets it rather than whichever IDA was the
-    default before.  Shell profiles are only modified when `interactive` and
-    the user agrees.
+    default before.  When `interactive`, the user is prompted before modifying
+    shell profiles and system configuration; otherwise changes apply
+    automatically.
 
     Raises:
         click.exceptions.Exit: with status 1 when creation fails; IDA itself is already installed.
