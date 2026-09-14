@@ -25,7 +25,7 @@ To make IDA use this environment, IDAPYTHON_VENV_EXECUTABLE must be set
 in your login session.
 HCLI will:
   1. Create LaunchAgent so IDA launched from Finder/Dock inherits IDAPYTHON_VENV_EXECUTABLE
-     ~/Library/LaunchAgents/com.hex-rays.idapython-venv.plist
+     ~/Library/LaunchAgents/com.hex-rays.idapython-venv-executable.plist
   2. Apply IDAPYTHON_VENV_EXECUTABLE to the current session (immediate, no logout needed)
   3. Add export to ~/.zprofile for terminal sessions
 
@@ -70,7 +70,7 @@ Shell profiles (`.zshrc`, `.bashrc`) only affect processes started from that she
 
 **Windows** sets a user environment variable via the PowerShell .NET API. This covers both GUI launches (Start Menu, file association) and new terminal sessions. Restart IDA and any open terminals for the change to take effect.
 
-**macOS** writes a LaunchAgent plist at `~/Library/LaunchAgents/com.hex-rays.idapython-venv.plist` and runs `launchctl setenv` to apply it immediately. It also adds an export to the shell login profile (`~/.zprofile` for zsh, `~/.bash_profile` for bash) for terminal sessions. Log out and back in for the LaunchAgent to apply to all new apps.
+**macOS** writes a LaunchAgent plist at `~/Library/LaunchAgents/com.hex-rays.idapython-venv-executable.plist` and runs `launchctl setenv` to apply it immediately. It also adds an export to the shell login profile (`~/.zprofile` for zsh, `~/.bash_profile` for bash) for terminal sessions. Log out and back in for the LaunchAgent to apply to all new apps.
 
 **Linux** creates `~/.config/environment.d/50-hexrays-idapython-venv-executable.conf` for graphical desktop sessions (GNOME, KDE, and other systemd-based desktops). It also adds an export to the shell login profile (`~/.profile`, `~/.bash_profile`, or `~/.zprofile`) for terminal and SSH sessions. Log out and back in for the changes to take effect. On non-systemd systems, only the shell profile is written.
 
