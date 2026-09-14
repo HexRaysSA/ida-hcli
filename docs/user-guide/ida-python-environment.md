@@ -30,7 +30,7 @@ The command asks IDA, through `idat`, which Python version it runs. It then crea
 Options:
 
 - `--no-configure` skips the question about `IDAPYTHON_VENV_EXECUTABLE`.
-- `--no-reinstall-plugins` skips reinstalling Python dependencies for existing plugins. Use this for offline setups or when you plan to reinstall plugins manually.
+- `--no-reinstall-plugins` skips reinstalling Python dependencies for existing plugins.
 - `--path` selects another location.
 - `--python-version X.Y` gives the version when `idat` is not available.
 - `--json` prints the result as JSON.
