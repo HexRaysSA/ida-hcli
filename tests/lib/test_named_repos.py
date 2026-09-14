@@ -285,7 +285,7 @@ def _invoke(runner: CliRunner, *args: str):
     return runner.invoke(plugin_group, list(args))
 
 
-def test_airgapped_workflow_bundle_repo(virtual_ida_environment, tmp_path):
+def test_airgapped_workflow_bundle_repo(virtual_ida_environment_with_venv, tmp_path):
     """Full airgapped workflow: remove default repos, add a bundle, search, install."""
     bundle_path = _write_bundle_with_plugins(tmp_path, PLUGIN1_V1, PLUGIN1_V2)
     bundle_url = bundle_path.as_uri()
