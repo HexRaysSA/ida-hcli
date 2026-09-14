@@ -352,6 +352,30 @@ def test_execute_step_profile_idempotent(tmp_path: Path):
     assert result.skipped
 
 
+def test_execute_step_profile_replaces_stale_line(tmp_path: Path):
+    profile = tmp_path / ".zprofile"
+    old_line = f'export {NAME}="/old/path/bin/python"'
+    profile.write_text(f"# my stuff\n{old_line}\nalias ll='ls -l'\n")
+    new_line = f'export {NAME}="{VALUE}"'
+    step = ConfigurationStep(
+        kind="shell-profile",
+        description=f"Add export to {profile}",
+        file_path=profile,
+        file_content=new_line,
+        command=None,
+        needs_logout=False,
+    )
+    result = execute_step(step)
+    assert result.success
+    assert not result.skipped
+    assert "Updated" in result.message
+    content = profile.read_text()
+    assert new_line in content
+    assert old_line not in content
+    assert "# my stuff" in content
+    assert "alias ll='ls -l'" in content
+
+
 def test_execute_step_creates_launchagent_plist(tmp_path: Path):
     plist_path = tmp_path / "Library" / "LaunchAgents" / "com.hex-rays.idapython-venv-executable.plist"
     plist_content = "<plist>test</plist>"
