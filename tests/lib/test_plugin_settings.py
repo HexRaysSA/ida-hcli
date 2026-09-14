@@ -2,6 +2,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
+from types import CodeType, FunctionType, SimpleNamespace
 
 import pytest
 from fixtures import *
@@ -12,7 +13,45 @@ from fixtures import (
     temp_env_var,
 )
 
+from hcli.lib.ida.plugin import settings as plugin_settings
+
 logger = logging.getLogger(__name__)
+
+
+def test_get_current_plugin_from_editable_checkout_callback(tmp_path, monkeypatch):
+    """Map a resolved source frame back through its editable install symlink."""
+    plugins_dir = tmp_path / "plugins"
+    source_dir = tmp_path / "plugin-checkout"
+    plugins_dir.mkdir()
+    source_dir.mkdir()
+    plugin_link = plugins_dir / "plugin-directory"
+    try:
+        plugin_link.symlink_to(source_dir, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"directory symlinks are unavailable: {error}")
+
+    metadata = SimpleNamespace(plugin=SimpleNamespace(name="canonical-plugin-name"))
+    metadata_paths = []
+    monkeypatch.setattr(plugin_settings, "get_plugins_directory", lambda: plugins_dir)
+
+    def get_metadata(plugin_directory):
+        metadata_paths.append(plugin_directory)
+        return metadata
+
+    monkeypatch.setattr(plugin_settings, "get_metadata_from_plugin_directory", get_metadata)
+
+    # Editable plugins can resolve their import path before loading UI modules,
+    # making a later Qt callback's co_filename point directly into the checkout.
+    module_code = compile(
+        "def callback():\n    return get_current_plugin()\n",
+        str(source_dir / "plugin_ui.py"),
+        "exec",
+    )
+    callback_code = next(const for const in module_code.co_consts if isinstance(const, CodeType))
+    callback = FunctionType(callback_code, {"get_current_plugin": plugin_settings.get_current_plugin})
+
+    assert callback() == "canonical-plugin-name"
+    assert metadata_paths == [plugin_link]
 
 
 def test_plugin_settings_integration(virtual_ida_environment_with_venv):
