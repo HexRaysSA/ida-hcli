@@ -47,9 +47,8 @@ def test_doctor_json_warns_when_venv_is_not_configured_for_ida(virtual_ida_envir
 
 def test_doctor_passes_a_properly_configured_environment(virtual_ida_environment_with_venv, monkeypatch):
     python_exe = os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"]
-    monkeypatch.setattr(ENV, "HCLI_CURRENT_IDA_PYTHON_EXE", None)
-    monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
     set_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE", python_exe)
+    monkeypatch.setattr(ENV, "HCLI_CURRENT_IDA_PYTHON_EXE", None)
 
     result = _run(["doctor", "--json"])
     assert result.exit_code == 0, result.output
