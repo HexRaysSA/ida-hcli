@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -20,21 +19,21 @@ from hcli.lib.ida.plugin.install import (
     install_single_plugin_dependencies,
 )
 from hcli.lib.ida.python.environment import get_recommended_venv_dir, get_system, render_set_env_var_command
+from hcli.lib.ida.python.platform_env import (
+    build_configuration_plan,
+    execute_configuration_plan,
+    verify_env_var_in_subprocess,
+)
 from hcli.lib.ida.python.venv_create import (
     TargetInspection,
     VenvCreationError,
-    append_to_shell_profile,
     create_virtual_environment,
-    detect_shell,
     determine_target_python_version,
     find_python_on_path,
     find_uv,
     get_registered_python_exe,
-    get_shell_profile_path,
     inspect_target,
     plan_virtual_environment,
-    render_profile_line,
-    set_windows_user_env_var,
 )
 
 logger = logging.getLogger(__name__)
@@ -102,63 +101,65 @@ def _is_interactive() -> bool:
 def configure_env_var(python_exe: Path, *, interactive: bool, quiet: bool) -> tuple[bool, str | None]:
     """Make `IDAPYTHON_VENV_EXECUTABLE` point at `python_exe`, with the user's consent.
 
-    Prints the exact change before asking. Returns (configured, how).
-    When not interactive, nothing is written and instructions are printed instead.
+    Builds a platform-specific configuration plan, shows it to the user,
+    and executes it if they agree.  Returns (configured, description).
+    When not interactive, prints manual instructions instead.
     """
-    system = get_system()
     value = str(python_exe)
-    set_command = render_set_env_var_command(ENV_VAR, value, system)
     out = stderr_console if quiet else console
 
     current = ENV.IDAPYTHON_VENV_EXECUTABLE
     if current and Path(current) != python_exe:
         out.print(f"[yellow]${ENV_VAR} is currently {escape(current)}. It must change.[/yellow]")
 
-    if system == "windows":
-        out.print(f"To make IDA use this environment, set {ENV_VAR} for your user account:")
-        out.print(f"  {escape(set_command)}", highlight=False)
-        if interactive and Confirm.ask("Run this setx command now?", default=False, console=console):
-            set_windows_user_env_var(ENV_VAR, value)
-            out.print(f"[green]Set {ENV_VAR} for your user account. Restart IDA and any open terminals.[/green]")
-            return True, "setx"
-        out.print("Then restart IDA and any open terminals.")
+    plan = build_configuration_plan(ENV_VAR, value)
+
+    out.print(f"\nTo make IDA use this environment, {ENV_VAR} must be set in your login session.")
+    out.print("HCLI will:", highlight=False)
+    for i, step in enumerate(plan.steps, 1):
+        out.print(f"  {i}. {escape(step.description)}", highlight=False)
+        if step.file_path is not None:
+            out.print(f"     [dim]{escape(str(step.file_path))}[/dim]", highlight=False)
+
+    if not interactive:
+        out.print(f"\n{escape(plan.manual_instructions)}", highlight=False)
         return False, None
 
-    shell = detect_shell(os.environ.get("SHELL"))
-    profile = get_shell_profile_path(shell, Path.home())
-    line = render_profile_line(ENV_VAR, value, shell)
+    consented = Confirm.ask("\nApply these changes?", default=True, console=console)
+    if not consented:
+        out.print(f"\n{escape(plan.manual_instructions)}", highlight=False)
+        return False, None
 
-    out.print(f"To make IDA use this environment, export {ENV_VAR} in your shell profile:")
-    out.print(f"  {escape(line)}", highlight=False)
-
-    consented = (
-        profile is not None
-        and interactive
-        and Confirm.ask(f"Append this line to {profile}?", default=False, console=console)
-    )
-    if consented:
-        assert profile is not None
-        if append_to_shell_profile(profile, line):
-            out.print(f"[green]Added to {escape(str(profile))}.[/green] Open a new terminal, then start IDA from it.")
+    results = execute_configuration_plan(plan)
+    configured_via_parts: list[str] = []
+    any_failed = False
+    for result in results:
+        if result.skipped:
+            out.print(f"  [dim]{escape(result.message)}[/dim]")
+        elif result.success:
+            out.print(f"  [green]{escape(result.message)}[/green]")
+            configured_via_parts.append(result.step.kind)
         else:
-            out.print(f"[green]{escape(str(profile))} already contains this line.[/green]")
-        _print_mac_launch_note(out, system)
-        return True, str(profile)
+            out.print(f"  [red]{escape(result.message)}[/red]")
+            any_failed = True
 
-    if profile is not None:
-        out.print(f"Add it to {escape(str(profile))}. Open a new terminal, then start IDA from it.")
+    if any_failed:
+        out.print("\n[yellow]Some steps failed. Review the output above.[/yellow]")
+        out.print(f"Manual instructions:\n{escape(plan.manual_instructions)}", highlight=False)
+        return False, None
+
+    verified = verify_env_var_in_subprocess(ENV_VAR, value)
+    if verified is True:
+        out.print(f"\n[green]{ENV_VAR} is set and verified.[/green]")
+    elif verified is False:
+        out.print(f"\n[yellow]{ENV_VAR} was written but could not be verified in a subprocess.[/yellow]")
+
+    if plan.needs_logout:
+        out.print("[dim]Log out and back in for all changes to take effect.[/dim]")
     else:
-        out.print("Add it to your shell's startup file. Open a new terminal, then start IDA from it.")
-    _print_mac_launch_note(out, system)
-    return False, None
+        out.print("[dim]Restart IDA and any open terminals for the change to take effect.[/dim]")
 
-
-def _print_mac_launch_note(out, system: str) -> None:
-    if system == "mac":
-        out.print(
-            "[dim]Shell profiles do not apply to IDA started from Finder or the Dock. For that, run "
-            f"`launchctl setenv {ENV_VAR} <path>`, or start IDA from a terminal.[/dim]"
-        )
+    return True, ", ".join(configured_via_parts) if configured_via_parts else None
 
 
 def _print_migration_plan(

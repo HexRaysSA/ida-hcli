@@ -194,14 +194,14 @@ def get_venv_python_path(venv_root: Path, system: System) -> Path:
 
 
 def render_set_env_var_command(name: str, value: str, system: System) -> str:
-    """The shell command that sets an environment variable persistently for the user.
+    """A representative command that sets an environment variable persistently.
 
-    `setx` writes the user's registry environment, so it survives new
-    terminals and reaches IDA launched from the Start menu.  On POSIX, this is
-    the line to add to a shell profile.
+    On Windows, the PowerShell .NET API writes to the user registry without the
+    1024-character truncation that setx has.  On POSIX, this is the line to add
+    to a shell login profile.
     """
     if system == "windows":
-        return f'setx {name} "{value}"'
+        return f'[Environment]::SetEnvironmentVariable("{name}", "{value}", "User")'
     return f'export {name}="{value}"'
 
 
