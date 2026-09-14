@@ -241,7 +241,7 @@ For example, we used it to kickstart the [build of the BinDiff plugin](https://g
 
 The community plugin index is built from GitHub. Publish releases on GitHub with valid `ida-plugin.json` files and the indexer will pick them up automatically.
 
-Upload plugin archives as attachments to the release (unless the default source archive is sufficient, which is usually true for pure-Python plugins). Each day, the indexer scans GitHub for repositories containing `ida-plugin.json` and inspects their releases for candidate plugins. The indexed results are served through the `community` plugin repository at `community.plugins.hex-rays.com`.
+Upload plugin archives as attachments to the release (unless the default source archive is sufficient, which is usually true for pure-Python plugins). Each day, the indexer scans GitHub for repositories containing `ida-plugin.json` and inspects their releases for candidate plugins. The indexed results are served through the `community` plugin repository.
 
 Inclusion into the community repository is self-service: put a well-formed plugin in a place the indexer can find it.
 
