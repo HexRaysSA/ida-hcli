@@ -63,6 +63,10 @@ $ hcli commands
 │ hcli plugin config set    │ Set a plugin configuration setting.                              │
 │ hcli plugin install       │ No description available                                         │
 │ hcli plugin lint          │ Lint an IDA plugin directory, archive (.zip file), or HTTPS URL. │
+│ hcli plugin repo add      │ Add a plugin repository.                                         │
+│ hcli plugin repo list     │ List the configured plugin repositories.                         │
+│ hcli plugin repo remove   │ Remove a plugin repository.                                      │
+│ hcli plugin repo set-default │ Set the repository used for references with no repo/ prefix.  │
 │ hcli plugin repo snapshot │ Create a snapshot of the repository.                             │
 │ hcli plugin search        │ No description available                                         │
 │ hcli plugin status        │ No description available                                         │
@@ -275,6 +279,7 @@ Delete file a49e9ff8d53a9af8ef20a383a276449d.exe_.i64 ? [y/n]: y
 │ config         Manage plugin configuration settings.                                               │
 │ install                                                                                            │
 │ lint           Lint an IDA plugin directory, archive (.zip file), or HTTPS URL.                    │
+│ repo           Manage plugin repositories.                                                         │
 │ search                                                                                             │
 │ status                                                                                             │
 │ uninstall                                                                                          │
@@ -312,7 +317,13 @@ $ hcli plugin search ipython
  ipyida  2.3  installed
 ```
 
-If two repository plugins share the same bare name, HCLI will ask you to qualify the reference with the plugin's repository URL, for example `hcli plugin install ida-chat@https://github.com/HexRaysSA/ida-chat-plugin` or `hcli plugin install ida-chat==1.0.0@https://github.com/HexRaysSA/ida-chat-plugin`. See [Plugin Manager](../user-guide/plugin-manager.md) for details.
+If two plugins share the same bare name, HCLI will ask you to qualify the reference with the plugin's repository URL, for example `hcli plugin install ida-chat@https://github.com/HexRaysSA/ida-chat-plugin`. To install a private plugin from the Hex-Rays repository, prefix the name with `hexrays/`:
+
+```bash
+$ hcli plugin install hexrays/some-private-plugin
+```
+
+See [Plugin Manager](../user-guide/plugin-manager.md) for details on repositories and disambiguation.
 
 ```bash
 $ hcli plugin install ipyida

@@ -1,9 +1,8 @@
 # IDA Plugin Manager
 
-The IDA Plugin Manager can help you discover, install, and manage IDA plugins distributed via a central index. It simplifies extending IDA capabilities, whether the plugins are written in IDAPython or compiled languages like C/C++.
+The IDA Plugin Manager handles searching, installing, upgrading, and removing IDA plugins. It works with both IDAPython and native (C/C++) plugins.
 
-The underlying index of plugins is published at [github.com/HexRaysSA/plugin-repository](https://github.com/HexRaysSA/plugin-repository),
- and Hex-Rays maintains [plugins.hex-rays.com](https://plugins.hex-rays.com) as a website showing the available plugins.
+Community plugins are indexed from public GitHub repositories and served through the Hex-Rays portal. Hex-Rays also publishes private plugins available to users with active IDA licenses. Browse available plugins at [plugins.hex-rays.com](https://plugins.hex-rays.com).
 
 !!! note "Development status"
 
@@ -58,6 +57,44 @@ If your Python setup works but does not match the recommended configuration, pas
 ❯ hcli plugin --no-python-environment-check install <name>
 ```
 
+## Plugin repositories
+
+HCLI fetches plugins from named repositories. Two are configured by default:
+
+| Name | Description | Authentication |
+| :--- | :---------- | :------------- |
+| `community` | Community plugins indexed from public GitHub repositories | none (anonymous) |
+| `hexrays` | Private plugins published by Hex-Rays | required (`hcli login`) |
+
+The `community` repository is the default. A bare `hcli plugin install <name>` searches it, same as always. To install a private plugin from the `hexrays` repository, prefix the name:
+
+```console
+❯ hcli plugin install hexrays/some-private-plugin
+```
+
+If you're not logged in, the `hexrays` repository returns a 401 and HCLI tells you to authenticate. `hcli plugin search` spans all configured repositories and notes any it could not reach.
+
+### Managing repositories
+
+List, add, remove, or change the default repository:
+
+```console
+❯ hcli plugin repo list
+community  https://community.plugins.hex-rays.com/plugin-repository.json  default reserved
+hexrays    https://hexrays.plugins.hex-rays.com/plugin-repository.json    reserved
+
+❯ hcli plugin repo add my-team https://plugins.example.com/repo.json
+added plugin repository 'my-team' -> https://plugins.example.com/repo.json
+
+❯ hcli plugin repo set-default my-team
+default plugin repository is now 'my-team'
+
+❯ hcli plugin repo remove my-team
+removed plugin repository 'my-team'
+```
+
+The `community` and `hexrays` names are reserved and always point to their Hex-Rays URLs. Custom repositories can be added, renamed, or removed freely.
+
 ## As a user of IDA...
 
 You'll want to know the HCLI commands:
@@ -66,9 +103,11 @@ You'll want to know the HCLI commands:
 ❯ hcli plugin search 
 ❯ hcli plugin search [keyword or plugin-name]
 ❯ hcli plugin install <plugin-name>
+❯ hcli plugin install <repo>/<plugin-name>
 ❯ hcli plugin status
 ❯ hcli plugin upgrade <plugin-name>
 ❯ hcli plugin uninstall <plugin-name>
+❯ hcli plugin repo list
 ```
 
 Plugins are written to `$IDAUSR/plugins`, which is typically `~/.idapro/plugins` on Unix-like systems, where IDA Pro will load them the next time the application is opened.
@@ -77,7 +116,7 @@ You can discover interesting plugins via:
 
   - `hcli plugin search` CLI program, or
   - [plugins.hex-rays.com](https://plugins.hex-rays.com) website, or
-  - [github.com/HexRaysSA/plugin-repository](https://github.com/HexRaysSA/plugin-repository) raw index data.
+  - [github.com/HexRaysSA/plugin-repository](https://github.com/HexRaysSA/plugin-repository) raw index data on GitHub.
 
 HCLI supports installing plugins to be loaded by IDA 9.0 and newer.
 

@@ -445,4 +445,4 @@ Once all tests pass:
 3. Wait for the daily indexer run
 4. Verify plugin appears: `hcli plugin search your-plugin`
 
-The plugin repository automatically discovers and indexes plugins with valid `ida-plugin.json` files!
+The community plugin repository automatically discovers and indexes plugins with valid `ida-plugin.json` files from GitHub releases.

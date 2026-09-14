@@ -93,6 +93,10 @@ You can also set your API key via environment variable:
 export HCLI_API_KEY=hrp-1-fdsafdsafdsafdsafdsa....
 ```
 
+## Plugin Repositories
+
+Authentication is also used when accessing private plugins from the `hexrays` plugin repository. Once logged in, `hcli plugin install hexrays/<name>` and `hcli plugin search` will include private plugins your account is entitled to. See [Plugin Manager](../user-guide/plugin-manager.md#plugin-repositories) for details.
+
 ## Next Steps
 
 - [Quick Start](quick-start.md) - Start using the CLI
