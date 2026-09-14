@@ -98,18 +98,17 @@ def plugin(
     plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo
     try:
         if repo is None:
-            # One read of ida-config.json for both the map and the default.
             ida_config = get_ida_config()
             repositories = get_plugin_repositories(ida_config)
             if not repositories:
-                console.print(
-                    "[red]No plugin repositories configured[/red]. "
-                    "Provide these in ida-config.json (.Settings.plugin-repositories)"
-                )
-                raise click.Abort()
+                if ctx.invoked_subcommand != "repo":
+                    console.print(
+                        "[red]No plugin repositories configured[/red]. "
+                        "Provide these in ida-config.json (.Settings.plugin-repositories)"
+                    )
+                    raise click.Abort()
+                return
 
-            # Repositories are fetched lazily, so building the aggregate costs
-            # nothing until a command actually looks something up.
             aggregate = AggregatePluginRepo(repositories)
             ctx.obj["plugin_repos"] = aggregate
             ctx.obj["default_plugin_repo"] = get_default_plugin_repository_name(ida_config)

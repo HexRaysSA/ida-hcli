@@ -71,8 +71,6 @@ You'll want to know the HCLI commands:
 ❯ hcli plugin uninstall <plugin-name>
 ```
 
-For offline or air-gapped environments, plugins can be installed from a plugin bundle archive. See [Plugin Bundles](../reference/plugin-bundle-spec.md) for details.
-
 Plugins are written to `$IDAUSR/plugins`, which is typically `~/.idapro/plugins` on Unix-like systems, where IDA Pro will load them the next time the application is opened.
 
 You can discover interesting plugins via:
@@ -82,6 +80,59 @@ You can discover interesting plugins via:
   - [github.com/HexRaysSA/plugin-repository](https://github.com/HexRaysSA/plugin-repository) raw index data.
 
 HCLI supports installing plugins to be loaded by IDA 9.0 and newer.
+
+### Plugin repositories
+
+HCLI ships with two built-in repositories (`hexrays` and `community`) that provide the public plugin index. You can add your own named repositories that point to a JSON index file, a local directory of plugin archives, or a [plugin bundle](../reference/plugin-bundle-spec.md) zip.
+
+```
+❯ hcli plugin repo list
+❯ hcli plugin repo add <name> <url>
+❯ hcli plugin repo remove <name>
+❯ hcli plugin repo set-default <name>
+```
+
+Repository URLs use the `https://` scheme for remote JSON indexes or `file://` for local paths. HCLI infers the repository type from what the path points to: a directory becomes a filesystem repository, a zip file containing `plugin-bundle.json` becomes a bundle repository, and anything else is treated as a JSON index.
+
+You can scope plugin references to a specific repository with a `repo/` prefix (e.g., `hcli plugin install myrepo/plugin-name`). Unprefixed references resolve against the default repository.
+
+### Offline and air-gapped environments
+
+Environments without internet access (for example, a FLARE-VM instance with host-only networking) can use a plugin bundle as their sole repository. A plugin bundle is a self-contained zip archive with plugins and their Python dependencies for specific platforms. See [Plugin Bundles](../reference/plugin-bundle-spec.md) for the format.
+
+To set this up, remove the default repositories (which require network access), add the bundle as a named repository, and set it as the default:
+
+```console
+❯ hcli plugin repo remove hexrays
+removed plugin repository 'hexrays'
+
+❯ hcli plugin repo remove community
+removed plugin repository 'community'
+
+❯ hcli plugin repo add offline file:///path/to/plugin-bundle.zip
+added plugin repository 'offline' -> file:///path/to/plugin-bundle.zip
+
+❯ hcli plugin repo set-default offline
+default plugin repository is now 'offline'
+
+❯ hcli plugin search
+current platform: windows-x86_64
+current version: 9.4
+
+ plugin1  1.0.0  ...
+
+❯ hcli plugin install plugin1
+Installed plugin: plugin1==1.0.0
+```
+
+Dependencies are installed from the bundle's embedded wheelhouse, so pip does not need network access.
+
+To restore the default configuration later, re-add the built-in repositories with their canonical URLs:
+
+```console
+❯ hcli plugin repo add hexrays https://hexrays.plugins.hex-rays.com/plugin-repository.json
+❯ hcli plugin repo add community https://community.plugins.hex-rays.com/plugin-repository.json
+```
 
 ### Disambiguating plugin names
 

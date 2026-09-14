@@ -101,22 +101,22 @@ def add_repo(ctx, name: str, url: str) -> None:
 def remove_repo(ctx, name: str) -> None:
     """Remove a plugin repository."""
     config = get_ida_config()
-    repos = dict(config.settings.plugin_repositories)
     all_repos = get_plugin_repositories(config)
     if name not in all_repos:
         console.print(f"[red]No such plugin repository '{name}'[/red].")
         raise click.Abort()
 
-    repos.pop(name, None)
-    default = config.settings.default_plugin_repository
+    remaining = {n: PluginRepositoryConfig(url=r.url) for n, r in all_repos.items() if n != name}
+    default = config.settings.default_plugin_repository or COMMUNITY_REPO_NAME
     if default == name:
+        new_default = COMMUNITY_REPO_NAME if COMMUNITY_REPO_NAME in remaining else next(iter(remaining), None)
         console.print(
-            f"[yellow]'{name}' was the default repository[/yellow]; unprefixed installs now use "
-            f"'{COMMUNITY_REPO_NAME}'."
+            f"[yellow]'{name}' was the default repository[/yellow]"
+            + (f"; unprefixed installs now use '{new_default}'." if new_default else ".")
         )
-        _save_repositories(config, repos, COMMUNITY_REPO_NAME)
+        _save_repositories(config, remaining, new_default)
     else:
-        _save_repositories(config, repos, None)
+        _save_repositories(config, remaining, default)
 
     console.print(f"removed plugin repository '{name}'")
 
