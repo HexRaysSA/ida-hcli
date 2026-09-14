@@ -20,12 +20,19 @@ $ hcli ida python create-environment
 Python version for the environment: 3.13 (via idat probe)
 Creating virtual environment: uv venv --seed --python /opt/homebrew/bin/python3.13 /Users/user/.idapro/venv
 Created /Users/user/.idapro/venv with Python 3.13 and pip.
-To make IDA use this environment, export IDAPYTHON_VENV_EXECUTABLE in your shell profile:
-  export IDAPYTHON_VENV_EXECUTABLE="/Users/user/.idapro/venv/bin/python"
-Append this line to /Users/user/.zshrc? [y/n] (n):
+
+To make IDA use this environment, IDAPYTHON_VENV_EXECUTABLE must be set
+in your login session.
+HCLI will:
+  1. Create LaunchAgent so IDA launched from Finder/Dock inherits IDAPYTHON_VENV_EXECUTABLE
+     ~/Library/LaunchAgents/com.hex-rays.idapython-venv.plist
+  2. Apply IDAPYTHON_VENV_EXECUTABLE to the current session (immediate, no logout needed)
+  3. Add export to ~/.zprofile for terminal sessions
+
+Apply these changes? [y/n] (y):
 ```
 
-The command asks IDA, through `idat`, which Python version it runs. It then creates the venv with `uv venv --seed` when `uv` is installed. Otherwise it uses the standard library `venv` module and `ensurepip`. Nothing outside the target directory changes without your consent. HCLI shows the exact shell profile line, or the `setx` command on Windows, before it asks. You can decline and apply it yourself.
+The command asks IDA, through `idat`, which Python version it runs. It then creates the venv with `uv venv --seed` when `uv` is installed. Otherwise it uses the standard library `venv` module and `ensurepip`. Nothing outside the target directory changes without your consent. HCLI shows a plan of the exact changes it will make and asks for confirmation. You can decline and configure the variable yourself.
 
 Options:
 
@@ -57,7 +64,15 @@ When a plugin's dependencies cannot be installed, for example because they are n
 
 `hcli ida install --create-python-environment` runs the same step after it installs IDA. A new machine gets the recommended setup in one command.
 
-On macOS, shell profiles do not apply to IDA started from Finder or the Dock. For that, run `launchctl setenv IDAPYTHON_VENV_EXECUTABLE <path>`, or start IDA from a terminal.
+### Platform-specific configuration
+
+Shell profiles (`.zshrc`, `.bashrc`) only affect processes started from that shell. IDA launched from macOS Dock, Windows Start Menu, or a Linux desktop file does not inherit shell variables. HCLI uses platform-specific mechanisms to set `IDAPYTHON_VENV_EXECUTABLE` so it reaches IDA in all launch contexts:
+
+**Windows** sets a user environment variable via the PowerShell .NET API. This covers both GUI launches (Start Menu, file association) and new terminal sessions. Restart IDA and any open terminals for the change to take effect.
+
+**macOS** writes a LaunchAgent plist at `~/Library/LaunchAgents/com.hex-rays.idapython-venv.plist` and runs `launchctl setenv` to apply it immediately. It also adds an export to the shell login profile (`~/.zprofile` for zsh, `~/.bash_profile` for bash) for terminal sessions. Log out and back in for the LaunchAgent to apply to all new apps.
+
+**Linux** creates `~/.config/environment.d/50-hexrays-idapython-venv-executable.conf` for graphical desktop sessions (GNOME, KDE, and other systemd-based desktops). It also adds an export to the shell login profile (`~/.profile`, `~/.bash_profile`, or `~/.zprofile`) for terminal and SSH sessions. Log out and back in for the changes to take effect. On non-systemd systems, only the shell profile is written.
 
 In Docker containers, the system Python is not writable (PEP 668 externally-managed), so you still need a venv. Use `--create-python-environment` when installing IDA and set `IDAPYTHON_VENV_EXECUTABLE` in the Dockerfile. See [Docker](../advanced/docker/README.md) for a working example.
 

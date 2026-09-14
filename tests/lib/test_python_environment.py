@@ -287,7 +287,7 @@ def test_windows_store_shim_pattern():
     assert identify_setup_pattern(state).id == "windows-store"
 
 
-def test_windows_fix_hints_use_setx_and_scripts_layout():
+def test_windows_fix_hints_use_powershell_and_scripts_layout():
     idausr = Path(r"C:\Users\user\AppData\Roaming\Hex-Rays\IDA Pro")
     state = make_state(
         python_exe=Path(r"C:\Python312\python.exe"),
@@ -298,7 +298,7 @@ def test_windows_fix_hints_use_setx_and_scripts_layout():
         idapython_venv_executable=None,
     )
     hint = check_python_environment(state)[0].fix_hint
-    assert "setx IDAPYTHON_VENV_EXECUTABLE" in hint
+    assert "SetEnvironmentVariable" in hint
     assert str(idausr / "venv" / "Scripts" / "python.exe") in hint
     assert "export" not in hint
 
@@ -306,7 +306,10 @@ def test_windows_fix_hints_use_setx_and_scripts_layout():
 def test_render_set_env_var_command_per_platform():
     assert render_set_env_var_command("X", "/a b", "linux") == 'export X="/a b"'
     assert render_set_env_var_command("X", "/a b", "mac") == 'export X="/a b"'
-    assert render_set_env_var_command("X", r"C:\a b", "windows") == r'setx X "C:\a b"'
+    assert (
+        render_set_env_var_command("X", r"C:\a b", "windows")
+        == '[Environment]::SetEnvironmentVariable("X", "C:\\a b", "User")'
+    )
 
 
 def test_get_venv_python_path_per_platform():
