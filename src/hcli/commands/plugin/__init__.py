@@ -98,6 +98,7 @@ def plugin(
     plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo
     try:
         if repo is None:
+            # One read of ida-config.json for both the map and the default.
             ida_config = get_ida_config()
             repositories = get_plugin_repositories(ida_config)
             if not repositories:
@@ -109,6 +110,8 @@ def plugin(
                     raise click.Abort()
                 return
 
+            # Repositories are fetched lazily, so building the aggregate costs
+            # nothing until a command actually looks something up.
             aggregate = AggregatePluginRepo(repositories)
             ctx.obj["plugin_repos"] = aggregate
             ctx.obj["default_plugin_repo"] = get_default_plugin_repository_name(ida_config)
@@ -207,9 +210,13 @@ def repo_for_reference(ctx: click.Context, ref: PluginReference) -> hcli.lib.ida
             )
         raise click.Abort()
 
+    # A named scope is a request for THAT repository: if it cannot be reached,
+    # that is the answer, not a quietly smaller search.
     try:
         child = aggregate.get_child_repo(name)
     except (httpx.ConnectError, httpx.TimeoutException):
+        # httpx connection errors often stringify to "", so without this the
+        # user gets a bare "Error:".
         console.print(
             f"[red]Cannot connect to plugin repository '{name}' at "
             f"{aggregate.repositories[name].url} - network unavailable.[/red]"
@@ -217,6 +224,9 @@ def repo_for_reference(ctx: click.Context, ref: PluginReference) -> hcli.lib.ida
         console.print("Please check your internet connection.")
         raise click.Abort()
 
+    # The survey path reports these through the search result; on this path
+    # there is no result to carry them, so say it here rather than drop a
+    # plugin silently.
     for note in aggregate.notes():
         console.print(f"[yellow]Warning:[/yellow] repository {note}")
 

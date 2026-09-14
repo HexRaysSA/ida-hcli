@@ -47,9 +47,11 @@ class AggregatePluginRepo(BasePluginRepo):
         super().__init__()
         self.repositories = repositories
         self._plugins: dict[str, list[Plugin]] = {}
-        self._repos: dict[str, BasePluginRepo] = {}
+        self._children: dict[str, BasePluginRepo] = {}
         self._failures: dict[str, Exception] = {}
         self._dropped: dict[str, int] = {}
+        # Which repository served which plugin, remembered at load time rather
+        # than reconstructed later by scanning every loaded list.
         self._owner: dict[int, str] = {}
 
     def _load(self, name: str) -> list[Plugin]:
@@ -68,7 +70,7 @@ class AggregatePluginRepo(BasePluginRepo):
             self._failures[name] = e
             raise
 
-        self._repos[name] = child
+        self._children[name] = child
         kept = self._filter_entitled(name, plugins)
         self._plugins[name] = kept
         for plugin in kept:
@@ -115,7 +117,7 @@ class AggregatePluginRepo(BasePluginRepo):
         if name not in self.repositories:
             raise KeyError(f"unknown plugin repository: {name}")
         self._load(name)
-        return self._repos[name]
+        return self._children[name]
 
     def get_plugins_in(self, name: str) -> list[Plugin]:
         """Plugins from one named repository. Propagates that repository's failure."""

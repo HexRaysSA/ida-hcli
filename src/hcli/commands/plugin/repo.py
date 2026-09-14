@@ -108,6 +108,8 @@ def remove_repo(ctx, name: str) -> None:
 
     remaining = {n: PluginRepositoryConfig(url=r.url) for n, r in all_repos.items() if n != name}
     default = config.settings.default_plugin_repository or COMMUNITY_REPO_NAME
+    # Leaving the default pointing at a repository that no longer exists would
+    # turn every unprefixed install into a confusing "plugin not found".
     if default == name:
         new_default = COMMUNITY_REPO_NAME if COMMUNITY_REPO_NAME in remaining else next(iter(remaining), None)
         console.print(

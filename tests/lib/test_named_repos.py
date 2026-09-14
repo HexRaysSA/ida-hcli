@@ -109,8 +109,6 @@ def _write_bundle(tmp_path: Path) -> Path:
 def _make_fs_repo(tmp_path: Path) -> Path:
     d = tmp_path / "fs-repo"
     d.mkdir()
-    import shutil
-
     shutil.copy(PLUGIN1_V1, d / "plugin1-v1.0.0.zip")
     return d
 
