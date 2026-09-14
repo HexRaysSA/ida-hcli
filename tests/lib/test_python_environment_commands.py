@@ -39,13 +39,14 @@ def test_doctor_json_warns_when_venv_is_not_configured_for_ida(virtual_ida_envir
     assert report["pip_available"] is True
     assert report["python_version"] == THIS_VERSION
     assert report["ida_python_version"] is None
-    assert [f["id"] for f in report["findings"]] == ["no-venv-exe-var"]
+    assert [f["id"] for f in report["findings"]] == ["hcli-override-active", "no-venv-exe-var"]
     assert report["pattern"]["id"] == "shell-activated-venv"
     assert report["ok"] is True
 
 
 def test_doctor_passes_a_properly_configured_environment(virtual_ida_environment_with_venv, monkeypatch):
     set_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE", os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"])
+    unset_env_var(monkeypatch, "HCLI_CURRENT_IDA_PYTHON_EXE")
 
     result = _run(["doctor", "--json"])
     assert result.exit_code == 0, result.output
