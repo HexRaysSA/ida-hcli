@@ -72,8 +72,10 @@ def list_repos(ctx) -> None:
 def add_repo(ctx, name: str, url: str) -> None:
     """Add a plugin repository."""
     if name in RESERVED_PLUGIN_REPOSITORIES:
-        console.print(f"[red]'{name}' is a reserved repository[/red] and always resolves to its Hex-Rays URL.")
-        raise click.Abort()
+        canonical = RESERVED_PLUGIN_REPOSITORIES[name]
+        if url != canonical:
+            console.print(f"[red]'{name}' is a reserved repository[/red] and always resolves to {canonical}")
+            raise click.Abort()
     if not PLUGIN_REPOSITORY_NAME_RE.match(name):
         console.print(
             f"[red]Invalid repository name '{name}'[/red]: must match {escape(PLUGIN_REPOSITORY_NAME_RE.pattern)}"
@@ -98,20 +100,15 @@ def add_repo(ctx, name: str, url: str) -> None:
 @click.pass_context
 def remove_repo(ctx, name: str) -> None:
     """Remove a plugin repository."""
-    if name in RESERVED_PLUGIN_REPOSITORIES:
-        console.print(f"[red]'{name}' is a reserved repository[/red] and cannot be removed.")
-        raise click.Abort()
-
     config = get_ida_config()
     repos = dict(config.settings.plugin_repositories)
-    if name not in repos:
+    all_repos = get_plugin_repositories(config)
+    if name not in all_repos:
         console.print(f"[red]No such plugin repository '{name}'[/red].")
         raise click.Abort()
 
-    del repos[name]
+    repos.pop(name, None)
     default = config.settings.default_plugin_repository
-    # Leaving the default pointing at a repository that no longer exists would
-    # turn every unprefixed install into a confusing "plugin not found".
     if default == name:
         console.print(
             f"[yellow]'{name}' was the default repository[/yellow]; unprefixed installs now use "

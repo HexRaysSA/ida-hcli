@@ -208,14 +208,9 @@ def repo_for_reference(ctx: click.Context, ref: PluginReference) -> hcli.lib.ida
             )
         raise click.Abort()
 
-    # A named scope is a request for THAT repository: if it cannot be reached,
-    # that is the answer, not a quietly smaller search.
     try:
-        plugins = aggregate.get_plugins_in(name)
+        child = aggregate.get_child_repo(name)
     except (httpx.ConnectError, httpx.TimeoutException):
-        # The group callback used to catch this when it did the fetching. The
-        # fetch moved here, and httpx connection errors often stringify to "",
-        # so without this the user gets a bare "Error:".
         console.print(
             f"[red]Cannot connect to plugin repository '{name}' at "
             f"{aggregate.repositories[name].url} - network unavailable.[/red]"
@@ -223,13 +218,10 @@ def repo_for_reference(ctx: click.Context, ref: PluginReference) -> hcli.lib.ida
         console.print("Please check your internet connection.")
         raise click.Abort()
 
-    # The survey path reports these through the search result; on this path
-    # there is no result to carry them, so say it here rather than drop a
-    # plugin silently.
     for note in aggregate.notes():
         console.print(f"[yellow]Warning:[/yellow] repository {note}")
 
-    return hcli.lib.ida.plugin.repo.file.JSONFilePluginRepo(plugins)
+    return child
 
 
 plugin.add_command(get_plugin_status, name="status")

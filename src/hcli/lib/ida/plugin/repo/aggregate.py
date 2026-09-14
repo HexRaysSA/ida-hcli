@@ -14,8 +14,7 @@ import httpx
 
 from hcli.lib.ida import HEXRAYS_REPO_NAME, PluginRepository
 from hcli.lib.ida.plugin.exceptions import PluginAccessDeniedError
-from hcli.lib.ida.plugin.repo import PLUGIN_REPO_HOST, BasePluginRepo, Plugin
-from hcli.lib.ida.plugin.repo.file import JSONFilePluginRepo
+from hcli.lib.ida.plugin.repo import PLUGIN_REPO_HOST, BasePluginRepo, Plugin, repo_from_url
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +47,9 @@ class AggregatePluginRepo(BasePluginRepo):
         super().__init__()
         self.repositories = repositories
         self._plugins: dict[str, list[Plugin]] = {}
+        self._repos: dict[str, BasePluginRepo] = {}
         self._failures: dict[str, Exception] = {}
         self._dropped: dict[str, int] = {}
-        # Which repository served which plugin, remembered at load time rather
-        # than reconstructed later by scanning every loaded list.
         self._owner: dict[int, str] = {}
 
     def _load(self, name: str) -> list[Plugin]:
@@ -61,14 +59,16 @@ class AggregatePluginRepo(BasePluginRepo):
         if name in self._failures:
             raise self._failures[name]
 
-        repo = self.repositories[name]
+        repo_config = self.repositories[name]
         try:
-            plugins = JSONFilePluginRepo.from_url(repo.url, repo_name=name).get_plugins()
+            child = repo_from_url(repo_config.url, repo_name=name)
+            plugins = child.get_plugins()
         except Exception as e:
-            logger.debug("failed to fetch plugin repository %s (%s): %s", name, repo.url, e)
+            logger.debug("failed to fetch plugin repository %s (%s): %s", name, repo_config.url, e)
             self._failures[name] = e
             raise
 
+        self._repos[name] = child
         kept = self._filter_entitled(name, plugins)
         self._plugins[name] = kept
         for plugin in kept:
@@ -106,6 +106,16 @@ class AggregatePluginRepo(BasePluginRepo):
             if name in self._dropped:
                 notes.append(f"{name}: ignored {self._dropped[name]} plugin(s) claiming Hex-Rays identities")
         return notes
+
+    def get_child_repo(self, name: str) -> BasePluginRepo:
+        """The loaded repo object for a named repository.
+
+        Triggers loading if not already loaded. Propagates that repository's failure.
+        """
+        if name not in self.repositories:
+            raise KeyError(f"unknown plugin repository: {name}")
+        self._load(name)
+        return self._repos[name]
 
     def get_plugins_in(self, name: str) -> list[Plugin]:
         """Plugins from one named repository. Propagates that repository's failure."""
