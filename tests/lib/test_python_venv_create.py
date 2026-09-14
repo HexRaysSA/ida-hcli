@@ -7,7 +7,6 @@ import pytest
 
 from hcli.lib.ida.python import IdatProbe
 from hcli.lib.ida.python.environment import System, get_venv_python_path
-from hcli.lib.venv import get_python_exe_candidates
 from hcli.lib.ida.python.venv_create import (
     VenvCreationError,
     append_to_shell_profile,
@@ -21,6 +20,7 @@ from hcli.lib.ida.python.venv_create import (
     validate_created_virtual_environment,
     validate_python_version_string,
 )
+from hcli.lib.venv import get_python_exe_candidates
 
 THIS_VERSION = f"{sys.version_info.major}.{sys.version_info.minor}"
 SYSTEM: System = "windows" if os.name == "nt" else "linux"

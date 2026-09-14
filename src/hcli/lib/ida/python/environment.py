@@ -550,7 +550,12 @@ def format_environment_warnings(findings: list[EnvironmentFinding]) -> str:
         tag = "[red]error[/red]  " if finding.severity == "error" else "[yellow]warning[/yellow]"
         lines.append(f"  {tag} {escape(finding.summary)}")
 
-    lines.append(f"Run `{ENV.HCLI_BINARY_NAME} ida python doctor` for details and fixes.")
+    lines.extend(
+        [
+            f"Run `{ENV.HCLI_BINARY_NAME} ida python doctor` for details and fixes.",
+            "To skip this check, pass `--no-python-environment-check` to the command group.",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -559,7 +564,12 @@ def format_environment_findings_plain(findings: list[EnvironmentFinding]) -> str
     lines = []
     for finding in findings:
         lines.append(f"- [{finding.severity}] {finding.summary}")
-    lines.append(f"Run '{ENV.HCLI_BINARY_NAME} ida python doctor' for details and fixes.")
+    lines.extend(
+        [
+            f"Run '{ENV.HCLI_BINARY_NAME} ida python doctor' for details and fixes.",
+            "To skip this check, pass --no-python-environment-check to the command group.",
+        ]
+    )
     return "\n".join(lines)
 
 

@@ -275,6 +275,16 @@ def render_doctor_report_text(report: DoctorReport) -> None:
             for finding in warnings:
                 _render_finding(finding, "yellow")
 
+        console.print(
+            "To install plugins despite these findings, pass `--no-python-environment-check`:",
+            highlight=False,
+        )
+        console.print(
+            f"  {ENV.HCLI_BINARY_NAME} plugin --no-python-environment-check install <name>",
+            highlight=False,
+        )
+        console.print()
+
     if report.notes:
         console.print("[bold]Notes[/bold]")
         for note in report.notes:
