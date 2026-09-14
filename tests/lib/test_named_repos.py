@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 import zipfile
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
+from fixtures import *
 
+from hcli.commands.plugin import plugin as plugin_group
 from hcli.lib.ida import (
     COMMUNITY_REPO_NAME,
     HEXRAYS_REPO_NAME,
@@ -18,6 +22,7 @@ from hcli.lib.ida import (
     PluginRepositoryConfig,
     get_plugin_repositories,
 )
+from hcli.lib.ida.plugin.install import get_installed_plugin_records
 from hcli.lib.ida.plugin.repo import repo_from_url
 from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
@@ -43,23 +48,41 @@ def _make_json_repo_file(tmp_path: Path, *plugin_zips: Path) -> Path:
     return p
 
 
+def _current_platform_tag() -> dict:
+    """Build a bundle target tag matching the current test environment."""
+    import platform as _platform
+    import sys
+
+    system = _platform.system()
+    if system == "Darwin":
+        version = _platform.uname().version
+        ida_platform = "macos-aarch64" if "RELEASE_ARM64" in version else "macos-x86_64"
+    elif system == "Windows":
+        ida_platform = "windows-x86_64"
+    else:
+        ida_platform = "linux-x86_64"
+
+    py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
+    cp_tag = f"cp{sys.version_info.major}{sys.version_info.minor}"
+    tag_id = f"{ida_platform}-{cp_tag}"
+    return {
+        "id": tag_id,
+        "idaPlatform": ida_platform,
+        "pythonVersion": py_ver,
+        "implementation": "cp",
+        "abis": [cp_tag, "abi3", "none"],
+        "pipPlatformTags": ["any"],
+        "wheelhouse": f"dependencies/python/{tag_id}",
+    }
+
+
 def _make_bundle_manifest() -> dict:
     return {
         "version": 1,
         "kind": "hcli-plugin-bundle",
         "builtAt": "2026-04-28T16:00:00Z",
         "createdBy": {"tool": "hcli", "version": "0.0.0"},
-        "targetPlatformTags": [
-            {
-                "id": "linux-x86_64-cp312",
-                "idaPlatform": "linux-x86_64",
-                "pythonVersion": "3.12",
-                "implementation": "cp",
-                "abis": ["cp312", "abi3", "none"],
-                "pipPlatformTags": ["manylinux_2_28_x86_64"],
-                "wheelhouse": "dependencies/python/linux-x86_64-cp312",
-            }
-        ],
+        "targetPlatformTags": [_current_platform_tag()],
     }
 
 
@@ -166,7 +189,7 @@ def test_aggregate_child_repo_preserves_bundle_type(tmp_path):
 
     child = agg.get_child_repo("offline")
     assert isinstance(child, PluginBundleRepo)
-    assert child.target_ids == ["linux-x86_64-cp312"]
+    assert child.target_ids == [_current_platform_tag()["id"]]
 
 
 def test_aggregate_mixed_repos(tmp_path):
@@ -232,3 +255,133 @@ def test_reserved_repos_injected_on_empty_config():
     repos = get_plugin_repositories(config)
     assert HEXRAYS_REPO_NAME in repos
     assert COMMUNITY_REPO_NAME in repos
+
+
+# --- CLI integration: airgapped workflow with named bundle repo ---
+
+
+def _write_bundle_with_plugins(tmp_path: Path, *plugin_zips: Path) -> Path:
+    buf = io.BytesIO()
+    manifest = _make_bundle_manifest()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("plugin-bundle.json", json.dumps(manifest))
+        for zip_path in plugin_zips:
+            zf.writestr(f"plugins/{zip_path.name}", zip_path.read_bytes())
+        for target in manifest["targetPlatformTags"]:
+            wh = target["wheelhouse"]
+            zf.writestr(f"{wh}/placeholder.whl", b"fake-wheel")
+    p = tmp_path / "plugins-offline.zip"
+    p.write_bytes(buf.getvalue())
+    return p
+
+
+def _write_fs_repo_with_plugins(tmp_path: Path, *plugin_zips: Path) -> Path:
+    d = tmp_path / "fs-repo"
+    d.mkdir()
+    for zip_path in plugin_zips:
+        shutil.copy(zip_path, d / zip_path.name)
+    return d
+
+
+def _invoke(runner: CliRunner, *args: str):
+    return runner.invoke(plugin_group, list(args))
+
+
+def test_airgapped_workflow_bundle_repo(virtual_ida_environment, tmp_path):
+    """Full airgapped workflow: remove default repos, add a bundle, search, install."""
+    bundle_path = _write_bundle_with_plugins(tmp_path, PLUGIN1_V1, PLUGIN1_V2)
+    bundle_url = bundle_path.as_uri()
+    runner = CliRunner(mix_stderr=False)
+
+    result = _invoke(runner, "repo", "remove", "hexrays")
+    assert result.exit_code == 0, result.output
+    assert "removed" in result.output
+
+    result = _invoke(runner, "repo", "remove", "community")
+    assert result.exit_code == 0, result.output
+    assert "removed" in result.output
+
+    result = _invoke(runner, "repo", "add", "offline", bundle_url)
+    assert result.exit_code == 0, result.output
+    assert "added" in result.output
+
+    result = _invoke(runner, "repo", "set-default", "offline")
+    assert result.exit_code == 0, result.output
+
+    result = _invoke(runner, "repo", "list")
+    assert result.exit_code == 0, result.output
+    assert "offline" in result.output
+    assert "hexrays" not in result.output
+    assert "community" not in result.output
+
+    result = _invoke(runner, "search")
+    assert result.exit_code == 0, result.output
+    assert "plugin1" in result.output
+
+    result = _invoke(runner, "install", "offline/plugin1==1.0.0")
+    assert result.exit_code == 0, result.output
+    assert "plugin1" in result.output
+    installed = [(r.name, r.version) for r in get_installed_plugin_records()]
+    assert ("plugin1", "1.0.0") in installed
+
+    result = _invoke(runner, "upgrade", "offline/plugin1==2.0.0")
+    assert result.exit_code == 0, result.output
+    installed = [(r.name, r.version) for r in get_installed_plugin_records()]
+    assert ("plugin1", "2.0.0") in installed
+
+
+def test_airgapped_workflow_fs_repo(virtual_ida_environment, tmp_path):
+    """Full airgapped workflow with a directory repo."""
+    fs_path = _write_fs_repo_with_plugins(tmp_path, PLUGIN1_V1, PLUGIN1_V2)
+    fs_url = fs_path.as_uri()
+    runner = CliRunner(mix_stderr=False)
+
+    result = _invoke(runner, "repo", "remove", "hexrays")
+    assert result.exit_code == 0, result.output
+
+    result = _invoke(runner, "repo", "remove", "community")
+    assert result.exit_code == 0, result.output
+
+    result = _invoke(runner, "repo", "add", "local", fs_url)
+    assert result.exit_code == 0, result.output
+
+    result = _invoke(runner, "repo", "set-default", "local")
+    assert result.exit_code == 0, result.output
+
+    result = _invoke(runner, "search")
+    assert result.exit_code == 0, result.output
+    assert "plugin1" in result.output
+
+    result = _invoke(runner, "install", "local/plugin1==1.0.0")
+    assert result.exit_code == 0, result.output
+    installed = [(r.name, r.version) for r in get_installed_plugin_records()]
+    assert ("plugin1", "1.0.0") in installed
+
+
+def test_restore_reserved_repo_after_removal(virtual_ida_environment):
+    """A removed reserved repo can be restored with repo add and its canonical URL."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = _invoke(runner, "repo", "remove", "hexrays")
+    assert result.exit_code == 0, result.output
+
+    result = _invoke(runner, "repo", "list")
+    assert result.exit_code == 0, result.output
+    assert "hexrays" not in result.output
+
+    canonical = RESERVED_PLUGIN_REPOSITORIES[HEXRAYS_REPO_NAME]
+    result = _invoke(runner, "repo", "add", "hexrays", canonical)
+    assert result.exit_code == 0, result.output
+
+    result = _invoke(runner, "repo", "list")
+    assert result.exit_code == 0, result.output
+    assert "hexrays" in result.output
+
+
+def test_reserved_repo_cannot_be_repointed(virtual_ida_environment):
+    """Adding a reserved repo with a non-canonical URL is rejected."""
+    runner = CliRunner(mix_stderr=False)
+
+    result = _invoke(runner, "repo", "add", "hexrays", "https://evil.example.com/repo.json")
+    assert result.exit_code != 0
+    assert "reserved" in result.output

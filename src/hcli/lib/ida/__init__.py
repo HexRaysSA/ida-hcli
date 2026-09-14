@@ -968,10 +968,12 @@ def get_plugin_repositories(config: IDAConfigJson | None = None) -> dict[str, Pl
             continue
         repos[name] = PluginRepository(name=name, url=entry.url, reserved=False)
 
-    has_config = bool(config.settings.plugin_repositories)
+    explicitly_configured = (
+        bool(config.settings.plugin_repositories) or config.settings.default_plugin_repository is not None
+    )
     for name, url in RESERVED_PLUGIN_REPOSITORIES.items():
         configured = config.settings.plugin_repositories.get(name)
-        if has_config and configured is None:
+        if explicitly_configured and configured is None:
             continue
         if configured is not None and configured.url and configured.url != url:
             stderr_console.print(
