@@ -403,9 +403,9 @@ def run_create_environment(
     help="Python version to use when idat is not available. IDA's own version wins when known.",
 )
 @click.option(
-    "--no-configure",
+    "--no-configure-env-var",
     is_flag=True,
-    help=f"Do not offer to set {ENV_VAR}. Only create the environment.",
+    help=f"Do not set {ENV_VAR}. Only create the virtual environment.",
 )
 @click.option(
     "--no-reinstall-plugins",
@@ -420,7 +420,7 @@ def run_create_environment(
 def create_environment(
     path: Path | None,
     python_version: str | None,
-    no_configure: bool,
+    no_configure_env_var: bool,
     no_reinstall_plugins: bool,
     json_output: bool,
 ) -> None:
@@ -436,12 +436,12 @@ def create_environment(
 
     HCLI shows a plan of the changes it will make. In an interactive
     terminal it asks for confirmation; in scripts and CI it applies
-    them automatically. Pass --no-configure to skip this step.
+    them automatically. Pass --no-configure-env-var to skip this step.
     """
     result = run_create_environment(
         path=path,
         python_version=python_version,
-        configure=not no_configure,
+        configure=not no_configure_env_var,
         reinstall_plugins=not no_reinstall_plugins,
         interactive=_is_interactive() and not json_output,
         quiet=json_output,

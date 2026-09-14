@@ -91,7 +91,7 @@ def no_ida(tmp_path: Path, monkeypatch):
 def test_create_environment_creates_venv_at_idausr_and_is_idempotent(virtual_ida_environment, no_ida):
     idausr = Path(os.environ["HCLI_IDAUSR"])
 
-    result = _run(["create-environment", "--json", "--no-configure", "--python-version", THIS_VERSION])
+    result = _run(["create-environment", "--json", "--no-configure-env-var", "--python-version", THIS_VERSION])
     assert result.exit_code == 0, result.output
 
     created = json.loads(result.stdout)
@@ -106,7 +106,7 @@ def test_create_environment_creates_venv_at_idausr_and_is_idempotent(virtual_ida
     assert python_exe.is_file()
     assert (idausr / "venv" / "pyvenv.cfg").is_file()
 
-    result = _run(["create-environment", "--json", "--no-configure", "--python-version", THIS_VERSION])
+    result = _run(["create-environment", "--json", "--no-configure-env-var", "--python-version", THIS_VERSION])
     assert result.exit_code == 0, result.output
     again = json.loads(result.stdout)
     assert again["created"] is False
