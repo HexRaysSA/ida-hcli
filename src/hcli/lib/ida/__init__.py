@@ -927,10 +927,10 @@ def _migrate_plugin_repositories(config: IDAConfigJson) -> bool:
 def get_plugin_repositories(config: IDAConfigJson | None = None) -> dict[str, PluginRepository]:
     """The configured plugin repositories, keyed by name.
 
-    Migrates a pre-0.23 config on first read. The two reserved repositories are
-    always present with their shipped URLs: a file that tries to redefine them
-    is ignored on that point and told so, since the whole value of a reserved
-    name is that it cannot be pointed somewhere else.
+    Migrates a pre-0.23 config on first read. Reserved repositories are present
+    by default (the migration creates them) but can be removed via ``repo remove``.
+    Their URLs cannot be repointed: if an entry exists under a reserved name with
+    a different URL, the shipped URL wins.
     """
     if config is None:
         config = get_ida_config()
@@ -968,8 +968,11 @@ def get_plugin_repositories(config: IDAConfigJson | None = None) -> dict[str, Pl
             continue
         repos[name] = PluginRepository(name=name, url=entry.url, reserved=False)
 
+    has_config = bool(config.settings.plugin_repositories)
     for name, url in RESERVED_PLUGIN_REPOSITORIES.items():
         configured = config.settings.plugin_repositories.get(name)
+        if has_config and configured is None:
+            continue
         if configured is not None and configured.url and configured.url != url:
             stderr_console.print(
                 f"[yellow]Warning:[/yellow] ignoring the url configured for reserved plugin repository "

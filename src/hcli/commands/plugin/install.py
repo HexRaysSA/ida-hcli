@@ -191,9 +191,8 @@ def install_plugin(
 
             from hcli.commands.plugin import repo_for_reference
 
-            # Installing is a choice, not a survey: resolve in exactly one
-            # repository -- the one named by the prefix, else the default.
             plugin_repo: BasePluginRepo = repo_for_reference(ctx, ref)
+            plugin_repo_obj = plugin_repo
 
             # reconstruct the plugin_spec for repo lookup without the @host suffix
             bare_spec = ref.name + ref.version_spec

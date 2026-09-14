@@ -466,3 +466,25 @@ class PluginArchiveIndex:
             ret.append(plugin)
 
         return ret
+
+
+def repo_from_url(url: str, repo_name: str | None = None) -> BasePluginRepo:
+    """Build the right BasePluginRepo subclass for a URL or file:// path.
+
+    Directories become FileSystemPluginRepo, zips containing a plugin-bundle.json
+    become PluginBundleRepo, and everything else is treated as a JSON plugin index.
+    """
+    from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo, is_plugin_bundle_zip
+    from hcli.lib.ida.plugin.repo.file import JSONFilePluginRepo
+    from hcli.lib.ida.plugin.repo.fs import FileSystemPluginRepo
+
+    parsed = urlparse(url)
+    if parsed.scheme == "file":
+        local_path = Path(urllib.request.url2pathname(parsed.path))
+        if local_path.is_dir():
+            return FileSystemPluginRepo(local_path)
+        if local_path.is_file() and is_plugin_bundle_zip(local_path):
+            return PluginBundleRepo(local_path)
+        return JSONFilePluginRepo.from_url(url, repo_name=repo_name)
+
+    return JSONFilePluginRepo.from_url(url, repo_name=repo_name)
