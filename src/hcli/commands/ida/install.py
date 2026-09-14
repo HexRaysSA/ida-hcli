@@ -294,6 +294,7 @@ def create_python_environment_for_install(install_dir_path: Path, *, interactive
             path=None,
             python_version=None,
             configure=True,
+            reinstall_plugins=True,
             interactive=interactive and sys.stdin.isatty(),
             quiet=False,
         )
