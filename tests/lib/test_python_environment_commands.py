@@ -10,6 +10,7 @@ from fixtures import get_base_python_exe, get_python_exe_for_venv, set_env_var, 
 
 from hcli.commands.ida.python import python as python_group
 from hcli.commands.ida.python.create_environment import CreateEnvironmentError, run_create_environment
+from hcli.env import ENV
 
 THIS_VERSION = f"{sys.version_info.major}.{sys.version_info.minor}"
 
@@ -50,8 +51,10 @@ def test_doctor_json_warns_when_venv_is_not_configured_for_ida(virtual_ida_envir
 
 
 def test_doctor_passes_a_properly_configured_environment(virtual_ida_environment_with_venv, monkeypatch):
-    set_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE", os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"])
-    unset_env_var(monkeypatch, "HCLI_CURRENT_IDA_PYTHON_EXE")
+    python_exe = os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"]
+    monkeypatch.setattr(ENV, "HCLI_CURRENT_IDA_PYTHON_EXE", None)
+    monkeypatch.delenv("HCLI_CURRENT_IDA_PYTHON_EXE", raising=False)
+    set_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE", python_exe)
 
     result = _run(["doctor", "--json"])
     assert result.exit_code == 0, result.output
