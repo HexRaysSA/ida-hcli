@@ -80,6 +80,11 @@ def test_windows_plan_uses_powershell():
     assert '"User"' in step.command[-1]
 
 
+def test_windows_plan_has_no_warnings():
+    plan = _build_windows_plan(NAME, WIN_VALUE)
+    assert plan.warnings == []
+
+
 def test_windows_plan_manual_instructions_mention_powershell_and_gui():
     plan = _build_windows_plan(NAME, WIN_VALUE)
     assert "PowerShell" in plan.manual_instructions
@@ -118,6 +123,26 @@ def test_macos_plan_needs_logout():
     assert plan.needs_logout
 
 
+def test_macos_plan_known_shell_has_no_warnings():
+    home = Path("/Users/testuser")
+    with patch.dict("os.environ", {"SHELL": "/bin/zsh"}):
+        plan = _build_macos_plan(NAME, VALUE, home)
+    assert plan.warnings == []
+
+
+def test_macos_plan_unknown_shell_warns_about_terminal():
+    home = Path("/Users/testuser")
+    with patch.dict("os.environ", {"SHELL": "/bin/nu"}):
+        plan = _build_macos_plan(NAME, VALUE, home)
+
+    kinds = [s.kind for s in plan.steps]
+    assert "macos-launchagent" in kinds
+    assert "shell-profile" not in kinds
+    assert len(plan.warnings) == 1
+    assert "terminal" in plan.warnings[0].lower()
+    assert "LaunchAgent" in plan.warnings[0]
+
+
 # ---------------------------------------------------------------------------
 # Linux plan
 # ---------------------------------------------------------------------------
@@ -143,11 +168,13 @@ def test_linux_plan_with_systemd_has_environment_d_and_profile():
     profile_step = next(s for s in plan.steps if s.kind == "shell-profile")
     assert profile_step.file_path == home / ".bash_profile"
 
+    assert plan.warnings == []
+
 
 def test_linux_plan_without_systemd_has_only_profile():
     home = Path("/home/testuser")
     with (
-        patch.dict("os.environ", {"SHELL": "/bin/zsh"}),
+        patch.dict("os.environ", {"SHELL": "/bin/zsh", "DISPLAY": ":0"}, clear=False),
         patch("hcli.lib.ida.python.platform_env.has_systemd_user", return_value=False),
     ):
         plan = _build_linux_plan(NAME, VALUE, home)
@@ -159,8 +186,41 @@ def test_linux_plan_without_systemd_has_only_profile():
     profile_step = next(s for s in plan.steps if s.kind == "shell-profile")
     assert profile_step.file_path == home / ".zprofile"
 
+    assert len(plan.warnings) == 1
+    assert "systemd" in plan.warnings[0].lower()
 
-def test_linux_plan_with_unknown_shell():
+
+def test_linux_plan_without_systemd_wayland_warns_about_compositor():
+    home = Path("/home/testuser")
+    with (
+        patch.dict("os.environ", {"SHELL": "/bin/bash", "WAYLAND_DISPLAY": "wayland-0"}, clear=False),
+        patch("hcli.lib.ida.python.platform_env.has_systemd_user", return_value=False),
+    ):
+        plan = _build_linux_plan(NAME, VALUE, home)
+
+    assert len(plan.warnings) == 1
+    assert "wayland" in plan.warnings[0].lower()
+    assert "compositor" in plan.warnings[0].lower()
+
+
+def test_linux_plan_without_systemd_unknown_shell_warns_full_gap():
+    home = Path("/home/testuser")
+    with (
+        patch.dict("os.environ", {"SHELL": "/bin/nu"}, clear=False),
+        patch("hcli.lib.ida.python.platform_env.has_systemd_user", return_value=False),
+    ):
+        plan = _build_linux_plan(NAME, VALUE, home)
+
+    kinds = [s.kind for s in plan.steps]
+    assert "linux-environment-d" not in kinds
+    assert "shell-profile" not in kinds
+    assert len(plan.steps) == 0
+
+    assert len(plan.warnings) == 1
+    assert "cannot automatically configure" in plan.warnings[0].lower()
+
+
+def test_linux_plan_with_systemd_unknown_shell_warns_about_terminal():
     home = Path("/home/testuser")
     with (
         patch.dict("os.environ", {"SHELL": "/bin/nu"}),
@@ -172,6 +232,10 @@ def test_linux_plan_with_unknown_shell():
     assert "linux-environment-d" in kinds
     assert "shell-profile" not in kinds
     assert "~/.profile" in plan.manual_instructions
+
+    assert len(plan.warnings) == 1
+    assert "terminal" in plan.warnings[0].lower()
+    assert "environment.d" in plan.warnings[0]
 
 
 # ---------------------------------------------------------------------------

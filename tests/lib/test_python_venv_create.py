@@ -9,14 +9,10 @@ from hcli.lib.ida.python import IdatProbe
 from hcli.lib.ida.python.environment import System, get_venv_python_path
 from hcli.lib.ida.python.venv_create import (
     VenvCreationError,
-    append_to_shell_profile,
     create_virtual_environment,
-    detect_shell,
     get_registered_python_exe,
-    get_shell_profile_path,
     inspect_target,
     plan_virtual_environment,
-    render_profile_line,
     validate_created_virtual_environment,
     validate_python_version_string,
 )
@@ -153,45 +149,6 @@ def test_validate_created_virtual_environment_rejects_wrong_version(seeded_venv:
 def test_validate_created_virtual_environment_rejects_non_venv(tmp_path: Path):
     with pytest.raises(VenvCreationError, match=r"no pyvenv\.cfg"):
         validate_created_virtual_environment(tmp_path, THIS_VERSION)
-
-
-def test_detect_shell_and_profile_paths():
-    home = Path("/home/user")
-    assert detect_shell("/bin/zsh") == "zsh"
-    assert detect_shell("/usr/bin/fish") == "fish"
-    assert detect_shell(None) == "unknown"
-    assert detect_shell("/bin/nu") == "unknown"
-
-    assert get_shell_profile_path("zsh", home) == home / ".zshrc"
-    assert get_shell_profile_path("bash", home) == home / ".bashrc"
-    assert get_shell_profile_path("fish", home) == home / ".config" / "fish" / "config.fish"
-    assert get_shell_profile_path("unknown", home) is None
-
-
-def test_render_profile_line_per_shell():
-    assert render_profile_line("X", "/v/bin/python", "zsh") == 'export X="/v/bin/python"'
-    assert render_profile_line("X", "/v/bin/python", "fish") == 'set -gx X "/v/bin/python"'
-
-
-def test_append_to_shell_profile_is_idempotent(tmp_path: Path):
-    profile = tmp_path / ".zshrc"
-    line = 'export IDAPYTHON_VENV_EXECUTABLE="/v/bin/python"'
-
-    assert append_to_shell_profile(profile, line)
-    assert profile.read_text() == line + "\n"
-
-    assert not append_to_shell_profile(profile, line)
-    assert profile.read_text() == line + "\n"
-
-    profile.write_text("alias ll='ls -l'")
-    assert append_to_shell_profile(profile, line)
-    assert profile.read_text() == "alias ll='ls -l'\n" + line + "\n"
-
-
-def test_append_to_shell_profile_creates_parent_dirs(tmp_path: Path):
-    profile = tmp_path / ".config" / "fish" / "config.fish"
-    assert append_to_shell_profile(profile, 'set -gx X "1"')
-    assert profile.read_text() == 'set -gx X "1"\n'
 
 
 def test_get_registered_python_exe_skips_non_python_executable(tmp_path: Path):
