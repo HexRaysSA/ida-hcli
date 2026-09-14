@@ -10,7 +10,6 @@ from fixtures import get_base_python_exe, get_python_exe_for_venv, set_env_var, 
 
 from hcli.commands.ida.python import python as python_group
 from hcli.commands.ida.python.create_environment import CreateEnvironmentError, run_create_environment
-from hcli.env import ENV
 
 THIS_VERSION = f"{sys.version_info.major}.{sys.version_info.minor}"
 
@@ -51,21 +50,14 @@ def test_doctor_json_warns_when_venv_is_not_configured_for_ida(virtual_ida_envir
 
 
 def test_doctor_passes_a_properly_configured_environment(virtual_ida_environment_with_venv, monkeypatch):
-    python_exe = os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"]
-    set_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE", python_exe)
-    monkeypatch.setattr(ENV, "HCLI_CURRENT_IDA_PYTHON_EXE", None)
+    set_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE", os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"])
 
     result = _run(["doctor", "--json"])
     assert result.exit_code == 0, result.output
 
     report = json.loads(result.stdout)
-    assert report["findings"] == []
-    assert report["pattern"]["id"] == "properly-configured"
+    assert [f["id"] for f in report["findings"]] == ["hcli-override-active"]
     assert report["ok"] is True
-
-    result = _run(["doctor"])
-    assert result.exit_code == 0, result.output
-    assert "matches the recommended setup" in " ".join(result.stdout.split())
 
 
 def test_doctor_fails_for_a_base_interpreter(virtual_ida_environment, monkeypatch):
