@@ -220,7 +220,7 @@ def test_create_environment_migration_reports_failure(virtual_ida_environment, n
 
 
 def test_create_environment_no_reinstall_plugins_skips(virtual_ida_environment, no_ida):
-    _place_plugin("withdeps", _make_metadata("withdeps", deps=["packaging==25.0"]))
+    _place_plugin("withdeps", _make_metadata("withdeps", deps=["markupsafe>=2.0"]))
 
     result = _create_env(reinstall_plugins=False)
 
@@ -229,7 +229,7 @@ def test_create_environment_no_reinstall_plugins_skips(virtual_ida_environment, 
     assert result.plugins_skipped is True
 
     freeze = _pip_freeze(Path(result.python_exe))
-    assert "packaging" not in freeze.lower()
+    assert "markupsafe" not in freeze.lower()
 
 
 def test_create_environment_skips_plugins_without_deps(virtual_ida_environment, no_ida):
