@@ -16,6 +16,7 @@ from fixtures import PLUGINS_DIR
 
 from hcli.commands.ida.python.create_environment import run_create_environment
 from hcli.lib.ida.plugin.install import (
+    PluginDependencyInfo,
     collect_plugin_dependencies,
     get_plugin_directory,
     install_plugin_archive,
@@ -110,8 +111,6 @@ def test_collect_from_real_plugin_archive(virtual_ida_environment_with_venv):
 
 def test_install_single_plugin_deps_success(virtual_ida_environment_with_venv):
     python_exe = Path(os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"])
-    from hcli.lib.ida.plugin.install import PluginDependencyInfo
-
     info = PluginDependencyInfo(name="test-plugin", dependencies=["packaging==25.0"])
     result = install_single_plugin_dependencies(python_exe, info)
 
@@ -122,8 +121,6 @@ def test_install_single_plugin_deps_success(virtual_ida_environment_with_venv):
 
 def test_install_single_plugin_deps_failure(virtual_ida_environment_with_venv):
     python_exe = Path(os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"])
-    from hcli.lib.ida.plugin.install import PluginDependencyInfo
-
     info = PluginDependencyInfo(
         name="bad-plugin",
         dependencies=["nonexistent-package-that-does-not-exist-xyz==99.99.99"],

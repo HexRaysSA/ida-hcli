@@ -202,8 +202,8 @@ def _run_migration(
 def _print_failure_summary(out, failed: list[PluginMigrationResult]) -> None:
     out.print()
     out.print(f"[yellow]Warning:[/yellow] {len(failed)} plugin(s) could not have their dependencies installed:")
-    for f in failed:
-        out.print(f"  [blue]{f.name}[/blue]: {f.error}")
+    for result in failed:
+        out.print(f"  [blue]{result.name}[/blue]: {result.error}")
     out.print()
     out.print(
         "Reinstall these plugins from their original source "
