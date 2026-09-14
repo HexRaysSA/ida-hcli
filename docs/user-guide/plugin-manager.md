@@ -66,7 +66,7 @@ HCLI fetches plugins from named repositories. Two are configured by default:
 | `community` | Community plugins indexed from public GitHub repositories | none (anonymous) |
 | `hexrays` | Private plugins published by Hex-Rays | required (`hcli login`) |
 
-The `community` repository is the default. A bare `hcli plugin install <name>` searches it, same as always. To install a private plugin from the `hexrays` repository, prefix the name:
+The `community` repository is the default. A bare `hcli plugin install <name>` searches it. To install a private plugin from the `hexrays` repository, prefix the name:
 
 ```console
 ❯ hcli plugin install hexrays/some-private-plugin
