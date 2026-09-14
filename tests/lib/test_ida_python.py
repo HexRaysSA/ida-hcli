@@ -306,6 +306,7 @@ def test_find_current_python_executable_honors_idapythonrc(tmp_path, monkeypatch
     set_env_var(monkeypatch, "HCLI_CURRENT_IDA_INSTALL_DIR", str(install_dir))
     set_env_var(monkeypatch, "HCLI_TEST_VENV", str(venv_dir))
     unset_env_var(monkeypatch, "HCLI_CURRENT_IDA_PYTHON_EXE")
+    unset_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE")
 
     # building the venv above probed IDA under the ambient environment;
     # this test changes the environment, so it needs a fresh probe.
