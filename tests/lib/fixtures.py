@@ -137,6 +137,18 @@ def hook_current_version():
 
 
 @pytest.fixture
+def block_network():
+    """Point HTTP(S)_PROXY at a dead endpoint so any network access fails fast.
+
+    Use alongside airgapped/offline tests to verify that nothing (pip, httpx,
+    urllib) accidentally reaches the internet.
+    """
+    dead = "http://127.0.0.1:1"
+    with temp_env_var("HTTP_PROXY", dead), temp_env_var("HTTPS_PROXY", dead):
+        yield
+
+
+@pytest.fixture
 def virtual_ida_environment(temp_hcli_idausr_dir, hook_current_platform, hook_current_version):
     """pytest fixture with the following hooks: IDAUSR, current platform, current version.
     This should allow many plugin operations to work without an IDA installation.
