@@ -61,17 +61,17 @@ $ hcli commands
 │ hcli plugin config import │ Import plugin configuration settings from JSON.                  │
 │ hcli plugin config list   │ List all configuration settings for a plugin.                    │
 │ hcli plugin config set    │ Set a plugin configuration setting.                              │
-│ hcli plugin install       │ No description available                                         │
+│ hcli plugin install       │ Install a plugin from a repository, URL, or local path.          │
 │ hcli plugin lint          │ Lint an IDA plugin directory, archive (.zip file), or HTTPS URL. │
 │ hcli plugin repo add      │ Add a plugin repository.                                         │
 │ hcli plugin repo list     │ List the configured plugin repositories.                         │
 │ hcli plugin repo remove   │ Remove a plugin repository.                                      │
 │ hcli plugin repo set-default │ Set the repository used for references with no repo/ prefix.  │
 │ hcli plugin repo snapshot │ Create a snapshot of the repository.                             │
-│ hcli plugin search        │ No description available                                         │
-│ hcli plugin status        │ No description available                                         │
-│ hcli plugin uninstall     │ No description available                                         │
-│ hcli plugin upgrade       │ No description available                                         │
+│ hcli plugin search        │ Search for plugins across configured repositories.               │
+│ hcli plugin status        │ Show installed plugins and available upgrades.                    │
+│ hcli plugin uninstall     │ Uninstall an installed plugin.                                   │
+│ hcli plugin upgrade       │ Upgrade an installed plugin to the latest version.               │
 │ hcli share delete         │ Delete shared file by code.                                      │
 │ hcli share get            │ Download a shared file using its shortcode.                      │
 │ hcli share list           │ List and manage your shared files.                               │
@@ -277,13 +277,13 @@ Delete file a49e9ff8d53a9af8ef20a383a276449d.exe_.i64 ? [y/n]: y
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ─────────────────────────────────────────────────────────────────────────────────────────╮
 │ config         Manage plugin configuration settings.                                               │
-│ install                                                                                            │
+│ install        Install a plugin from a repository, local directory, local .zip file, or URL.       │
 │ lint           Lint an IDA plugin directory, archive (.zip file), or HTTPS URL.                    │
 │ repo           Manage plugin repositories.                                                         │
-│ search                                                                                             │
-│ status                                                                                             │
-│ uninstall                                                                                          │
-│ upgrade                                                                                            │
+│ search         Search for plugins by name, keyword, category, or author.                           │
+│ status         Show installed plugins and their upgrade status.                                    │
+│ uninstall      Remove an installed plugin.                                                         │
+│ upgrade        Upgrade an installed plugin to the latest compatible version.                       │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
