@@ -121,6 +121,9 @@ def configure_env_var(python_exe: Path, *, interactive: bool, quiet: bool) -> tu
         if step.file_path is not None:
             out.print(f"     [dim]{escape(str(step.file_path))}[/dim]", highlight=False)
 
+    for warning in plan.warnings:
+        out.print(f"  [yellow]Warning: {escape(warning)}[/yellow]", highlight=False)
+
     if not interactive:
         out.print(f"\n{escape(plan.manual_instructions)}", highlight=False)
         return False, None

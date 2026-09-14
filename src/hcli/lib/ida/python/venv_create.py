@@ -1,4 +1,4 @@
-"""Create a virtual environment for IDA and make IDA use it.
+"""Create a virtual environment for IDA.
 
 `hcli ida python create-environment` drives this.  The steps are separate
 functions so each is testable on its own:
@@ -8,14 +8,13 @@ functions so each is testable on its own:
      IDA's embedded Python (what idapyswitch registered) is authoritative.
   3. `plan_virtual_environment`: which tool and interpreter to use.  Pure.
   4. `create_virtual_environment`: run the plan and validate the result.
-  5. `render_set_env_var_command` / `append_to_shell_profile` / `set_windows_user_env_var`:
-     make `IDAPYTHON_VENV_EXECUTABLE` point at the new venv.
+
+Persisting environment variables is handled by `platform_env`.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import re
 import shutil
 import subprocess
@@ -330,67 +329,3 @@ def validate_created_virtual_environment(target: Path, version: str) -> Path:
         raise VenvCreationError(f"{target} was created but pip is not available in {python_exe}")
 
     return python_exe
-
-
-ShellKind = Literal["bash", "zsh", "fish", "sh", "unknown"]
-
-
-def detect_shell(shell_env: str | None) -> ShellKind:
-    if not shell_env:
-        return "unknown"
-    name = Path(shell_env).name
-    if name in ("bash", "zsh", "fish", "sh"):
-        return name  # type: ignore[return-value]
-    return "unknown"
-
-
-def get_shell_profile_path(shell: ShellKind, home: Path) -> Path | None:
-    """The file where an exported variable persists for `shell`, or None when unknown."""
-    if shell == "zsh":
-        return home / ".zshrc"
-    if shell == "bash":
-        return home / ".bashrc"
-    if shell == "fish":
-        return home / ".config" / "fish" / "config.fish"
-    if shell == "sh":
-        return home / ".profile"
-    return None
-
-
-def render_profile_line(name: str, value: str, shell: ShellKind) -> str:
-    if shell == "fish":
-        return f'set -gx {name} "{value}"'
-    return f'export {name}="{value}"'
-
-
-def append_to_shell_profile(profile: Path, line: str) -> bool:
-    """Append `line` to `profile` unless it's already there.  Returns whether anything was written."""
-    existing = ""
-    if profile.is_file():
-        existing = profile.read_text(encoding="utf-8", errors="replace")
-        if line in existing.splitlines():
-            return False
-
-    profile.parent.mkdir(parents=True, exist_ok=True)
-    with profile.open("a", encoding="utf-8") as f:
-        if existing and not existing.endswith("\n"):
-            f.write("\n")
-        f.write(line + "\n")
-    return True
-
-
-def set_windows_user_env_var(name: str, value: str) -> None:
-    """Persist a user environment variable via setx.
-
-    Raises:
-        VenvCreationError: when setx fails.
-    """
-    command = ["setx", name, value]
-    try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=60.0, check=False)
-    except (subprocess.SubprocessError, OSError) as e:
-        raise VenvCreationError(f"failed to run setx: {e}") from e
-    if result.returncode != 0:
-        output = (result.stderr or result.stdout or "").strip()
-        raise VenvCreationError(f"setx failed with exit code {result.returncode}: {output}")
-    os.environ[name] = value

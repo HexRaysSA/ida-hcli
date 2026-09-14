@@ -7,27 +7,48 @@ desktop file.  The mechanism differs by OS and session type.
 The logic is split into three layers:
 
   1. **Platform detection** — pure predicates that inspect the runtime
-     environment: `is_windows`, `is_macos`, `is_linux`, `is_wayland_session`,
-     `detect_login_shell`, etc.
+     environment: `is_windows`, `is_macos`, `is_linux`, `has_systemd_user`,
+     `detect_session_type`, `detect_login_shell`.
 
   2. **Plan** — `build_configuration_plan` reads the predicates and returns a
-     `ConfigurationPlan`: a list of `ConfigurationStep`s describing what HCLI
-     will write, where, and why.  This function is pure (no I/O beyond reading
-     env vars) and testable.
+     `ConfigurationPlan`: steps to execute, warnings about coverage gaps, and
+     manual instructions for anything HCLI cannot automate.
 
   3. **Execute** — `execute_configuration_plan` carries out the plan: writes
      files, runs commands, and reports what happened.
 
 Why environment variables (not a config file):
-  IDA 9.0–9.4 has no config-file hook that is read before the Python
+  IDA 9.0-9.4 has no config-file hook that is read before the Python
   interpreter loads.  IDAPYTHON_VENV_EXECUTABLE is already recognized by IDA.
   A config-file mechanism may arrive in IDA 9.5+; until then, env vars are the
   only option that works across all IDA editions and launch contexts.
 
-Platform table:
-  Windows  — user environment variable via PowerShell .NET API
-  macOS    — LaunchAgent plist (GUI) + shell login profile (terminal)
-  Linux    — ~/.config/environment.d/ (graphical) + shell login profile (terminal)
+Platform coverage:
+
+  Windows     — user environment variable via PowerShell .NET API.
+                Covers GUI and terminal.  No gaps.
+
+  macOS       — LaunchAgent plist (GUI) + shell login profile (terminal).
+                Gap: unknown shell -> no terminal profile written.
+
+  Linux       — Two independent mechanisms needed:
+                GUI:      ~/.config/environment.d/ on systemd distros.
+                          No reliable mechanism on non-systemd distros.
+                Terminal: shell login profile.
+                          Gap: unknown shell -> no profile written.
+
+Edge cases that produce warnings (HCLI tells the user what it cannot do):
+
+  - Unknown shell (any OS): HCLI cannot write a shell profile.  The user
+    must set the export in their shell's login file manually.
+
+  - Non-systemd Linux: environment.d is not written (nothing would read it).
+    The shell profile may or may not reach graphical sessions depending on
+    the display manager.  Under Wayland without systemd, there is no reliable
+    user-level mechanism; the user must configure their compositor.
+
+  - Non-systemd Linux + unknown shell: no automated mechanism at all.  HCLI
+    provides manual instructions only.
 """
 
 from __future__ import annotations
@@ -68,8 +89,7 @@ def detect_session_type() -> SessionType:
         return "wayland"
     if os.environ.get("DISPLAY"):
         return "x11"
-    term = os.environ.get("TERM", "")
-    if term and not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+    if os.environ.get("TERM") and not os.environ.get("DISPLAY"):
         return "tty"
     return "unknown"
 
@@ -144,6 +164,7 @@ class ConfigurationStep:
 @dataclass(frozen=True)
 class ConfigurationPlan:
     steps: list[ConfigurationStep]
+    warnings: list[str]
     env_var_name: str
     env_var_value: str
     manual_instructions: str
@@ -202,6 +223,7 @@ def _build_windows_plan(name: str, value: str) -> ConfigurationPlan:
     )
     return ConfigurationPlan(
         steps=[step],
+        warnings=[],
         env_var_name=name,
         env_var_value=value,
         manual_instructions=manual,
@@ -210,6 +232,7 @@ def _build_windows_plan(name: str, value: str) -> ConfigurationPlan:
 
 def _build_macos_plan(name: str, value: str, home: Path) -> ConfigurationPlan:
     steps: list[ConfigurationStep] = []
+    warnings: list[str] = []
     shell = detect_login_shell()
     profile = get_login_profile_path(shell, home)
 
@@ -249,6 +272,14 @@ def _build_macos_plan(name: str, value: str, home: Path) -> ConfigurationPlan:
                 needs_logout=False,
             )
         )
+    else:
+        shell_name = os.environ.get("SHELL", "your shell")
+        warnings.append(
+            f"HCLI does not know how to configure {shell_name}. "
+            f"IDA launched from Finder/Dock will work (via the LaunchAgent), but "
+            f"terminal sessions will not see {name} until you add the export to "
+            f"your shell's login profile manually."
+        )
 
     manual_parts = [
         f"Configure {name} for your system:\n",
@@ -270,6 +301,7 @@ def _build_macos_plan(name: str, value: str, home: Path) -> ConfigurationPlan:
     )
     return ConfigurationPlan(
         steps=steps,
+        warnings=warnings,
         env_var_name=name,
         env_var_value=value,
         manual_instructions="\n".join(manual_parts),
@@ -278,19 +310,20 @@ def _build_macos_plan(name: str, value: str, home: Path) -> ConfigurationPlan:
 
 def _build_linux_plan(name: str, value: str, home: Path) -> ConfigurationPlan:
     steps: list[ConfigurationStep] = []
+    warnings: list[str] = []
     shell = detect_login_shell()
     profile = get_login_profile_path(shell, home)
+    systemd = has_systemd_user()
+    session = detect_session_type()
 
-    if has_systemd_user():
-        env_d_dir = home / ".config" / "environment.d"
-        env_d_path = env_d_dir / ENVIRONMENT_D_FILENAME
-        env_d_content = f"{name}={value}"
+    if systemd:
+        env_d_path = home / ".config" / "environment.d" / ENVIRONMENT_D_FILENAME
         steps.append(
             ConfigurationStep(
                 kind="linux-environment-d",
                 description=f"Create {env_d_path} for graphical desktop sessions",
                 file_path=env_d_path,
-                file_content=env_d_content,
+                file_content=f"{name}={value}",
                 command=None,
                 needs_logout=True,
             )
@@ -309,10 +342,44 @@ def _build_linux_plan(name: str, value: str, home: Path) -> ConfigurationPlan:
             )
         )
 
+    if not systemd and profile is not None:
+        if session == "wayland":
+            warnings.append(
+                "This system does not use systemd, so environment.d is not available. "
+                "Under Wayland, there is no reliable mechanism to set per-user environment "
+                "variables for graphical apps. The shell profile may not reach IDA launched "
+                "from the desktop. If IDA does not see the variable, configure it in your "
+                "Wayland compositor's environment settings (e.g., sway: `exec`, "
+                "Hyprland: `env =`, labwc: environment config)."
+            )
+        else:
+            warnings.append(
+                "This system does not use systemd, so environment.d is not available. "
+                "Whether the shell profile reaches graphical sessions depends on your "
+                "display manager. If IDA launched from the desktop does not see the "
+                "variable, add it to ~/.xprofile (for X11) or configure it in your "
+                "desktop environment's session settings."
+            )
+    elif not systemd and profile is None:
+        warnings.append(
+            "This system does not use systemd, and HCLI could not detect your shell. "
+            f"HCLI cannot automatically configure {name}. "
+            "Set it in your shell's login profile and in your desktop environment's "
+            "session configuration (e.g., ~/.xprofile for X11, or your Wayland "
+            "compositor's environment settings)."
+        )
+    elif systemd and profile is None:
+        shell_name = os.environ.get("SHELL", "your shell")
+        warnings.append(
+            f"HCLI does not know how to configure {shell_name}. "
+            f"IDA launched from the desktop will work (via environment.d), but "
+            f"terminal and SSH sessions will not see {name} until you add the export "
+            f"to your shell's login profile manually."
+        )
+
     manual_parts = [f"Configure {name} for your system:\n"]
-    if has_systemd_user():
-        env_d_dir = home / ".config" / "environment.d"
-        env_d_path = env_d_dir / ENVIRONMENT_D_FILENAME
+    if systemd:
+        env_d_path = home / ".config" / "environment.d" / ENVIRONMENT_D_FILENAME
         manual_parts.append(
             f"  For graphical sessions (GNOME, KDE, etc.):\n    Create {env_d_path} with:\n      {name}={value}\n"
         )
@@ -327,6 +394,7 @@ def _build_linux_plan(name: str, value: str, home: Path) -> ConfigurationPlan:
     manual_parts.append("Log out and back in for the changes to take effect.")
     return ConfigurationPlan(
         steps=steps,
+        warnings=warnings,
         env_var_name=name,
         env_var_value=value,
         manual_instructions="\n".join(manual_parts),
