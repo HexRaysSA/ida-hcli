@@ -32,7 +32,7 @@ HCLI will:
 Apply these changes? [y/n] (y):
 ```
 
-The command asks IDA, through `idat`, which Python version it runs. It then creates the venv with `uv venv --seed` when `uv` is installed. Otherwise it uses the standard library `venv` module and `ensurepip`. Nothing outside the target directory changes without your consent. HCLI shows a plan of the exact changes it will make and asks for confirmation. You can decline and configure the variable yourself.
+The command asks IDA, through `idat`, which Python version it runs. It then creates the venv with `uv venv --seed` when `uv` is installed. Otherwise it uses the standard library `venv` module and `ensurepip`. HCLI shows a plan of the changes it will make. In an interactive terminal it asks for confirmation; in scripts and CI it applies them automatically. Pass `--no-configure` to skip the configuration step entirely.
 
 Options:
 

@@ -99,11 +99,11 @@ def _is_interactive() -> bool:
 
 
 def configure_env_var(python_exe: Path, *, interactive: bool, quiet: bool) -> tuple[bool, str | None]:
-    """Make `IDAPYTHON_VENV_EXECUTABLE` point at `python_exe`, with the user's consent.
+    """Make `IDAPYTHON_VENV_EXECUTABLE` point at `python_exe`.
 
     Builds a platform-specific configuration plan, shows it to the user,
-    and executes it if they agree.  Returns (configured, description).
-    When not interactive, prints manual instructions instead.
+    and executes it.  When interactive, asks for confirmation first.
+    Returns (configured, description).
     """
     value = str(python_exe)
     out = stderr_console if quiet else console
@@ -124,14 +124,11 @@ def configure_env_var(python_exe: Path, *, interactive: bool, quiet: bool) -> tu
     for warning in plan.warnings:
         out.print(f"  [yellow]Warning: {escape(warning)}[/yellow]", highlight=False)
 
-    if not interactive:
-        out.print(f"\n{escape(plan.manual_instructions)}", highlight=False)
-        return False, None
-
-    consented = Confirm.ask("\nApply these changes?", default=True, console=console)
-    if not consented:
-        out.print(f"\n{escape(plan.manual_instructions)}", highlight=False)
-        return False, None
+    if interactive:
+        consented = Confirm.ask("\nApply these changes?", default=True, console=console)
+        if not consented:
+            out.print(f"\n{escape(plan.manual_instructions)}", highlight=False)
+            return False, None
 
     results = execute_configuration_plan(plan)
     configured_via_parts: list[str] = []
@@ -437,9 +434,9 @@ def create_environment(
     dependencies are reinstalled into the new environment. Pass
     --no-reinstall-plugins to skip this step.
 
-    Nothing outside the target directory changes without your consent. HCLI
-    shows a plan of the changes it will make and asks for confirmation.
-    You can decline and apply them yourself.
+    HCLI shows a plan of the changes it will make. In an interactive
+    terminal it asks for confirmation; in scripts and CI it applies
+    them automatically. Pass --no-configure to skip this step.
     """
     result = run_create_environment(
         path=path,
