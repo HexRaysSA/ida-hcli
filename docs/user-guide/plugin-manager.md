@@ -52,6 +52,12 @@ They aren't managed by HCLI. Try finding an updated version in the plugin reposi
 
 Plugins that declare Python dependencies need a working Python environment. HCLI checks this before installing dependencies. If something is wrong, the install stops and points you to `hcli ida python doctor` for details. See [IDA's Python Environment](ida-python-environment.md) for setup.
 
+If your Python setup works but does not match the recommended configuration, pass `--no-python-environment-check` to skip the check:
+
+```console
+❯ hcli plugin --no-python-environment-check install <name>
+```
+
 ## As a user of IDA...
 
 You'll want to know the HCLI commands:
