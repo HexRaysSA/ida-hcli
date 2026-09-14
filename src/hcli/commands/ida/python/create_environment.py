@@ -54,13 +54,15 @@ class CreateEnvironmentResult(BaseModel):
     python_exe: str
     python_version: str
     python_version_source: str
+    # False when a healthy venv already existed at the path
     created: bool
     tool: str | None
+    # the command that makes IDA use the venv
     set_command: str
+    # whether HCLI persisted the variable (shell profile or setx)
     configured: bool
     configured_via: str | None
-    plugins_migrated: list[PluginMigrationResult] = []
-    plugins_failed: list[PluginMigrationResult] = []
+    plugin_migrations: list[PluginMigrationResult] = []
     plugins_skipped: bool = False
 
 
@@ -178,9 +180,8 @@ def _run_migration(
     out,
     python_exe: Path,
     plugins: list[PluginDependencyInfo],
-) -> tuple[list[PluginMigrationResult], list[PluginMigrationResult]]:
-    migrated: list[PluginMigrationResult] = []
-    failed: list[PluginMigrationResult] = []
+) -> list[PluginMigrationResult]:
+    results: list[PluginMigrationResult] = []
     for plugin in plugins:
         with rich.status.Status(f"installing dependencies for {plugin.name}", console=stderr_console):
             result = install_single_plugin_dependencies(python_exe, plugin)
@@ -192,11 +193,10 @@ def _run_migration(
         )
         if result.success:
             out.print(f"  [green]Installed[/green] dependencies for [blue]{plugin.name}[/blue]")
-            migrated.append(mr)
         else:
             out.print(f"  [red]Failed[/red] dependencies for [blue]{plugin.name}[/blue]")
-            failed.append(mr)
-    return migrated, failed
+        results.append(mr)
+    return results
 
 
 def _print_failure_summary(out, failed: list[PluginMigrationResult]) -> None:
@@ -218,11 +218,11 @@ def migrate_plugin_dependencies(
     reinstall_plugins: bool,
     interactive: bool,
     quiet: bool,
-) -> tuple[list[PluginMigrationResult], list[PluginMigrationResult], bool]:
+) -> tuple[list[PluginMigrationResult], bool]:
     """Reinstall Python dependencies for existing plugins into a new venv.
 
     Returns:
-        (migrated, failed, skipped) where skipped is True when migration
+        (results, skipped) where skipped is True when migration
         was not attempted (user declined or --no-reinstall-plugins).
     """
     out = stderr_console if quiet else console
@@ -232,7 +232,7 @@ def migrate_plugin_dependencies(
 
     if not plugins:
         logger.info("no installed plugins require Python dependencies")
-        return [], [], False
+        return [], False
 
     if not reinstall_plugins:
         logger.warning(
@@ -251,16 +251,17 @@ def migrate_plugin_dependencies(
             f"Reinstall these plugins with `{ENV.HCLI_BINARY_NAME} plugin install <name>` "
             "to restore their dependencies."
         )
-        return [], [], True
+        return [], True
 
     _print_migration_plan(out, plugins)
 
     if interactive and not Confirm.ask("Install these dependencies?", default=True, console=console):
         out.print("Skipped plugin dependency installation.")
-        return [], [], True
+        return [], True
 
-    migrated, failed = _run_migration(out, python_exe, plugins)
+    results = _run_migration(out, python_exe, plugins)
 
+    failed = [r for r in results if not r.success]
     if failed:
         _print_failure_summary(out, failed)
         logger.warning(
@@ -269,7 +270,7 @@ def migrate_plugin_dependencies(
             ", ".join(f.name for f in failed),
         )
 
-    return migrated, failed, False
+    return results, False
 
 
 def run_create_environment(
@@ -314,8 +315,7 @@ def run_create_environment(
 
     system = get_system()
 
-    plugins_migrated: list[PluginMigrationResult] = []
-    plugins_failed: list[PluginMigrationResult] = []
+    plugin_migrations: list[PluginMigrationResult] = []
     plugins_skipped = False
 
     if inspection.kind == "healthy-venv":
@@ -350,7 +350,7 @@ def run_create_environment(
         created = True
         tool = plan.tool
 
-        plugins_migrated, plugins_failed, plugins_skipped = migrate_plugin_dependencies(
+        plugin_migrations, plugins_skipped = migrate_plugin_dependencies(
             python_exe=python_exe,
             reinstall_plugins=reinstall_plugins,
             interactive=interactive,
@@ -383,8 +383,7 @@ def run_create_environment(
         set_command=set_command,
         configured=configured,
         configured_via=configured_via,
-        plugins_migrated=plugins_migrated,
-        plugins_failed=plugins_failed,
+        plugin_migrations=plugin_migrations,
         plugins_skipped=plugins_skipped,
     )
 
