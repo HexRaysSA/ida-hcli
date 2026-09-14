@@ -393,6 +393,50 @@ def get_installed_plugin_paths() -> list[Path]:
     return [r.path for r in get_installed_plugin_records()]
 
 
+@dataclass
+class PluginDependencyInfo:
+    name: str
+    dependencies: list[str]
+
+
+def collect_plugin_dependencies() -> list[PluginDependencyInfo]:
+    """Enumerate installed plugins that have Python dependencies.
+
+    Skips plugins with unreadable metadata or no dependencies.
+    """
+    result: list[PluginDependencyInfo] = []
+    for record in get_installed_plugin_records():
+        try:
+            deps = get_python_dependencies_from_plugin_directory(record.path, record.metadata)
+        except Exception as e:
+            logger.debug("skipping unreadable plugin dependencies at %s: %s", record.path, e)
+            continue
+        if deps:
+            result.append(PluginDependencyInfo(name=record.name, dependencies=deps))
+    return result
+
+
+@dataclass
+class PluginDependencyResult:
+    name: str
+    dependencies: list[str]
+    success: bool
+    error: str | None = None
+
+
+def install_single_plugin_dependencies(
+    python_exe: Path,
+    plugin: PluginDependencyInfo,
+    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+) -> PluginDependencyResult:
+    """Install Python dependencies for a single plugin. Does not raise."""
+    try:
+        pip_install_packages(python_exe, plugin.dependencies, pip_options=pip_options)
+        return PluginDependencyResult(name=plugin.name, dependencies=plugin.dependencies, success=True)
+    except CantInstallPackagesError as e:
+        return PluginDependencyResult(name=plugin.name, dependencies=plugin.dependencies, success=False, error=str(e))
+
+
 def get_installed_minimal_plugins() -> list[tuple[Path, MinimalIDAPluginMetadata]]:
     """fetch (name, path) pairs for currently installed minimal (likely legacy) plugins"""
     plugins_dir = get_plugins_directory()

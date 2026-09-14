@@ -21,7 +21,12 @@ def _run(args: list[str]):
 
 def _create(python_version: str | None):
     return run_create_environment(
-        path=None, python_version=python_version, configure=False, interactive=False, quiet=False
+        path=None,
+        python_version=python_version,
+        configure=False,
+        reinstall_plugins=False,
+        interactive=False,
+        quiet=False,
     )
 
 

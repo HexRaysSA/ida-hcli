@@ -14,6 +14,11 @@ from rich.prompt import Confirm
 from hcli.env import ENV
 from hcli.lib.console import console, print_json, stderr_console
 from hcli.lib.ida import get_ida_user_dir
+from hcli.lib.ida.plugin.install import (
+    PluginDependencyInfo,
+    collect_plugin_dependencies,
+    install_single_plugin_dependencies,
+)
 from hcli.lib.ida.python.environment import get_recommended_venv_dir, get_system, render_set_env_var_command
 from hcli.lib.ida.python.venv_create import (
     TargetInspection,
@@ -37,19 +42,26 @@ logger = logging.getLogger(__name__)
 ENV_VAR = "IDAPYTHON_VENV_EXECUTABLE"
 
 
+class PluginMigrationResult(BaseModel):
+    name: str
+    dependencies: list[str]
+    success: bool
+    error: str | None = None
+
+
 class CreateEnvironmentResult(BaseModel):
     venv_path: str
     python_exe: str
     python_version: str
     python_version_source: str
-    # False when a healthy venv already existed at the path
     created: bool
     tool: str | None
-    # the command that makes IDA use the venv
     set_command: str
-    # whether HCLI persisted the variable (shell profile or setx)
     configured: bool
     configured_via: str | None
+    plugins_migrated: list[PluginMigrationResult] = []
+    plugins_failed: list[PluginMigrationResult] = []
+    plugins_skipped: bool = False
 
 
 class CreateEnvironmentError(click.ClickException):
@@ -147,11 +159,125 @@ def _print_mac_launch_note(out, system: str) -> None:
         )
 
 
+def _print_migration_plan(
+    out,
+    plugins: list[PluginDependencyInfo],
+) -> None:
+    total_deps = sum(len(p.dependencies) for p in plugins)
+    out.print(
+        f"\n{len(plugins)} installed plugin(s) have {total_deps} Python "
+        f"dependenc{'y' if total_deps == 1 else 'ies'} to install in the new environment:"
+    )
+    for plugin in plugins:
+        deps_str = ", ".join(plugin.dependencies)
+        out.print(f"  [blue]{plugin.name}[/blue]: {deps_str}")
+    out.print()
+
+
+def _run_migration(
+    out,
+    python_exe: Path,
+    plugins: list[PluginDependencyInfo],
+) -> tuple[list[PluginMigrationResult], list[PluginMigrationResult]]:
+    migrated: list[PluginMigrationResult] = []
+    failed: list[PluginMigrationResult] = []
+    for plugin in plugins:
+        with rich.status.Status(f"installing dependencies for {plugin.name}", console=stderr_console):
+            result = install_single_plugin_dependencies(python_exe, plugin)
+        mr = PluginMigrationResult(
+            name=result.name,
+            dependencies=result.dependencies,
+            success=result.success,
+            error=result.error,
+        )
+        if result.success:
+            out.print(f"  [green]Installed[/green] dependencies for [blue]{plugin.name}[/blue]")
+            migrated.append(mr)
+        else:
+            out.print(f"  [red]Failed[/red] dependencies for [blue]{plugin.name}[/blue]")
+            failed.append(mr)
+    return migrated, failed
+
+
+def _print_failure_summary(out, failed: list[PluginMigrationResult]) -> None:
+    out.print()
+    out.print(f"[yellow]Warning:[/yellow] {len(failed)} plugin(s) could not have their dependencies installed:")
+    for f in failed:
+        out.print(f"  [blue]{f.name}[/blue]: {f.error}")
+    out.print()
+    out.print(
+        "Reinstall these plugins from their original source "
+        f"(`{ENV.HCLI_BINARY_NAME} plugin install <name>`) so their "
+        "dependencies are available in the new environment."
+    )
+
+
+def migrate_plugin_dependencies(
+    *,
+    python_exe: Path,
+    reinstall_plugins: bool,
+    interactive: bool,
+    quiet: bool,
+) -> tuple[list[PluginMigrationResult], list[PluginMigrationResult], bool]:
+    """Reinstall Python dependencies for existing plugins into a new venv.
+
+    Returns:
+        (migrated, failed, skipped) where skipped is True when migration
+        was not attempted (user declined or --no-reinstall-plugins).
+    """
+    out = stderr_console if quiet else console
+
+    with rich.status.Status("checking installed plugins for Python dependencies", console=stderr_console):
+        plugins = collect_plugin_dependencies()
+
+    if not plugins:
+        logger.info("no installed plugins require Python dependencies")
+        return [], [], False
+
+    if not reinstall_plugins:
+        logger.warning(
+            "%d plugin(s) have Python dependencies that were not installed: %s",
+            len(plugins),
+            ", ".join(p.name for p in plugins),
+        )
+        out.print(
+            f"[yellow]Warning:[/yellow] {len(plugins)} plugin(s) have Python dependencies "
+            f"that were not installed (--no-reinstall-plugins)."
+        )
+        for plugin in plugins:
+            deps_str = ", ".join(plugin.dependencies)
+            out.print(f"  [blue]{plugin.name}[/blue]: {deps_str}")
+        out.print(
+            f"Reinstall these plugins with `{ENV.HCLI_BINARY_NAME} plugin install <name>` "
+            "to restore their dependencies."
+        )
+        return [], [], True
+
+    _print_migration_plan(out, plugins)
+
+    if interactive and not Confirm.ask("Install these dependencies?", default=True, console=console):
+        out.print("Skipped plugin dependency installation.")
+        return [], [], True
+
+    migrated, failed = _run_migration(out, python_exe, plugins)
+
+    if failed:
+        _print_failure_summary(out, failed)
+        logger.warning(
+            "%d plugin(s) could not have their dependencies installed: %s",
+            len(failed),
+            ", ".join(f.name for f in failed),
+        )
+
+    return migrated, failed, False
+
+
 def run_create_environment(
     *,
     path: Path | None,
     python_version: str | None,
     configure: bool,
+    reinstall_plugins: bool,
     interactive: bool,
     quiet: bool,
 ) -> CreateEnvironmentResult:
@@ -188,6 +314,10 @@ def run_create_environment(
 
     system = get_system()
 
+    plugins_migrated: list[PluginMigrationResult] = []
+    plugins_failed: list[PluginMigrationResult] = []
+    plugins_skipped = False
+
     if inspection.kind == "healthy-venv":
         assert inspection.python_exe is not None
         out.print(
@@ -219,6 +349,13 @@ def run_create_environment(
         out.print(f"[green]Created {escape(str(target))} with Python {version.version} and pip.[/green]")
         created = True
         tool = plan.tool
+
+        plugins_migrated, plugins_failed, plugins_skipped = migrate_plugin_dependencies(
+            python_exe=python_exe,
+            reinstall_plugins=reinstall_plugins,
+            interactive=interactive,
+            quiet=quiet,
+        )
     else:
         raise CreateEnvironmentError(_explain_existing_target(inspection))
 
@@ -246,6 +383,9 @@ def run_create_environment(
         set_command=set_command,
         configured=configured,
         configured_via=configured_via,
+        plugins_migrated=plugins_migrated,
+        plugins_failed=plugins_failed,
+        plugins_skipped=plugins_skipped,
     )
 
 
@@ -267,13 +407,32 @@ def run_create_environment(
     is_flag=True,
     help=f"Do not offer to set {ENV_VAR}. Only create the environment.",
 )
+@click.option(
+    "--no-reinstall-plugins",
+    is_flag=True,
+    help=(
+        "Skip reinstalling Python dependencies for existing plugins into the new "
+        "environment. Use this for offline setups or when you plan to reinstall "
+        "plugins manually."
+    ),
+)
 @click.option("--json", "json_output", is_flag=True, help="Output the result as JSON.")
-def create_environment(path: Path | None, python_version: str | None, no_configure: bool, json_output: bool) -> None:
+def create_environment(
+    path: Path | None,
+    python_version: str | None,
+    no_configure: bool,
+    no_reinstall_plugins: bool,
+    json_output: bool,
+) -> None:
     """Create a virtual environment for IDA's Python and configure IDA to use it.
 
     The environment is created at $IDAUSR/venv with the Python version that
     idapyswitch registered for IDA, and seeded with pip. Existing directories
     are never modified or replaced.
+
+    When plugins with Python dependencies are already installed, their
+    dependencies are reinstalled into the new environment. Pass
+    --no-reinstall-plugins to skip this step.
 
     Nothing outside the target directory changes without your consent. HCLI
     shows the exact shell profile line (or setx command on Windows) first.
@@ -283,6 +442,7 @@ def create_environment(path: Path | None, python_version: str | None, no_configu
         path=path,
         python_version=python_version,
         configure=not no_configure,
+        reinstall_plugins=not no_reinstall_plugins,
         interactive=_is_interactive() and not json_output,
         quiet=json_output,
     )

@@ -30,11 +30,30 @@ The command asks IDA, through `idat`, which Python version it runs. It then crea
 Options:
 
 - `--no-configure` skips the question about `IDAPYTHON_VENV_EXECUTABLE`.
+- `--no-reinstall-plugins` skips reinstalling Python dependencies for existing plugins. Use this for offline setups or when you plan to reinstall plugins manually.
 - `--path` selects another location.
 - `--python-version X.Y` gives the version when `idat` is not available.
 - `--json` prints the result as JSON.
 
 HCLI never deletes or modifies an existing directory. If `$IDAUSR/venv` is already a healthy venv with the correct version, the command reports that and exits with success. If it is a venv with another Python version, or an unrelated directory, the command exits non-zero. The message tells you what to remove, or where to point `--path`.
+
+When plugins with Python dependencies are already installed, the command offers to reinstall those dependencies into the new environment. It lists each plugin and its dependencies, then asks for confirmation:
+
+```
+Created /Users/user/.idapro/venv with Python 3.13 and pip.
+
+3 installed plugin(s) have 5 Python dependencies to install in the new environment:
+  capa: flare-capa>=9.0
+  binja-diff: requests, ssdeep>=3.0
+  my-plugin: httpx, gidgethub[httpx]>4.0.0
+
+Install these dependencies? [Y/n] (y):
+  Installed dependencies for capa
+  Installed dependencies for binja-diff
+  Failed dependencies for my-plugin
+```
+
+When a plugin's dependencies cannot be installed, for example because they are not available on the public PyPI repository, the command prints a warning and continues. Reinstall those plugins from their original source (`hcli plugin install <name>`) to restore their dependencies. In non-interactive mode, the command installs dependencies automatically. `--no-reinstall-plugins` skips this step entirely; use it for offline setups or when you plan to reinstall plugins manually.
 
 `hcli ida install --create-python-environment` runs the same step after it installs IDA. A new machine gets the recommended setup in one command.
 
