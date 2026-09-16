@@ -140,7 +140,7 @@ Pass `--yes` (`-y`) to confirm automatically in scripts. In non-interactive mode
 
 ### Plugin suites
 
-Some plugins are distributed as a **suite**: a root plugin that bundles tightly-coupled sub-plugins called components. Components share the suite's lifecycle and are installed, upgraded, and removed together.
+Some plugins are distributed as a suite: a root plugin that bundles tightly-coupled sub-plugins called components. Components share the suite's lifecycle. When you install or remove a suite, all its components go with it.
 
 `hcli plugin status` shows a count of components next to each suite. Use `--show-components` to expand the listing:
 

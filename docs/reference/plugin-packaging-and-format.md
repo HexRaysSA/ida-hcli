@@ -205,7 +205,7 @@ Dependencies are not bundled inside the declaring plugin's archive. Each depende
 
 ### Plugin Suites (Components)
 
-When several plugins are tightly coupled and must be installed, upgraded, and removed as a unit, a plugin can declare them as **components** via the `components` field. Unlike loose dependencies, components are bundled inside the same archive as the declaring plugin (the "suite root") and share its lifecycle.
+When several plugins are tightly coupled and must share a single lifecycle, a plugin can declare them as components via the `components` field. Unlike loose dependencies, components are bundled inside the same archive as the declaring plugin (the "suite root"). They are always installed and removed with the suite.
 
 ```json
 {
