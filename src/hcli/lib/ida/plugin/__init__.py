@@ -485,6 +485,26 @@ class PluginMetadata(BaseModel):
         description="User-configurable settings exposed by the plugin.",
     )
 
+    dependencies: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Plugins to install alongside this one. Each entry is a plugin "
+            "reference: a bare name, name==version, or name@host with optional "
+            "version pin. Dependencies are fetched from the declaring plugin's "
+            "source and installed as independent top-level plugins."
+        ),
+        examples=[["go-runtime-detector", "go-string-extractor==1.2.0"]],
+    )
+
+    @field_validator("dependencies", mode="after")
+    @classmethod
+    def validate_dependency_specs(cls, specs: list[str]) -> list[str]:
+        from hcli.lib.ida.plugin.reference import parse_dependency_spec
+
+        for spec in specs:
+            parse_dependency_spec(spec)
+        return specs
+
     @field_validator("name", mode="after")
     @classmethod
     def is_ok_name(cls, v: str) -> str:

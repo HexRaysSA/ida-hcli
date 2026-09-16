@@ -178,6 +178,21 @@ def _lint_metadata(metadata: IDAMetadataDescriptor, source_name: str) -> int:
                 )
                 recommendation_count += 1
 
+    recommendation_count += _check_dependency_specs(metadata, source_name)
+
+    return recommendation_count
+
+
+def _check_dependency_specs(metadata: IDAMetadataDescriptor, source_name: str) -> int:
+    from hcli.lib.ida.plugin.reference import parse_dependency_spec
+
+    recommendation_count = 0
+    for i, spec in enumerate(metadata.plugin.dependencies):
+        try:
+            parse_dependency_spec(spec)
+        except ValueError as e:
+            console.print(f"[red]Error[/red] ({source_name}): plugin.dependencies[{i}]: invalid spec '{spec}': {e}")
+            recommendation_count += 1
     return recommendation_count
 
 

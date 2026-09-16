@@ -274,6 +274,20 @@
           },
           "title": "Settings",
           "type": "array"
+        },
+        "dependencies": {
+          "description": "Plugins to install alongside this one. Each entry is a plugin reference: a bare name, name==version, or name@host with optional version pin. Dependencies are fetched from the declaring plugin's source and installed as independent top-level plugins.",
+          "examples": [
+            [
+              "go-runtime-detector",
+              "go-string-extractor==1.2.0"
+            ]
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Dependencies",
+          "type": "array"
         }
       },
       "required": [

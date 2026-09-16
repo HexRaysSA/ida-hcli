@@ -221,6 +221,25 @@ def parse_plugin_reference(value: str) -> PluginReference:
     return PluginReference(name=name, version_spec=version_spec, host=host, repo=repo)
 
 
+def parse_dependency_spec(spec: str) -> PluginReference:
+    """Parse a dependency spec from a plugin's ``dependencies`` array.
+
+    Accepts the same forms as ``parse_plugin_reference`` except the
+    ``repo/`` prefix, which has no meaning inside a manifest.
+
+    Raises:
+        ValueError: when the spec is invalid or uses a ``repo/`` prefix.
+    """
+    ref = parse_plugin_reference(spec)
+    if ref.repo is not None:
+        raise ValueError(f"dependency spec must not use a repository prefix: {spec!r}")
+    if not re.match(r"^[a-zA-Z0-9_-]+$", ref.name):
+        raise ValueError(f"invalid plugin name in dependency spec: {ref.name!r}")
+    if ref.name.startswith(("_", "-")) or ref.name.endswith(("_", "-")):
+        raise ValueError(f"plugin name must not start or end with underscore or hyphen: {ref.name!r}")
+    return ref
+
+
 def format_qualified_plugin_reference(ref: PluginReference) -> str:
     """Render a plugin reference in its canonical user-facing string form.
 

@@ -5,9 +5,10 @@ import logging
 from pathlib import Path
 
 import httpx
+import rich.status
 import rich_click as click
 
-from hcli.lib.console import console
+from hcli.lib.console import console, stderr_console
 from hcli.lib.ida import (
     FailedToDetectIDAVersion,
     MissingCurrentInstallationDirectory,
@@ -16,7 +17,7 @@ from hcli.lib.ida import (
     find_current_ida_platform,
     find_current_ida_version,
 )
-from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
+from hcli.lib.ida.plugin import IDAMetadataDescriptor, get_metadata_from_plugin_archive
 from hcli.lib.ida.plugin.bundle import bundle_dependency_source
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
 from hcli.lib.ida.plugin.install import find_installed_plugin, sweep_trash, upgrade_plugin_archive
@@ -88,6 +89,8 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             console.print(f"[red]Error[/red]: plugin '{ref.name}' is not installed")
             raise click.Abort()
 
+        old_deps = list(installed.metadata.plugin.dependencies)
+
         if ref.host is not None and normalize_plugin_host(installed.host) != normalize_plugin_host(ref.host):
             console.print(
                 f"[red]Error[/red]: installed plugin '{installed.name}' comes from {installed.host}, not {ref.host}"
@@ -145,6 +148,16 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 
         console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}")
+
+        _handle_upgrade_dependencies(
+            old_deps=old_deps,
+            new_metadata=metadata,
+            plugin_repo=plugin_repo,
+            current_ida_platform=current_ida_platform,
+            current_ida_version=current_ida_version,
+            pip_options=pip_options,
+            check_environment=check_environment,
+        )
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
         raise click.Abort()
@@ -171,3 +184,54 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
         raise click.Abort()
+
+
+def _handle_upgrade_dependencies(
+    *,
+    old_deps: list[str],
+    new_metadata: IDAMetadataDescriptor,
+    plugin_repo: BasePluginRepo,
+    current_ida_platform: str,
+    current_ida_version: str,
+    pip_options: PipOptions,
+    check_environment: bool,
+) -> None:
+    from hcli.lib.ida.plugin.dependencies import install_dependencies
+    from hcli.lib.ida.plugin.reference import parse_dependency_spec
+
+    new_deps = list(new_metadata.plugin.dependencies)
+    if not old_deps and not new_deps:
+        return
+
+    old_names = {parse_dependency_spec(s).name for s in old_deps}
+    new_names = {parse_dependency_spec(s).name for s in new_deps}
+
+    dropped = old_names - new_names
+    if dropped:
+        console.print(
+            f"[yellow]Note[/yellow]: these dependencies were removed from [blue]{new_metadata.plugin.name}[/blue]:"
+        )
+        for name in sorted(dropped):
+            console.print(f"  {name}")
+        console.print("They remain installed; remove them manually if no longer needed.")
+
+    if new_deps:
+        console.print(f"Checking dependencies for [blue]{new_metadata.plugin.name}[/blue]...")
+        with rich.status.Status("installing dependencies", console=stderr_console):
+            result = install_dependencies(
+                metadata=new_metadata,
+                plugin_repo=plugin_repo,
+                current_platform=current_ida_platform,
+                current_version=current_ida_version,
+                pip_options=pip_options,
+                check_environment=check_environment,
+            )
+
+        for name in result.installed:
+            console.print(f"  [green]Installed[/green] dependency: [blue]{name}[/blue]")
+        for name in result.upgraded:
+            console.print(f"  [green]Upgraded[/green] dependency: [blue]{name}[/blue]")
+        for name in result.skipped:
+            console.print(f"  [dim]Skipped[/dim] dependency: {name} (already installed)")
+        for name, error in result.failed:
+            console.print(f"  [red]Failed[/red] dependency: {name}: {error}")
