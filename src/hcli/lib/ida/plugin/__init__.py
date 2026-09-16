@@ -497,6 +497,17 @@ class PluginMetadata(BaseModel):
         examples=[["go-runtime-detector", "go-string-extractor==1.2.0"]],
     )
 
+    components: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Subdirectory names of plugins bundled inside this suite's archive. "
+            "Each entry must match a subdirectory containing its own ida-plugin.json "
+            "whose plugin.name matches the entry. Components share the suite's "
+            "lifecycle and are hidden from top-level plugin listings."
+        ),
+        examples=[["hexrays-taint-engine", "hexrays-type-propagation"]],
+    )
+
     @field_validator("dependencies", mode="after")
     @classmethod
     def validate_dependency_specs(cls, specs: list[str]) -> list[str]:
@@ -505,6 +516,24 @@ class PluginMetadata(BaseModel):
         for spec in specs:
             parse_dependency_spec(spec)
         return specs
+
+    @field_validator("components", mode="after")
+    @classmethod
+    def validate_component_names(cls, names: list[str]) -> list[str]:
+        for name in names:
+            if "==" in name:
+                raise ValueError(f"component entries must not contain version pins: '{name}'")
+            if "@" in name:
+                raise ValueError(f"component entries must not contain host qualifiers: '{name}'")
+            if not re.match(r"^[a-zA-Z0-9_-]+$", name):
+                raise ValueError(
+                    f"component name must consist of ASCII letters, digits, underscores, and hyphens: '{name}'"
+                )
+            if name.startswith(("_", "-")) or name.endswith(("_", "-")):
+                raise ValueError(f"component name must not start or end with underscore or hyphen: '{name}'")
+        if len(set(names)) != len(names):
+            raise ValueError("component names must be unique within a single manifest")
+        return names
 
     @field_validator("name", mode="after")
     @classmethod
