@@ -32,6 +32,12 @@ Here are your specific instructions. Ask for guidance and clarification along th
     # "dep-plugin-name",
     # "dep-plugin-name==1.0.0",
   ],
+  "components": [
+    # tightly-coupled sub-plugins bundled in the same archive.
+    # each entry is a bare plugin name matching a subdirectory with its own ida-plugin.json.
+    # no version pins or host qualifiers allowed.
+    # "component-plugin-name",
+  ],
   "settings": [
     # configuration values described in the readme or code
     # that would typically require manual source code editing or config file changes

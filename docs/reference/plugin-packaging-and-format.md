@@ -94,6 +94,7 @@ And there are new optional fields:
   - `.plugin.license` for the code license of your project
   - `.plugin.settings` is a list of descriptors of settings
   - `.plugin.dependencies` declares companion plugins to install alongside this one (e.g., `["dep-a", "dep-b==1.0.0"]`)
+  - `.plugin.components` declares tightly-coupled sub-plugins bundled inside the same archive (e.g., `["helper-a", "helper-b"]`)
 
 If there's a problem with the `ida-plugin.json` file, then the plugin is invalid and won't work with the repo.
 Unfortunately even things like trailing commas will break strict JSON parsers like the one used by HCLI.
@@ -202,6 +203,44 @@ When a user installs or upgrades a plugin that declares dependencies, HCLI fetch
 
 Dependencies are not bundled inside the declaring plugin's archive. Each dependency is its own plugin with its own `ida-plugin.json` and its own archive in the repository.
 
+### Plugin Suites (Components)
+
+When several plugins are tightly coupled and must be installed, upgraded, and removed as a unit, a plugin can declare them as **components** via the `components` field. Unlike loose dependencies, components are bundled inside the same archive as the declaring plugin (the "suite root") and share its lifecycle.
+
+```json
+{
+  "plugin": {
+    "name": "go-analysis-suite",
+    "version": "2.0.0",
+    "entryPoint": "go_suite.py",
+    "components": ["go-runtime-detector", "go-string-extractor"],
+    "urls": { "repository": "https://github.com/example/go-suite" },
+    "authors": [{ "name": "Jane Doe" }]
+  }
+}
+```
+
+Each component is a subdirectory that contains its own `ida-plugin.json`. The directory name must match the component's `plugin.name`. Components can themselves declare further components, up to a nesting depth of 10.
+
+```
+go-analysis-suite.zip
+└── go-analysis-suite/
+    ├── ida-plugin.json          (name: go-analysis-suite, components: [...])
+    ├── go_suite.py
+    ├── go-runtime-detector/
+    │   ├── ida-plugin.json      (name: go-runtime-detector)
+    │   └── detector.py
+    └── go-string-extractor/
+        ├── ida-plugin.json      (name: go-string-extractor)
+        └── extractor.py
+```
+
+HCLI installs the entire suite directory into `$IDAUSR/plugins/<suite-name>/`. Component subdirectories are extracted alongside the root plugin's files. Because `hcli plugin status` only scans one level deep, components are hidden from the top-level listing unless `--show-components` is passed.
+
+Component names must not collide with any installed top-level plugin or with components of other installed suites. HCLI checks for collisions before installing. Uninstalling a component individually is not allowed; uninstall the suite root instead.
+
+Version pins (`==`) and host qualifiers (`@`) are not valid in `components` entries since the components are always bundled in the same archive.
+
 ### Source Archives and Binary Archives
 
 For many pure-Python IDA plugins, source archives are often sufficient.
@@ -299,6 +338,8 @@ plugins.zip
     ├── plugin2.py
     └── ida-plugin.json
 ```
+
+If one of the plugins declares the others as `components`, HCLI treats the archive as a plugin suite and installs from the root manifest (see [Plugin Suites](#plugin-suites-components)). If none of the manifests reference each other, the archive contains unrelated plugins, which is unusual but supported.
 
 Plugin archives can also be collected into a [plugin bundle](./plugin-bundle-spec.md) for offline installation on air-gapped machines.
 
