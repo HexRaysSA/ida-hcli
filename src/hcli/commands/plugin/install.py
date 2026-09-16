@@ -362,14 +362,18 @@ def install_plugin(
         console.print(f"[green]{verb}[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}{suffix}")
 
         if metadata.plugin.dependencies:
-            _handle_install_dependencies(
-                metadata=metadata,
-                plugin_repo=plugin_repo_obj,
-                current_ida_platform=current_ida_platform,
-                current_ida_version=current_ida_version,
-                pip_options=pip_options,
-                check_environment=check_environment,
-            )
+            try:
+                _handle_install_dependencies(
+                    metadata=metadata,
+                    plugin_repo=plugin_repo_obj,
+                    current_ida_platform=current_ida_platform,
+                    current_ida_version=current_ida_version,
+                    pip_options=pip_options,
+                    check_environment=check_environment,
+                )
+            except Exception as dep_err:
+                logger.debug("dependency handling failed: %s", dep_err, exc_info=True)
+                console.print(f"[yellow]Warning[/yellow]: failed to process dependencies: {dep_err}")
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
         raise click.Abort()

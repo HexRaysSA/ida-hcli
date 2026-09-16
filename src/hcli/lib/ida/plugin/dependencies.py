@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any
 
 from hcli.lib.ida.plugin import IDAMetadataDescriptor, parse_plugin_version
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
@@ -86,9 +91,9 @@ def _install_one_dependency(
     pip_options: PipOptions,
     check_environment: bool,
     result: DependencyResult,
-    find_installed,
-    do_install,
-    do_upgrade,
+    find_installed: Callable[[str], Any],
+    do_install: Callable[..., None],
+    do_upgrade: Callable[..., None],
 ) -> None:
     try:
         installed = find_installed(dep_name)
