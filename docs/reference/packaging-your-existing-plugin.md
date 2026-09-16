@@ -137,6 +137,7 @@ and new optional fields:
   - `.plugin.platforms` is recommended, defaults to all platforms. The possible values are: `windows-x86_64`, `linux-x86_64`, `macos-x86_64`, and `macos-aarch64`.
   - `.plugin.license` for the code license of your project
   - `.plugin.settings` is a list of descriptors of settings
+  - `.plugin.dependencies` declares companion plugins to install alongside this one (e.g., `["dep-a", "dep-b==1.0.0"]`)
 
 
 !!! tip "Validating Your `ida-plugin.json` File"

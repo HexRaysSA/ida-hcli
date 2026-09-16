@@ -93,6 +93,7 @@ And there are new optional fields:
   - `.plugin.platforms` is recommended, defaults to all platforms. The possible values are: `windows-x86_64`, `linux-x86_64`, `macos-x86_64`, and `macos-aarch64`.
   - `.plugin.license` for the code license of your project
   - `.plugin.settings` is a list of descriptors of settings
+  - `.plugin.dependencies` declares companion plugins to install alongside this one (e.g., `["dep-a", "dep-b==1.0.0"]`)
 
 If there's a problem with the `ida-plugin.json` file, then the plugin is invalid and won't work with the repo.
 Unfortunately even things like trailing commas will break strict JSON parsers like the one used by HCLI.
@@ -180,6 +181,26 @@ Example settings configuration:
 }
 ```
 
+
+### Plugin Dependencies
+
+A plugin can declare other plugins as loose dependencies via the `dependencies` field. Each entry is a plugin reference: a bare name, a name with a version pin, or a name with a repository host URL and optional version pin.
+
+```json
+{
+  "plugin": {
+    "dependencies": [
+      "go-runtime-detector",
+      "go-string-extractor==1.2.0",
+      "helper@https://github.com/org/repo"
+    ]
+  }
+}
+```
+
+When a user installs or upgrades a plugin that declares dependencies, HCLI fetches each one from the same repository and installs it as an independent top-level plugin. Dependencies that are already installed and satisfy the spec are skipped. If a pinned dependency is installed at a lower version, it is upgraded automatically; a higher installed version is not downgraded.
+
+Dependencies are not bundled inside the declaring plugin's archive. Each dependency is its own plugin with its own `ida-plugin.json` and its own archive in the repository.
 
 ### Source Archives and Binary Archives
 

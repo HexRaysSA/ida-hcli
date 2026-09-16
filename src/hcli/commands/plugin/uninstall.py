@@ -11,10 +11,10 @@ from hcli.lib.console import console
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
 from hcli.lib.ida.plugin.install import (
     find_installed_plugin,
-    is_plugin_installed,
     sweep_trash,
 )
 from hcli.lib.ida.plugin.install import uninstall_plugin as uninstall_plugin_impl
+from hcli.lib.ida.plugin.reference import parse_dependency_spec
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,11 @@ def uninstall_plugin(plugin: str, yes: bool) -> None:
 
         try:
             record = find_installed_plugin(plugin)
-            dep_names = list(record.metadata.plugin.dependencies)
+            for spec in record.metadata.plugin.dependencies:
+                try:
+                    dep_names.append(parse_dependency_spec(spec).name)
+                except ValueError:
+                    pass
         except PluginNotInstalledError:
             pass
 
@@ -48,16 +52,22 @@ def uninstall_plugin(plugin: str, yes: bool) -> None:
     if not dep_names:
         return
 
-    installed_deps = [(name, _get_installed_version(name)) for name in dep_names if is_plugin_installed(name)]
+    installed_deps: list[tuple[str, str | None]] = []
+    for name in dep_names:
+        try:
+            dep_record = find_installed_plugin(name)
+            installed_deps.append((name, dep_record.version))
+        except PluginNotInstalledError:
+            pass
     if not installed_deps:
         return
 
     console.print("These plugins were listed as dependencies:")
     for name, version in installed_deps:
-        version_str = f"    {version}" if version else ""
+        version_str = f"=={version}" if version else ""
         console.print(f"  {name}{version_str}")
 
-    interactive = sys.stdin.isatty() and not yes
+    interactive = sys.stdin.isatty()
     if yes:
         should_remove = True
     elif interactive:
@@ -76,11 +86,3 @@ def uninstall_plugin(plugin: str, yes: bool) -> None:
         except Exception as e:
             logger.debug("failed to uninstall dependency %s: %s", name, e, exc_info=True)
             console.print(f"  [red]Failed[/red] to uninstall dependency {name}: {e}")
-
-
-def _get_installed_version(name: str) -> str | None:
-    try:
-        record = find_installed_plugin(name)
-        return record.version
-    except PluginNotInstalledError:
-        return None

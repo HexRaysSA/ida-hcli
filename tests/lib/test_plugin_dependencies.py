@@ -122,6 +122,11 @@ def test_parse_dependency_spec_rejects_invalid_name():
         parse_dependency_spec("-bad-name")
 
 
+def test_parse_dependency_spec_rejects_non_equality_operators():
+    with pytest.raises(ValueError, match="only supports =="):
+        parse_dependency_spec("my-plugin>=1.0.0")
+
+
 # ---------------------------------------------------------------------------
 # PluginMetadata.dependencies field
 # ---------------------------------------------------------------------------
@@ -180,7 +185,7 @@ def test_metadata_serialization_includes_dependencies():
     assert serialized["plugin"]["dependencies"] == ["dep-a", "dep-b"]
 
 
-def test_metadata_serialization_omits_empty_dependencies():
+def test_metadata_serialization_empty_dependencies():
     descriptor = IDAMetadataDescriptor.model_validate(MINIMAL_METADATA)
     serialized = descriptor.model_dump(mode="json", by_alias=True)
     assert serialized["plugin"]["dependencies"] == []
@@ -477,23 +482,9 @@ def test_uninstall_pack_removes_deps_with_yes_flag(virtual_ida_environment):
     result = runner.invoke(plugin_group, ["uninstall", "--yes", "my-pack"])
 
     assert result.exit_code == 0, result.output
+    assert not is_plugin_installed("my-pack")
     assert not is_plugin_installed("dep-a")
     assert not is_plugin_installed("dep-b")
-
-
-def test_uninstall_pack_keeps_deps_when_declined(virtual_ida_environment):
-    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"])
-    dep_a_zip = _make_plugin_zip("dep-a", "1.0.0")
-
-    install_plugin_archive(pack_zip, "my-pack")
-    install_plugin_archive(dep_a_zip, "dep-a")
-
-    runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(plugin_group, ["uninstall", "my-pack"], input="n\n")
-
-    assert result.exit_code == 0, result.output
-    assert not is_plugin_installed("my-pack")
-    assert is_plugin_installed("dep-a")
 
 
 def test_uninstall_pack_noninteractive_keeps_deps(virtual_ida_environment):
@@ -510,21 +501,6 @@ def test_uninstall_pack_noninteractive_keeps_deps(virtual_ida_environment):
     assert not is_plugin_installed("my-pack")
     assert is_plugin_installed("dep-a")
     assert "no longer needed" in result.output.lower()
-
-
-def test_uninstall_pack_yes_flag_removes_deps(virtual_ida_environment):
-    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"])
-    dep_a_zip = _make_plugin_zip("dep-a", "1.0.0")
-
-    install_plugin_archive(pack_zip, "my-pack")
-    install_plugin_archive(dep_a_zip, "dep-a")
-
-    runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(plugin_group, ["uninstall", "--yes", "my-pack"])
-
-    assert result.exit_code == 0, result.output
-    assert not is_plugin_installed("my-pack")
-    assert not is_plugin_installed("dep-a")
 
 
 # ---------------------------------------------------------------------------

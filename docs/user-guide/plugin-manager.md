@@ -119,6 +119,25 @@ You'll want to know the HCLI commands:
 
 Plugins are written to `$IDAUSR/plugins`, which is typically `~/.idapro/plugins` on Unix-like systems, where IDA Pro will load them the next time the application is opened.
 
+### Plugin dependencies
+
+A plugin can declare other plugins as dependencies in its `ida-plugin.json`. When you install or upgrade such a plugin, HCLI fetches the declared dependencies from the same repository and installs them as independent top-level plugins. If a dependency is already installed and satisfies the version requirement, it is skipped.
+
+On upgrade, HCLI installs any newly-added dependencies and tells you about any that were removed from the manifest (they stay installed so you can remove them yourself if no longer needed).
+
+On uninstall, HCLI lists installed dependencies and asks whether to remove them:
+
+```console
+❯ hcli plugin uninstall my-suite
+Uninstalled plugin: my-suite
+These plugins were listed as dependencies:
+  dep-a    1.0.0
+  dep-b    2.3.0
+Remove them too? [y/N]
+```
+
+Pass `--yes` (`-y`) to confirm automatically in scripts. In non-interactive mode without `--yes`, dependencies are listed but not removed.
+
 You can discover interesting plugins via:
 
   - `hcli plugin search` CLI program, or
@@ -211,3 +230,5 @@ Check out the following resources and don't hesitate to contact us for support:
   - [Plugin packaging and format](../reference/plugin-packaging-and-format.md)
   - [Publishing your existing plugin](../reference/packaging-your-existing-plugin.md)
   - [Plugin bundles](../reference/plugin-bundle-spec.md) for offline distribution
+
+Plugin authors can declare loose dependencies on other plugins via the `dependencies` field in `ida-plugin.json`. See [Plugin packaging and format](../reference/plugin-packaging-and-format.md) for details on the field syntax.

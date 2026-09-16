@@ -149,15 +149,19 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
 
         console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}")
 
-        _handle_upgrade_dependencies(
-            old_deps=old_deps,
-            new_metadata=metadata,
-            plugin_repo=plugin_repo,
-            current_ida_platform=current_ida_platform,
-            current_ida_version=current_ida_version,
-            pip_options=pip_options,
-            check_environment=check_environment,
-        )
+        try:
+            _handle_upgrade_dependencies(
+                old_deps=old_deps,
+                new_metadata=metadata,
+                plugin_repo=plugin_repo,
+                current_ida_platform=current_ida_platform,
+                current_ida_version=current_ida_version,
+                pip_options=pip_options,
+                check_environment=check_environment,
+            )
+        except Exception as dep_err:
+            logger.debug("dependency handling failed: %s", dep_err, exc_info=True)
+            console.print(f"[yellow]Warning[/yellow]: failed to process dependencies: {dep_err}")
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
         raise click.Abort()
@@ -217,7 +221,7 @@ def _handle_upgrade_dependencies(
 
     if new_deps:
         console.print(f"Checking dependencies for [blue]{new_metadata.plugin.name}[/blue]...")
-        with rich.status.Status("installing dependencies", console=stderr_console):
+        with rich.status.Status("checking dependencies", console=stderr_console):
             result = install_dependencies(
                 metadata=new_metadata,
                 plugin_repo=plugin_repo,

@@ -335,6 +335,7 @@ Before creating a GitHub release:
 - [ ] `idaVersions` lists all supported versions
 - [ ] `platforms` specified (or omit for all platforms)
 - [ ] `logoPath` included (optional but recommended)
+- [ ] `dependencies` lists companion plugins correctly (if applicable)
 
 ### Testing Complete
 

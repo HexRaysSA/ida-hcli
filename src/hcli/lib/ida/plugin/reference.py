@@ -233,6 +233,8 @@ def parse_dependency_spec(spec: str) -> PluginReference:
     ref = parse_plugin_reference(spec)
     if ref.repo is not None:
         raise ValueError(f"dependency spec must not use a repository prefix: {spec!r}")
+    if ref.version_spec and not ref.version_spec.startswith("=="):
+        raise ValueError(f"dependency spec only supports == version pins, got: {ref.version_spec!r}")
     if not re.match(r"^[a-zA-Z0-9_-]+$", ref.name):
         raise ValueError(f"invalid plugin name in dependency spec: {ref.name!r}")
     if ref.name.startswith(("_", "-")) or ref.name.endswith(("_", "-")):

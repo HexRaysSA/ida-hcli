@@ -26,6 +26,12 @@ Here are your specific instructions. Ask for guidance and clarification along th
     # dependencies must be called out in the readme, not inferred from source.
     "packagename[>=version]",
   ],
+  "dependencies": [
+    # other plugins that should be installed alongside this one.
+    # bare name, name==version, or name@host with optional version pin.
+    # "dep-plugin-name",
+    # "dep-plugin-name==1.0.0",
+  ],
   "settings": [
     # configuration values described in the readme or code
     # that would typically require manual source code editing or config file changes
