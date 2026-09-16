@@ -6,7 +6,6 @@ import io
 import json
 import logging
 import zipfile
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -14,7 +13,7 @@ from fixtures import *
 from pydantic import ValidationError
 
 from hcli.commands.plugin import plugin as plugin_group
-from hcli.lib.ida.plugin import IDAMetadataDescriptor, get_metadatas_with_paths_from_plugin_archive
+from hcli.lib.ida.plugin import IDAMetadataDescriptor
 from hcli.lib.ida.plugin.components import (
     check_component_name_collisions,
     collect_all_component_names_from_archive,
@@ -105,7 +104,7 @@ def _make_nested_suite_zip(
 
         for comp_name, comp_version, sub_components in components:
             sub_names = [n for n, _ in sub_components]
-            comp_meta = _make_plugin_metadata(comp_name, comp_version, components=sub_names if sub_names else None)
+            comp_meta = _make_plugin_metadata(comp_name, comp_version, components=sub_names or None)
             zf.writestr(f"{suite_name}/{comp_name}/ida-plugin.json", json.dumps(comp_meta))
             zf.writestr(f"{suite_name}/{comp_name}/{comp_name}.py", "# component")
 
@@ -178,13 +177,13 @@ def test_metadata_serialization_includes_components():
 
 def test_find_root_manifest_single_plugin():
     zip_data = _make_standalone_zip("my-plugin", "1.0.0")
-    path, meta = find_root_manifest_in_archive(zip_data)
+    _path, meta = find_root_manifest_in_archive(zip_data)
     assert meta.plugin.name == "my-plugin"
 
 
 def test_find_root_manifest_in_suite():
     zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0"), ("comp-b", "2.0.0")])
-    path, meta = find_root_manifest_in_archive(zip_data)
+    _path, meta = find_root_manifest_in_archive(zip_data)
     assert meta.plugin.name == "my-suite"
 
 
@@ -216,7 +215,8 @@ def test_walk_archive_flat_suite():
 
 def test_walk_archive_nested_suite():
     zip_data = _make_nested_suite_zip(
-        "my-suite", "1.0.0",
+        "my-suite",
+        "1.0.0",
         [("comp-a", "1.0.0", [("sub-x", "0.1.0")]), ("comp-b", "2.0.0", [])],
     )
     path, meta = find_root_manifest_in_archive(zip_data)
