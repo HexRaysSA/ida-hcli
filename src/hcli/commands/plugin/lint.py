@@ -196,6 +196,58 @@ def _check_dependency_specs(metadata: IDAMetadataDescriptor, source_name: str) -
     return recommendation_count
 
 
+def _check_components_in_directory(plugin_path: Path, metadata: IDAMetadataDescriptor, source_name: str) -> int:
+    from hcli.lib.ida.plugin.components import walk_component_tree_from_directory
+
+    if not metadata.plugin.components:
+        return 0
+
+    recommendation_count = 0
+    try:
+        tree = walk_component_tree_from_directory(plugin_path)
+    except ValueError as e:
+        console.print(f"[red]Error[/red] ({source_name}): component validation failed: {e}")
+        return 1
+
+    seen_names: set[str] = {metadata.plugin.name}
+    for comp_path, comp_meta in tree:
+        comp_source = f"{source_name}:{comp_meta.plugin.name}"
+        if comp_meta.plugin.name in seen_names:
+            console.print(f"[red]Error[/red] ({comp_source}): duplicate component name '{comp_meta.plugin.name}'")
+            recommendation_count += 1
+        seen_names.add(comp_meta.plugin.name)
+        recommendation_count += _lint_metadata(comp_meta, comp_source)
+
+    return recommendation_count
+
+
+def _check_components_in_archive(
+    zip_data: bytes, metadata_path: Path, metadata: IDAMetadataDescriptor, source_name: str
+) -> int:
+    from hcli.lib.ida.plugin.components import walk_component_tree_from_archive
+
+    if not metadata.plugin.components:
+        return 0
+
+    recommendation_count = 0
+    try:
+        tree = walk_component_tree_from_archive(zip_data, metadata_path, metadata)
+    except ValueError as e:
+        console.print(f"[red]Error[/red] ({source_name}): component validation failed: {e}")
+        return 1
+
+    seen_names: set[str] = {metadata.plugin.name}
+    for comp_path, comp_meta in tree:
+        comp_source = f"{source_name}:{comp_meta.plugin.name}"
+        if comp_meta.plugin.name in seen_names:
+            console.print(f"[red]Error[/red] ({comp_source}): duplicate component name '{comp_meta.plugin.name}'")
+            recommendation_count += 1
+        seen_names.add(comp_meta.plugin.name)
+        recommendation_count += _lint_metadata(comp_meta, comp_source)
+
+    return recommendation_count
+
+
 def _lint_plugin_directory(plugin_path: Path) -> int:
     """Lint a plugin in a directory.
 
@@ -236,6 +288,7 @@ def _lint_plugin_directory(plugin_path: Path) -> int:
 
     recommendation_count += _lint_metadata(metadata, str(plugin_path))
     recommendation_count += _lint_readme_in_directory(plugin_path, str(plugin_path))
+    recommendation_count += _check_components_in_directory(plugin_path, metadata, str(plugin_path))
 
     return recommendation_count
 
@@ -312,6 +365,7 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
 
         recommendation_count += _lint_metadata(metadata, plugin_source_name)
         recommendation_count += _lint_readme_in_archive(zip_data, metadata_path, plugin_source_name)
+        recommendation_count += _check_components_in_archive(zip_data, metadata_path, metadata, plugin_source_name)
 
     return recommendation_count
 
