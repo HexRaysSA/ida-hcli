@@ -258,10 +258,7 @@ def install_plugin(
 
         suite_record = find_suite_for_component(plugin_name)
         if suite_record is not None:
-            raise ValueError(
-                f"'{plugin_name}' is a component of '{suite_record.name}'; "
-                f"uninstall the suite first"
-            )
+            raise ValueError(f"'{plugin_name}' is a component of '{suite_record.name}'; uninstall the suite first")
 
         if not editable and buf is not None and metadata.plugin.components:
             root_path, root_meta = get_metadata_from_plugin_archive(buf, plugin_name)

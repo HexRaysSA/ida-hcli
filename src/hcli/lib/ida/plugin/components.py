@@ -215,7 +215,6 @@ def check_component_name_collisions(
     return collisions
 
 
-
 def _read_metadata_from_directory(plugin_dir: Path) -> IDAMetadataDescriptor:
     metadata_file = plugin_dir / "ida-plugin.json"
     if not metadata_file.exists():
