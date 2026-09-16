@@ -20,6 +20,7 @@ from hcli.lib.ida import (
     find_current_ida_version,
 )
 from hcli.lib.ida.plugin import parse_plugin_version
+from hcli.lib.ida.plugin.components import walk_component_tree_from_directory
 from hcli.lib.ida.plugin.exceptions import AmbiguousPluginReferenceError
 from hcli.lib.ida.plugin.install import (
     InstalledPluginRecord,
@@ -34,6 +35,11 @@ from hcli.lib.ida.plugin.repo import BasePluginRepo
 logger = logging.getLogger(__name__)
 
 
+class ComponentInfo(BaseModel):
+    name: str
+    version: str
+
+
 class InstalledPluginStatusEntry(BaseModel):
     name: str
     version: str
@@ -42,6 +48,7 @@ class InstalledPluginStatusEntry(BaseModel):
     upgrade_checked: bool
     in_repository: bool | None
     upgradable_to: str | None
+    components: list[ComponentInfo] | None = None
 
 
 class NotFoundPluginStatusEntry(BaseModel):
@@ -74,6 +81,16 @@ class StatusReport(BaseModel):
     plugins: list[PluginStatusEntry]
 
 
+def _collect_components(record: InstalledPluginRecord) -> list[ComponentInfo] | None:
+    if not record.metadata.plugin.components:
+        return None
+    try:
+        tree = walk_component_tree_from_directory(record.path)
+        return [ComponentInfo(name=m.plugin.name, version=m.plugin.version) for _, m in tree]
+    except ValueError:
+        return None
+
+
 def _collect_installed_entry(
     plugin_repo: BasePluginRepo,
     record: InstalledPluginRecord,
@@ -81,6 +98,8 @@ def _collect_installed_entry(
     current_ida_version: str,
     skip_upgrade_check: bool,
 ) -> InstalledPluginStatusEntry:
+    components = _collect_components(record)
+
     if skip_upgrade_check:
         return InstalledPluginStatusEntry(
             name=record.name,
@@ -88,6 +107,7 @@ def _collect_installed_entry(
             upgrade_checked=False,
             in_repository=None,
             upgradable_to=None,
+            components=components,
         )
 
     try:
@@ -103,6 +123,7 @@ def _collect_installed_entry(
             upgradable_to=(
                 latest_version if parse_plugin_version(latest_version) > parse_plugin_version(record.version) else None
             ),
+            components=components,
         )
     except (ValueError, KeyError, AmbiguousPluginReferenceError):
         return InstalledPluginStatusEntry(
@@ -111,6 +132,7 @@ def _collect_installed_entry(
             upgrade_checked=True,
             in_repository=False,
             upgradable_to=None,
+            components=components,
         )
 
 
@@ -142,6 +164,11 @@ def _render_status_row(table: rich.table.Table, entry: PluginStatusEntry) -> Non
         status = f"upgradable to [yellow]{entry.upgradable_to}[/yellow]"
     else:
         status = ""
+
+    if entry.components:
+        n = len(entry.components)
+        comp_label = f"({n} component{'s' if n != 1 else ''})"
+        status = f"{status}  {comp_label}".strip() if status else comp_label
 
     table.add_row(entry.name, entry.version, status)
 
@@ -198,7 +225,9 @@ def collect_status_report(
     return StatusReport(plugins=entries)
 
 
-def render_status_report_text(report: StatusReport, plugins_filter: tuple[str, ...]) -> None:
+def render_status_report_text(
+    report: StatusReport, plugins_filter: tuple[str, ...], *, show_components: bool = False
+) -> None:
     table = rich.table.Table(show_header=False, box=None)
     table.add_column("name", style="blue")
     table.add_column("version", style="default")
@@ -217,6 +246,9 @@ def render_status_report_text(report: StatusReport, plugins_filter: tuple[str, .
         elif isinstance(entry, LegacyPluginStatusEntry):
             has_legacy = True
         _render_status_row(table, entry)
+        if show_components and isinstance(entry, InstalledPluginStatusEntry) and entry.components:
+            for comp in entry.components:
+                table.add_row(f"  [dim]{comp.name}[/dim]", comp.version, "[dim](component)[/dim]")
 
     if table.row_count:
         console.print(table)
@@ -252,8 +284,16 @@ def render_status_report_json(report: StatusReport) -> None:
     help="skip the per-plugin upgrade check against the plugin repository",
 )
 @click.option("--json", "json_output", is_flag=True, default=False, help="output machine-readable JSON")
+@click.option(
+    "--show-components",
+    is_flag=True,
+    default=False,
+    help="expand plugin suites to show their bundled components",
+)
 @click.pass_context
-def get_plugin_status(ctx, plugins: tuple[str, ...], skip_upgrade_check: bool, json_output: bool) -> None:
+def get_plugin_status(
+    ctx, plugins: tuple[str, ...], skip_upgrade_check: bool, json_output: bool, show_components: bool
+) -> None:
     """Show installed plugins and their upgrade status.
 
     If one or more PLUGINS are given, show status for just those plugins,
@@ -266,7 +306,7 @@ def get_plugin_status(ctx, plugins: tuple[str, ...], skip_upgrade_check: bool, j
         if json_output:
             render_status_report_json(report)
         else:
-            render_status_report_text(report, plugins)
+            render_status_report_text(report, plugins, show_components=show_components)
 
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
