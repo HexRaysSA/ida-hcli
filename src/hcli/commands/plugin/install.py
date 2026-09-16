@@ -23,7 +23,6 @@ from hcli.lib.ida import (
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
     get_metadata_from_plugin_archive,
-    get_metadatas_with_paths_from_plugin_archive,
     parse_plugin_version,
 )
 from hcli.lib.ida.plugin.bundle import bundle_dependency_source
@@ -62,13 +61,8 @@ logger = logging.getLogger(__name__)
 def _resolve_plugin_name_from_archive(buf: bytes) -> str:
     from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
 
-    items = list(get_metadatas_with_paths_from_plugin_archive(buf))
-    if len(items) == 0:
-        raise ValueError("no valid plugins found in archive")
-    if len(items) == 1:
-        return items[0][1].plugin.name
-    _, root_meta = find_root_manifest_in_archive(buf)
-    return root_meta.plugin.name
+    _, meta = find_root_manifest_in_archive(buf)
+    return meta.plugin.name
 
 
 @click.command()
