@@ -8,6 +8,7 @@ import sys
 import rich_click as click
 
 from hcli.lib.console import console
+from hcli.lib.ida.plugin.components import find_suite_for_component, walk_component_tree_from_directory
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
 from hcli.lib.ida.plugin.install import (
     find_installed_plugin,
@@ -28,6 +29,11 @@ def uninstall_plugin(plugin: str, yes: bool) -> None:
     try:
         sweep_trash()
 
+        suite_record = find_suite_for_component(plugin)
+        if suite_record is not None:
+            console.print(f"[red]{plugin}[/red] is a component of [blue]{suite_record.name}[/blue].")
+            raise click.Abort()
+
         try:
             record = find_installed_plugin(plugin)
             for spec in record.metadata.plugin.dependencies:
@@ -37,12 +43,29 @@ def uninstall_plugin(plugin: str, yes: bool) -> None:
                     pass
         except PluginNotInstalledError:
             pass
+        else:
+            if record.metadata.plugin.components:
+                try:
+                    tree = walk_component_tree_from_directory(record.path)
+                except ValueError:
+                    tree = []
+
+                if tree:
+                    console.print(f"[blue]{plugin}[/blue] manages these plugins:")
+                    for _, comp_meta in tree:
+                        console.print(f"  {comp_meta.plugin.name:30s} {comp_meta.plugin.version}")
+
+                    interactive = sys.stdin.isatty()
+                    if not yes and interactive and not click.confirm("Uninstall all?", default=True):
+                        raise click.Abort()
 
         uninstall_plugin_impl(plugin)
     except PluginNotInstalledError as e:
         console.print(f"[red]{e}[/red]")
         raise click.Abort()
     except Exception as e:
+        if isinstance(e, click.Abort):
+            raise
         logger.debug("failed to uninstall: %s", e, exc_info=True)
         console.print(f"[red]uninstall failed: {e}[/red]")
         raise click.Abort()
