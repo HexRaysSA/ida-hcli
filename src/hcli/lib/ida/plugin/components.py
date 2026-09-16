@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
     get_metadatas_with_paths_from_plugin_archive,
 )
+
+if TYPE_CHECKING:
+    from hcli.lib.ida.plugin.install import InstalledPluginRecord
 
 logger = logging.getLogger(__name__)
 
@@ -153,11 +157,8 @@ def find_root_manifest_in_archive(
     return roots[0]
 
 
-def find_suite_for_component(name: str) -> object | None:
-    """If *name* is a component of an installed suite, return that suite's record.
-
-    Returns an ``InstalledPluginRecord`` or ``None``.
-    """
+def find_suite_for_component(name: str) -> InstalledPluginRecord | None:
+    """If *name* is a component of an installed suite, return that suite's record."""
     from hcli.lib.ida.plugin.install import get_installed_plugin_records
 
     for record in get_installed_plugin_records():
