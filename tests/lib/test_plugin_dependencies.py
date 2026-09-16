@@ -1,0 +1,360 @@
+"""Tests for loose plugin dependencies."""
+
+from __future__ import annotations
+
+import io
+import json
+import logging
+import tempfile
+import zipfile
+from pathlib import Path
+
+import pytest
+from fixtures import *
+from pydantic import ValidationError
+
+from hcli.lib.ida.plugin import IDAMetadataDescriptor
+from hcli.lib.ida.plugin.dependencies import install_dependencies
+from hcli.lib.ida.plugin.install import (
+    get_installed_plugin_records,
+    install_plugin_archive,
+    is_plugin_installed,
+    uninstall_plugin,
+    upgrade_plugin_archive,
+)
+from hcli.lib.ida.plugin.reference import parse_dependency_spec
+from hcli.lib.ida.plugin.repo.fs import FileSystemPluginRepo
+
+logger = logging.getLogger(__name__)
+
+HOST = "https://github.com/test/test-pack"
+
+
+def _make_plugin_metadata(name: str, version: str, deps: list[str] | None = None) -> dict:
+    plugin: dict = {
+        "name": name,
+        "version": version,
+        "entryPoint": f"{name}.py",
+        "urls": {"repository": HOST},
+        "authors": [{"name": "Test", "email": "test@example.com"}],
+    }
+    if deps is not None:
+        plugin["dependencies"] = deps
+    return {"IDAMetadataDescriptorVersion": 1, "plugin": plugin}
+
+
+def _make_plugin_zip(name: str, version: str, deps: list[str] | None = None) -> bytes:
+    buf = io.BytesIO()
+    metadata = _make_plugin_metadata(name, version, deps)
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(f"{name}/ida-plugin.json", json.dumps(metadata))
+        zf.writestr(f"{name}/{name}.py", "# plugin")
+    return buf.getvalue()
+
+
+def _make_fs_repo(archives: dict[str, bytes]) -> FileSystemPluginRepo:
+    """Write archives to a temp dir and return a FileSystemPluginRepo over it.
+
+    The temp dir is NOT cleaned up; the test's HCLI_IDAUSR tmpdir
+    handles that (or the OS sweeps /tmp).
+    """
+    repo_dir = Path(tempfile.mkdtemp())
+    for filename, data in archives.items():
+        (repo_dir / filename).write_bytes(data)
+    return FileSystemPluginRepo(repo_dir)
+
+
+def _get_installed_version(name: str) -> str | None:
+    for r in get_installed_plugin_records():
+        if r.name == name:
+            return r.version
+    return None
+
+
+# ---------------------------------------------------------------------------
+# parse_dependency_spec
+# ---------------------------------------------------------------------------
+
+
+def test_parse_dependency_spec_bare_name():
+    ref = parse_dependency_spec("my-plugin")
+    assert ref.name == "my-plugin"
+    assert ref.version_spec == ""
+    assert ref.host is None
+    assert ref.repo is None
+
+
+def test_parse_dependency_spec_pinned_version():
+    ref = parse_dependency_spec("my-plugin==1.2.3")
+    assert ref.name == "my-plugin"
+    assert ref.version_spec == "==1.2.3"
+    assert ref.host is None
+
+
+def test_parse_dependency_spec_with_host():
+    ref = parse_dependency_spec("my-plugin@https://github.com/org/repo")
+    assert ref.name == "my-plugin"
+    assert ref.version_spec == ""
+    assert ref.host == "https://github.com/org/repo"
+
+
+def test_parse_dependency_spec_with_host_and_version():
+    ref = parse_dependency_spec("my-plugin==2.0.0@https://github.com/org/repo")
+    assert ref.name == "my-plugin"
+    assert ref.version_spec == "==2.0.0"
+    assert ref.host == "https://github.com/org/repo"
+
+
+def test_parse_dependency_spec_rejects_repo_prefix():
+    with pytest.raises(ValueError, match="repository prefix"):
+        parse_dependency_spec("community/my-plugin")
+
+
+def test_parse_dependency_spec_rejects_empty():
+    with pytest.raises(ValueError):
+        parse_dependency_spec("")
+
+
+def test_parse_dependency_spec_rejects_invalid_name():
+    with pytest.raises(ValueError):
+        parse_dependency_spec("-bad-name")
+
+
+# ---------------------------------------------------------------------------
+# PluginMetadata.dependencies field
+# ---------------------------------------------------------------------------
+
+MINIMAL_METADATA = {
+    "IDAMetadataDescriptorVersion": 1,
+    "plugin": {
+        "name": "test-pack",
+        "version": "1.0.0",
+        "entryPoint": "noop.py",
+        "urls": {"repository": HOST},
+        "authors": [{"name": "Test Author", "email": "test@example.com"}],
+    },
+}
+
+
+def _metadata_with_deps(deps: list[str]) -> dict:
+    data = json.loads(json.dumps(MINIMAL_METADATA))
+    data["plugin"]["dependencies"] = deps
+    return data
+
+
+def test_metadata_with_dependencies():
+    data = _metadata_with_deps(["dep-a", "dep-b==1.0.0"])
+    descriptor = IDAMetadataDescriptor.model_validate(data)
+    assert descriptor.plugin.dependencies == ["dep-a", "dep-b==1.0.0"]
+
+
+def test_metadata_without_dependencies():
+    descriptor = IDAMetadataDescriptor.model_validate(MINIMAL_METADATA)
+    assert descriptor.plugin.dependencies == []
+
+
+def test_metadata_empty_dependencies():
+    data = _metadata_with_deps([])
+    descriptor = IDAMetadataDescriptor.model_validate(data)
+    assert descriptor.plugin.dependencies == []
+
+
+def test_metadata_with_host_dependency():
+    data = _metadata_with_deps(["dep-a@https://github.com/org/repo"])
+    descriptor = IDAMetadataDescriptor.model_validate(data)
+    assert descriptor.plugin.dependencies == ["dep-a@https://github.com/org/repo"]
+
+
+def test_metadata_rejects_invalid_dependency_spec():
+    data = _metadata_with_deps(["community/bad-prefix"])
+    with pytest.raises(ValidationError):
+        IDAMetadataDescriptor.model_validate(data)
+
+
+def test_metadata_serialization_includes_dependencies():
+    data = _metadata_with_deps(["dep-a", "dep-b"])
+    descriptor = IDAMetadataDescriptor.model_validate(data)
+    serialized = descriptor.model_dump(mode="json", by_alias=True)
+    assert serialized["plugin"]["dependencies"] == ["dep-a", "dep-b"]
+
+
+def test_metadata_serialization_omits_empty_dependencies():
+    descriptor = IDAMetadataDescriptor.model_validate(MINIMAL_METADATA)
+    serialized = descriptor.model_dump(mode="json", by_alias=True)
+    assert serialized["plugin"]["dependencies"] == []
+
+
+# ---------------------------------------------------------------------------
+# install_dependencies (library-level integration tests)
+# ---------------------------------------------------------------------------
+
+
+def test_install_pack_installs_dependencies(virtual_ida_environment):
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a", "dep-b"])
+    dep_a_zip = _make_plugin_zip("dep-a", "1.0.0")
+    dep_b_zip = _make_plugin_zip("dep-b", "2.0.0")
+
+    repo = _make_fs_repo({"dep-a.zip": dep_a_zip, "dep-b.zip": dep_b_zip})
+    install_plugin_archive(pack_zip, "my-pack")
+
+    _, metadata = _parse_metadata(pack_zip, "my-pack")
+    result = install_dependencies(
+        metadata=metadata,
+        plugin_repo=repo,
+        current_platform="macos-aarch64",
+        current_version="9.1",
+    )
+
+    assert set(result.installed) == {"dep-a", "dep-b"}
+    assert not result.failed
+    assert is_plugin_installed("dep-a")
+    assert is_plugin_installed("dep-b")
+
+
+def test_install_pack_skips_already_installed_dep(virtual_ida_environment):
+    dep_a_zip = _make_plugin_zip("dep-a", "1.0.0")
+    install_plugin_archive(dep_a_zip, "dep-a")
+
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"])
+    repo = _make_fs_repo({"dep-a.zip": dep_a_zip})
+    install_plugin_archive(pack_zip, "my-pack")
+
+    _, metadata = _parse_metadata(pack_zip, "my-pack")
+    result = install_dependencies(
+        metadata=metadata,
+        plugin_repo=repo,
+        current_platform="macos-aarch64",
+        current_version="9.1",
+    )
+
+    assert result.skipped == ["dep-a"]
+    assert not result.installed
+
+
+def test_install_pack_upgrades_outdated_pinned_dep(virtual_ida_environment):
+    dep_a_v1 = _make_plugin_zip("dep-a", "1.0.0")
+    dep_a_v2 = _make_plugin_zip("dep-a", "2.0.0")
+    install_plugin_archive(dep_a_v1, "dep-a")
+    assert _get_installed_version("dep-a") == "1.0.0"
+
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a==2.0.0"])
+    repo = _make_fs_repo({"dep-a-v2.zip": dep_a_v2})
+    install_plugin_archive(pack_zip, "my-pack")
+
+    _, metadata = _parse_metadata(pack_zip, "my-pack")
+    result = install_dependencies(
+        metadata=metadata,
+        plugin_repo=repo,
+        current_platform="macos-aarch64",
+        current_version="9.1",
+    )
+
+    assert result.upgraded == ["dep-a"]
+    assert _get_installed_version("dep-a") == "2.0.0"
+
+
+def test_install_pack_no_downgrade_pinned_dep(virtual_ida_environment):
+    dep_a_v2 = _make_plugin_zip("dep-a", "2.0.0")
+    install_plugin_archive(dep_a_v2, "dep-a")
+
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a==1.0.0"])
+    dep_a_v1 = _make_plugin_zip("dep-a", "1.0.0")
+    repo = _make_fs_repo({"dep-a-v1.zip": dep_a_v1})
+    install_plugin_archive(pack_zip, "my-pack")
+
+    _, metadata = _parse_metadata(pack_zip, "my-pack")
+    result = install_dependencies(
+        metadata=metadata,
+        plugin_repo=repo,
+        current_platform="macos-aarch64",
+        current_version="9.1",
+    )
+
+    assert result.skipped == ["dep-a"]
+    assert _get_installed_version("dep-a") == "2.0.0"
+
+
+def test_install_pack_partial_dep_failure(virtual_ida_environment):
+    dep_a_zip = _make_plugin_zip("dep-a", "1.0.0")
+    repo = _make_fs_repo({"dep-a.zip": dep_a_zip})
+
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a", "dep-missing"])
+    install_plugin_archive(pack_zip, "my-pack")
+
+    _, metadata = _parse_metadata(pack_zip, "my-pack")
+    result = install_dependencies(
+        metadata=metadata,
+        plugin_repo=repo,
+        current_platform="macos-aarch64",
+        current_version="9.1",
+    )
+
+    assert result.installed == ["dep-a"]
+    assert len(result.failed) == 1
+    assert result.failed[0][0] == "dep-missing"
+    assert is_plugin_installed("dep-a")
+    assert is_plugin_installed("my-pack")
+
+
+def test_install_pack_without_dependencies(virtual_ida_environment):
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0")
+    install_plugin_archive(pack_zip, "my-pack")
+
+    _, metadata = _parse_metadata(pack_zip, "my-pack")
+    assert metadata.plugin.dependencies == []
+
+
+# ---------------------------------------------------------------------------
+# Upgrade with dependencies
+# ---------------------------------------------------------------------------
+
+
+def test_upgrade_pack_installs_new_deps(virtual_ida_environment):
+    pack_v1 = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"])
+    pack_v2 = _make_plugin_zip("my-pack", "2.0.0", deps=["dep-a", "dep-b"])
+    dep_a_zip = _make_plugin_zip("dep-a", "1.0.0")
+    dep_b_zip = _make_plugin_zip("dep-b", "1.0.0")
+
+    repo = _make_fs_repo({"dep-a.zip": dep_a_zip, "dep-b.zip": dep_b_zip})
+
+    install_plugin_archive(pack_v1, "my-pack")
+    _, meta_v1 = _parse_metadata(pack_v1, "my-pack")
+    install_dependencies(
+        metadata=meta_v1,
+        plugin_repo=repo,
+        current_platform="macos-aarch64",
+        current_version="9.1",
+    )
+
+    upgrade_plugin_archive(pack_v2, "my-pack")
+    _, meta_v2 = _parse_metadata(pack_v2, "my-pack")
+    result = install_dependencies(
+        metadata=meta_v2,
+        plugin_repo=repo,
+        current_platform="macos-aarch64",
+        current_version="9.1",
+    )
+
+    assert "dep-b" in result.installed
+    assert "dep-a" in result.skipped
+    assert is_plugin_installed("dep-b")
+
+
+def test_uninstall_standalone_dep_works_normally(virtual_ida_environment):
+    dep_zip = _make_plugin_zip("dep-a", "1.0.0")
+    install_plugin_archive(dep_zip, "dep-a")
+    assert is_plugin_installed("dep-a")
+
+    uninstall_plugin("dep-a")
+    assert not is_plugin_installed("dep-a")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_metadata(zip_data: bytes, name: str) -> tuple[Path, IDAMetadataDescriptor]:
+    from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
+
+    return get_metadata_from_plugin_archive(zip_data, name)

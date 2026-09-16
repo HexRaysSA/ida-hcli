@@ -21,6 +21,7 @@ from hcli.lib.ida import (
     get_ida_config,
 )
 from hcli.lib.ida.plugin import (
+    IDAMetadataDescriptor,
     get_metadata_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
     parse_plugin_version,
@@ -359,6 +360,16 @@ def install_plugin(
         suffix = " [yellow](editable)[/yellow]" if editable else ""
         verb = "Upgraded" if is_upgrade else "Installed"
         console.print(f"[green]{verb}[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}{suffix}")
+
+        if metadata.plugin.dependencies:
+            _handle_install_dependencies(
+                metadata=metadata,
+                plugin_repo=plugin_repo_obj,
+                current_ida_platform=current_ida_platform,
+                current_ida_version=current_ida_version,
+                pip_options=pip_options,
+                check_environment=check_environment,
+            )
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
         raise click.Abort()
@@ -386,3 +397,45 @@ def install_plugin(
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
         raise click.Abort()
+
+
+def _handle_install_dependencies(
+    *,
+    metadata: IDAMetadataDescriptor,
+    plugin_repo: BasePluginRepo | None,
+    current_ida_platform: str,
+    current_ida_version: str,
+    pip_options: PipOptions,
+    check_environment: bool,
+) -> None:
+    from hcli.lib.ida.plugin.dependencies import install_dependencies
+
+    if plugin_repo is None:
+        console.print(
+            f"[yellow]Warning[/yellow]: {metadata.plugin.name} declares dependencies "
+            f"but they cannot be auto-installed from a local source."
+        )
+        for dep in metadata.plugin.dependencies:
+            console.print(f"  {dep}")
+        console.print("Install them manually from a plugin repository.")
+        return
+
+    console.print(f"Installing dependencies for [blue]{metadata.plugin.name}[/blue]...")
+    with rich.status.Status("installing dependencies", console=stderr_console):
+        result = install_dependencies(
+            metadata=metadata,
+            plugin_repo=plugin_repo,
+            current_platform=current_ida_platform,
+            current_version=current_ida_version,
+            pip_options=pip_options,
+            check_environment=check_environment,
+        )
+
+    for name in result.installed:
+        console.print(f"  [green]Installed[/green] dependency: [blue]{name}[/blue]")
+    for name in result.upgraded:
+        console.print(f"  [green]Upgraded[/green] dependency: [blue]{name}[/blue]")
+    for name in result.skipped:
+        console.print(f"  [dim]Skipped[/dim] dependency: {name} (already installed)")
+    for name, error in result.failed:
+        console.print(f"  [red]Failed[/red] dependency: {name}: {error}")
