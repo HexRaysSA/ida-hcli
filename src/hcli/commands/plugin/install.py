@@ -130,26 +130,44 @@ def install_plugin(
             source_dir = Path(plugin_spec).expanduser().resolve()
             buf = pack_plugin_directory_to_zip(source_dir)
             items = list(get_metadatas_with_paths_from_plugin_archive(buf))
-            if len(items) != 1:
-                raise ValueError("plugin directory must contain a single plugin")
-            plugin_name = items[0][1].plugin.name
+            if len(items) == 0:
+                raise ValueError("no valid plugins found in directory")
+            if len(items) == 1:
+                plugin_name = items[0][1].plugin.name
+            else:
+                from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
+
+                _, root_meta = find_root_manifest_in_archive(buf)
+                plugin_name = root_meta.plugin.name
 
         elif Path(plugin_spec).exists() and plugin_spec.endswith(".zip"):
             logger.info("installing from the local file system")
             buf = Path(plugin_spec).read_bytes()
             items = list(get_metadatas_with_paths_from_plugin_archive(buf))
-            if len(items) != 1:
-                raise ValueError("plugin archive must contain a single plugin for local file system installation")
-            plugin_name = items[0][1].plugin.name
+            if len(items) == 0:
+                raise ValueError("no valid plugins found in archive")
+            if len(items) == 1:
+                plugin_name = items[0][1].plugin.name
+            else:
+                from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
+
+                _, root_meta = find_root_manifest_in_archive(buf)
+                plugin_name = root_meta.plugin.name
 
         elif plugin_spec.startswith("file://"):
             logger.info("installing from the local file system")
             # fetch from file system
             buf = fetch_plugin_archive(plugin_spec)
             items = list(get_metadatas_with_paths_from_plugin_archive(buf))
-            if len(items) != 1:
-                raise ValueError("plugin archive must contain a single plugin for local file system installation")
-            plugin_name = items[0][1].plugin.name
+            if len(items) == 0:
+                raise ValueError("no valid plugins found in archive")
+            if len(items) == 1:
+                plugin_name = items[0][1].plugin.name
+            else:
+                from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
+
+                _, root_meta = find_root_manifest_in_archive(buf)
+                plugin_name = root_meta.plugin.name
 
         elif is_github_direct_install_url(plugin_spec):
             logger.info("installing from GitHub repository")
@@ -165,9 +183,15 @@ def install_plugin(
                 console.print("Please check your internet connection.")
                 raise click.Abort()
             items = list(get_metadatas_with_paths_from_plugin_archive(buf))
-            if len(items) != 1:
-                raise ValueError("plugin archive must contain a single plugin for GitHub installation")
-            plugin_name = items[0][1].plugin.name
+            if len(items) == 0:
+                raise ValueError("no valid plugins found in archive")
+            if len(items) == 1:
+                plugin_name = items[0][1].plugin.name
+            else:
+                from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
+
+                _, root_meta = find_root_manifest_in_archive(buf)
+                plugin_name = root_meta.plugin.name
 
         elif plugin_spec.startswith("https://"):
             logger.info("installing from HTTP URL")
@@ -179,9 +203,15 @@ def install_plugin(
                 console.print("Please check your internet connection.")
                 raise click.Abort()
             items = list(get_metadatas_with_paths_from_plugin_archive(buf))
-            if len(items) != 1:
-                raise ValueError("plugin archive must contain a single plugin for HTTP URL installation")
-            plugin_name = items[0][1].plugin.name
+            if len(items) == 0:
+                raise ValueError("no valid plugins found in archive")
+            if len(items) == 1:
+                plugin_name = items[0][1].plugin.name
+            else:
+                from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
+
+                _, root_meta = find_root_manifest_in_archive(buf)
+                plugin_name = root_meta.plugin.name
 
         else:
             logger.info("finding plugin in repository")
@@ -252,6 +282,28 @@ def install_plugin(
                 )
                 return
             is_upgrade = True
+
+        from hcli.lib.ida.plugin.components import (
+            check_component_name_collisions,
+            collect_all_component_names_from_archive,
+            find_suite_for_component,
+        )
+
+        suite_record = find_suite_for_component(plugin_name)
+        if suite_record is not None:
+            raise ValueError(
+                f"'{plugin_name}' is a component of '{suite_record.name}'; "
+                f"uninstall the suite first, or use --force to replace"
+            )
+
+        if not editable and buf is not None and metadata.plugin.components:
+            root_path, root_meta = get_metadata_from_plugin_archive(buf, plugin_name)
+            component_names = collect_all_component_names_from_archive(buf, root_path, root_meta)
+            exclude = plugin_name if is_upgrade else None
+            collisions = check_component_name_collisions(component_names, exclude_suite=exclude)
+            if collisions:
+                msg = "component name collisions:\n" + "\n".join(f"  {c}" for c in collisions)
+                raise ValueError(msg)
 
         if metadata.plugin.settings:
             for config_item in config:
