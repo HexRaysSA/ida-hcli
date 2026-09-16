@@ -138,6 +138,7 @@ and new optional fields:
   - `.plugin.license` for the code license of your project
   - `.plugin.settings` is a list of descriptors of settings
   - `.plugin.dependencies` declares companion plugins to install alongside this one (e.g., `["dep-a", "dep-b==1.0.0"]`)
+  - `.plugin.components` declares tightly-coupled sub-plugins bundled inside the same archive (e.g., `["helper-a", "helper-b"]`). See [Plugin Suites](./plugin-packaging-and-format.md#plugin-suites-components) for the archive layout.
 
 
 !!! tip "Validating Your `ida-plugin.json` File"

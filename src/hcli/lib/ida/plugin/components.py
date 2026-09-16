@@ -215,27 +215,6 @@ def check_component_name_collisions(
     return collisions
 
 
-def collect_python_dependencies_from_component_tree(
-    plugin_dir: Path,
-) -> list[str]:
-    """Collect pythonDependencies from all components in a suite's tree."""
-    from hcli.lib.ida.plugin import get_python_dependencies_from_plugin_directory
-
-    result: list[str] = []
-    try:
-        tree = walk_component_tree_from_directory(plugin_dir)
-    except ValueError:
-        return result
-
-    for comp_path, comp_meta in tree:
-        try:
-            deps = get_python_dependencies_from_plugin_directory(comp_path, comp_meta)
-            result.extend(deps)
-        except Exception as e:
-            logger.debug("could not read python deps from component %s: %s", comp_path, e)
-
-    return result
-
 
 def _read_metadata_from_directory(plugin_dir: Path) -> IDAMetadataDescriptor:
     metadata_file = plugin_dir / "ida-plugin.json"

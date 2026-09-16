@@ -138,6 +138,29 @@ Remove them too? [y/N]
 
 Pass `--yes` (`-y`) to confirm automatically in scripts. In non-interactive mode without `--yes`, dependencies are listed but not removed.
 
+### Plugin suites
+
+Some plugins are distributed as a **suite**: a root plugin that bundles tightly-coupled sub-plugins called components. Components share the suite's lifecycle and are installed, upgraded, and removed together.
+
+`hcli plugin status` shows a count of components next to each suite. Use `--show-components` to expand the listing:
+
+```console
+❯ hcli plugin status --show-components
+ go-analysis-suite  2.0.0  (2 components)
+   go-runtime-detector  1.0.0  (component)
+   go-string-extractor  1.0.0  (component)
+```
+
+Components cannot be uninstalled individually. To remove a suite and all its components, uninstall the suite root:
+
+```console
+❯ hcli plugin uninstall go-analysis-suite
+go-analysis-suite manages these plugins:
+  go-runtime-detector                1.0.0
+  go-string-extractor                1.0.0
+Uninstall all? [Y/n]
+```
+
 You can discover interesting plugins via:
 
   - `hcli plugin search` CLI program, or
@@ -231,4 +254,4 @@ Check out the following resources and don't hesitate to contact us for support:
   - [Publishing your existing plugin](../reference/packaging-your-existing-plugin.md)
   - [Plugin bundles](../reference/plugin-bundle-spec.md) for offline distribution
 
-Plugin authors can declare loose dependencies on other plugins via the `dependencies` field in `ida-plugin.json`. See [Plugin packaging and format](../reference/plugin-packaging-and-format.md) for details on the field syntax.
+Plugin authors can declare loose dependencies on other plugins via `dependencies`, or bundle tightly-coupled sub-plugins via `components`, in `ida-plugin.json`. See [Plugin packaging and format](../reference/plugin-packaging-and-format.md) for details on both fields.

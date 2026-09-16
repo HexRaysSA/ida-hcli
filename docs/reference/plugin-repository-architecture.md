@@ -60,11 +60,24 @@ $IDAUSR/plugins/oplog/
 └── (other plugin files)
 ```
 
+A plugin suite that declares `components` installs its component subdirectories alongside its own files:
+```
+$IDAUSR/plugins/go-analysis-suite/
+├── ida-plugin.json
+├── go_suite.py
+├── go-runtime-detector/
+│   ├── ida-plugin.json
+│   └── detector.py
+└── go-string-extractor/
+    ├── ida-plugin.json
+    └── extractor.py
+```
+
 The directory name matches the plugin name from `ida-plugin.json`.
 This is why the contents of `name` are fairly restrictive. They should also be globally unique.
 
 During upgrades, the existing directory is replaced with the new version.
-Uninstallation is as easy as deleting the directory.
+Uninstallation is as easy as deleting the directory. For suites, the entire suite directory (including all component subdirectories) is removed as a unit.
 
 ### Plugin identity and name collisions
 

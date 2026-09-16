@@ -210,7 +210,7 @@ def _check_components_in_directory(plugin_path: Path, metadata: IDAMetadataDescr
         return 1
 
     seen_names: set[str] = {metadata.plugin.name}
-    for comp_path, comp_meta in tree:
+    for _, comp_meta in tree:
         comp_source = f"{source_name}:{comp_meta.plugin.name}"
         if comp_meta.plugin.name in seen_names:
             console.print(f"[red]Error[/red] ({comp_source}): duplicate component name '{comp_meta.plugin.name}'")
@@ -237,7 +237,7 @@ def _check_components_in_archive(
         return 1
 
     seen_names: set[str] = {metadata.plugin.name}
-    for comp_path, comp_meta in tree:
+    for _, comp_meta in tree:
         comp_source = f"{source_name}:{comp_meta.plugin.name}"
         if comp_meta.plugin.name in seen_names:
             console.print(f"[red]Error[/red] ({comp_source}): duplicate component name '{comp_meta.plugin.name}'")
