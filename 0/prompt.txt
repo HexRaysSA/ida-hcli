@@ -1,0 +1,50 @@
+<task-notification>
+<task-id>a7b5897e14a9cab7e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/66090c30-e2ac-4c11-89fc-a5df8aea2685/tasks/a7b5897e14a9cab7e.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit probe.executable usage" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>This just uses `probe.version_major`/`version_minor`, not `probe.executable`. The only display use is line 116 which prints it as a diagnostic label — display-only, not operational. Safe.
+
+Here's the complete audit:
+
+---
+
+**Task:** Audit all uses of `probe.executable` / `info.executable` / `sys_executable` for the IDA 9.4+ macOS bug where `sys.executable` reports the `idat` binary.
+
+## Findings
+
+### 1. `venv_create.py:235-237` — `get_registered_python_exe` — **BUG (already fixed by parent)**
+Returns `probe.executable` as a Python interpreter without checking `_is_python_executable_name`. When `sys.executable` is `idat`, this passes the `idat` binary to `uv venv --python`, which fails.
+
+### 2. `__init__.py:123-170` — `_derive_python_exe` — **ALREADY SAFE**
+Uses `sys_executable = info.executable` but all three paths that could return it require validation:
+- Line 160: requires `sys_executable_venv == requested_venv_root`. Since `_get_venv_root_from_python` (line 124) checks `_is_python_executable_name` first, `sys_executable_venv` is `None` for `idat`, so this never matches.
+- Line 164: same — `sys_executable_venv` is `None`, so `_normalize_path(str(None))` produces a nonsense path that won't match.
+- Line 168: compares normalized paths of `sys_executable` vs `requested_venv_executable`. `idat` won't match a python venv path.
+
+Falls through to the IDAPYTHON_VENV_EXECUTABLE fallback (lines 176-183) or prefix_candidates (185-187). The comment at lines 172-173 explicitly documents this.
+
+### 3. `__init__.py:195` — **SAFE (display only)**
+Used in an error message string: `f"sys.executable: {info.executable}"`. No operational impact.
+
+### 4. `explain_environment.py:116` — **SAFE (display only)**
+`_kv("  sys.executable", _path(probe.executable))` — renders the raw value for diagnostic output. Correct behavior: the user should see what `sys.executable` actually is.
+
+### 5. `find_python_version_mismatches` (`__init__.py:477-544`) — **SAFE**
+Does not access `info.executable` at all. Uses `info.virtual_env`, `info.idapython_venv_executable`, and the separately-passed `python_exe` (already resolved).
+
+### 6. `collect_python_environment_state` (`environment.py:228-293`) — **SAFE**
+Uses `resolved.exe` (the output of `_derive_python_exe`), not `probe.executable`.
+
+### 7. Test: `test_derive_python_exe_uses_idapython_venv_executable_when_sys_executable_is_idat` (`test_ida_python.py:181`) — **SAFE**
+This test already covers the `idat`-as-executable scenario for `_derive_python_exe`. There is **no corresponding test** for `get_registered_python_exe` with the same scenario — the parent may want to add one.
+
+## Summary
+
+**Only one bug site:** `get_registered_python_exe` in `venv_create.py` (already fixed). All other uses of `probe.executable` are either display-only or have existing guards that prevent the `idat` path from being treated as a Python interpreter. `_derive_python_exe` was already patched for this issue; `get_registered_python_exe` was the only one missed.
+
+**Testing gap:** No test covers `get_registered_python_exe` when `probe.executable` is a non-Python binary. A test analogous to the existing `test_derive_python_exe_uses_idapython_venv_executable_when_sys_executable_is_idat` would be valuable.</result>
+<usage><subagent_tokens>83583</subagent_tokens><tool_uses>14</tool_uses><duration_ms>81120</duration_ms></usage>
+</task-notification>
