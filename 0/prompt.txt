@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bu0s3s111</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/b7b277ac-b0d5-4cd7-8e06-a7eea8f5e406/tasks/bu0s3s111.output</output-file>
+<status>failed</status>
+<summary>Background command "Watch CI test run until completion" failed with exit code 1</summary>
+</task-notification>
