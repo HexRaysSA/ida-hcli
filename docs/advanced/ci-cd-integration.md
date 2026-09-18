@@ -163,47 +163,47 @@ jobs:
             sdk_slug: "release/9.2/sdk-and-utilities/idasdk92.zip"
             sdk_subdir: "src/"
 
-            # 
-            # 9.1: gooMBA main doesn't build for 9.1
-            # 
-            - os: ubuntu-latest
-              os_name: "linux"
-              ida_version: "9.1"
-              sdk_slug: "release/9.1/sdk-and-utilities/idasdk91.zip"
-              sdk_subdir: "idasdk91/"
-          
-            - os: windows-latest
-              os_name: "windows"
-              ida_version: "9.1"
-              sdk_slug: "release/9.1/sdk-and-utilities/idasdk91.zip"
-              sdk_subdir: "idasdk91/"
-          
-            - os: macos-latest
-              os_name: "macos"
-              ida_version: "9.1"
-              sdk_slug: "release/9.1/sdk-and-utilities/idasdk91.zip"
-              sdk_subdir: "idasdk91/"
+          #
+          # 9.1: gooMBA main doesn't build for 9.1
+          #
+          - os: ubuntu-latest
+            os_name: "linux"
+            ida_version: "9.1"
+            sdk_slug: "release/9.1/sdk-and-utilities/idasdk91.zip"
+            sdk_subdir: "idasdk91/"
 
-            #
-            #  9.0: gooMBA main doesn't build for 9.0
-            # 
-            - os: ubuntu-latest
-              os_name: "linux"
-              ida_version: "9.0"
-              sdk_slug: "release/9.0/sdk-and-utilities/idasdk90.zip"
-              sdk_subdir: "idasdk90/"
-          
-            - os: windows-latest
-              os_name: "windows"
-              ida_version: "9.0"
-              sdk_slug: "release/9.0/sdk-and-utilities/idasdk90.zip"
-              sdk_subdir: "idasdk90/"
-          
-            - os: macos-latest
-              os_name: "macos"
-              ida_version: "9.0"
-              sdk_slug: "release/9.0/sdk-and-utilities/idasdk90.zip"
-              sdk_subdir: "idasdk90/"
+          - os: windows-latest
+            os_name: "windows"
+            ida_version: "9.1"
+            sdk_slug: "release/9.1/sdk-and-utilities/idasdk91.zip"
+            sdk_subdir: "idasdk91/"
+
+          - os: macos-latest
+            os_name: "macos"
+            ida_version: "9.1"
+            sdk_slug: "release/9.1/sdk-and-utilities/idasdk91.zip"
+            sdk_subdir: "idasdk91/"
+
+          #
+          #  9.0: gooMBA main doesn't build for 9.0
+          #
+          - os: ubuntu-latest
+            os_name: "linux"
+            ida_version: "9.0"
+            sdk_slug: "release/9.0/sdk-and-utilities/idasdk90.zip"
+            sdk_subdir: "idasdk90/"
+
+          - os: windows-latest
+            os_name: "windows"
+            ida_version: "9.0"
+            sdk_slug: "release/9.0/sdk-and-utilities/idasdk90.zip"
+            sdk_subdir: "idasdk90/"
+
+          - os: macos-latest
+            os_name: "macos"
+            ida_version: "9.0"
+            sdk_slug: "release/9.0/sdk-and-utilities/idasdk90.zip"
+            sdk_subdir: "idasdk90/"
 
     steps:
       - name: Setup MSBuild

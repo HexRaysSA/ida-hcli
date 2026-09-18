@@ -88,13 +88,28 @@ exec "$@"
 
 **Option C: Volume Mount for Credentials**
 
-Mount your local credentials directory:
+HCLI stores credentials in `config.json` inside its platform configuration
+directory, so the mount source depends on the host and the target is always
+`/root/.config/hcli` in a Linux container.
+
+From a Linux host:
 
 ```bash
 docker run --rm \
-  -v ~/.hcli:/root/.hcli:ro \
+  -v ~/.config/hcli:/root/.config/hcli:ro \
   hcli:latest hcli whoami
 ```
+
+From a macOS host:
+
+```bash
+docker run --rm \
+  -v "$HOME/Library/Application Support/hcli":/root/.config/hcli:ro \
+  hcli:latest hcli whoami
+```
+
+A mounted OAuth session can expire, and a read-only mount cannot be refreshed, so
+`HCLI_API_KEY` (Option A) remains the supported way to authenticate in containers.
 
 ## Best Practices
 
