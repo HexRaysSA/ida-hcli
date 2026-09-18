@@ -1,0 +1,89 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. **Primary Request and Intent:**
+
+   The user's first message (voice-transcribed, so "Ada"/"idol live" = IDA/idalib, "Jason" = JSON, "HCI"/"HLI" = hcli) asked for deep research into how hcli tracks the "current IDA installation," which they believe exists in two places and is incorrect. Specifics:
+   - They stated (and told me to assume as true and correct) that when idalib executes, one of the first things it does is read `ida-config.json` to determine the currently active installation, and uses that to update the search path to load the IDA shared library — i.e. this is "the user's currently selected interpreter."
+   - They observed hcli separately has a mechanism to register installations, with its own configuration/state file elsewhere, listing registered IDA installations and possibly a current default, and they cannot figure out why hcli would need to work with a different IDA installation than the user's selected one.
+   - Deliverables requested: (a) enumerate what's in both files from hcli's perspective, (b) enumerate how each is used, (c) describe what hcli does in various scenarios.
+   - They lean toward removing the concept of "current IDA installation" from the hcli state file, but want to know what that would break/change.
+   - The CLI surface must be considered; breaking changes are acceptable and another hcli release can be made. They recalled a `--set-default` flag on `hcli ida install` that updated `ida-config.json`, wondered whether it went away or now influences hcli state, and whether it could be brought back.
+   - Order of work: understand the codebase first, then decisions come afterward.
+
+   The user's most recent request: "write all of your results and questions into a single document in @./docs/plans/current-ida-registration.md" — i.e. the research report *and* the open decision questions go into that one file. They rejected my attempt to ask the decisions interactively via AskUserQuestion.
+
+2. **Key Technical Concepts:**
+   - `$IDAUSR/ida-config.json` — IDA's per-user JSON config; `Paths.ida-install-dir` is the installation that `import idapro` (idalib) binds to. `$IDADIR` overrides it.
+   - hcli's `config.json` at `platformdirs.user_config_dir("hcli", "hex-rays")` — holds `ida.instances` (name → path), `ida.default` (instance name), `idb.sources`, credentials, version keys.
+   - Resolution precedence in `resolve_current_ida_install_directory()`: `$HCLI_CURRENT_IDA_INSTALL_DIR` → `$IDADIR` → hcli `ida.default` → `ida-config.json`.
+   - idalib bootstrap: `idapro/config.py::get_ida_install_dir()`, `idapro/__init__.py` recursive `find_file` + ctypes dlopen of `libidalib.dylib`/`libidalib.so`/`idalib.dll`; `py-activate-idalib.py` writes `ida-install-dir`.
+   - Installation discovery: `find_standard_installations()` → Windows Add/Remove Programs registry (`HKLM\...\Uninstall`, `InstallLocation`/`DisplayName`), Linux `com.hex_rays.IDA.*.desktop` `Exec=` parsing plus `$HOME`, `/opt`, `/usr/local`, `~/.local/share/applications`, macOS Spotlight `mdfind kMDItemCFBundleIdentifier == 'com.hexrays.ida'` plus `/Applications` and `~/Applications`.
+   - macOS bundle normalization: `_normalize_install_dir()` maps `.../Contents/MacOS` → `.app` root.
+   - Version detection order: `$HCLI_CURRENT_IDA_VERSION` → Windows registry → `python/ida_pro.py` "IDA SDK v9.x" docstring → binary version metadata → directory name.
+   - IDA Python interpreter detection via an `idat` batch probe (`run_py_in_current_idapython`, `_run_ida_batch_script`), cached per process.
+   - Pydantic models `IDAConfigJson`/`PathsConfig`/`SettingsConfig`/`PluginConfig` with `serialize_by_alias`; extras are dropped on round-trip.
+   - rich_click CLI groups; `hcli ida` subcommands: `add`, `install`, `list`, `open`, `protocol`, `python`, `remove`, `set-default` (deprecated), `source`, `switch`, `accept-eula`.
+   - Plugins install to `$IDAUSR/plugins` (shared across installations); the "current installation" only affects compatibility filtering (version+platform) and which Python gets pip dependencies.
+
+3. **Files and Code Sections:**
+
+   - `src/hcli/lib/ida/__init__.py` (1456 lines) — the heart of the problem.
+     - `find_hcli_default_ida_instance()` (line 878) reads `config_store.get_string("ida.default")` + `get_object("ida.instances")`, validates existence and `is_ida_dir`, returns `(name, path)`.
+     - `resolve_current_ida_install_directory()` (line 897) implements the 4-step precedence and returns `ResolvedInstallDir(path, source)`; `find_current_ida_install_directory()` (938) unwraps `.path`.
+     - `explain_missing_current_installation_directory()` (945) still tells users to run `hcli ida set-default`.
+     - `get_ida_config()` / `set_ida_config()` (837/846) — the latter writes `config.model_dump_json()`, which is lossy.
+     - `add_instance_to_config(name, path)` (1436), `generate_instance_name(path)` (1417), `select_default_ida_instance(instances)` (1339, picks highest parsed version), `parse_instance_version` (1312).
+     - `PathsConfig.installation_directory = Field(alias="ida-install-dir")`; `IDAConfigJson` fields `Version`, `Paths`, `Settings`, `Plugins`.
+     - `is_idalib_capable_installation(ida_dir)` (302) = `get_idalib_path(ida_dir).exists()`.
+   - `src/hcli/commands/ida/switch.py` — `_set_default_instance()` sets `ida.default`, then only writes `ida-config.json` when `is_idalib_capable_installation(install_dir)`; comment explicitly says "hcli's default lives in ida.default. ida-config.json's ida-install-dir is also consumed by idalib, so only move it when the selected installation includes idalib."
+   - `src/hcli/commands/ida/set_default.py` — deprecated command; writes only `ida-config.json` via raw JSON edit, never touches `ida.default`.
+   - `src/hcli/commands/ida/install.py` — `--set-default/--no-set-default` (default True): registers an instance (with `-2` suffix disambiguation), sets `ida.default`, and only writes `ida-config.json` when idalib-capable, using hand-edited JSON with the comment "we update this without Pydantic validation to ensure we always can make the changes." Line ~117 tells users "To reinstall, first remove it: hcli ida remove {instance_name}" — misleading because remove only unregisters.
+   - `src/hcli/commands/ida/{list,add,remove}.py` and `protocol/register.py` — all operate on the `ida.instances`/`ida.default` registry; `add --auto` and `protocol register` use live discovery while `list`/`switch`/`remove` use the registry.
+   - `src/hcli/lib/ida/launcher.py:155` `get_ida_binary()` — duplicate precedence: `ida.default`/`ida.instances` first, then `find_current_ida_install_directory()`.
+   - `src/hcli/main.py:29-119` `_get_status_section()` — reads both stores and prints "IDA:" from the registry and a separate "idalib:" line from `ida-config.json`, comparing paths.
+   - `src/hcli/lib/config/__init__.py` — `ConfigStore` with `_migrate_config()` gated on `f"{binary}.version"` vs `ENV.HCLI_VERSION`; the natural place for a migration hook.
+   - `src/hcli/lib/ida/python.py:783` `get_environment_for_python()` — never sets `IDADIR` for child processes.
+   - `src/hcli/commands/ida/python/explain_environment.py` — consumes `resolve_current_ida_install_directory()`/`resolve_current_ida_version()` and reports the `source` of each.
+   - `docs/reference/ida-detection.md` — line 7 wrongly says the HCLI default instance is "registered with `hcli ida set-default /path/to/ida`"; line 11 documents the divergence as an "open question."
+   - `/Applications/IDA Professional 9.4.app/Contents/MacOS/idalib/python/idapro/config.py` (read verbatim) — `get_ida_install_dir()` returns `$IDADIR` first, else `config['Paths'].get('ida-install-dir', None)`; `get_user_config_path()` uses `Path(os.getenv("IDAUSR"))` with **no** path-separator splitting.
+   - `/Applications/IDA Professional 9.4.app/Contents/MacOS/idalib/python/py-activate-idalib.py` (read verbatim) — the IDA-supplied writer of `ida-install-dir`.
+
+4. **Errors and fixes:**
+   - `timeout 120 uv run ...` failed with "command not found: timeout" (macOS has no coreutils `timeout`). Fixed by re-running without it.
+   - `ls docs/plans` → "No such file or directory"; the target directory doesn't exist yet (Write creates parents, so no mkdir needed).
+   - The user rejected my `AskUserQuestion` tool call presenting the four decisions, then instructed me to put results *and* questions into a document instead. Going forward, decisions must be written as open questions in the markdown file, not asked interactively.
+
+5. **Problem Solving:**
+
+   Established the complete picture and verified it against the shipped IDA product rather than assuming. Findings to be written up:
+   - `ida-config.json` keys hcli touches: `Paths.ida-install-dir` (written by IDA's `py-activate-idalib.py` and by hcli's install/set-default/switch; read by `idapro` and by hcli as last-resort fallback), `Settings.plugin-repository.url` (hcli only), `Plugins.<name>.settings` (hcli only). The IDA GUI/kernel binaries and the IDA installer never touch this file (issue #155).
+   - hcli's own store: `ida.instances`, `ida.default`, `idb.sources` (+ legacy `idb.search-paths`), credentials.
+   - Nine defects: (1) two pointers with the private one winning; (2) `hcli ida switch` deliberately diverges for non-idalib editions; (3) `hcli ida set-default PATH` is inert while `ida.default` is set, yet is still recommended in help text and docs; (4) hcli never sets `IDADIR` for child Python processes, so `hcli ida python run-script` picks the interpreter from hcli's install while `import idapro` inside the script binds to `ida-config.json`'s; (5) `hcli ida remove --all` or a moved install silently changes the current installation via fallback; (6) two competing notions of "installations that exist" (registry vs discovery); (7) `set_ida_config()` silently drops unknown JSON keys (verified experimentally); (8) `hcli ida remove` doesn't uninstall yet install.py suggests it for reinstalling; (9) hcli splits `$IDAUSR` on the path separator while IDA's `config.py` does not.
+   - Proposed direction: make `ida-config.json:Paths.ida-install-dir` the single persistent selection; resolution becomes `$HCLI_CURRENT_IDA_INSTALL_DIR` → `$IDADIR` → `ida-config.json`; keep discovery as the source of "what exists" with names derived via `generate_instance_name()`; migrate in `ConfigStore._migrate_config` (adopt `ida.default` when `ida-config.json` is missing/invalid, notice once when they differ, then drop the keys). Known cost: switching to a Home/Free edition repoints idalib at an install with no `libidalib`, breaking `import idapro` until switched back — one loud warning is preferred over permanent invisible divergence.
+   - Touch list: `lib/ida/__init__.py`, `commands/ida/{switch,list,add,remove,set_default,install}.py`, `lib/ida/launcher.py:155`, `main.py`, `lib/config`, `tests/lib/test_ida.py`, docs (`ida-detection.md`, `environment-variables.md`, `quick-start.md`, `installing-ida.md`; issue #193 already tracks the switch/set-default doc drift). Separately: fix `set_ida_config`'s lossy round-trip.
+   - The four open decisions: (a) unify on ida-config.json (drop `ida.default`) vs keep both and always write both vs invert precedence; (b) fate of `ida.instances` — delete and rely on discovery + derived names, keep as an unnamed "extra paths" list, or keep as-is; (c) when nothing is configured, auto-select the newest discovered install (reporting the source) vs keep erroring; (d) CLI verbs — `switch` as the one verb with `--set-default` retained on install and `set-default` as a deprecated alias that finally works, vs un-deprecating `set-default`, vs both first-class.
+
+6. **All user messages:**
+   - (Local command output, not a request: `/model` → "Set model to Opus 5 and saved as your default for new sessions".)
+   - "Today HCLI supports setting the "current Ida installation" in like one or two different concepts and I don't really understand what's going on there and I think it's incorrect so I want you to do some deep research on this. I want you to understand really the code based thoroughly and then we need to kind of figure out a plan forward and so the problem is that when Ada runs in specifically when idol live executes one of the first things it does is it looks at the Ida config.Jason file to figure out what the currently active installation is and uses that to updated search path in oload shared library associated with with Ida, and so this is kind of like the users currently selected interpreter and now HCLI also seems to have some mechanism to like register installations. I think it has its own configuration or state file. It might be a Jason on file store somewhere else that again has this list of registered eye installations and possibly also like the current default one that HLI works with, and I can't figure out like why would HCI need to work with a different item installation? That's not the users selected current item installation and so I want you to figure out what's in both of these two files at least from the perspective HCLI and then kind of a enumerate how they are used again. I've explained how to live uses. I had a conflict Jason you can assume this is true incorrect another question is like what does HCI do in these various scenario of us and probably what I'm leaning towards what we need to do is remove the concept of the current item of installation from the HCI State file I think this is what we're gonna need to do, but I'm not sure what that's going to do what that's going to break what that's going to change and furthermore, we also nekeep in mind with the command line interfaces for HCI and how that might be changing. We can break things we can do another release of HCI that makes it with some incompatible changes. In fact we had this previous flag to HCI – – set default when installing Ida, that updated Ida confit.Jason and maybe I don't know if that went away or that now influences the HCI state but maybe we can bring that back or I don't know so we're gonna also have to have some understanding of how does the command line interface but first go ahead look closely at the code base today understand how these things are architected exist what data exists where how they can be used and how they interact with one another and then we will come out forward to make some decisions."
+   - [Rejection of the AskUserQuestion tool call] "[Request interrupted by user for tool use]"
+   - "write all of your results and questions into a single document in @./docs/plans/current-ida-registration.md"
+
+   Security/process constraints in effect (from CLAUDE.md, to be preserved): use `gh` read-only unless explicitly requested; NEVER use `git checkout --`, `git restore`, `git reset`, or `git stash` on files I didn't modify, and use hunk-level staging (`git add -p` or explicit file paths) when committing; commit/push only when asked.
+
+7. **Pending Tasks:**
+   - Write `docs/plans/current-ida-registration.md` containing the full research results (both config files and their contents, all consumers, the resolution order, the enumerated defects/scenarios, the proposed direction, migration plan, touch list) **and** the four open decision questions.
+   - Per global CLAUDE.md, run `uvx --from slop-guard sg --verbose` against the markdown after writing it and revise for concision, preferring naturally flowing text over many section headers.
+   - No code changes have been made yet; nothing has been committed. Decisions on the four open questions are awaited before implementation.
+
+8. **Current Work:**
+
+   Immediately before this summary, I had finished the research and delivered the full report in chat, then the user rejected the interactive question tool and said: "write all of your results and questions into a single document in @./docs/plans/current-ida-registration.md". I ran `ls docs/plans` and confirmed the directory does not exist ("ls: docs/plans: No such file or directory"), so the file will be created fresh via Write (which creates parent directories). No file has been written yet.
+
+9. **Optional Next Step:**
+
+   Write `docs/plans/current-ida-registration.md` with the complete research results and the open questions, directly fulfilling: "write all of your results and questions into a single document in @./docs/plans/current-ida-registration.md". The content is the report already produced — the two-file inventory (`$IDAUSR/ida-config.json` keys `Paths.ida-install-dir`/`Settings.plugin-repository.url`/`Plugins.<name>.settings` with their writers and readers, verified against IDA 9.4's `idapro/config.py` and `py-activate-idalib.py`; hcli's `config.json` keys `ida.instances`/`ida.default`/`idb.sources`), the resolution chain `$HCLI_CURRENT_IDA_INSTALL_DIR → $IDADIR → ida.default → ida-config.json` introduced by commit `6e956e6d`, the nine enumerated defects, the proposed unification on `ida-config.json` with discovery-derived names, the `ConfigStore._migrate_config` migration, the file touch list, and the four decisions (unify?, registry fate, no-config fallback, CLI verb naming). Then run slop-guard on it and revise.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/user/.claude/projects/-Users-user-code-hex-rays-ida-hcli/a97345d5-5cdf-433b-8761-dc59bd737c86.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
