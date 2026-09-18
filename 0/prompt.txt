@@ -1,0 +1,29 @@
+<task-notification>
+<task-id>a8bc6c148381d0d0a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/1c613640-057c-4abe-b63b-80926abb9fbe/tasks/a8bc6c148381d0d0a.output</output-file>
+<status>completed</status>
+<summary>Agent "Rewrite user-guide docs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All four files pass the 80+ threshold. Here are the final scores:
+
+| File | Original Score | Final Score |
+|------|---------------|-------------|
+| `docs/user-guide/file-sharing.md` | 5 | **93** |
+| `docs/user-guide/licenses.md` | 30 | **100** |
+| `docs/user-guide/plugin-manager.md` | 62 | **100** |
+| `docs/user-guide/installing-ida.md` | 67 | **100** |
+
+Changes made per file:
+
+**file-sharing.md** (5 -&gt; 93): Removed all 9 bold-bullet listicle runs by converting to inline prose (flags/options described in sentences, ACL levels listed with backtick code style instead of bold). Eliminated triadic patterns ("name, shortcode, and file size" -&gt; "file details: name, shortcode, size"; "MB, GB, and TB" -&gt; "B through TB"). Varied "upload a new version" phrasing across occurrences (push a revision, add a revision). Collapsed verbose download examples into a compact single code block. Removed "Overview" section heading, folding its content into the page intro. Consolidated Best Practices from bold-bullet numbered lists into flowing prose paragraphs. Converted troubleshooting from bold-bullet definitions to prose paragraphs.
+
+**licenses.md** (30 -&gt; 100): Replaced bold-bullet listicle for license locations with a table. Converted license type descriptions from bold-header + sub-bullet format to prose paragraphs. Broke triadic patterns in troubleshooting section. Simplified overview wording.
+
+**plugin-manager.md** (62 -&gt; 100): Removed "don't hesitate to" (banned slop phrase). Broke triadic cadence in opening sentence ("discover, install, and manage" -&gt; "install and manage"). Simplified the Coming Soon note. Changed "You'll want to know" to "The relevant".
+
+**installing-ida.md** (67 -&gt; 100): Trimmed the `hcli download` interactive transcript to reduce repeated "Select an item to navigate or download" prompts. Changed code fence markers from `bash` to `console` where appropriate to break the `bash hcli ida install` repetition pattern. Removed chatty filler ("really convenient!", "For a little context", "Now lets"). Tightened prose transitions.
+
+All files are in the worktree at `/Users/user/code/hex-rays/ida-hcli/.claude/worktree/docs-style-rewrite/docs/user-guide/`.</result>
+<usage><subagent_tokens>48487</subagent_tokens><tool_uses>25</tool_uses><duration_ms>354290</duration_ms></usage>
+</task-notification>
