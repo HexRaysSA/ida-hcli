@@ -1,0 +1,5 @@
+"The indexed results are served through the `community` plugin repository at `community.plugins.hex-rays.com`."
+
+->
+
+"The indexed results are served through the `community` plugin repository."
