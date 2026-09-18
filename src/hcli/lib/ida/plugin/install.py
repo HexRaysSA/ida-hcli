@@ -23,14 +23,16 @@ from hcli.lib.ida.plugin import (
     MinimalIDAPluginMetadata,
     get_metadata_from_plugin_archive,
     get_metadata_path_from_plugin_archive,
-    get_python_dependencies_from_plugin_archive,
-    get_python_dependencies_from_plugin_directory,
     is_binary_plugin_archive,
     is_ida_version_compatible,
     is_source_plugin_archive,
     parse_plugin_version,
     validate_metadata_in_plugin_archive,
     validate_path,
+)
+from hcli.lib.ida.plugin.components import (
+    collect_python_dependencies_from_archive,
+    collect_python_dependencies_from_directory,
 )
 from hcli.lib.ida.plugin.exceptions import (
     BrokenPluginInstallationError,
@@ -407,7 +409,7 @@ def collect_plugin_dependencies() -> list[PluginDependencyInfo]:
     result: list[PluginDependencyInfo] = []
     for record in get_installed_plugin_records():
         try:
-            deps = get_python_dependencies_from_plugin_directory(record.path, record.metadata)
+            deps = collect_python_dependencies_from_directory(record.path, record.metadata)
         except Exception as e:
             logger.debug("skipping unreadable plugin dependencies at %s: %s", record.path, e)
             continue
@@ -522,6 +524,7 @@ def resolve_python_for_dependencies(python_dependencies: list[str], *, check_env
 def validate_can_install_python_dependencies(
     zip_data: bytes,
     metadata: IDAMetadataDescriptor,
+    metadata_path: Path,
     excluded_plugins: list[str] | None = None,
     python_exe: Path | None = None,
     pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
@@ -537,7 +540,7 @@ def validate_can_install_python_dependencies(
         DependencyInstallationError: If dependencies cannot be installed, including when
             IDA's Python environment fails the health check (see `validate_python_environment`).
     """
-    python_dependencies = get_python_dependencies_from_plugin_archive(zip_data, metadata)
+    python_dependencies = collect_python_dependencies_from_archive(zip_data, metadata_path, metadata)
     if python_dependencies:
         all_python_dependencies: list[str] = []
         for existing_plugin_path in get_installed_plugin_paths():
@@ -545,7 +548,7 @@ def validate_can_install_python_dependencies(
             if excluded_plugins and existing_metadata.plugin.name in excluded_plugins:
                 continue
 
-            existing_deps = get_python_dependencies_from_plugin_directory(existing_plugin_path, existing_metadata)
+            existing_deps = collect_python_dependencies_from_directory(existing_plugin_path, existing_metadata)
             all_python_dependencies.extend(existing_deps)
 
         all_python_dependencies.extend(python_dependencies)
@@ -571,6 +574,7 @@ def validate_can_install_python_dependencies(
 def validate_can_install_plugin(
     zip_data: bytes,
     metadata: IDAMetadataDescriptor,
+    metadata_path: Path,
     current_platform: str,
     current_version: str,
     pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
@@ -622,7 +626,7 @@ def validate_can_install_plugin(
         raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
 
     return validate_can_install_python_dependencies(
-        zip_data, metadata, pip_options=pip_options, check_environment=check_environment
+        zip_data, metadata, metadata_path, pip_options=pip_options, check_environment=check_environment
     )
 
 
@@ -753,9 +757,12 @@ def _install_plugin_archive(
         current_platform = find_current_ida_platform()
         current_version = find_current_ida_version()
 
+    metadata_path = get_metadata_path_from_plugin_archive(zip_data, name)
+
     python_exe = validate_can_install_plugin(
         zip_data,
         metadata,
+        metadata_path,
         current_platform,
         current_version,
         pip_options=pip_options,
@@ -763,19 +770,17 @@ def _install_plugin_archive(
     )
 
     destination_path = get_plugin_directory(metadata.plugin.name)
-
-    metadata_path = get_metadata_path_from_plugin_archive(zip_data, name)
     plugin_subdirectory = metadata_path.parent
 
     # TODO: install idaPluginDependencies
 
-    python_dependencies = get_python_dependencies_from_plugin_archive(zip_data, metadata)
+    python_dependencies = collect_python_dependencies_from_archive(zip_data, metadata_path, metadata)
     if python_dependencies:
         with rich.status.Status("collecting existing Python dependencies", console=stderr_console):
             all_python_dependencies: list[str] = []
             for existing_plugin_path in get_installed_plugin_paths():
                 existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
-                existing_deps = get_python_dependencies_from_plugin_directory(existing_plugin_path, existing_metadata)
+                existing_deps = collect_python_dependencies_from_directory(existing_plugin_path, existing_metadata)
                 all_python_dependencies.extend(existing_deps)
 
             logger.debug("installing new python dependencies: %s", python_dependencies)
@@ -882,7 +887,7 @@ def install_plugin_directory_editable(
     # Validate + install Python dependencies. Excludes the current plugin from
     # the existing-installed set so a re-install of the same plugin doesn't
     # double-count its own deps when verifying the resolver.
-    python_dependencies = get_python_dependencies_from_plugin_directory(source_dir, metadata)
+    python_dependencies = collect_python_dependencies_from_directory(source_dir, metadata)
     if python_dependencies:
         with rich.status.Status("collecting existing Python dependencies", console=stderr_console):
             all_python_dependencies: list[str] = []
@@ -894,7 +899,7 @@ def install_plugin_directory_editable(
                     continue
                 if existing_metadata.plugin.name == metadata.plugin.name:
                     continue
-                existing_deps = get_python_dependencies_from_plugin_directory(existing_plugin_path, existing_metadata)
+                existing_deps = collect_python_dependencies_from_directory(existing_plugin_path, existing_metadata)
                 all_python_dependencies.extend(existing_deps)
             all_python_dependencies.extend(python_dependencies)
 
@@ -1068,6 +1073,7 @@ def is_plugin_installed(name: str) -> bool:
 def validate_can_upgrade_plugin(
     zip_data: bytes,
     metadata: IDAMetadataDescriptor,
+    metadata_path: Path,
     current_platform: str,
     current_version: str,
     pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
@@ -1104,7 +1110,12 @@ def validate_can_upgrade_plugin(
         raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
 
     validate_can_install_python_dependencies(
-        zip_data, metadata, excluded_plugins=[name], pip_options=pip_options, check_environment=check_environment
+        zip_data,
+        metadata,
+        metadata_path,
+        excluded_plugins=[name],
+        pip_options=pip_options,
+        check_environment=check_environment,
     )
 
 
@@ -1123,6 +1134,7 @@ def upgrade_plugin_archive(
     validate_can_upgrade_plugin(
         zip_data,
         metadata,
+        path,
         current_platform,
         current_version,
         pip_options=pip_options,

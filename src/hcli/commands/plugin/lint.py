@@ -197,17 +197,30 @@ def _check_dependency_specs(metadata: IDAMetadataDescriptor, source_name: str) -
 
 
 def _check_components_in_directory(plugin_path: Path, metadata: IDAMetadataDescriptor, source_name: str) -> int:
-    from hcli.lib.ida.plugin.components import walk_component_tree_from_directory
-
-    if not metadata.plugin.components:
-        return 0
+    from hcli.lib.ida.plugin.components import (
+        find_undeclared_plugins_in_directory,
+        walk_component_tree_from_directory,
+    )
 
     recommendation_count = 0
+
+    undeclared = find_undeclared_plugins_in_directory(plugin_path)
+    for ud_path, ud_meta in undeclared:
+        console.print(
+            f"[yellow]Warning[/yellow] ({source_name}): "
+            f"subdirectory '{ud_path.name}' contains ida-plugin.json "
+            f"(plugin '{ud_meta.plugin.name}') but is not declared as a component"
+        )
+        recommendation_count += 1
+
+    if not metadata.plugin.components:
+        return recommendation_count
+
     try:
         tree = walk_component_tree_from_directory(plugin_path)
     except ValueError as e:
         console.print(f"[red]Error[/red] ({source_name}): component validation failed: {e}")
-        return 1
+        return recommendation_count + 1
 
     seen_names: set[str] = {metadata.plugin.name}
     for _, comp_meta in tree:
@@ -224,17 +237,30 @@ def _check_components_in_directory(plugin_path: Path, metadata: IDAMetadataDescr
 def _check_components_in_archive(
     zip_data: bytes, metadata_path: Path, metadata: IDAMetadataDescriptor, source_name: str
 ) -> int:
-    from hcli.lib.ida.plugin.components import walk_component_tree_from_archive
-
-    if not metadata.plugin.components:
-        return 0
+    from hcli.lib.ida.plugin.components import (
+        find_undeclared_plugins_in_archive,
+        walk_component_tree_from_archive,
+    )
 
     recommendation_count = 0
+
+    undeclared = find_undeclared_plugins_in_archive(zip_data, metadata_path, metadata)
+    for ud_path, ud_meta in undeclared:
+        console.print(
+            f"[yellow]Warning[/yellow] ({source_name}): "
+            f"archive contains plugin '{ud_meta.plugin.name}' "
+            f"that is not declared as a component"
+        )
+        recommendation_count += 1
+
+    if not metadata.plugin.components:
+        return recommendation_count
+
     try:
         tree = walk_component_tree_from_archive(zip_data, metadata_path, metadata)
     except ValueError as e:
         console.print(f"[red]Error[/red] ({source_name}): component validation failed: {e}")
-        return 1
+        return recommendation_count + 1
 
     seen_names: set[str] = {metadata.plugin.name}
     for _, comp_meta in tree:

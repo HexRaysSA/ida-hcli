@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
     get_metadatas_with_paths_from_plugin_archive,
+    get_python_dependencies_from_plugin_archive,
+    get_python_dependencies_from_plugin_directory,
 )
 
 if TYPE_CHECKING:
@@ -114,6 +116,30 @@ def walk_component_tree_from_archive(
     return result
 
 
+def collect_python_dependencies_from_archive(
+    zip_data: bytes,
+    root_path: Path,
+    root_metadata: IDAMetadataDescriptor,
+) -> list[str]:
+    """Collect pythonDependencies from the root and every component in a suite archive."""
+    deps = list(get_python_dependencies_from_plugin_archive(zip_data, root_metadata))
+    for _comp_path, comp_meta in walk_component_tree_from_archive(zip_data, root_path, root_metadata):
+        deps.extend(get_python_dependencies_from_plugin_archive(zip_data, comp_meta))
+    return deps
+
+
+def collect_python_dependencies_from_directory(
+    plugin_dir: Path,
+    metadata: IDAMetadataDescriptor,
+) -> list[str]:
+    """Collect pythonDependencies from the root and every component on disk."""
+    deps = list(get_python_dependencies_from_plugin_directory(plugin_dir, metadata))
+    if metadata.plugin.components:
+        for comp_dir, comp_meta in walk_component_tree_from_directory(plugin_dir):
+            deps.extend(get_python_dependencies_from_plugin_directory(comp_dir, comp_meta))
+    return deps
+
+
 def collect_all_component_names_from_archive(
     zip_data: bytes,
     root_path: Path,
@@ -213,6 +239,74 @@ def check_component_name_collisions(
                     collisions.append(f"'{name}' collides with a component of suite '{record.name}'")
 
     return collisions
+
+
+def find_undeclared_plugins_in_directory(
+    plugin_dir: Path,
+) -> list[tuple[Path, IDAMetadataDescriptor]]:
+    """Find subdirectories that contain ida-plugin.json but are not declared as components.
+
+    Walks the declared component tree first, then scans every subdirectory for
+    manifests that weren't referenced. Returns a flat list of (path, metadata)
+    for each undeclared plugin found.
+    """
+    try:
+        tree = walk_component_tree_from_directory(plugin_dir)
+    except ValueError:
+        tree = []
+    all_declared_dirs = {path for path, _ in tree}
+    all_declared_dirs.add(plugin_dir)
+
+    undeclared: list[tuple[Path, IDAMetadataDescriptor]] = []
+    _scan_for_undeclared(plugin_dir, all_declared_dirs, undeclared)
+    return undeclared
+
+
+def _scan_for_undeclared(
+    directory: Path,
+    declared_dirs: set[Path],
+    result: list[tuple[Path, IDAMetadataDescriptor]],
+) -> None:
+    """Recursively scan for undeclared plugin subdirectories."""
+    for child in sorted(directory.iterdir()):
+        if not child.is_dir():
+            continue
+        manifest = child / "ida-plugin.json"
+        if not manifest.exists():
+            continue
+        if child in declared_dirs:
+            _scan_for_undeclared(child, declared_dirs, result)
+        else:
+            try:
+                meta = _read_metadata_from_directory(child)
+            except ValueError:
+                continue
+            result.append((child, meta))
+
+
+def find_undeclared_plugins_in_archive(
+    zip_data: bytes,
+    root_path: Path,
+    root_metadata: IDAMetadataDescriptor,
+) -> list[tuple[Path, IDAMetadataDescriptor]]:
+    """Find manifests in the archive that are not part of the declared component tree.
+
+    Returns (path, metadata) pairs for each undeclared plugin.
+    """
+    all_items = list(get_metadatas_with_paths_from_plugin_archive(zip_data))
+
+    try:
+        tree = walk_component_tree_from_archive(zip_data, root_path, root_metadata)
+    except ValueError:
+        tree = []
+    declared_names = {root_metadata.plugin.name}
+    declared_names.update(meta.plugin.name for _, meta in tree)
+
+    undeclared = []
+    for path, meta in all_items:
+        if meta.plugin.name not in declared_names:
+            undeclared.append((path, meta))
+    return undeclared
 
 
 def _read_metadata_from_directory(plugin_dir: Path) -> IDAMetadataDescriptor:

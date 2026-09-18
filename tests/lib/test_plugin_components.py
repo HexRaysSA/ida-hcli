@@ -41,6 +41,8 @@ def _make_plugin_metadata(
     *,
     components: list[str] | None = None,
     deps: list[str] | None = None,
+    python_dependencies: list[str] | None = None,
+    settings: list[dict] | None = None,
 ) -> dict:
     plugin: dict = {
         "name": name,
@@ -53,6 +55,10 @@ def _make_plugin_metadata(
         plugin["components"] = components
     if deps is not None:
         plugin["dependencies"] = deps
+    if python_dependencies is not None:
+        plugin["pythonDependencies"] = python_dependencies
+    if settings is not None:
+        plugin["settings"] = settings
     return {"IDAMetadataDescriptorVersion": 1, "plugin": plugin}
 
 
@@ -68,20 +74,31 @@ def _make_standalone_zip(name: str, version: str, **kwargs) -> bytes:
 def _make_suite_zip(
     suite_name: str,
     suite_version: str,
-    components: list[tuple[str, str]],
+    components: list[tuple[str, str] | tuple[str, str, dict]],
     *,
     suite_deps: list[str] | None = None,
+    suite_python_deps: list[str] | None = None,
+    suite_settings: list[dict] | None = None,
 ) -> bytes:
     buf = io.BytesIO()
-    comp_names = [name for name, _ in components]
-    suite_meta = _make_plugin_metadata(suite_name, suite_version, components=comp_names, deps=suite_deps)
+    comp_names = [c[0] for c in components]
+    suite_meta = _make_plugin_metadata(
+        suite_name,
+        suite_version,
+        components=comp_names,
+        deps=suite_deps,
+        python_dependencies=suite_python_deps,
+        settings=suite_settings,
+    )
 
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr(f"{suite_name}/ida-plugin.json", json.dumps(suite_meta))
         zf.writestr(f"{suite_name}/{suite_name}.py", "# suite entry point")
 
-        for comp_name, comp_version in components:
-            comp_meta = _make_plugin_metadata(comp_name, comp_version)
+        for comp in components:
+            comp_name, comp_version = comp[0], comp[1]
+            comp_kwargs = comp[2] if len(comp) > 2 else {}
+            comp_meta = _make_plugin_metadata(comp_name, comp_version, **comp_kwargs)
             zf.writestr(f"{suite_name}/{comp_name}/ida-plugin.json", json.dumps(comp_meta))
             zf.writestr(f"{suite_name}/{comp_name}/{comp_name}.py", "# component")
 
@@ -92,11 +109,20 @@ def _make_nested_suite_zip(
     suite_name: str,
     suite_version: str,
     components: list[tuple[str, str, list[tuple[str, str]]]],
+    *,
+    suite_python_deps: list[str] | None = None,
+    comp_python_deps: dict[str, list[str]] | None = None,
 ) -> bytes:
     """Create a suite with nested components (components that have their own components)."""
     buf = io.BytesIO()
+    _comp_deps = comp_python_deps or {}
     top_comp_names = [name for name, _, _ in components]
-    suite_meta = _make_plugin_metadata(suite_name, suite_version, components=top_comp_names)
+    suite_meta = _make_plugin_metadata(
+        suite_name,
+        suite_version,
+        components=top_comp_names,
+        python_dependencies=suite_python_deps,
+    )
 
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr(f"{suite_name}/ida-plugin.json", json.dumps(suite_meta))
@@ -104,12 +130,21 @@ def _make_nested_suite_zip(
 
         for comp_name, comp_version, sub_components in components:
             sub_names = [n for n, _ in sub_components]
-            comp_meta = _make_plugin_metadata(comp_name, comp_version, components=sub_names or None)
+            comp_meta = _make_plugin_metadata(
+                comp_name,
+                comp_version,
+                components=sub_names or None,
+                python_dependencies=_comp_deps.get(comp_name),
+            )
             zf.writestr(f"{suite_name}/{comp_name}/ida-plugin.json", json.dumps(comp_meta))
             zf.writestr(f"{suite_name}/{comp_name}/{comp_name}.py", "# component")
 
             for sub_name, sub_version in sub_components:
-                sub_meta = _make_plugin_metadata(sub_name, sub_version)
+                sub_meta = _make_plugin_metadata(
+                    sub_name,
+                    sub_version,
+                    python_dependencies=_comp_deps.get(sub_name),
+                )
                 zf.writestr(f"{suite_name}/{comp_name}/{sub_name}/ida-plugin.json", json.dumps(sub_meta))
                 zf.writestr(f"{suite_name}/{comp_name}/{sub_name}/{sub_name}.py", "# sub-component")
 
@@ -501,3 +536,500 @@ def test_lint_suite_missing_component_dir(virtual_ida_environment, tmp_path):
     result = runner.invoke(plugin_group, ["lint", str(suite_dir)])
     assert "comp-missing" in result.output
     assert "not found" in result.output.lower() or "error" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Recursive Python dependency collection
+# ---------------------------------------------------------------------------
+
+
+def test_collect_python_deps_from_archive():
+    from hcli.lib.ida.plugin.components import collect_python_dependencies_from_archive
+
+    zip_data = _make_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", {"python_dependencies": ["pyyaml"]})],
+        suite_python_deps=["requests"],
+    )
+    path, meta = find_root_manifest_in_archive(zip_data)
+    deps = collect_python_dependencies_from_archive(zip_data, path, meta)
+    assert "requests" in deps
+    assert "pyyaml" in deps
+
+
+def test_collect_nested_python_deps_from_archive():
+    from hcli.lib.ida.plugin.components import collect_python_dependencies_from_archive
+
+    zip_data = _make_nested_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", [("sub-x", "0.1.0")]), ("comp-b", "2.0.0", [])],
+        suite_python_deps=["requests"],
+        comp_python_deps={"comp-a": ["pyyaml"], "sub-x": ["toml"]},
+    )
+    path, meta = find_root_manifest_in_archive(zip_data)
+    deps = collect_python_dependencies_from_archive(zip_data, path, meta)
+    assert "requests" in deps
+    assert "pyyaml" in deps
+    assert "toml" in deps
+
+
+def test_collect_python_deps_from_directory(virtual_ida_environment):
+    from hcli.lib.ida.plugin.components import collect_python_dependencies_from_directory
+    from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
+
+    zip_data = _make_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", {"python_dependencies": ["pyyaml"]})],
+        suite_python_deps=["requests"],
+    )
+    install_plugin_archive(zip_data, "my-suite")
+
+    suite_dir = get_plugin_directory("my-suite")
+    metadata = get_metadata_from_plugin_directory(suite_dir)
+    deps = collect_python_dependencies_from_directory(suite_dir, metadata)
+    assert "requests" in deps
+    assert "pyyaml" in deps
+
+
+def test_collect_plugin_dependencies_includes_component_deps(virtual_ida_environment):
+    from hcli.lib.ida.plugin.install import collect_plugin_dependencies
+
+    zip_data = _make_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", {"python_dependencies": ["pyyaml"]})],
+        suite_python_deps=["requests"],
+    )
+    install_plugin_archive(zip_data, "my-suite")
+
+    all_deps = collect_plugin_dependencies()
+    suite_entry = next(d for d in all_deps if d.name == "my-suite")
+    assert "requests" in suite_entry.dependencies
+    assert "pyyaml" in suite_entry.dependencies
+
+
+# ---------------------------------------------------------------------------
+# Component settings via --config
+# ---------------------------------------------------------------------------
+
+SETTING_API_KEY = {
+    "key": "api_key",
+    "type": "string",
+    "required": True,
+    "name": "API Key",
+    "prompt": True,
+}
+
+SETTING_VERBOSE = {
+    "key": "verbose",
+    "type": "boolean",
+    "required": False,
+    "default": False,
+    "name": "Verbose",
+    "prompt": True,
+}
+
+
+def test_install_config_with_component_prefix(virtual_ida_environment, tmp_path):
+    zip_data = _make_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", {"settings": [SETTING_API_KEY]})],
+    )
+    zip_path = tmp_path / "suite.zip"
+    zip_path.write_bytes(zip_data)
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(
+        plugin_group,
+        ["install", str(zip_path), "--config", "comp-a.api_key=test-key-123"],
+    )
+    assert result.exit_code == 0, result.output
+
+    from hcli.lib.ida import get_ida_config
+
+    config = get_ida_config()
+    assert "comp-a" in config.plugins
+    assert config.plugins["comp-a"].settings["api_key"] == "test-key-123"
+
+
+def test_install_config_without_prefix_targets_root(virtual_ida_environment, tmp_path):
+    zip_data = _make_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0")],
+        suite_settings=[SETTING_VERBOSE],
+    )
+    zip_path = tmp_path / "suite.zip"
+    zip_path.write_bytes(zip_data)
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(
+        plugin_group,
+        ["install", str(zip_path), "--config", "verbose=true"],
+    )
+    assert result.exit_code == 0, result.output
+
+    from hcli.lib.ida import get_ida_config
+
+    config = get_ida_config()
+    assert "my-suite" in config.plugins
+    assert config.plugins["my-suite"].settings["verbose"] is True
+
+
+def test_install_component_required_setting_nointeractive(virtual_ida_environment, tmp_path):
+    zip_data = _make_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", {"settings": [SETTING_API_KEY]})],
+    )
+    zip_path = tmp_path / "suite.zip"
+    zip_path.write_bytes(zip_data)
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["install", str(zip_path)])
+    assert result.exit_code != 0
+    assert "comp-a" in result.output
+    assert "api_key" in result.output
+
+
+# ---------------------------------------------------------------------------
+# hcli plugin config for components
+# ---------------------------------------------------------------------------
+
+
+def test_config_list_for_component(virtual_ida_environment):
+    zip_data = _make_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", {"settings": [SETTING_API_KEY]})],
+    )
+    install_plugin_archive(zip_data, "my-suite")
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["config", "comp-a", "list"])
+    assert result.exit_code == 0, result.output
+    assert "api_key" in result.output
+
+
+def test_config_set_for_component(virtual_ida_environment):
+    zip_data = _make_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", {"settings": [SETTING_API_KEY]})],
+    )
+    install_plugin_archive(zip_data, "my-suite")
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["config", "comp-a", "set", "api_key", "my-value"])
+    assert result.exit_code == 0, result.output
+
+    from hcli.lib.ida import get_ida_config
+
+    config = get_ida_config()
+    assert config.plugins["comp-a"].settings["api_key"] == "my-value"
+
+
+def test_config_get_for_component(virtual_ida_environment):
+    zip_data = _make_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", {"settings": [SETTING_API_KEY]})],
+    )
+    install_plugin_archive(zip_data, "my-suite")
+
+    from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
+    from hcli.lib.ida.plugin.settings import set_setting_for_metadata
+
+    comp_dir = get_plugin_directory("my-suite") / "comp-a"
+    comp_meta = get_metadata_from_plugin_directory(comp_dir)
+    set_setting_for_metadata("comp-a", "api_key", "test-val", comp_meta)
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["config", "comp-a", "get", "api_key"])
+    assert result.exit_code == 0, result.output
+    assert "test-val" in result.output
+
+
+# ---------------------------------------------------------------------------
+# get_current_plugin for components
+# ---------------------------------------------------------------------------
+
+
+def test_get_current_plugin_returns_component_name(virtual_ida_environment):
+    """Verify get_current_plugin walks into component subdirectories."""
+    zip_data = _make_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0")],
+    )
+    install_plugin_archive(zip_data, "my-suite")
+
+    from hcli.lib.ida.plugin.install import get_plugin_directory
+    from hcli.lib.ida.plugin.settings import get_metadata_from_plugin_directory
+
+    suite_dir = get_plugin_directory("my-suite")
+    comp_file = suite_dir / "comp-a" / "comp-a.py"
+    assert comp_file.exists()
+
+    metadata = get_metadata_from_plugin_directory(suite_dir)
+    assert metadata.plugin.name == "my-suite"
+
+    comp_dir = suite_dir / "comp-a"
+    comp_metadata = get_metadata_from_plugin_directory(comp_dir)
+    assert comp_metadata.plugin.name == "comp-a"
+
+
+def test_get_current_plugin_returns_suite_for_root_code(virtual_ida_environment):
+    """Verify get_current_plugin returns suite name for root-level code."""
+    zip_data = _make_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0")],
+    )
+    install_plugin_archive(zip_data, "my-suite")
+
+    from hcli.lib.ida.plugin.install import get_plugin_directory
+    from hcli.lib.ida.plugin.settings import get_metadata_from_plugin_directory
+
+    suite_dir = get_plugin_directory("my-suite")
+    root_file = suite_dir / "my-suite.py"
+    assert root_file.exists()
+
+    metadata = get_metadata_from_plugin_directory(suite_dir)
+    assert metadata.plugin.name == "my-suite"
+
+
+# ---------------------------------------------------------------------------
+# Depth-2+ nested component tests (grandchildren)
+# ---------------------------------------------------------------------------
+
+
+def test_nested_deps_depth2_collected_from_archive():
+    """Root -> comp-a -> sub-x: all three levels' deps are collected."""
+    from hcli.lib.ida.plugin.components import collect_python_dependencies_from_archive
+
+    zip_data = _make_nested_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", [("sub-x", "0.1.0")])],
+        suite_python_deps=["requests"],
+        comp_python_deps={"comp-a": ["pyyaml"], "sub-x": ["toml"]},
+    )
+    path, meta = find_root_manifest_in_archive(zip_data)
+    deps = collect_python_dependencies_from_archive(zip_data, path, meta)
+    assert "requests" in deps
+    assert "pyyaml" in deps
+    assert "toml" in deps
+
+
+def test_nested_deps_depth2_collected_from_directory(virtual_ida_environment):
+    """Install a depth-2 suite and verify all component deps are collected on disk."""
+    from hcli.lib.ida.plugin.components import collect_python_dependencies_from_directory
+    from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
+
+    zip_data = _make_nested_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", [("sub-x", "0.1.0")])],
+        suite_python_deps=["requests"],
+        comp_python_deps={"comp-a": ["pyyaml"], "sub-x": ["toml"]},
+    )
+    install_plugin_archive(zip_data, "my-suite")
+
+    suite_dir = get_plugin_directory("my-suite")
+    metadata = get_metadata_from_plugin_directory(suite_dir)
+    deps = collect_python_dependencies_from_directory(suite_dir, metadata)
+    assert "requests" in deps
+    assert "pyyaml" in deps
+    assert "toml" in deps
+
+
+def test_nested_settings_depth2_via_config(virtual_ida_environment, tmp_path):
+    """Install depth-2 suite passing --config for grandchild component settings."""
+    setting_token = {
+        "key": "token",
+        "type": "string",
+        "required": True,
+        "name": "Token",
+        "prompt": True,
+    }
+
+    buf = io.BytesIO()
+    suite_meta = _make_plugin_metadata("my-suite", "1.0.0", components=["comp-a"])
+    comp_meta = _make_plugin_metadata("comp-a", "1.0.0", components=["sub-x"])
+    sub_meta = _make_plugin_metadata("sub-x", "0.1.0", settings=[setting_token])
+
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("my-suite/ida-plugin.json", json.dumps(suite_meta))
+        zf.writestr("my-suite/my-suite.py", "# suite")
+        zf.writestr("my-suite/comp-a/ida-plugin.json", json.dumps(comp_meta))
+        zf.writestr("my-suite/comp-a/comp-a.py", "# comp")
+        zf.writestr("my-suite/comp-a/sub-x/ida-plugin.json", json.dumps(sub_meta))
+        zf.writestr("my-suite/comp-a/sub-x/sub-x.py", "# sub")
+
+    zip_path = tmp_path / "suite.zip"
+    zip_path.write_bytes(buf.getvalue())
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(
+        plugin_group,
+        ["install", str(zip_path), "--config", "sub-x.token=secret-123"],
+    )
+    assert result.exit_code == 0, result.output
+
+    from hcli.lib.ida import get_ida_config
+
+    config = get_ida_config()
+    assert "sub-x" in config.plugins
+    assert config.plugins["sub-x"].settings["token"] == "secret-123"
+
+
+def test_nested_component_walk_depth2(virtual_ida_environment):
+    """Walk installed depth-2 suite and verify grandchild appears."""
+    zip_data = _make_nested_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", [("sub-x", "0.1.0")])],
+    )
+    install_plugin_archive(zip_data, "my-suite")
+
+    from hcli.lib.ida.plugin.install import get_plugin_directory
+
+    suite_dir = get_plugin_directory("my-suite")
+    tree = walk_component_tree_from_directory(suite_dir)
+    names = {m.plugin.name for _, m in tree}
+    assert names == {"comp-a", "sub-x"}
+
+    assert (suite_dir / "comp-a" / "sub-x" / "ida-plugin.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Undeclared component detection
+# ---------------------------------------------------------------------------
+
+
+def test_undeclared_plugin_detected_in_directory(virtual_ida_environment, tmp_path):
+    """A subdirectory with ida-plugin.json not listed in components triggers a warning."""
+    from hcli.lib.ida.plugin.components import find_undeclared_plugins_in_directory
+
+    suite_dir = tmp_path / "my-suite"
+    suite_dir.mkdir()
+    suite_meta = _make_plugin_metadata("my-suite", "1.0.0", components=["comp-a"])
+    (suite_dir / "ida-plugin.json").write_text(json.dumps(suite_meta))
+    (suite_dir / "my-suite.py").write_text("# suite")
+
+    comp_dir = suite_dir / "comp-a"
+    comp_dir.mkdir()
+    comp_meta = _make_plugin_metadata("comp-a", "1.0.0")
+    (comp_dir / "ida-plugin.json").write_text(json.dumps(comp_meta))
+    (comp_dir / "comp-a.py").write_text("# component")
+
+    stray_dir = suite_dir / "sneaky-plugin"
+    stray_dir.mkdir()
+    stray_meta = _make_plugin_metadata("sneaky-plugin", "1.0.0")
+    (stray_dir / "ida-plugin.json").write_text(json.dumps(stray_meta))
+    (stray_dir / "sneaky-plugin.py").write_text("# sneaky")
+
+    undeclared = find_undeclared_plugins_in_directory(suite_dir)
+    assert len(undeclared) == 1
+    assert undeclared[0][1].plugin.name == "sneaky-plugin"
+
+
+def test_no_undeclared_when_all_referenced(virtual_ida_environment, tmp_path):
+    """No undeclared plugins when every subdirectory plugin is declared."""
+    from hcli.lib.ida.plugin.components import find_undeclared_plugins_in_directory
+
+    suite_dir = tmp_path / "my-suite"
+    suite_dir.mkdir()
+    suite_meta = _make_plugin_metadata("my-suite", "1.0.0", components=["comp-a"])
+    (suite_dir / "ida-plugin.json").write_text(json.dumps(suite_meta))
+    (suite_dir / "my-suite.py").write_text("# suite")
+
+    comp_dir = suite_dir / "comp-a"
+    comp_dir.mkdir()
+    comp_meta = _make_plugin_metadata("comp-a", "1.0.0")
+    (comp_dir / "ida-plugin.json").write_text(json.dumps(comp_meta))
+    (comp_dir / "comp-a.py").write_text("# component")
+
+    undeclared = find_undeclared_plugins_in_directory(suite_dir)
+    assert len(undeclared) == 0
+
+
+def test_undeclared_plugin_detected_in_archive():
+    """An archive with a manifest not in the component tree is flagged."""
+    from pathlib import Path as P
+
+    from hcli.lib.ida.plugin.components import find_undeclared_plugins_in_archive
+
+    buf = io.BytesIO()
+    suite_meta_dict = _make_plugin_metadata("my-suite", "1.0.0", components=["comp-a"])
+    comp_meta = _make_plugin_metadata("comp-a", "1.0.0")
+    stray_meta = _make_plugin_metadata("stray-plugin", "1.0.0")
+
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("my-suite/ida-plugin.json", json.dumps(suite_meta_dict))
+        zf.writestr("my-suite/my-suite.py", "# suite")
+        zf.writestr("my-suite/comp-a/ida-plugin.json", json.dumps(comp_meta))
+        zf.writestr("my-suite/comp-a/comp-a.py", "# comp")
+        zf.writestr("my-suite/stray-plugin/ida-plugin.json", json.dumps(stray_meta))
+        zf.writestr("my-suite/stray-plugin/stray-plugin.py", "# stray")
+
+    zip_data = buf.getvalue()
+    root_path = P("my-suite/ida-plugin.json")
+    root_meta = IDAMetadataDescriptor.model_validate(suite_meta_dict)
+    undeclared = find_undeclared_plugins_in_archive(zip_data, root_path, root_meta)
+    assert len(undeclared) == 1
+    assert undeclared[0][1].plugin.name == "stray-plugin"
+
+
+def test_lint_warns_undeclared_component(virtual_ida_environment, tmp_path):
+    """Lint detects unreferenced plugin subdirectories."""
+    suite_dir = tmp_path / "my-suite"
+    suite_dir.mkdir()
+    suite_meta = _make_plugin_metadata("my-suite", "1.0.0", components=["comp-a"])
+    (suite_dir / "ida-plugin.json").write_text(json.dumps(suite_meta))
+    (suite_dir / "my-suite.py").write_text("# suite")
+
+    comp_dir = suite_dir / "comp-a"
+    comp_dir.mkdir()
+    comp_meta = _make_plugin_metadata("comp-a", "1.0.0")
+    (comp_dir / "ida-plugin.json").write_text(json.dumps(comp_meta))
+    (comp_dir / "comp-a.py").write_text("# component")
+
+    stray_dir = suite_dir / "sneaky"
+    stray_dir.mkdir()
+    stray_meta = _make_plugin_metadata("sneaky", "1.0.0")
+    (stray_dir / "ida-plugin.json").write_text(json.dumps(stray_meta))
+    (stray_dir / "sneaky.py").write_text("# sneaky")
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["lint", str(suite_dir)])
+    assert "sneaky" in result.output
+    assert "not declared" in result.output.lower() or "warning" in result.output.lower()
+
+
+def test_undeclared_nested_grandchild(virtual_ida_environment, tmp_path):
+    """A stray plugin under a declared component is also detected."""
+    from hcli.lib.ida.plugin.components import find_undeclared_plugins_in_directory
+
+    suite_dir = tmp_path / "my-suite"
+    suite_dir.mkdir()
+    suite_meta = _make_plugin_metadata("my-suite", "1.0.0", components=["comp-a"])
+    (suite_dir / "ida-plugin.json").write_text(json.dumps(suite_meta))
+    (suite_dir / "my-suite.py").write_text("# suite")
+
+    comp_dir = suite_dir / "comp-a"
+    comp_dir.mkdir()
+    comp_meta = _make_plugin_metadata("comp-a", "1.0.0")
+    (comp_dir / "ida-plugin.json").write_text(json.dumps(comp_meta))
+    (comp_dir / "comp-a.py").write_text("# component")
+
+    stray_dir = comp_dir / "hidden-plugin"
+    stray_dir.mkdir()
+    stray_meta = _make_plugin_metadata("hidden-plugin", "1.0.0")
+    (stray_dir / "ida-plugin.json").write_text(json.dumps(stray_meta))
+    (stray_dir / "hidden-plugin.py").write_text("# hidden")
+
+    undeclared = find_undeclared_plugins_in_directory(suite_dir)
+    assert len(undeclared) == 1
+    assert undeclared[0][1].plugin.name == "hidden-plugin"
