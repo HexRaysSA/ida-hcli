@@ -1,0 +1,1 @@
+write this design into a proposal markdown file here: /Users/user/Obsidian/hex-rays/hcli
