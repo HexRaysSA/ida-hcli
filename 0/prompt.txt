@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bv7sffb98</task-id>
+<tool-use-id>toolu_01VPGisax4bJiQG2FhSGxfQP</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/b7b277ac-b0d5-4cd7-8e06-a7eea8f5e406/tasks/bv7sffb98.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch new CI test run" completed (exit code 0)</summary>
+</task-notification>
