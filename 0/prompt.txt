@@ -1,0 +1,3 @@
+using this skill: ~/code/idawilli/.claude/skills/ida-and-github-actions/SKILL.md
+
+update the GHA in the current repo for IDA and GitHub Actions. make reasonable concessions if there's a reason to compromise, but list everything to me. make the change, branch, commit, push, and then babysit CI on the branch. ensure it works, or fix. tell me what you needed to do.
