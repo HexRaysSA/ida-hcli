@@ -1,0 +1,70 @@
+<task-notification>
+<task-id>af43f4fe30a9c1237</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/b5176059-4895-4ae6-b4aa-3493601bff33/tasks/af43f4fe30a9c1237.output</output-file>
+<status>completed</status>
+<summary>Agent "Research PluginMetadata and schema" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have a thorough understanding of the codebase. Here's my report:
+
+---
+
+## Research findings: PluginMetadata model, JSON schema, and related code
+
+### 1. PluginMetadata Pydantic model
+
+**File:** `src/hcli/lib/ida/plugin/__init__.py`, line 358–587
+
+The `PluginMetadata` class extends `BaseModel` with `extra="allow"` (accepts unknown keys). Required fields: `name`, `version`, `entry_point` (alias `entryPoint`), `urls`. Optional fields: `description`, `categories`, `keywords`, `license`, `authors`, `maintainers`, `ida_versions` (alias `idaVersions`), `platforms`, `logo_path` (alias `logoPath`), `python_dependencies` (alias `pythonDependencies`), `settings`.
+
+**No `dependencies` or `components` field exists yet.** These are the fields the design doc proposes adding.
+
+Validators:
+- `is_ok_name` (line 488): ASCII alphanumeric + hyphens/underscores, no leading/trailing `-`/`_`
+- `is_ok_version` (line 499): must parse as semver
+- `transform_ida_version_spec_to_versions` (line 508): converts version spec strings to version lists
+- `check_at_least_one_contact` (line 519): authors or maintainers required
+- `has_unique_setting_keys` (line 533): setting keys must be unique
+- `do_defaults_validate` (line 542): defaults must match declared types
+
+### 2. IDAMetadataDescriptor (top-level wrapper)
+
+**File:** same, line 589–610
+
+Wraps the `PluginMetadata` in the top-level `ida-plugin.json` structure with `$schema`, `IDAMetadataDescriptorVersion` (must be `1`), and `plugin`.
+
+### 3. JSON schema
+
+**File:** `docs/schemas/ida-plugin.json`
+
+Generated from `IDAMetadataDescriptor.model_json_schema(by_alias=True)` via the `schema` command (`src/hcli/commands/plugin/schema.py`, line 30). No `dependencies` or `components` fields present. The schema will auto-update when the Pydantic model changes.
+
+### 4. Metadata parsing/loading
+
+- **From archive:** `get_metadatas_with_paths_from_plugin_archive()` at line 749–772: iterates all `ida-plugin.json` in a zip, yields `(Path, IDAMetadataDescriptor)` tuples. Silently skips invalid metadata.
+- **From archive (single):** `get_metadata_from_plugin_archive()` at line 790: finds a specific plugin by name.
+- **From filesystem:** `get_metadata_from_plugin_directory()` at `install.py:202`: reads `ida-plugin.json` from a plugin directory.
+- **Validation in archive:** `validate_metadata_in_plugin_archive()` at line 844–905: validates entry point and logo paths exist, are relative, and binary plugins have platform-appropriate entry points.
+- **Validation in directory:** `validate_metadata_in_plugin_directory()` at `install.py:216`.
+
+### 5. Key installation/management functions
+
+- **`get_installed_plugin_records()`** (`install.py:299`): Iterates `$IDAUSR/plugins/` **one level deep** — only direct subdirectories. This is important: components nested inside a suite directory are naturally excluded from top-level listings, as the design doc intends.
+- **`_install_plugin_archive()`** (`install.py:741`): The core install routine — validates metadata, checks compatibility, installs python deps, extracts archive.
+- **`extract_zip_subdirectory_to()`** (`install.py:681`): Extracts a subdirectory from a zip to a destination, using atomic staging+rename. Already extracts nested subdirectories, which means suite components would be extracted with the suite.
+- **`install_plugin_archive()`** (`install.py:802`): Public install API wrapping `_install_plugin_archive`.
+- **`upgrade_plugin_archive()`** (`install.py:1111`): Moves existing to trash, installs new version, rolls back on failure.
+- **`uninstall_plugin()`** (`install.py:1022`): Removes plugin directory (or symlink for editable).
+
+### 6. Single-manifest CLI constraints
+
+The design doc mentions five call sites enforcing `len(items) != 1`. Found in `src/hcli/commands/plugin/install.py`:
+- Line 132: local directory install
+- Line 140: local .zip file
+- Line 149: file:// URL
+- Line 167: GitHub direct URL
+- Line 181: https:// URL
+
+These all do `items = list(get_metadatas_with_paths_from_plugin_archive(buf))` then check `len(items) != 1`. For loose packs (dependencies), these constraints need to be relaxed to allow multi-manifest archives — OR the pack itself is a single-manifest plugin whose dependencies are fetched separately (which is the loose-dependency model). In the loose model, each dependency is fetched individually as its own single-manifest archive, so these checks may actually not need relaxation for phase 1.</result>
+<usage><subagent_tokens>97423</subagent_tokens><tool_uses>25</tool_uses><duration_ms>90766</duration_ms></usage>
+</task-notification>
