@@ -367,7 +367,6 @@ def install_plugin(
                 metadata,
                 plugin_name,
                 root_cli_config,
-                is_installed=True,
             )
 
             for comp_name, comp_meta in component_metadatas.items():
@@ -441,8 +440,6 @@ def _apply_plugin_settings(
     metadata: IDAMetadataDescriptor,
     plugin_name: str,
     cli_config: dict[str, str],
-    *,
-    is_installed: bool,
 ) -> None:
     """Apply root plugin settings from --config or interactive prompt."""
     if not metadata.plugin.settings and not cli_config:
@@ -454,10 +451,7 @@ def _apply_plugin_settings(
             parsed_value = parse_setting_value(descr, value_str)
             descr.validate_value(parsed_value)
             if descr.default != parsed_value:
-                if is_installed:
-                    set_plugin_setting(metadata.plugin.name, key, parsed_value)
-                else:
-                    set_setting_for_metadata(metadata.plugin.name, key, parsed_value, metadata)
+                set_plugin_setting(metadata.plugin.name, key, parsed_value)
     elif metadata.plugin.settings:
         needed_settings = [
             s
@@ -488,10 +482,7 @@ def _apply_plugin_settings(
             descr = metadata.plugin.get_setting(key)
             if descr.default == answer:
                 continue
-            if is_installed:
-                set_plugin_setting(metadata.plugin.name, descr.key, answer)
-            else:
-                set_setting_for_metadata(metadata.plugin.name, descr.key, answer, metadata)
+            set_plugin_setting(metadata.plugin.name, descr.key, answer)
 
 
 def _apply_component_settings(
@@ -534,12 +525,14 @@ def _apply_component_settings(
             answers = prompt_plugin_settings(comp_metadata.plugin.settings, existing_values)
             if answers is None:
                 raise click.Abort()
+        else:
+            answers = {}
 
-            for key, answer in answers.items():
-                descr = comp_metadata.plugin.get_setting(key)
-                if descr.default == answer:
-                    continue
-                set_setting_for_metadata(comp_name, key, answer, comp_metadata)
+        for key, answer in answers.items():
+            descr = comp_metadata.plugin.get_setting(key)
+            if descr.default == answer:
+                continue
+            set_setting_for_metadata(comp_name, key, answer, comp_metadata)
 
 
 def _handle_install_dependencies(

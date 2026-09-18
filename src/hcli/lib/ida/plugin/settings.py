@@ -10,6 +10,7 @@ from hcli.lib.ida.plugin import ChoiceValueError, PluginSettingDescriptor
 
 if TYPE_CHECKING:
     from hcli.lib.ida.plugin import IDAMetadataDescriptor
+
 from hcli.lib.ida.plugin.install import (
     find_installed_plugin,
     get_metadata_from_plugin_directory,
@@ -237,9 +238,9 @@ def set_setting_for_metadata(
 
 
 def has_setting_in_config(plugin_name: str, key: str) -> bool:
-    """Check if a setting value exists in ida-config.json for any name.
+    """Check if a setting value exists in ida-config.json.
 
-    Does not validate against installed plugins.
+    Does not validate against installed plugins or setting descriptors.
     """
     config = get_ida_config()
     if plugin_name not in config.plugins:
