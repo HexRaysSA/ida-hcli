@@ -51,10 +51,8 @@ from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
 from hcli.lib.ida.plugin.settings import (
-    has_plugin_setting,
     has_setting_in_config,
     parse_setting_value,
-    set_plugin_setting,
     set_setting_for_metadata,
 )
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, detect_current_python_version, merge_bundle_pip_options
@@ -453,12 +451,12 @@ def _apply_plugin_settings(
             parsed_value = parse_setting_value(descr, value_str)
             descr.validate_value(parsed_value)
             if descr.default != parsed_value:
-                set_plugin_setting(metadata.plugin.name, key, parsed_value)
+                set_setting_for_metadata(plugin_name, key, parsed_value, metadata)
     elif metadata.plugin.settings:
         needed_settings = [
             s
             for s in metadata.plugin.settings
-            if not has_plugin_setting(plugin_name, s.key) and s.required and s.default is None
+            if not has_setting_in_config(plugin_name, s.key) and s.required and s.default is None
         ]
 
         if needed_settings and not console.is_interactive:
@@ -484,7 +482,7 @@ def _apply_plugin_settings(
             descr = metadata.plugin.get_setting(key)
             if descr.default == answer:
                 continue
-            set_plugin_setting(metadata.plugin.name, descr.key, answer)
+            set_setting_for_metadata(plugin_name, descr.key, answer, metadata)
 
 
 def _apply_component_settings(
