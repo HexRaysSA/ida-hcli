@@ -1,0 +1,6 @@
+check again.
+
+this doesn't make senses:
+
+Failed to get download URL for 
+release/9.4/ida-free/ida-free-pc_94_armmac.app.zip: Resource not found
