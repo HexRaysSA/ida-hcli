@@ -1,0 +1,3 @@
+> ### Managing repositories
+
+For this section, I think it's an appropriate place to note that these plugin repositories are compatible with offline plugin bundles. So read that section in the existing documentation and then also maybe include a three-sentence paragraph indicating how you could in an offline scenario such as Flare VM Remove the default repositories and add a repository pointing to an offer. Plugin bundle archive and set that as the default so that the user can search, list, install plugins from that local. Archive file
