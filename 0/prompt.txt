@@ -1,0 +1,4 @@
+plugins_migrated: list[PluginMigrationResult] = []
+    plugins_failed: list[PluginMigrationResult] = []
+
+lets keep these in a single list, and use result.success to select the entries as necessary
