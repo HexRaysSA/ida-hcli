@@ -1,0 +1,3 @@
+"A bare `hcli plugin install <name>` searches it, same as always."
+
+do not assume the user knows anything about the past. describe the current point in time, how behavior is today.
