@@ -1,0 +1,1 @@
+implement "/Users/user/Obsidian/hex-rays/hcli/Implementation Plan - IDAPython Environment Consistency.md" in a new branch, open a PR, and babysit CI
