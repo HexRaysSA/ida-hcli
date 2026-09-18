@@ -777,12 +777,11 @@ def test_config_get_for_component(virtual_ida_environment):
 
 
 # ---------------------------------------------------------------------------
-# get_current_plugin for components
+# Suite install layout for component metadata
 # ---------------------------------------------------------------------------
 
 
-def test_get_current_plugin_returns_component_name(virtual_ida_environment):
-    """Verify get_current_plugin walks into component subdirectories."""
+def test_suite_install_creates_component_metadata(virtual_ida_environment):
     zip_data = _make_suite_zip(
         "my-suite",
         "1.0.0",
@@ -790,8 +789,7 @@ def test_get_current_plugin_returns_component_name(virtual_ida_environment):
     )
     install_plugin_archive(zip_data, "my-suite")
 
-    from hcli.lib.ida.plugin.install import get_plugin_directory
-    from hcli.lib.ida.plugin.settings import get_metadata_from_plugin_directory
+    from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
 
     suite_dir = get_plugin_directory("my-suite")
     comp_file = suite_dir / "comp-a" / "comp-a.py"
@@ -805,8 +803,7 @@ def test_get_current_plugin_returns_component_name(virtual_ida_environment):
     assert comp_metadata.plugin.name == "comp-a"
 
 
-def test_get_current_plugin_returns_suite_for_root_code(virtual_ida_environment):
-    """Verify get_current_plugin returns suite name for root-level code."""
+def test_suite_install_creates_root_entry_point(virtual_ida_environment):
     zip_data = _make_suite_zip(
         "my-suite",
         "1.0.0",
@@ -814,8 +811,7 @@ def test_get_current_plugin_returns_suite_for_root_code(virtual_ida_environment)
     )
     install_plugin_archive(zip_data, "my-suite")
 
-    from hcli.lib.ida.plugin.install import get_plugin_directory
-    from hcli.lib.ida.plugin.settings import get_metadata_from_plugin_directory
+    from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
 
     suite_dir = get_plugin_directory("my-suite")
     root_file = suite_dir / "my-suite.py"
