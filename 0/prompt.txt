@@ -1,0 +1,242 @@
+<task-notification>
+<task-id>af7be7e38ce995c81</task-id>
+<tool-use-id>toolu_01YbsJRYgiLN8uHCJNCpNkAh</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/b7b277ac-b0d5-4cd7-8e06-a7eea8f5e406/tasks/af7be7e38ce995c81.output</output-file>
+<status>completed</status>
+<summary>Agent "Explore plugin install and env creation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have a thorough understanding of the codebase. Here is my complete report.
+
+---
+
+## Report: Plugin Installation, Python Environments, and Dependency Management in ida-hcli
+
+### 1. CLI Command Structure
+
+The CLI is built with `rich_click` (a rich-themed Click wrapper). The relevant command groups are:
+
+- **`hcli plugin ...`** -- defined in `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/__init__.py`
+  - `install`, `uninstall`, `upgrade`, `status`, `search`, `config`, `lint`, `schema`, `bundle`, `repo`
+- **`hcli ida python ...`** -- defined in `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/ida/python/__init__.py`
+  - `create-environment`, `doctor`, `exec`, `explain-environment`, `find-script`, `run-script`
+
+Commands are registered in `/Users/user/code/hex-rays/ida-hcli/src/hcli/main.py` via `register_commands(cli)`.
+
+---
+
+### 2. Where Installed Plugins Live
+
+**Key file:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/install.py`
+
+Plugins are installed to **`$IDAUSR/plugins/&lt;plugin-name&gt;/`**.
+
+The `$IDAUSR` (IDA user directory) is resolved by `get_ida_user_dir()` in `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/__init__.py` (line 109-130):
+- Env var `$HCLI_IDAUSR` takes highest precedence
+- Then `$IDAUSR` (first path in the colon-separated list)
+- Then platform defaults:
+  - **Windows**: `%APPDATA%/Hex-Rays/IDA Pro`
+  - **Linux/macOS**: `~/.idapro`
+
+The function `get_plugins_directory()` (line 64-74) returns `$IDAUSR/plugins/`, creating it if it does not exist. Each plugin gets its own subdirectory named after the plugin: `get_plugin_directory(name)` returns `$IDAUSR/plugins/&lt;name&gt;`.
+
+**Plugin metadata storage**: Each installed plugin directory must contain an **`ida-plugin.json`** file. There is no separate metadata database -- the on-disk `ida-plugin.json` files are the canonical source of truth. The function `get_installed_plugin_records()` (line 299-339) enumerates installed plugins by scanning `$IDAUSR/plugins/` for directories containing valid `ida-plugin.json`.
+
+**Trash/staging area**: A `.plugins-trash` directory sits beside the plugins directory (`$IDAUSR/.plugins-trash`) for atomic install/uninstall operations. Stale entries are swept by `sweep_trash()`.
+
+**Plugin configuration**: Per-plugin settings (from `ida-plugin.json`'s `settings` field) are stored in `$IDAUSR/ida-config.json` under the `Plugins` key, keyed by bare plugin name. The model is `IDAConfigJson` in `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/__init__.py` (line 833-845).
+
+---
+
+### 3. Plugin Manifest/Metadata Schema (`ida-plugin.json`)
+
+**Key file:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/__init__.py`
+
+The top-level schema is `IDAMetadataDescriptor` (line 589-610):
+```python
+class IDAMetadataDescriptor(BaseModel):
+    schema_: str | None         # "$schema" -- optional JSON Schema URL
+    metadata_version: Literal[1]  # "IDAMetadataDescriptorVersion" -- must be 1
+    plugin: PluginMetadata
+```
+
+The `PluginMetadata` model (line 358-576) includes:
+- **`name`**: plugin identifier (ASCII letters, digits, underscores, hyphens)
+- **`version`**: semver string (`x.y.z`)
+- **`entryPoint`**: filename of the main plugin file (`.py` for Python plugins)
+- **`urls`**: contains `repository` (GitHub URL or Hex-Rays portal URL) -- this is the plugin's identity
+- **`platforms`**: list of supported platforms (`windows-x86_64`, `linux-x86_64`, `macos-aarch64`, etc.)
+- **`idaVersions`**: list of supported IDA versions (or a semver spec string that gets expanded)
+- **`pythonDependencies`**: **THIS IS THE KEY FIELD** -- either a list of pip dependency specs, or the string `"inline"` for PEP 723 metadata
+- **`settings`**: list of `PluginSettingDescriptor` entries for user-configurable settings
+- Other optional fields: `description`, `categories`, `keywords`, `license`, `authors`, `maintainers`, `logoPath`
+
+---
+
+### 4. How Python Dependencies Are Declared in Plugins
+
+**Key file:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/__init__.py`
+
+The `pythonDependencies` field in `ida-plugin.json` supports two forms:
+
+**A) Explicit list** -- a JSON array of pip dependency specifiers:
+```json
+"pythonDependencies": ["httpx", "gidgethub[httpx]&gt;4.0.0", "pkg3&gt;=1.0,&lt;=2.0"]
+```
+
+**B) PEP 723 inline metadata** -- the string `"inline"`:
+```json
+"pythonDependencies": "inline"
+```
+When set to `"inline"`, HCLI reads the entry point `.py` file and parses PEP 723 script metadata (the `# /// script` block) to extract dependencies. This is done in `parse_pep723_metadata()` (line 634-669) which parses the TOML block inside the `# ///` markers.
+
+Dependency extraction functions:
+- `get_python_dependencies_from_plugin_archive(zip_data, metadata)` (line 694-719) -- extracts deps from a ZIP archive
+- `get_python_dependencies_from_plugin_directory(plugin_path, metadata)` (line 722-746) -- extracts deps from an installed directory
+
+---
+
+### 5. How Plugin Installation Works
+
+**Key files:**
+- CLI command: `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/install.py`
+- Core logic: `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/install.py`
+
+The `install_plugin` click command (line 87) accepts a `plugin` argument that can be:
+
+1. **Local directory** (with `-e`/`--editable`): symlinks the directory into `$IDAUSR/plugins/&lt;name&gt;`
+2. **Local directory** (without `-e`): packs to in-memory ZIP, runs through archive pipeline
+3. **Local `.zip` file**: reads bytes, runs through archive pipeline
+4. **`file://` URL**: fetches and runs through archive pipeline
+5. **GitHub URL** (like `https://github.com/org/repo`): fetches the latest release ZIP asset
+6. **HTTPS URL**: generic fetch
+7. **Plugin reference** (like `plugin-name`, `plugin-name==1.2.3`, `repo/plugin-name@https://...`): resolved against configured plugin repositories
+
+The core archive install flow in `_install_plugin_archive()` (line 697-755):
+1. Parse and validate `ida-plugin.json` from the ZIP
+2. Find current IDA platform and version
+3. Call `validate_can_install_plugin()` which checks:
+   - Plugin name validity
+   - Not already installed
+   - Platform compatibility
+   - IDA version compatibility
+   - **Python dependency installability** (via `validate_can_install_python_dependencies`)
+4. **Install Python dependencies** (lines 728-748):
+   - Collect dependencies from ALL already-installed plugins plus the new plugin's dependencies
+   - Call `pip_install_packages(python_exe, all_python_dependencies, pip_options)` which runs the union of all plugin dependencies
+5. Extract the ZIP to `$IDAUSR/plugins/&lt;name&gt;/` via a staging directory for atomicity
+
+**Editable install** (`install_plugin_directory_editable`, line 793-903):
+- Validates metadata from the source directory
+- Installs Python dependencies same as above
+- Creates a **symlink** from `$IDAUSR/plugins/&lt;name&gt;` to the source directory
+- If the source has a `src/` directory (src-layout), writes a `.pth` file into IDA's site-packages
+
+---
+
+### 6. How Python Dependencies Are Resolved and Installed
+
+**Key file:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/__init__.py`
+
+**Finding IDA's Python interpreter** -- `resolve_current_python()` (line 247-275):
+1. `$HCLI_CURRENT_IDA_PYTHON_EXE` env var (highest priority)
+2. `$IDAPYTHON_VENV_EXECUTABLE` env var (if the file exists)
+3. Launch `idat` (IDA's text-mode binary) with a probe script to discover `sys.prefix`, `sys.base_prefix`, `sys.executable`, etc., then derive the interpreter path
+
+**Pre-flight validation** -- `validate_can_install_python_dependencies()` in `install.py` (line 478-524):
+1. Extracts the new plugin's Python dependencies
+2. Collects dependencies from ALL already-installed plugins
+3. Unions them all together
+4. Finds IDA's Python via `resolve_python_for_dependencies()` which:
+   - Calls `resolve_current_python()` to find the interpreter
+   - Calls `validate_python_environment()` to check health (venv exists, pip available, version matches, not externally managed)
+   - Checks `has_pip()` 
+5. Runs `verify_pip_can_install_packages()` which calls `pip install --dry-run` with all the unioned dependencies
+
+**Actual installation** -- `pip_install_packages()` (line 411-433):
+```python
+subprocess.run(
+    [str(python_exe), "-m", "pip", "install"] + pip_options.build_args() + packages,
+    capture_output=True, check=False,
+)
+```
+
+The `PipOptions` dataclass (line 301-334) supports: `--index-url`, `--extra-index-url`, `--find-links`, `--no-index` (offline), `--isolated`, `--no-cache-dir`, `--no-build-isolation`.
+
+**Important**: Dependencies from ALL installed plugins are re-installed together (unioned) every time a new plugin is installed. This means dependencies are not isolated per-plugin -- they all share IDA's Python environment. Orphaned dependencies from uninstalled plugins are intentionally left behind (line 998-999 comment in `uninstall_plugin`).
+
+**Bundle support**: Plugin bundles (`.zip` files with pre-downloaded wheels) can provide offline dependency installation. The `bundle_dependency_source()` context manager in `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/bundle.py` extracts a wheelhouse to a temp directory and creates `PipOptions` with `--find-links` pointing at it.
+
+---
+
+### 7. How Python Virtual Environments Are Created
+
+**Key files:**
+- CLI command: `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/ida/python/create_environment.py`
+- Core logic: `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/venv_create.py`
+
+The `hcli ida python create-environment` command:
+
+**Step 1 -- Determine Python version** (`determine_target_python_version`, venv_create.py line 131-172):
+- Probes IDA via `idat` to learn which Python version IDA's `idapyswitch` registered
+- The `--python-version X.Y` flag is a fallback when idat cannot run
+- IDA's probed version always wins
+
+**Step 2 -- Plan the venv** (`plan_virtual_environment`, venv_create.py line 248-277):
+- Prefers `uv venv --seed --python &lt;version&gt; &lt;target&gt;` if `uv` is on PATH
+- Falls back to `python -m venv &lt;target&gt;` with stdlib venv
+- Target defaults to `$IDAUSR/venv` (configurable via `--path`)
+
+**Step 3 -- Create the venv** (`create_virtual_environment`, venv_create.py line 280-309):
+- Runs the planned command
+- For stdlib `venv`, also runs `ensurepip --upgrade`
+- Validates: pyvenv.cfg exists, interpreter runs, correct version, pip available
+
+**Step 4 -- Configure IDA** (`configure_env_var`, create_environment.py line 88-139):
+- Sets `$IDAPYTHON_VENV_EXECUTABLE` to point at the venv's Python interpreter
+- On Windows: offers to run `setx IDAPYTHON_VENV_EXECUTABLE &lt;path&gt;`
+- On POSIX: offers to append `export IDAPYTHON_VENV_EXECUTABLE="&lt;path&gt;"` to shell profile (`.zshrc`, `.bashrc`, etc.)
+- Interactive consent is required before writing
+
+---
+
+### 8. Environment Health Checks
+
+**Key file:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/environment.py`
+
+The `check_python_environment()` function (line 334-530) evaluates multiple conditions and produces `EnvironmentFinding` results with severity `error` or `warning`:
+
+- **Error: `uv-ephemeral`** -- IDA's Python is a temporary `uv run --with` overlay
+- **Error: `venv-exe-not-found`** -- `$IDAPYTHON_VENV_EXECUTABLE` points to a missing file
+- **Error: `python-exe-not-found`** -- the resolved interpreter doesn't exist
+- **Error: `no-venv`** -- IDA's Python is not a virtual environment
+- **Error: `externally-managed`** -- PEP 668 marker prevents pip from installing
+- **Error: `no-pip`** -- pip is not available
+- **Error: `version-mismatch`** -- venv Python version differs from IDA's embedded Python
+- **Warning: `no-venv-exe-var`** -- `$IDAPYTHON_VENV_EXECUTABLE` not set or pointing elsewhere
+- **Warning: `idapythonrc-venv`** -- idapythonrc.py activates a venv (unreliable method)
+
+`validate_python_environment()` (line 577-597) is called during plugin installation; it prints warnings to stderr and **raises `PythonEnvironmentError` if any error-level findings exist**, blocking the install.
+
+---
+
+### Summary of Key Files
+
+| Purpose | File |
+|---------|------|
+| Plugin install CLI command | `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/install.py` |
+| Plugin install/uninstall/upgrade logic | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/install.py` |
+| Plugin metadata schema (`ida-plugin.json`) | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/__init__.py` |
+| Plugin reference parsing (`name==ver@host`) | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/reference.py` |
+| Plugin install exceptions | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/exceptions.py` |
+| Plugin bundle (offline wheels) | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/bundle.py` |
+| Python resolution, pip install/verify | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/__init__.py` |
+| Python environment health checks | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/environment.py` |
+| Venv creation logic | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/venv_create.py` |
+| `create-environment` CLI command | `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/ida/python/create_environment.py` |
+| `ida python` CLI group | `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/ida/python/__init__.py` |
+| IDA user dir, config, installations | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/__init__.py` |
+| Venv utilities (probe, detect, resolve) | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/venv.py` |
+| Plugin CLI group and repo setup | `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/__init__.py` |
+| Plugin settings management | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/settings.py` |</result>
+<usage><subagent_tokens>134887</subagent_tokens><tool_uses>21</tool_uses><duration_ms>115064</duration_ms></usage>
+</task-notification>
