@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b2200upgl</task-id>
+<tool-use-id>toolu_016YqqbfsT7W1WViL6cBMCqZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/c2e6a069-e577-48ef-8b81-b88d9ab998e4/tasks/b2200upgl.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch CI to completion" completed (exit code 0)</summary>
+</task-notification>
