@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bgv2i4sha</task-id>
+<tool-use-id>toolu_01LtQY5kCuBo6coC6vuaB9NF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/ec9aa125-1137-4e9f-9caa-136c762721fb/tasks/bgv2i4sha.output</output-file>
+<status>failed</status>
+<summary>Background command "Wait 2min then check CI" failed with exit code 8</summary>
+</task-notification>
