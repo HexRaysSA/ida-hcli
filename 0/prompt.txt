@@ -1,0 +1,60 @@
+<task-notification>
+<task-id>a21bd19a565fa6e40</task-id>
+<tool-use-id>toolu_01G6VAPv8rqnEJVCo6vGz9vL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/f7f6d0cb-a250-48b6-a084-cdee7b944069/tasks/a21bd19a565fa6e40.output</output-file>
+<status>completed</status>
+<summary>Agent "Survey documentation site content" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here is my complete survey. 25 documentation files across 6 sections:
+
+---
+
+## Documentation Site Survey
+
+**25 files** organized in 6 sections: getting-started (3), user-guide (5), how-to (3), reference (7), advanced (2), development (2), plus index.md and changelog.md.
+
+---
+
+### Pages with Python/environment relevance (candidates for update)
+
+**1. `user-guide/ida-python-environment.md`** — Already rewritten by PR #319. This is the primary Python environment page: recommended setup, `create-environment`, `doctor`, `exec`/`run-script`/`find-script`. This page is in good shape and reflects the new world.
+
+**2. `user-guide/installing-ida.md`** — Shows `hcli ida install` examples but does not mention `--create-python-environment` (added in #319). Does not mention Python setup at all after installation. A user following this page ends up with IDA installed but no Python environment configured.
+
+**3. `getting-started/quick-start.md`** — The primary onboarding page. "Install IDA" section walks through `hcli ida install` but says nothing about Python environment setup afterward. No link to the Python environment page. A new user following this guide wouldn't know they need a venv.
+
+**4. `getting-started/installation.md`** — HCLI installation only. No Python relevance. Fine as-is.
+
+**5. `reference/environment-variables.md`** — Lists `IDAPYTHON_VENV_EXECUTABLE` and `HCLI_CURRENT_IDA_PYTHON_EXE` but the descriptions are terse. Doesn't explain the recommended setup or link to the Python environment page. The IDAPYTHON_VENV_EXECUTABLE entry says "used for plugin dependency management when the file exists" which undersells its role.
+
+**6. `reference/ida-detection.md`** — Documents Python interpreter resolution. Already mentions the recommended setup and links to `ida-python-environment.md`. Looks current.
+
+**7. `advanced/ci-cd-integration.md`** — Shows `hcli ida install` in CI but doesn't mention Python environment setup for CI runners. A CI pipeline following this guide would have IDA installed but no venv, which means plugin installs with Python dependencies would fail or use the system Python.
+
+**8. `advanced/docker/README.md`** — Shows a Dockerfile that installs IDA + `pip install idapro ida-domain`. Does not create a venv or set `IDAPYTHON_VENV_EXECUTABLE`. The approach works for idalib-only use but doesn't follow the recommended setup. Worth a note, though Docker is a controlled environment where the system Python is fine.
+
+**9. `user-guide/plugin-manager.md`** — The plugin manager page. Mentions that plugins can have `pythonDependencies` and installs them. Does not mention that the Python environment must be set up first, or what happens if it isn't. Since #319 added pre-install health checks, a brief mention that `plugin install` checks the Python environment (and points to `doctor` when it fails) would be appropriate.
+
+**10. `index.md`** — Landing page. Lists four key features. No mention of Python environment management, though the new `ida python` commands are a significant capability. Could add a brief bullet.
+
+---
+
+### Pages that need NO changes
+
+- `getting-started/authentication.md` — Auth only
+- `user-guide/licenses.md` — License management only
+- `user-guide/file-sharing.md` — File sharing only
+- `reference/plugin-packaging-and-format.md` — Plugin format spec; mentions `pythonDependencies` but that's the plugin author's concern, not environment setup
+- `reference/packaging-your-existing-plugin.md` — Plugin author guide
+- `reference/plugin-repository-architecture.md` — Repo architecture
+- `reference/plugin-bundle-spec.md` — Offline bundles spec
+- `reference/plugins-AGENT.md` — Internal agent instructions
+- `reference/hex-rays-guide-for-suggesting-changes.md` — Internal Hex-Rays workflow
+- `how-to/share-files-with-support.md` — File sharing guide
+- `how-to/test-plugin-before-publishing.md` — Plugin testing; already mentions `hcli plugin lint`
+- `how-to/use-hcli-in-docker.md` — Docker howto, lightweight
+- `development/setup.md` — Contributor dev setup
+- `development/plugin-packaging-experience-reports.md` — Internal notes
+- `changelog.md` — Version history; will be updated at release time anyway</result>
+<usage><subagent_tokens>93252</subagent_tokens><tool_uses>28</tool_uses><duration_ms>57274</duration_ms></usage>
+</task-notification>
