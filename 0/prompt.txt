@@ -1,0 +1,3 @@
+why did you skip environment.d?
+
+remove old unused functions. don't worry about the backwards compat thing. this is brand new functionality.
