@@ -1,0 +1,12 @@
+1. good.
+2. good. we should probably use the flag by default, so prefer to list it in examples rather than not
+3. good
+4. ok
+5. use the flag during install. explain it in short paragraph/link
+6. system python is not acceptable. venv everywhere, including in docker. so we need to update the dockerfile. use the installer flag
+
+ida-python-environment: one sentence to note that even in docker, system python is not ok (not writable). always use the python environment.
+
+also, as appropriate, we should be explaining that the env var is set (or how to do this).
+
+everywhere, use concise and direct wording, semi-informal, ASD-STE100 with compromises on jargon related to IDA, plugin manager, Python
