@@ -1,0 +1,31 @@
+<task-notification>
+<task-id>a350a7737d00f6721</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/22f43f98-b18b-4f1f-97c4-db3b30190b62/tasks/a350a7737d00f6721.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit related code for similar assumptions" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good, I now have the full picture. Here's the audit report:
+
+---
+
+**Audit: silent-fallback-on-missing-path assumptions**
+
+**1. `HCLI_CURRENT_IDA_PYTHON_EXE` accepted without existence check**
+`src/hcli/lib/ida/python/__init__.py:258-259` — When `HCLI_CURRENT_IDA_PYTHON_EXE` is set, `resolve_current_python()` wraps it in `ResolvedPython` with no `.is_file()` check. Downstream, `has_pip()` will `subprocess.run` a nonexistent binary and return False; `probe_python_version()` returns None. Doctor reports "no-pip" and no version, but never says "the interpreter you specified doesn't exist." This is lower-severity than the IDAPYTHON_VENV_EXECUTABLE case because HCLI_CURRENT_IDA_PYTHON_EXE is documented as "trust the user" (an explicit override, not the recommended flow), but the resulting doctor output is still confusing.
+
+**2. `validate_python_environment` / `warn_python_environment` — no issue (fixed by this PR)**
+Both call `collect_python_environment_state` → `check_python_environment`, which now emits `venv-exe-not-found`. The new finding is severity "error", so `validate_python_environment` will correctly raise `PythonEnvironmentError` and block installs. `warn_python_environment` prints the warning. No gap here.
+
+**3. `explain-environment` `collect_notes` doesn't flag dangling var**
+`src/hcli/lib/ida/python/environment.py:1035-1101` — `collect_notes()` has access to `python_environment.idapython_venv_executable_exists` but never checks it. The rendering layer (`explain_environment.py:101-104`) shows `[red](not found)[/red]` inline, but the notes section gives generic hints ("run create-environment") without diagnosing that the explicit configuration is broken. Minor, since explain-environment is a raw-state diagnostic and the rendering already highlights it in red, but it's a gap in the notes.
+
+**4. `venv_executable_points_at()` false-positive risk**
+`src/hcli/lib/ida/python/environment.py:306-314` — When `idapython_venv_executable` points to a nonexistent file, `_get_venv_root_from_python` returns None, and the function falls back to `.parent.parent`. If the nonexistent path happens to share the same grandparent as `venv_root` (e.g. the user deleted and re-created the venv at the same path), it returns True. This is now harmless in the check path because `dangling_var` suppresses the `no-venv-exe-var` check, and `identify_setup_pattern` checks `idapython_venv_executable_exists` before reaching the `var_ok`-dependent branches. But `venv_executable_points_at` can still return True for a nonexistent file, which is semantically wrong and could confuse future callers.
+
+**5. `HCLI_IDAUSR` / `IDAUSR` accepted without existence check**
+`src/hcli/lib/ida/__init__.py:109-113` — `get_ida_user_dir()` returns `Path(ENV.HCLI_IDAUSR)` without checking if it exists. This is less concerning because the directory is used for lookups (pyvenv.cfg, idapythonrc.py, etc.) that individually fail gracefully with `is_file()` guards. A completely bogus HCLI_IDAUSR silently yields "no venv found, no idapythonrc" rather than an error, but the consequence is just a less helpful doctor report rather than wrong behavior.
+
+**Summary:** Issue #1 (HCLI_CURRENT_IDA_PYTHON_EXE with nonexistent path) is the most actionable remaining gap — same class of bug as the one just fixed. Issues #3-5 are minor.</result>
+<usage><subagent_tokens>108843</subagent_tokens><tool_uses>12</tool_uses><duration_ms>63616</duration_ms></usage>
+</task-notification>
