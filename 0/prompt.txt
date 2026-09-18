@@ -1,0 +1,1 @@
+ok, now we need to carefully update the documentation we have. review the docs we already have an suggest what needs to be updated. i suspect this primarily has to do with the plugin metadata format and repo.
