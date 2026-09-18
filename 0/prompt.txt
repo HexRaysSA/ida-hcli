@@ -1,0 +1,71 @@
+<task-notification>
+<task-id>a3cea1a924bd2284e</task-id>
+<tool-use-id>toolu_01B4viengZtAcNZ7QYabt7bk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/ec9aa125-1137-4e9f-9caa-136c762721fb/tasks/a3cea1a924bd2284e.output</output-file>
+<status>completed</status>
+<summary>Agent "Research plugin metadata model" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here's the full research report:
+
+---
+
+## PluginMetadata model (`src/hcli/lib/ida/plugin/__init__.py:358`)
+
+`PluginMetadata` is a Pydantic `BaseModel` with `extra="allow"`. Fields:
+
+- **Required:** `name`, `version`, `entry_point` (alias `entryPoint`), `urls`
+- **Optional:** `description`, `categories`, `keywords`, `license`, `authors`, `maintainers`, `ida_versions` (alias `idaVersions`), `platforms`, `logo_path` (alias `logoPath`), `python_dependencies` (alias `pythonDependencies`), `settings`, `dependencies`
+- **No `components` field exists yet.**
+
+The `dependencies` field (line 488) is `list[str]`, default `[]`, with a `@field_validator` calling `parse_dependency_spec()` on each entry.
+
+The wrapper is `IDAMetadataDescriptor` (line 609), with fields `$schema`, `IDAMetadataDescriptorVersion` (Literal[1]), and `plugin: PluginMetadata`.
+
+## JSON schema generation (`src/hcli/commands/plugin/schema.py:30`)
+
+`IDAMetadataDescriptor.model_json_schema(by_alias=True)` — auto-generated from the Pydantic model. Adding `components` to `PluginMetadata` will automatically update the schema.
+
+## `get_metadatas_with_paths_from_plugin_archive()` (`__init__.py:769`)
+
+Iterates all `ida-plugin.json` files in a zip archive, parses each into `IDAMetadataDescriptor`, yields `(Path, IDAMetadataDescriptor)` tuples. Already handles multi-manifest archives correctly.
+
+## `get_installed_plugin_records()` (`install.py:299`)
+
+Iterates **one level deep** in `$IDAUSR/plugins/`: for each direct child directory, reads `ida-plugin.json`, validates it, and checks `metadata.plugin.name == plugin_path.name`. Returns `list[InstalledPluginRecord]`. **Does not recurse into subdirectories**, so nested component manifests are naturally excluded from top-level listings.
+
+## Install flow (`install.py:741-808`)
+
+`_install_plugin_archive()`: looks up the named plugin's metadata in the archive, validates, resolves python deps across all installed plugins, extracts via `extract_zip_subdirectory_to()`. The extraction extracts the entire subtree under the manifest's parent directory — including nested subdirectories (components would come along for free).
+
+**Single-manifest constraint** — 5 locations in `src/hcli/commands/plugin/install.py` (lines 133, 141, 150, 168, 182) enforce `len(items) != 1` for local-dir, local-zip, file://, GitHub-URL, and https:// installs. The repo-based install path (line 186+) does NOT enforce this check — it resolves by name.
+
+## Upgrade flow (`install.py:1111`)
+
+`upgrade_plugin_archive()`: atomically moves old plugin to trash, calls `install_plugin_archive()`. If install fails, rolls back. The command-level handler (`upgrade.py:193`) also handles dependency changes (new/dropped).
+
+## Uninstall flow (`install.py:1022`, `uninstall.py:25`)
+
+`uninstall_plugin()` in the lib removes the plugin directory (or symlink for editable). The CLI command then checks for `dependencies` on the metadata and offers to remove them. No component awareness currently exists.
+
+## Lint (`lint.py`)
+
+`_lint_metadata()` checks various fields and calls `_check_dependency_specs()` for the `dependencies` field. `_lint_plugin_archive()` iterates all manifests in a zip and validates each. No component-specific validation.
+
+## `pack_plugin_directory_to_zip()` (`install.py:816`)
+
+Packs a local directory into a zip, recursing via `rglob("*")`, skipping `.git`/`__pycache__`/etc. This already packs nested subdirectories, so component directories inside a suite dir would be included automatically.
+
+## Key observations for components implementation
+
+1. **No `components` field on `PluginMetadata`** — needs to be added.
+2. **`get_installed_plugin_records()` is one-level-deep** — components in nested dirs are already excluded. This is exactly the behavior the design wants.
+3. **`extract_zip_subdirectory_to()` extracts full subtrees** — component subdirectories come for free during extraction.
+4. **`pack_plugin_directory_to_zip()` recurses** — local directory installs of suites will include components.
+5. **5 single-manifest constraints** in the install CLI need to be relaxed for suite archives.
+6. **`_install_plugin_archive()` only installs python deps for the named plugin** — needs to also collect deps from all components recursively.
+7. **`validate_metadata_in_plugin_archive()` validates one manifest** — needs companion logic to walk the component tree and validate each component.
+8. **Uninstall** needs component awareness: refuse individual component uninstall, cascade for suite.
+9. **Status** needs component count display and `--show-components` flag.
+10. **Lint** needs component tree validation.</result>
+<usage><subagent_tokens>85746</subagent_tokens><tool_uses>34</tool_uses><duration_ms>160437</duration_ms></usage>
+</task-notification>
