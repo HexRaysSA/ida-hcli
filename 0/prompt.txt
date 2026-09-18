@@ -1,0 +1,15 @@
+<task-notification>
+<task-id>a456c6168308245bb</task-id>
+<tool-use-id>toolu_01DwZpqGTf2utzg6uhkg5s6g</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/099ceea2-439b-4b7d-80c8-2cfb47ac298d/tasks/a456c6168308245bb.output</output-file>
+<status>completed</status>
+<summary>Agent "Read open GitHub issues" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Wrote summaries of all 8 open issues to `/tmp/open-issues.md`. Each entry covers: problem, error messages, platform, root cause, impact, and proposed solutions. Key themes across these issues:
+
+1. **idat probe is the central bottleneck** — it's slow (#288), absent on IDA Home (#196), and doesn't pick up venv configuration (#144/#275)
+2. **No standard way to tell HCLI about the Python environment** — users configure venvs via `idapythonrc.py` but HCLI's headless probe doesn't see it
+3. **No dependency tracking** — can't declare plugin deps (#291), can't clean up on uninstall (#265)
+4. **Validation happens too late** — #314 and #275 both want earlier, clearer error reporting</result>
+<usage><subagent_tokens>49820</subagent_tokens><tool_uses>18</tool_uses><duration_ms>77490</duration_ms></usage>
+</task-notification>
