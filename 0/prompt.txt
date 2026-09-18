@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bnycysm42</task-id>
+<tool-use-id>bfb4fc61-b7b7-4efd-89c0-f6c97a104588:inner:preamble-0</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/b5176059-4895-4ae6-b4aa-3493601bff33/tasks/bnycysm42.output</output-file>
+<status>completed</status>
+<summary>Background command "plannotator annotate-last" completed (exit code 0)</summary>
+</task-notification>
