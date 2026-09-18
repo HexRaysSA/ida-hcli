@@ -1,0 +1,96 @@
+<task-notification>
+<task-id>a500a05d1fd155945</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/b5176059-4895-4ae6-b4aa-3493601bff33/tasks/a500a05d1fd155945.output</output-file>
+<status>completed</status>
+<summary>Agent "Research plugin install flow" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have a thorough picture. Here is my report:
+
+---
+
+## Research: Plugin install flow in HCLI
+
+### 1. Install command (`src/hcli/commands/plugin/install.py`)
+
+The `install_plugin` click command (line 87) handles five sources:
+1. **Editable** (`-e`): reads metadata from local dir, symlinks to `$IDAUSR/plugins/&lt;name&gt;` (line 106-120)
+2. **Local directory** (non-editable): packs into in-memory zip via `pack_plugin_directory_to_zip()`, runs through archive pipeline (line 122-134)
+3. **Local `.zip` file**: reads bytes directly (line 136-141)
+4. **`file://` URL**: fetches via `fetch_plugin_archive()` (line 144-151)
+5. **GitHub direct URL**: uses `fetch_github_release_zip_asset()` (line 153-169)
+6. **`https://` URL**: uses `fetch_plugin_archive()` (line 171-183)
+7. **Repository reference** (else branch): `parse_plugin_reference()` + `repo.fetch_compatible_plugin_from_spec()` (line 185-213)
+
+After obtaining the archive, there is:
+- Name conflict check against installed plugins (line 226-239)
+- `--upgrade` handling (line 247-253)
+- Settings configuration (line 255-346)
+- The actual install call: either `install_plugin_archive()` or `upgrade_plugin_archive()` (line 268-296)
+
+### 2. `install_plugin_archive()` library function (`src/hcli/lib/ida/plugin/install.py`)
+
+- **Public function** at line 802: validates it's a source or binary plugin archive, then calls `_install_plugin_archive()`.
+- **Private `_install_plugin_archive()`** at line 741:
+  1. `get_metadata_from_plugin_archive(zip_data, name)` - extracts metadata for the named plugin
+  2. `validate_metadata_in_plugin_archive()` - validates entry point, logo, paths
+  3. `validate_can_install_plugin()` - checks name validity, not already installed, platform/version compat, python deps
+  4. Installs Python dependencies via `pip_install_packages()` (line 773-793)
+  5. Removes stale editable `.pth` file (line 797)
+  6. `extract_zip_subdirectory_to()` - extracts to staging dir then atomic-renames to `$IDAUSR/plugins/&lt;name&gt;/` (line 799)
+
+### 3. Single-manifest constraint (`len(items) != 1`)
+
+Five call sites enforce exactly one `ida-plugin.json` in the archive, all in `src/hcli/commands/plugin/install.py`:
+1. **Line 132**: local directory install — `"plugin directory must contain a single plugin"`
+2. **Line 140**: local `.zip` file — `"plugin archive must contain a single plugin for local file system installation"`
+3. **Line 149**: `file://` URL — `"plugin archive must contain a single plugin for local file system installation"`
+4. **Line 167**: GitHub direct URL — `"plugin archive must contain a single plugin for GitHub installation"`
+5. **Line 181**: `https://` URL — `"plugin archive must contain a single plugin for HTTP URL installation"`
+
+The **repo-based install path** (line 185+) does NOT check `len(items)`. It gets the plugin name from `repo.fetch_compatible_plugin_from_spec()` and passes it directly to `install_plugin_archive()`, which finds the correct manifest by name. This path already handles multi-manifest archives correctly.
+
+### 4. `extract_zip_subdirectory_to()` (`install.py:681`)
+
+Extracts a specific subdirectory from a zip archive to a destination path:
+1. Stages in trash directory (same filesystem for atomic rename)
+2. Validation pass: rejects symlinks, absolute paths, `..` traversals
+3. Extraction pass: extracts all files under the specified subdirectory prefix (skips `.git/`)
+4. Atomic rename from staging to destination
+5. Cleanup on failure
+
+This function already extracts a full subtree including nested subdirectories — a suite archive with components nested inside would be extracted correctly by this function without modification.
+
+### 5. Python dependency installation
+
+- `get_python_dependencies_from_plugin_archive()` (plugin `__init__.py:694`): reads `pythonDependencies` from metadata (list or "inline" for PEP 723)
+- `validate_can_install_python_dependencies()` (`install.py:522`): dry-run verifies all deps (new + existing) resolve
+- In `_install_plugin_archive()` (line 773): collects deps from all existing installed plugins + new plugin, installs all together to avoid conflicts
+
+### 6. Key data types
+
+- `PluginMetadata` (`__init__.py:358`): the Pydantic model for `ida-plugin.json`. Currently has **no** `dependencies` or `components` field. Uses `extra="allow"` so unknown fields are silently accepted (they'll be flagged by lint's `_check_unexpected_keys()`).
+- `InstalledPluginRecord` (`install.py:279`): represents an installed plugin with path and metadata
+- `get_installed_plugin_records()` (`install.py:299`): enumerates `$IDAUSR/plugins/` one level deep — only immediate children of plugins/
+
+### 7. Uninstall command (`uninstall.py`)
+
+Very simple: calls `uninstall_plugin(name)` which finds the installed plugin record and removes the directory (via trash-and-delete or symlink unlink). No awareness of dependencies or relationships.
+
+### 8. Upgrade command (`upgrade.py`)
+
+Fetches latest compatible version from repo, calls `upgrade_plugin_archive()` which: checkpoints current install to trash, installs new version, rolls back on failure. No awareness of dependencies.
+
+### 9. Status command (`status.py`)
+
+Lists installed plugins from `get_installed_plugin_records()` (one level deep). No awareness of dependencies or component counts.
+
+### 10. Lint command (`lint.py`)
+
+Validates metadata, checks for README, verifies entry points exist. No awareness of dependencies field.
+
+### 11. JSON schema (`docs/schemas/ida-plugin.json`)
+
+Generated from the Pydantic model via `schema.py`. No `dependencies` field currently.</result>
+<usage><subagent_tokens>104157</subagent_tokens><tool_uses>25</tool_uses><duration_ms>85237</duration_ms></usage>
+</task-notification>
