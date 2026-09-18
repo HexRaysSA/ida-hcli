@@ -1,0 +1,154 @@
+We recently merged a PR that introduced named plugin sources called repos. And by default we have two of them. We have community and hex rays. And this influences how we are able to specify the source for a plugin, as well as have multiple plugins. repos available so that users can install plugins from private sources such as those hosted by hexrays in their portal. We made all these code changes, but we haven't actually updated the documentation that ends up on the documentation website. all those markdown files. So what I'd like you to do is do a survey of the changes that were made to support this feature and then also research the existing documentation. It's layout and the appropriate places that we need to update. To specify how this named repo thing works. will at least need to describe that there are two default repositories uh and that the the hex rays one can be used to access uh private plugins published by hex rays um uh to user users with uh active IDA licenses uh and similar. um and also the commands that you can use to um add, modify, remove these um these refos. We'll also want to update the documentation to adjust how we are referring to the where the community plugin repository URL is. Uh I think right now it's on GitHub. uh and we'll want to kind of modify that n language a bit to indicate that uh it's mirrored from github. That one on public. Uh and a public GitHub is unauthenticated, freely available for anyone to see. That we mirror that um uh and proxy that through uh the hex rays portal 
+
+https://github.com/HexRaysSA/ida-hcli/pull/317
+
+# Spec: Named Plugin Repositories
+
+Status: draft for discussion (PR \#313)
+
+Baseline for all compatibility statements: the **released** hcli (public GitHub index only). The current PR branch (merged API endpoint, merged-URL migration, `url-migrated` marker, `using_default_plugin_repo` hint) is unreleased and is **replaced** by this design, not migrated from.
+
+## 1\. Concept
+
+- A **repo** is a named URL serving a plugin-repository JSON document. Today it looks like:
+
+```json
+{
+  "Version": 1,
+  "Paths": {
+    "ida-install-dir": "/Applications/IDA Professional 9.4.app"
+  },
+  "Settings": {
+    "plugin-repository": {
+      "url": "https://raw.githubusercontent.com/HexRaysSA/plugin-repository/refs/heads/v1/plugin-repository.json"
+    }
+  },
+  "Plugins": {...}
+  }
+}
+
+```
+
+- `ida-config.json` holds a map of named repos plus one **default** repo.  
+- hcli fetches repos independently (lazily) and merges client-side, so provenance is always known. No server-side merging.  
+- No reserved names. The two shipped defaults:
+
+| Name | URL | Auth |
+| :---- | :---- | :---- |
+| `community` | `https://community.plugins.hex-rays.com/plugin-repository.json` | anonymous |
+| `hexrays` | `https://hexrays.plugins.hex-rays.com/plugin-repository.json` | required (401 otherwise) |
+
+- Our repository are on \*.plugins.hex-rays.com  
+- Credentials are attached per existing host scoping (\*.plugins.hex-rays.com only) — unchanged.  
+- **Plugin identity stays `name@host`** (`urls.repository`). A repo is where a plugin was *found*, never part of what it *is*.
+
+## 2\. Reference grammar
+
+```
+plugin-ref := [repo "/"] name [version-spec]
+            | name [version-spec] "@" host-url        (existing, unchanged)
+            | https-url | file-url                    (existing, unchanged)
+```
+
+- The `repo/` prefix is **lookup scope only**: it selects which document to search, is dropped after resolution, and is never stored. Validated as `^[a-z0-9\-]+$`.  
+- The grammar is already unambiguous: plugin names are validated as `^[a-zA-Z0-9_-]+$`, so `/` cannot appear in a name. No schema change.  
+- Version specs compose: `hexrays/xyz@url>=1.2`.
+
+## 3\. Resolution
+
+| Input | Search space | Fetches |
+| :---- | :---- | :---- |
+| `xyz` | default repos only | default repo doc |
+| `hexrays/xyz community/xyz` | repo `hexrays` only repo `community` only | that repo doc |
+| `xyz@<url>` | all configured repos (host disambiguates) | as needed |
+
+- Miss in the searched scope → plain "plugin not found". No cross-repo suggestions; no repo is special.  
+- `hexrays/xyz` while logged out → the repo fetch gets a 401 → `PluginAccessDeniedError` → clear "log in to access repo 'hexrays'" message (mechanism already exists in `fetch_plugin_repo_bytes`).  
+- Collisions within one repo: unchanged — `AmbiguousPluginReferenceError` listing `name@url` candidates.  
+- Install flows: `install xyz` for community plugins works exactly as released; private plugins are always `install hexrays/xyz`, so once installed there is no ambiguity.
+
+## 4\. Changes required
+
+### Server (outside this repo)
+
+- S1: serve the two documents above; `hexrays` returns 401 anonymous and only entitled entries when authenticated. Drop the merged endpoint.  
+- S2: portal enforces unique plugin names within the `hexrays` document.  
+- S3 (exists): portal is sole issuer of \*.`plugins.hex-rays.com` identities; community indexer keeps `expected_host` enforcement.
+
+### Config — `src/hcli/lib/ida/__init__.py`
+
+- Replace `PluginRepositoryConfig` (single `url`) with a named map \+ defaults:
+
+```json
+{
+  "Version": 1,
+  "Paths": {
+    "ida-install-dir": "/Applications/IDA Professional 9.4.app"
+  },
+  "Settings": {
+    "plugin-repositories": { 
+      "hexrays": {
+        "url": "https://hexrays.plugins.hex-rays.com/plugin-repository.json",
+      },
+      "community": {
+        "url": "https://community.plugins.hex-rays.com/plugin-repository.json"
+      }
+    },
+    "default-plugin-repositories": ["hexrays", "community"],
+  },
+  "Plugins": {...}
+  }
+}
+
+```
+
+- Replace `get_plugin_repository_url()` / `get_default_plugin_repository_url()` with map-aware equivalents; default URLs derive from `ENV.HCLI_API_URL`.  
+- Remove the branch's merged-URL migration and `url-migrated` marker.
+
+### Reference parsing — `src/hcli/lib/ida/plugin/reference.py`
+
+- `PluginReference` gains `repo: str | None`; `parse_plugin_reference` peels a leading `repo/`. Whether `repo/name@host` is allowed (scope \+ identity) or an error: open question OQ1.
+
+### Repo layer — `src/hcli/lib/ida/plugin/repo/`
+
+- New aggregate over `{name: BasePluginRepo}` \+ default name, lazy per-repo fetch, implementing the resolution table above. Fits under the existing `BasePluginRepo` abstraction.
+
+### Command wiring — `src/hcli/commands/plugin/`
+
+- Group callback builds the aggregate from config. `--repo <url>` unchanged in meaning: an ephemeral repo used as the sole/default scope (repo prefixes rejected under it).  
+- Naming conflict: `--repo github` currently means "run the live GitHub indexer". Resolve by renaming that magic value (OQ2). Shipped repo names `community`/`hexrays` avoid the collision.  
+- `install`/`upgrade`/`bundle`: thread `ref.repo` into lookups. `upgrade` stays anchored to the installed `name@host` and resolves it across configured repos; an explicit repo prefix acts as scope, mismatch mirrors the existing `@url` mismatch error.  
+- `search`: aggregates all fetchable repos (skips repos it cannot fetch, e.g. 401 while logged out); results show provenance as `repo/name` for non-default repos; JSON output gains an additive `repo` field. Repos that could not be access (either because of 401 or 404\) are mentionned in the end of the search \- Error should be specific to error code   
+- Remove the branch's `using_default_plugin_repo` login-hint plumbing (superseded by the 401 path).
+
+### Repo management commands
+
+- `hcli plugin repo list | add <name> <url> | remove <name> | set-default <name>` editing the config map. Shipped entries are ordinary entries: renamable, removable, default reassignable.
+
+## 5\. Compatibility (vs released hcli)
+
+- `install <name>` for community plugins: identical behavior. Default repo serves the same index content, now via the API URL.  
+- `name@url` references: unchanged.  
+- `--repo <url>`, bundle, fs, file/https direct installs, offline: unchanged.  
+- Installed plugins: records already store `name@host` and only private repos can have \*.plugins.hex-rays.com hosts; `upgrade`/`status` resolve identically. No installed-state change.  
+- JSON outputs: additive fields only.  
+- New capability, no regression: private plugins via `hexrays/<name>`.
+
+## 6\. Migration (from released state only)
+
+- M1: `ida-config.json` with the legacy raw.githubusercontent URL as `plugin-repository.url` (the released default) or no entry → write the new two-repo map with `community` as default.  
+- M2: a user-customized `plugin-repository.url` → becomes a named entry (e.g. `custom`) and the default repo; behavior preserved.  
+- M3: one-shot rewrite, no marker needed — the old single-`url` key is removed by the rewrite, so it cannot re-trigger. Console notice on migration, as already agreed.  
+- M4: portal/docs publish the canonical `hcli plugin install hexrays/<name>` string.
+
+## 7\. Out of scope (v1)
+
+- Provenance in installed records (which repo installed a plugin): not needed with identity-based resolution; revisit only if user-defined repos with overlapping identities become common.  
+- Repo priorities/overlays: deliberately excluded — scope is always explicit or the single default.
+
+## 8\. Open questions
+
+- OQ1: `repo/name@host` — allow as scope restriction, or reject : Answer: ALLOW   
+- OQ2: new name for the `--repo github` indexer mode: This should go in a specific hcli plugin index command (make a suggestion for this)   
+- OQ3: config JSON shape final form (naming, casing) — align with IDA's conventions for `ida-config.json`.  
+- OQ4: should `search` while logged out mention that a configured repo was skipped for auth (one grey line), or stay silent? \=\> it should mention it as a message after search
