@@ -1,0 +1,13 @@
+while we're at it, lets update the descriptions here:
+
+│ hcli plugin install       │ No description available                                         │
+│ hcli plugin lint          │ Lint an IDA plugin directory, archive (.zip file), or HTTPS URL. │
+│ hcli plugin repo add      │ Add a plugin repository.                                         │
+│ hcli plugin repo list     │ List the configured plugin repositories.                         │
+│ hcli plugin repo remove   │ Remove a plugin repository.                                      │
+│ hcli plugin repo set-default │ Set the repository used for references with no repo/ prefix.  │
+│ hcli plugin repo snapshot │ Create a snapshot of the repository.                             │
+│ hcli plugin search        │ No description available                                         │
+│ hcli plugin status        │ No description available                                         │
+│ hcli plugin uninstall     │ No description available                                         │
+│ hcli plugin upgrade       │ No description available                                         │
