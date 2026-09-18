@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bayqsex7g</task-id>
+<tool-use-id>toolu_01QdExWKWBTuUcdFaK1HZBhV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/ec9aa125-1137-4e9f-9caa-136c762721fb/tasks/bayqsex7g.output</output-file>
+<status>failed</status>
+<summary>Background command "Wait 60s then check CI" failed with exit code 8</summary>
+</task-notification>
