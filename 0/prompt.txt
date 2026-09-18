@@ -1,0 +1,29 @@
+<task-notification>
+<task-id>ab1783852111018ea</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/1c613640-057c-4abe-b63b-80926abb9fbe/tasks/ab1783852111018ea.output</output-file>
+<status>completed</status>
+<summary>Agent "Rewrite how-to docs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All three files pass. Here is the summary:
+
+**Final slop-guard scores:**
+
+| File | Before | After |
+|------|--------|-------|
+| `docs/how-to/share-files-with-support.md` | 9 | **82** |
+| `docs/how-to/test-plugin-before-publishing.md` | 26 | **80** |
+| `docs/how-to/use-hcli-in-docker.md` | 27 | **84** |
+
+**Key changes across all three files:**
+
+- Removed all bold-bullet listicle patterns (e.g., `**Problem:**`/`**Solution:**`, `**Option A:**`, `**Do:**`/`**Don't:**`). Converted these to prose or definition-style text.
+- Eliminated slop phrases ("For the impatient", "Please let me know if", "For more detailed information").
+- Removed "Problem Statement" section headers and collapsed them into the intro.
+- Broke up the 232-word run-on checklist in `test-plugin-before-publishing.md` by inserting prose transitions between checkbox groups.
+- Reduced command repetition by varying filenames, using `&lt;file&gt;` placeholders, combining code blocks, and converting redundant examples to inline references.
+- Fixed triadic sentence patterns by splitting into two shorter sentences.
+- Removed bold formatting from table cells and inline list items.
+- Preserved all technical content, links, code examples, and information from the originals.</result>
+<usage><subagent_tokens>55622</subagent_tokens><tool_uses>29</tool_uses><duration_ms>368436</duration_ms></usage>
+</task-notification>
