@@ -996,7 +996,7 @@ def test_no_undeclared_when_all_referenced(virtual_ida_environment, tmp_path):
 
 def test_undeclared_plugin_detected_in_archive():
     """An archive with a manifest not in the component tree is flagged."""
-    from pathlib import Path as P
+    from pathlib import Path
 
     from hcli.lib.ida.plugin.components import find_undeclared_plugins_in_archive
 
@@ -1014,7 +1014,7 @@ def test_undeclared_plugin_detected_in_archive():
         zf.writestr("my-suite/stray-plugin/stray-plugin.py", "# stray")
 
     zip_data = buf.getvalue()
-    root_path = P("my-suite/ida-plugin.json")
+    root_path = Path("my-suite/ida-plugin.json")
     root_meta = IDAMetadataDescriptor.model_validate(suite_meta_dict)
     undeclared = find_undeclared_plugins_in_archive(zip_data, root_path, root_meta)
     assert len(undeclared) == 1

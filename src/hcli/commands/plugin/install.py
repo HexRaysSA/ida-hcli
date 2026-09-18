@@ -502,14 +502,14 @@ def _apply_component_settings(
             if descr.default != parsed_value:
                 set_setting_for_metadata(comp_name, key, parsed_value, comp_metadata)
     elif comp_metadata.plugin.settings:
-        needed = [
+        needed_settings = [
             s
             for s in comp_metadata.plugin.settings
             if not has_setting_in_config(comp_name, s.key) and s.required and s.default is None
         ]
 
-        if needed and not console.is_interactive:
-            setting_names = ", ".join(f"--config {comp_name}.{s.key}=<value>" for s in needed)
+        if needed_settings and not console.is_interactive:
+            setting_names = ", ".join(f"--config {comp_name}.{s.key}=<value>" for s in needed_settings)
             raise ValueError(
                 f"component '{comp_name}' requires configuration but console is not interactive. "
                 f"Please provide settings via command line: {setting_names}"
