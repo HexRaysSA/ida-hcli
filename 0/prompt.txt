@@ -1,0 +1,61 @@
+<task-notification>
+<task-id>a12a84580e36d79b9</task-id>
+<tool-use-id>toolu_01VFf4Rqqj3aCdNxvWxvd1xf</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/88cf14c7-47bc-4a5a-a773-f0ff4dc2b36c/tasks/a12a84580e36d79b9.output</output-file>
+<status>completed</status>
+<summary>Agent "Research install/upgrade code paths" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good. I now have a complete picture. Here's my analysis:
+
+---
+
+## Current situation
+
+**Named plugin repositories** (from #317) are stored in `ida-config.json` under `.Settings.plugin-repositories` as a `dict[str, PluginRepositoryConfig]` where `PluginRepositoryConfig` has a single field: `url: str`. The `PluginRepository` dataclass that gets built from this has `name`, `url`, and `reserved`.
+
+**`AggregatePluginRepo._load()`** (aggregate.py:66) unconditionally calls `JSONFilePluginRepo.from_url(repo.url)` for every named repository. This means every named repo is assumed to be a JSON document served over HTTPS or from a `file://` path. If you point a named repo's URL at a bundle `.zip` or a filesystem directory, it fails: it tries to JSON-parse the raw bytes.
+
+**The `--repo` flag** on `plugin` (the group command, `__init__.py:148-160`) already handles all three source types correctly: it detects directories (`FileSystemPluginRepo`), bundle zips (`PluginBundleRepo`), and JSON files (`JSONFilePluginRepo`). But this is only for the `--repo` CLI override, not for named repositories in the config.
+
+**Install/upgrade** have special-case logic for `PluginBundleRepo` to use its wheelhouse for offline dependency installation (install.py:275, upgrade.py:110). This checks `isinstance(plugin_repo_obj, PluginBundleRepo)`. When a bundle is loaded through a named repo in the aggregate, it gets flattened into a `JSONFilePluginRepo` (aggregate.py:66), so the `isinstance` check would never match, and the wheelhouse path would be lost.
+
+**`repo_for_reference()`** (`__init__.py:232`) also flattens the result: after fetching plugins from the aggregate, it wraps them in a bare `JSONFilePluginRepo(plugins)`, discarding the original repo type entirely.
+
+## The three changes needed
+
+1. **`AggregatePluginRepo._load()` needs to dispatch by repo type** instead of hardcoding `JSONFilePluginRepo.from_url()`. It needs to detect whether the URL points to a directory, a bundle zip, or a JSON document, and instantiate the right `BasePluginRepo` implementation.
+
+2. **`repo_for_reference()` needs to preserve the original repo object** when the user targets a single named repo, rather than re-wrapping plugins in a new `JSONFilePluginRepo`. The install/upgrade commands need access to the actual `PluginBundleRepo` (or `FileSystemPluginRepo`) instance for the wheelhouse path.
+
+3. **Install/upgrade `isinstance(plugin_repo_obj, PluginBundleRepo)` checks need to work** through the named-repo path. Currently `plugin_repo_obj` is set from `ctx.obj["plugin_repo"]` which, in the aggregate path, is the `AggregatePluginRepo` itself. The bundle check would need a way to retrieve the underlying repo. Either:
+   - `repo_for_reference` returns the underlying repo directly (not a wrapper), or
+   - the aggregate exposes the child repo objects so callers can ask "is the repo backing this plugin a bundle?"
+
+## Questions for you
+
+**A. Config model: should the repository type be explicit in `ida-config.json`, or inferred from the URL/path?**
+
+Option 1 (infer): Keep `PluginRepositoryConfig` as `{url: "..."}`. At load time, hcli probes the path: is it a directory? a `.zip` with `plugin-bundle.json`? Otherwise treat it as a JSON URL. This matches how `--repo` works today.
+
+Option 2 (explicit): Add a `type` field to `PluginRepositoryConfig`: `"json"` | `"bundle"` | `"directory"`. The URL/path is unambiguous then and doesn't need probing. But it's more config for the user to get right.
+
+I'd lean toward **inferring**, since it matches the existing `--repo` behavior and the user shouldn't need to know the distinction. But inference means a network-unreachable JSON URL can't be distinguished from a nonexistent local path up front.
+
+**B. Should bundle repos loaded via named config be kept open for the lifetime of the command group, or opened/closed per operation?**
+
+`PluginBundleRepo.__init__` opens a `zipfile.ZipFile` and holds it for the lifetime of the object. For `--repo bundle.zip`, the `plugin` group callback creates it and it lives for the command. Named repos in the aggregate are currently lazy (loaded on first access). If we make them lazy-open bundles, the zip stays open until the process exits. That's fine for CLI commands but worth calling out.
+
+**C. Should `FileSystemPluginRepo` repos also support the `file://` scheme in the config URL, or only bare paths?**
+
+The `PluginRepositoryConfig.url` field is currently always a URL. A bare `/path/to/dir` isn't a URL. We could accept both (infer from scheme), or require `file:///path/to/dir` for directories in the config, or just accept bare paths. Since this is aimed at airgapped users, bare paths feel friendlier.
+
+**D. Reserved repos: should an airgapped user be able to remove "hexrays" and "community" from their config?**
+
+The issue says they should be able to "remove the hexrays and community default plugin repos." Currently, reserved repos are force-injected (`get_plugin_repositories` always adds them). For truly offline use, these repos are dead weight that generate connection-timeout warnings. Should we:
+- Let users delete them from config (stop force-injecting)?
+- Add a mechanism to disable them (e.g. `"enabled": false`)?
+- Leave them, since the aggregate is best-effort and silently skips unreachable repos?
+
+The best-effort approach already works, but the timeout delays are a real UX problem for airgapped users.</result>
+<usage><subagent_tokens>82912</subagent_tokens><tool_uses>22</tool_uses><duration_ms>84024</duration_ms></usage>
+</task-notification>
