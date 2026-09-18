@@ -1,0 +1,4 @@
+com.hex-rays.idapython-venv.plist
+
+thsi should be
+com.hex-rays.idapython-venv-executable.plist
