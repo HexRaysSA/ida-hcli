@@ -1,0 +1,1 @@
+Ah, okay. W are the types different? One is like a configuration and the other is a repository object. Perhaps we just need to rename these members appropriately so it's more clear
