@@ -1,0 +1,31 @@
+<task-notification>
+<task-id>acf40b5d5e59a7364</task-id>
+<tool-use-id>toolu_01JtswQcP1eQXteKYhbRuv7Z</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/f7f6d0cb-a250-48b6-a084-cdee7b944069/tasks/acf40b5d5e59a7364.output</output-file>
+<status>completed</status>
+<summary>Agent "Read PR #319 details" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## PR #319 Summary
+
+**Title:** Add IDA Python environment health check, doctor, and create-environment
+
+**Purpose:** Defines a recommended Python setup for IDA (a venv at `$IDAUSR/venv` with pip, selected via `IDAPYTHON_VENV_EXECUTABLE`, matching IDA's libpython version) and gives HCLI tools to check, create, and enforce it.
+
+**Key changes:**
+
+1. **New commands:**
+   - `hcli ida python doctor` — reports resolved IDA installation/interpreter, identifies the setup pattern (proper venv, idapythonrc.py venv, shell-activated, uv ephemeral, conda, Homebrew, Windows Store…), lists findings with fixes. `--json` for scripting.
+   - `hcli ida python create-environment` — creates the venv using `uv venv --seed` or stdlib `venv` + `ensurepip`. Offers to set `IDAPYTHON_VENV_EXECUTABLE`. `--path`, `--no-configure`, `--json`.
+   - `hcli ida install --create-python-environment` — runs the same step post-install.
+
+2. **Health check integration:** `plugin install`/`upgrade` validate the Python environment before installing deps. Errors (no venv, no pip, PEP 668, version mismatch) block installs; warnings (missing env var, idapythonrc.py venv) print and continue. Bypass with `--no-python-environment-check`.
+
+3. **Internals:** `hcli.lib.ida.python` became a package with `environment.py` (state models, checks, pattern identification) and `venv_create.py` (target inspection, `VenvPlan`, creation, shell-profile helpers).
+
+4. **Docs:** `docs/user-guide/ida-python-environment.md` rewritten around the recommended setup.
+
+5. **Tests:** 48 new tests covering findings/patterns, venv creation, doctor JSON output, create-environment idempotency, and the `--no-python-environment-check` flag.
+
+22 files changed across commands, lib, docs, and tests.</result>
+<usage><subagent_tokens>27849</subagent_tokens><tool_uses>1</tool_uses><duration_ms>12006</duration_ms></usage>
+</task-notification>
