@@ -1,0 +1,31 @@
+<task-notification>
+<task-id>a4f1215cca89e6eee</task-id>
+<tool-use-id>toolu_01T1k9M1QMf1rVbpjYaQMCyH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/ec9aa125-1137-4e9f-9caa-136c762721fb/tasks/a4f1215cca89e6eee.output</output-file>
+<status>completed</status>
+<summary>Agent "Find all documentation files" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here's my report:
+
+**Files that need updating for the `components` field:**
+
+1. **`docs/reference/plugin-packaging-and-format.md`** — The main plugin format reference. Documents `ida-plugin.json` fields (lines 83–96 list fields including `dependencies`), shows example manifests, and describes the dependency system. Needs: add `components` field to the field list and examples, describe suite archive layout, explain component lifecycle.
+
+2. **`docs/user-guide/plugin-manager.md`** — User-facing guide for install/upgrade/uninstall/status. Has a "Plugin dependencies" section (line 122) covering loose deps. Needs: add a "Plugin suites (components)" section explaining that suites are installed/upgraded atomically, components are hidden from top-level listings, component uninstall is refused, status shows component counts and `--show-components`.
+
+3. **`docs/reference/plugin-repository-architecture.md`** — Describes how archives, install, and the filesystem layout work. States "Each plugin is installed in its own subdirectory" (line 55) and describes single-manifest archives. Needs: update filesystem layout to show nested component directories, mention suite archives contain multiple manifests, note that `get_installed_plugin_records()` is one-level-deep so components are hidden.
+
+4. **`docs/reference/plugins-AGENT.md`** — Agent instructions for packaging plugins. Shows `ida-plugin.json` template with `dependencies` (line 29). Needs: add `components` field to the template so the agent knows about it.
+
+5. **`docs/reference/packaging-your-existing-plugin.md`** — Guide for plugin authors to package their plugin. Shows example `ida-plugin.json` files. Needs: mention `components` as an optional field for suite authors, or at least note its existence.
+
+**Files that probably don't need changes:**
+
+- `docs/reference/plugin-bundle-spec.md` — Bundles contain plugin archives; suite archives just work (the bundle doesn't know/care about components vs standalone).
+- `docs/advanced/ci-cd-integration.md` — CI/CD config, not plugin metadata.
+- `docs/getting-started/quick-start.md` — High-level commands, doesn't go into metadata fields.
+- `README.md` — Brief overview, no metadata details.
+- `CHANGELOG.md` — Separate process.
+- `docs/schemas/ida-plugin.json` — Already updated by the code change.</result>
+<usage><subagent_tokens>166682</subagent_tokens><tool_uses>8</tool_uses><duration_ms>60796</duration_ms></usage>
+</task-notification>
