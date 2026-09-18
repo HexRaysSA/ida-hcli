@@ -1,0 +1,70 @@
+<task-notification>
+<task-id>a1ec531b522205e56</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/e6dd9346-c5a7-4b95-af28-73a2896baaf3/tasks/a1ec531b522205e56.output</output-file>
+<status>completed</status>
+<summary>Agent "Read all relevant source files" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have everything. Here's my report:
+
+---
+
+## File 1: `src/hcli/lib/ida/plugin/install.py` (lines 1-100)
+
+- **Lines 1-61**: Imports and logger. Key imports: `get_python_dependencies_from_plugin_archive`, `get_python_dependencies_from_plugin_directory` (from `__init__.py`).
+- **Line 64**: `get_plugins_directory()` -- returns `$IDAUSR/plugins/`
+- **Line 93**: `get_plugin_directory(name)` -- returns `$IDAUSR/plugins/&lt;name&gt;`
+- **Lines 299-339**: `get_installed_plugin_records()` -- iterates one level deep under `$IDAUSR/plugins/`. Does NOT recurse into component subdirectories.
+- **Lines 392-393**: `get_installed_plugin_paths()` -- just `[r.path for r in get_installed_plugin_records()]`
+- **Lines 396-416**: `collect_plugin_dependencies()` -- iterates `get_installed_plugin_records()` only. Does NOT recurse into component subdirs. Used by `create_environment.py` line 232.
+- **Lines 522-568**: `validate_can_install_python_dependencies()` -- validates only root metadata deps.
+- **Lines 571+**: `validate_can_install_plugin()` -- calls `validate_can_install_python_dependencies()` with root metadata only.
+- **Lines 741-799**: `_install_plugin_archive()` -- line 772 calls `get_python_dependencies_from_plugin_archive(zip_data, metadata)` with root metadata ONLY. Line 776-778 collects existing deps from `get_installed_plugin_paths()` (top-level only). Line 799 extracts everything including component subdirs.
+- **Lines 837-916**: `install_plugin_directory_editable()` -- line 885 calls `get_python_dependencies_from_plugin_directory(source_dir, metadata)` with root metadata only.
+
+## File 2: `src/hcli/lib/ida/plugin/__init__.py` (lines 460-550)
+
+- **Lines 474-482**: `python_dependencies` field definition on `PluginMetadata` -- `list[str] | str`
+- **Lines 484-487**: `settings` field -- `list[PluginSettingDescriptor]`
+- **Lines 489-498**: `dependencies` field (loose deps, independent plugins)
+- **Lines 500-509**: `components` field -- `list[str]`
+- **Lines 520-536**: `validate_component_names()` validator
+- **Lines 744-769**: `get_python_dependencies_from_plugin_archive()` -- reads from single metadata only
+- **Lines 772-796**: `get_python_dependencies_from_plugin_directory()` -- reads from single metadata only
+
+## File 3: `src/hcli/lib/ida/plugin/settings.py` (full, 259 lines)
+
+- **Line 52**: `set_plugin_setting(plugin_name, key, value)` -- stores in `ida-config.json` keyed by plugin name
+- **Line 86**: `get_plugin_setting(plugin_name, key)`
+- **Line 120**: `del_plugin_setting(plugin_name, key)`
+- **Line 143**: `has_plugin_setting(plugin_name, key)` -- checks `_resolve_installed_plugin_name()` which calls `find_installed_plugin()` (top-level only)
+- **Lines 165-224**: `get_current_plugin()` -- walks call stack, extracts `module_relative_path.parts[0]` which is the suite name, NOT the component name. A component calling this gets back the suite name.
+- **Lines 227-258**: convenience wrappers: `get_current_plugin_setting`, `set_current_plugin_setting`, etc.
+
+## File 4: `src/hcli/commands/plugin/install.py` (full, 456 lines)
+
+- **Line 79**: `--config` option, `multiple=True`, format `key=value`
+- **Lines 266-273**: Pre-validation of `--config` values against `metadata.plugin.settings` (root only)
+- **Lines 309-357**: Post-install settings configuration -- operates on `metadata.plugin.settings` (root only). If `--config` given, writes those values. Otherwise, prompts interactively for required settings. No component iteration.
+- **Lines 374-386**: Dependency handling for loose `dependencies` (not components)
+
+## File 5: `tests/lib/test_plugin_components.py` (full, 504 lines)
+
+- **Lines 38-116**: Test helpers -- `_make_plugin_metadata`, `_make_standalone_zip`, `_make_suite_zip`, `_make_nested_suite_zip`. None of these support `pythonDependencies` or `settings` kwargs.
+- No tests for component Python dependencies or component settings.
+
+## File 6: `docs/reference/plugin-packaging-and-format.md` (lines 200-260)
+
+- **Lines 206-242**: Plugin Suites (Components) section. Documents the archive layout, naming rules, collision checking. Does NOT mention component `pythonDependencies` or `settings` behavior.
+
+## File 7: `docs/plans/spec.md` -- does not exist
+## File 8: `docs/plans/design.md` -- does not exist
+
+## Additional files checked:
+
+- **`src/hcli/commands/plugin/_prompt.py`** (116 lines): `prompt_plugin_settings()` takes a flat `list[PluginSettingDescriptor]` and existing values dict. No concept of plugin name/component namespacing.
+- **`src/hcli/commands/plugin/config.py`** (242 lines): `hcli plugin config &lt;plugin_name&gt; set/get/list/setup/export/import`. Uses `find_installed_plugin()` which only finds top-level plugins. Components cannot be configured via this command.
+- **`src/hcli/lib/ida/plugin/components.py`** (223 lines): `walk_component_tree_from_directory()` and `walk_component_tree_from_archive()` both return `list[tuple[Path, IDAMetadataDescriptor]]` -- the metadata includes `python_dependencies` and `settings` for each component.
+- **`src/hcli/commands/ida/python/create_environment.py`** line 232: Uses `collect_plugin_dependencies()` to reinstall deps when creating a new Python env. Only sees top-level plugins.</result>
+<usage><subagent_tokens>75428</subagent_tokens><tool_uses>16</tool_uses><duration_ms>59952</duration_ms></usage>
+</task-notification>
