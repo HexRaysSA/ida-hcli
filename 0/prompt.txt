@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b0oqv3ref</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/f7f6d0cb-a250-48b6-a084-cdee7b944069/tasks/b0oqv3ref.output</output-file>
+<status>completed</status>
+<summary>Background command "Build Docker image with podman" completed (exit code 0)</summary>
+</task-notification>
