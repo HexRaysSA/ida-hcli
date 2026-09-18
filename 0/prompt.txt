@@ -1,0 +1,1 @@
+look at the recent merged PR and then audit how doctor handles an IDAPYTHON_VENV_EXECUTABLE pointing to a directory that doesn't exist. i think it draws some conclusions that don't make sense
