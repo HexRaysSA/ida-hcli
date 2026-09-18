@@ -1,0 +1,10 @@
+likewise, lets update the subcommand help to ensure there are entries here (or update the doc):
+
+│ config         Manage plugin configuration settings.                                               │
+│ install                                                                                            │
+│ lint           Lint an IDA plugin directory, archive (.zip file), or HTTPS URL.                    │
+│ repo           Manage plugin repositories.                                                         │
+│ search                                                                                             │
+│ status                                                                                             │
+│ uninstall                                                                                          │
+│ upgrade                                                                                            │
