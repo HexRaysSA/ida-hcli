@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>ae196be02d99dcafa</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/099ceea2-439b-4b7d-80c8-2cfb47ac298d/tasks/ae196be02d99dcafa.output</output-file>
+<status>completed</status>
+<summary>Agent "Research IDA docs on Python config" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Research complete. Written to `/tmp/ida-docs-python-research.md`.
+
+The official IDA documentation at docs.hex-rays.com has almost no Python configuration guidance. Across ~30 pages checked (every Python-relevant page in the sitemap plus release notes for all 9.x versions):
+
+- **idapyswitch**: Undocumented. Appears only in release note changelog lines ("idapyswitch -a now keeps the currently-selected Python").
+- **IDAPYTHON_VENV_EXECUTABLE**: Not mentioned anywhere.
+- **idapythonrc.py**: Not mentioned anywhere.
+- **Virtual environments**: One sentence in the 9.0 release notes: "simply run IDA from an activated virtual environment and it will pick up locally installed modules." No setup instructions.
+- **Python version matching**: Not documented.
+- **Package installation / pip**: Not documented (except `pythonDependencies` in plugin manifests, with no troubleshooting).
+- **IDAPYTHON.CFG**: Listed as a config file, never explained.
+- **Troubleshooting**: No Python-specific troubleshooting at all.
+
+The install page says "Make sure Python 3 or later is installed" and that's essentially it. The environment variables page lists ~35 IDA env vars but zero Python-related ones. The 9.4 release notes mention detecting uv/anaconda/homebrew Pythons and warning on version mismatches, but only as changelog one-liners with no explanation of what users should do.</result>
+<usage><subagent_tokens>87217</subagent_tokens><tool_uses>32</tool_uses><duration_ms>183862</duration_ms></usage>
+</task-notification>
