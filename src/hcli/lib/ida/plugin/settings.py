@@ -110,10 +110,13 @@ def parse_setting_value(descriptor: PluginSettingDescriptor, string_value: str) 
         raise ValueError(f"unsupported setting type: {descriptor.type}")
 
 
-def set_plugin_setting(plugin_name: str, key: str, value: str | bool):
-    plugin_name = resolve_plugin_name(plugin_name)
-    plugin_path = resolve_plugin_directory(plugin_name)
-    metadata = get_metadata_from_plugin_directory(plugin_path)
+def _write_setting(
+    plugin_name: str,
+    key: str,
+    value: str | bool,
+    metadata: IDAMetadataDescriptor,
+) -> None:
+    """Validate and persist a single setting to ida-config.json."""
     descr = metadata.plugin.get_setting(key)
 
     if descr.type == "string" and not isinstance(value, str) or descr.type == "boolean" and not isinstance(value, bool):
@@ -140,8 +143,14 @@ def set_plugin_setting(plugin_name: str, key: str, value: str | bool):
 
     plugin_config.settings[key] = value
     config.plugins[plugin_name] = plugin_config
-
     set_ida_config(config)
+
+
+def set_plugin_setting(plugin_name: str, key: str, value: str | bool):
+    plugin_name = resolve_plugin_name(plugin_name)
+    plugin_path = resolve_plugin_directory(plugin_name)
+    metadata = get_metadata_from_plugin_directory(plugin_path)
+    _write_setting(plugin_name, key, value, metadata)
 
 
 def get_plugin_setting(plugin_name: str, key: str) -> str | bool:
@@ -234,30 +243,7 @@ def set_setting_for_metadata(
     Does not perform installed-plugin lookup. Used during install when the
     target may be a component not yet discoverable as a top-level plugin.
     """
-    descr = metadata.plugin.get_setting(key)
-
-    if descr.type == "string" and not isinstance(value, str) or descr.type == "boolean" and not isinstance(value, bool):
-        raise ValueError(f"mismatching settings types: {plugin_name}: {key}: {descr.type} vs {type(value).__name__}")
-
-    try:
-        descr.validate_value(value)
-    except ChoiceValueError as e:
-        choices_str = ", ".join(e.choices)
-        raise ValueError(
-            f"failed to validate setting value: {plugin_name}: {key}: '{value}' (must be one of: {choices_str})"
-        ) from e
-    except ValueError as e:
-        raise ValueError(f"failed to validate setting value: {plugin_name}: {key}: '{value}'") from e
-
-    config = get_ida_config()
-    if plugin_name not in config.plugins:
-        plugin_config = PluginConfig()
-    else:
-        plugin_config = config.plugins[plugin_name]
-
-    plugin_config.settings[key] = value
-    config.plugins[plugin_name] = plugin_config
-    set_ida_config(config)
+    _write_setting(plugin_name, key, value, metadata)
 
 
 def has_setting_in_config(plugin_name: str, key: str) -> bool:
