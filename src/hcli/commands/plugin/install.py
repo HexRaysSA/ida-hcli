@@ -50,12 +50,48 @@ from hcli.lib.ida.plugin.reference import (
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
-from hcli.lib.ida.plugin.settings import has_plugin_setting, parse_setting_value, set_plugin_setting
+from hcli.lib.ida.plugin.settings import (
+    has_plugin_setting,
+    has_setting_in_config,
+    parse_setting_value,
+    set_plugin_setting,
+    set_setting_for_metadata,
+)
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, detect_current_python_version, merge_bundle_pip_options
 
 from ._prompt import prompt_plugin_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _partition_config_items(
+    config: tuple[str, ...],
+    root_metadata: IDAMetadataDescriptor,
+    component_metadatas: dict[str, IDAMetadataDescriptor],
+) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+    """Split --config items into root vs. component buckets.
+
+    Returns (root_config, component_configs) where:
+      root_config = {"key": "raw_value_str", ...}
+      component_configs = {"component-name": {"key": "raw_value_str", ...}, ...}
+    """
+    root_config: dict[str, str] = {}
+    component_configs: dict[str, dict[str, str]] = {}
+
+    for item in config:
+        if "=" not in item:
+            raise ValueError(f"invalid config format: {item}, expected key=value")
+        raw_key, value_str = item.split("=", 1)
+
+        if "." in raw_key:
+            prefix, suffix = raw_key.split(".", 1)
+            if prefix in component_metadatas:
+                component_configs.setdefault(prefix, {})[suffix] = value_str
+                continue
+
+        root_config[raw_key] = value_str
+
+    return root_config, component_configs
 
 
 def _resolve_plugin_name_from_archive(buf: bytes) -> str:
@@ -76,7 +112,13 @@ def _resolve_plugin_name_from_archive(buf: bytes) -> str:
     help="Install a local plugin directory by symlinking it into $IDAUSR/plugins/. "
     "Edits to the source tree take effect immediately on the next plugin reload.",
 )
-@click.option("--config", multiple=True, help="Configuration setting in key=value format (use true/false for booleans)")
+@click.option(
+    "--config",
+    multiple=True,
+    help="Configuration setting in key=value format. "
+    "For component settings, prefix with the component name: component.key=value. "
+    "Use true/false for booleans.",
+)
 @click.option(
     "--no-build-isolation",
     is_flag=True,
@@ -248,12 +290,14 @@ def install_plugin(
             check_component_name_collisions,
             collect_all_component_names_from_archive,
             find_suite_for_component,
+            walk_component_tree_from_archive,
         )
 
         suite_record = find_suite_for_component(plugin_name)
         if suite_record is not None:
             raise ValueError(f"'{plugin_name}' is a component of '{suite_record.name}'; uninstall the suite first")
 
+        component_metadatas: dict[str, IDAMetadataDescriptor] = {}
         if not editable and buf is not None and metadata.plugin.components:
             root_path, root_meta = get_metadata_from_plugin_archive(buf, plugin_name)
             component_names = collect_all_component_names_from_archive(buf, root_path, root_meta)
@@ -262,13 +306,25 @@ def install_plugin(
             if collisions:
                 msg = "component name collisions:\n" + "\n".join(f"  {c}" for c in collisions)
                 raise ValueError(msg)
+            for _comp_path, comp_meta in walk_component_tree_from_archive(buf, root_path, root_meta):
+                component_metadatas[comp_meta.plugin.name] = comp_meta
 
-        if metadata.plugin.settings:
-            for config_item in config:
-                if "=" not in config_item:
-                    raise ValueError(f"invalid config format: {config_item}, expected key=value")
-                key, value_str = config_item.split("=", 1)
+        root_cli_config, component_cli_configs = _partition_config_items(
+            config,
+            metadata,
+            component_metadatas,
+        )
+
+        if metadata.plugin.settings or root_cli_config:
+            for key, value_str in root_cli_config.items():
                 descr = metadata.plugin.get_setting(key)
+                parsed_value = parse_setting_value(descr, value_str)
+                descr.validate_value(parsed_value)
+
+        for comp_name, comp_config in component_cli_configs.items():
+            comp_meta = component_metadatas[comp_name]
+            for key, value_str in comp_config.items():
+                descr = comp_meta.plugin.get_setting(key)
                 parsed_value = parse_setting_value(descr, value_str)
                 descr.validate_value(parsed_value)
 
@@ -307,53 +363,21 @@ def install_plugin(
                     write_archive(buf, plugin_name, pip_options=pip_options, check_environment=check_environment)
 
         try:
-            if metadata.plugin.settings:
-                cli_config: dict[str, str | bool] = {}
-                for config_item in config:
-                    if "=" not in config_item:
-                        raise ValueError(f"invalid config format: {config_item}, expected key=value")
-                    key, value_str = config_item.split("=", 1)
-                    descr = metadata.plugin.get_setting(key)
-                    parsed_value = parse_setting_value(descr, value_str)
-                    cli_config[key] = parsed_value
+            _apply_plugin_settings(
+                metadata,
+                plugin_name,
+                root_cli_config,
+                is_installed=True,
+            )
 
-                if cli_config:
-                    for key, value in cli_config.items():
-                        descr = metadata.plugin.get_setting(key)
-                        descr.validate_value(value)
-                        if descr.default != value:
-                            set_plugin_setting(metadata.plugin.name, key, value)
-                else:
-                    needed_settings = [
-                        s
-                        for s in metadata.plugin.settings
-                        if not has_plugin_setting(plugin_name, s.key) and s.required and s.default is None
-                    ]
-
-                    if needed_settings and not console.is_interactive:
-                        setting_names = ", ".join(f"--config {s.key}=<value>" for s in needed_settings)
-                        raise ValueError(
-                            f"plugin requires configuration but console is not interactive. Please provide settings via command line: {setting_names}"
-                        )
-
-                    if console.is_interactive:
-                        existing_config = get_ida_config()
-                        existing_values: dict[str, str | bool] = {}
-                        if plugin_name in existing_config.plugins:
-                            existing_values = dict(existing_config.plugins[plugin_name].settings)
-
-                        answers = prompt_plugin_settings(metadata.plugin.settings, existing_values)
-                        if answers is None:
-                            raise click.Abort()
-                    else:
-                        answers = {}
-
-                    for key, answer in answers.items():
-                        descr = metadata.plugin.get_setting(key)
-                        if descr.default == answer:
-                            continue
-
-                        set_plugin_setting(metadata.plugin.name, descr.key, answer)
+            for comp_name, comp_meta in component_metadatas.items():
+                if not comp_meta.plugin.settings and comp_name not in component_cli_configs:
+                    continue
+                _apply_component_settings(
+                    comp_meta,
+                    comp_name,
+                    component_cli_configs.get(comp_name, {}),
+                )
 
         except Exception:
             if is_upgrade:
@@ -411,6 +435,111 @@ def install_plugin(
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
         raise click.Abort()
+
+
+def _apply_plugin_settings(
+    metadata: IDAMetadataDescriptor,
+    plugin_name: str,
+    cli_config: dict[str, str],
+    *,
+    is_installed: bool,
+) -> None:
+    """Apply root plugin settings from --config or interactive prompt."""
+    if not metadata.plugin.settings and not cli_config:
+        return
+
+    if cli_config:
+        for key, value_str in cli_config.items():
+            descr = metadata.plugin.get_setting(key)
+            parsed_value = parse_setting_value(descr, value_str)
+            descr.validate_value(parsed_value)
+            if descr.default != parsed_value:
+                if is_installed:
+                    set_plugin_setting(metadata.plugin.name, key, parsed_value)
+                else:
+                    set_setting_for_metadata(metadata.plugin.name, key, parsed_value, metadata)
+    elif metadata.plugin.settings:
+        needed_settings = [
+            s
+            for s in metadata.plugin.settings
+            if not has_plugin_setting(plugin_name, s.key) and s.required and s.default is None
+        ]
+
+        if needed_settings and not console.is_interactive:
+            setting_names = ", ".join(f"--config {s.key}=<value>" for s in needed_settings)
+            raise ValueError(
+                f"plugin requires configuration but console is not interactive. "
+                f"Please provide settings via command line: {setting_names}"
+            )
+
+        if console.is_interactive:
+            existing_config = get_ida_config()
+            existing_values: dict[str, str | bool] = {}
+            if plugin_name in existing_config.plugins:
+                existing_values = dict(existing_config.plugins[plugin_name].settings)
+
+            answers = prompt_plugin_settings(metadata.plugin.settings, existing_values)
+            if answers is None:
+                raise click.Abort()
+        else:
+            answers = {}
+
+        for key, answer in answers.items():
+            descr = metadata.plugin.get_setting(key)
+            if descr.default == answer:
+                continue
+            if is_installed:
+                set_plugin_setting(metadata.plugin.name, descr.key, answer)
+            else:
+                set_setting_for_metadata(metadata.plugin.name, descr.key, answer, metadata)
+
+
+def _apply_component_settings(
+    comp_metadata: IDAMetadataDescriptor,
+    comp_name: str,
+    cli_config: dict[str, str],
+) -> None:
+    """Apply component settings from --config or interactive prompt."""
+    if not comp_metadata.plugin.settings and not cli_config:
+        return
+
+    if cli_config:
+        for key, value_str in cli_config.items():
+            descr = comp_metadata.plugin.get_setting(key)
+            parsed_value = parse_setting_value(descr, value_str)
+            descr.validate_value(parsed_value)
+            if descr.default != parsed_value:
+                set_setting_for_metadata(comp_name, key, parsed_value, comp_metadata)
+    elif comp_metadata.plugin.settings:
+        needed = [
+            s
+            for s in comp_metadata.plugin.settings
+            if not has_setting_in_config(comp_name, s.key) and s.required and s.default is None
+        ]
+
+        if needed and not console.is_interactive:
+            setting_names = ", ".join(f"--config {comp_name}.{s.key}=<value>" for s in needed)
+            raise ValueError(
+                f"component '{comp_name}' requires configuration but console is not interactive. "
+                f"Please provide settings via command line: {setting_names}"
+            )
+
+        if console.is_interactive:
+            console.print(f"\nconfigure component [blue]{comp_name}[/blue]:")
+            existing_config = get_ida_config()
+            existing_values: dict[str, str | bool] = {}
+            if comp_name in existing_config.plugins:
+                existing_values = dict(existing_config.plugins[comp_name].settings)
+
+            answers = prompt_plugin_settings(comp_metadata.plugin.settings, existing_values)
+            if answers is None:
+                raise click.Abort()
+
+            for key, answer in answers.items():
+                descr = comp_metadata.plugin.get_setting(key)
+                if descr.default == answer:
+                    continue
+                set_setting_for_metadata(comp_name, key, answer, comp_metadata)
 
 
 def _handle_install_dependencies(
