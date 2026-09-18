@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bnydvdo9y</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/f7f6d0cb-a250-48b6-a084-cdee7b944069/tasks/bnydvdo9y.output</output-file>
+<status>completed</status>
+<summary>Background command "Rebuild Docker image with explicit venv interpreter" completed (exit code 0)</summary>
+</task-notification>
