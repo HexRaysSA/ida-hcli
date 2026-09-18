@@ -1,0 +1,14 @@
+❯ hcli ida python create-environment
+Python version for the environment: 3.13 (via idat probe)
+Creating virtual environment: /nix/store/REDACTED/bin/uv venv --seed --python /Applications/IDA Professional
+9.4.app/Contents/MacOS/idat /Users/user/.idapro/venv
+╭─ Error ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ `/nix/store/REDACTED/bin/uv venv --seed --python /Applications/IDA Professional 9.4.app/Contents/MacOS/idat                 │
+│ /Users/user/.idapro/venv` failed with exit code 1:                                                                                                               │
+│ × Failed to inspect Python interpreter from provided path at `/Applications/IDA Professional 9.4.app/Contents/MacOS/idat`                                        │
+│   ╰─▶ Querying Python at `/Applications/IDA Professional 9.4.app/Contents/MacOS/idat` failed with exit status exit status: 1                                     │
+│                                                                                                                                                                  │
+│       [stdout]                                                                                                                                                   │
+│       Failed to initialize IDA as library (error code 1)                                                                                                         │
+│       Check ida.log!                                                                                                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
