@@ -1,0 +1,1 @@
+spend some time identifying all the setups that are no longer recommended and describing them in the document in another section
