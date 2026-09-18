@@ -1,0 +1,33 @@
+<task-notification>
+<task-id>a2129d126ea2fdfc1</task-id>
+<tool-use-id>toolu_01EmNshPjkQMpoh7S1TT9zCj</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/88cf14c7-47bc-4a5a-a773-f0ff4dc2b36c/tasks/a2129d126ea2fdfc1.output</output-file>
+<status>completed</status>
+<summary>Agent "Research plugin repo types" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have a complete picture. Here's the summary:
+
+---
+
+**1. BasePluginRepo** (`src/hcli/lib/ida/plugin/repo/__init__.py:233`)
+- Abstract base. Key method: `get_plugins() -&gt; list[Plugin]`. Also provides `find_plugin_from_spec`, `fetch_plugin_from_spec`, and `_fetch_and_verify`.
+
+**Implementations:**
+- **JSONFilePluginRepo** (`repo/file.py:17`) — loads from a JSON document (URL or file path). `from_url()` supports `file://` and `https://` schemes, reads bytes and JSON-parses them.
+- **PluginBundleRepo** (`repo/bundle.py:98`) — opens a zip file containing `plugin-bundle.json` manifest. Walks `plugins/*.zip` inside. Overrides `_fetch_and_verify` to read from the zip. Also provides `extract_wheelhouse()` and `find_target_for_platform()`.
+- **FileSystemPluginRepo** (`repo/fs.py:7`) — walks a directory, indexes all `.zip` files as plugin archives.
+- **GithubPluginRepo** (`repo/github.py:771`) — searches GitHub for repos with `ida-plugin.json`, fetches releases.
+- **AggregatePluginRepo** (`repo/aggregate.py:39`) — wraps a `dict[str, PluginRepository]`. Loads each by name.
+
+**2. The problem: AggregatePluginRepo._load()** (`aggregate.py:57`)
+Line 66 hardcodes `JSONFilePluginRepo.from_url(repo.url)` for every named repository. This means named repos can only point to JSON documents over HTTPS or `file://`. No bundle zips, no directories.
+
+**3. Config model** (`src/hcli/lib/ida/__init__.py`)
+- `PluginRepositoryConfig` (line 789): just has `url: str`.
+- `SettingsConfig.plugin_repositories` (line 802): `dict[str, PluginRepositoryConfig]`.
+- `PluginRepository` dataclass (line 873): `name`, `url`, `reserved`.
+- `get_plugin_repositories()` (line 927): builds the dict, validates names, injects reserved repos.
+
+**4. PluginBundleRepo** takes a `Path`, not a URL. `FileSystemPluginRepo` also takes a `Path`.</result>
+<usage><subagent_tokens>57651</subagent_tokens><tool_uses>12</tool_uses><duration_ms>41969</duration_ms></usage>
+</task-notification>
