@@ -1,0 +1,2 @@
+in a new worktree, implement the plan in /Users/user/Obsidian/hex-rays/hcli/recusive plugin component dep installation and config plan.md
+open a PR and babysit CI
