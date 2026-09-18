@@ -1,0 +1,1 @@
+ok, create a new worktree branched off docs-python-env. spawn subagents to address each of the files with score 75 or less. use the style explanation we agreed upon above, pass that to the subagent.
