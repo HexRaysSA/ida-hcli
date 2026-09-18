@@ -1,0 +1,7 @@
+1. good.
+2. use period.
+3. yes
+
+Develop a complete and comprehensive and thorough implementation plan that references all the areas that need to change and precisely how to do so, chunking the work appropriately. Not everything has to land at once, so do it in phases that make logical sense. Create the implementation plan so that a junior engineer would be able to follow it with the goals and implement everything that's needed. 
+
+write the plan into: /Users/user/Obsidian/hex-rays/hcli/recusive plugin component dep installation and config plan.md
