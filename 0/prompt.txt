@@ -1,0 +1,3 @@
+Good. We also have to survey and update the appropriate places in the website documentation for HCLI. those are the markdown files to refer to this behavior. Uh and I think it can only it it only has to be kind of a um subsection of how Create Environment works. Um it might be helpful to show an example of kind of what the output sort of looks like. um as well as those additional flags there. Um but use the surrounding style and just make sure that a user who browses the website also has a chance to understand what um this behavior looks like. 
+
+Go ahead and implement this, opening a PR. Use a new work tree for your implementation
