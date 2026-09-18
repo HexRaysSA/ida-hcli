@@ -575,19 +575,27 @@ def test_collect_nested_python_deps_from_archive():
     assert "toml" in deps
 
 
-def test_collect_python_deps_from_directory(virtual_ida_environment):
+def test_collect_python_deps_from_directory(virtual_ida_environment, tmp_path):
     from hcli.lib.ida.plugin.components import collect_python_dependencies_from_directory
-    from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
+    from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory
 
-    zip_data = _make_suite_zip(
+    suite_dir = tmp_path / "my-suite"
+    suite_dir.mkdir()
+    suite_meta = _make_plugin_metadata(
         "my-suite",
         "1.0.0",
-        [("comp-a", "1.0.0", {"python_dependencies": ["pyyaml"]})],
-        suite_python_deps=["requests"],
+        components=["comp-a"],
+        python_dependencies=["requests"],
     )
-    install_plugin_archive(zip_data, "my-suite")
+    (suite_dir / "ida-plugin.json").write_text(json.dumps(suite_meta))
+    (suite_dir / "my-suite.py").write_text("# suite")
 
-    suite_dir = get_plugin_directory("my-suite")
+    comp_dir = suite_dir / "comp-a"
+    comp_dir.mkdir()
+    comp_meta = _make_plugin_metadata("comp-a", "1.0.0", python_dependencies=["pyyaml"])
+    (comp_dir / "ida-plugin.json").write_text(json.dumps(comp_meta))
+    (comp_dir / "comp-a.py").write_text("# comp")
+
     metadata = get_metadata_from_plugin_directory(suite_dir)
     deps = collect_python_dependencies_from_directory(suite_dir, metadata)
     assert "requests" in deps
@@ -595,15 +603,25 @@ def test_collect_python_deps_from_directory(virtual_ida_environment):
 
 
 def test_collect_plugin_dependencies_includes_component_deps(virtual_ida_environment):
-    from hcli.lib.ida.plugin.install import collect_plugin_dependencies
+    from hcli.lib.ida.plugin.install import collect_plugin_dependencies, get_plugin_directory
 
     zip_data = _make_suite_zip(
         "my-suite",
         "1.0.0",
-        [("comp-a", "1.0.0", {"python_dependencies": ["pyyaml"]})],
-        suite_python_deps=["requests"],
+        [("comp-a", "1.0.0")],
     )
     install_plugin_archive(zip_data, "my-suite")
+
+    suite_dir = get_plugin_directory("my-suite")
+    suite_meta = _make_plugin_metadata(
+        "my-suite",
+        "1.0.0",
+        components=["comp-a"],
+        python_dependencies=["requests"],
+    )
+    (suite_dir / "ida-plugin.json").write_text(json.dumps(suite_meta))
+    comp_meta = _make_plugin_metadata("comp-a", "1.0.0", python_dependencies=["pyyaml"])
+    (suite_dir / "comp-a" / "ida-plugin.json").write_text(json.dumps(comp_meta))
 
     all_deps = collect_plugin_dependencies()
     suite_entry = next(d for d in all_deps if d.name == "my-suite")
@@ -823,21 +841,39 @@ def test_nested_deps_depth2_collected_from_archive():
     assert "toml" in deps
 
 
-def test_nested_deps_depth2_collected_from_directory(virtual_ida_environment):
-    """Install a depth-2 suite and verify all component deps are collected on disk."""
+def test_nested_deps_depth2_collected_from_directory(virtual_ida_environment, tmp_path):
+    """Build a depth-2 suite on disk and verify all component deps are collected."""
     from hcli.lib.ida.plugin.components import collect_python_dependencies_from_directory
-    from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
+    from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory
 
-    zip_data = _make_nested_suite_zip(
+    suite_dir = tmp_path / "my-suite"
+    suite_dir.mkdir()
+    suite_meta = _make_plugin_metadata(
         "my-suite",
         "1.0.0",
-        [("comp-a", "1.0.0", [("sub-x", "0.1.0")])],
-        suite_python_deps=["requests"],
-        comp_python_deps={"comp-a": ["pyyaml"], "sub-x": ["toml"]},
+        components=["comp-a"],
+        python_dependencies=["requests"],
     )
-    install_plugin_archive(zip_data, "my-suite")
+    (suite_dir / "ida-plugin.json").write_text(json.dumps(suite_meta))
+    (suite_dir / "my-suite.py").write_text("# suite")
 
-    suite_dir = get_plugin_directory("my-suite")
+    comp_dir = suite_dir / "comp-a"
+    comp_dir.mkdir()
+    comp_meta = _make_plugin_metadata(
+        "comp-a",
+        "1.0.0",
+        components=["sub-x"],
+        python_dependencies=["pyyaml"],
+    )
+    (comp_dir / "ida-plugin.json").write_text(json.dumps(comp_meta))
+    (comp_dir / "comp-a.py").write_text("# comp")
+
+    sub_dir = comp_dir / "sub-x"
+    sub_dir.mkdir()
+    sub_meta = _make_plugin_metadata("sub-x", "0.1.0", python_dependencies=["toml"])
+    (sub_dir / "ida-plugin.json").write_text(json.dumps(sub_meta))
+    (sub_dir / "sub-x.py").write_text("# sub")
+
     metadata = get_metadata_from_plugin_directory(suite_dir)
     deps = collect_python_dependencies_from_directory(suite_dir, metadata)
     assert "requests" in deps
