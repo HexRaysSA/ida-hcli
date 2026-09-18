@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b4x14butu</task-id>
+<tool-use-id>7bfb1a68-bb82-49d3-86bf-41914d9a840a:inner:preamble-0</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/7fa9b5ee-4bd1-4f74-95b4-7d7fd390c921/tasks/b4x14butu.output</output-file>
+<status>completed</status>
+<summary>Background command "plannotator annotate "/Users/user/Obsidian/hex-rays/hcli/Implementation Plan - IDAPython Environment Consistency.md"" completed (exit code 0)</summary>
+</task-notification>
