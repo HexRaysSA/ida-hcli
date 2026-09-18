@@ -1,0 +1,64 @@
+<task-notification>
+<task-id>a8f766d40510f4070</task-id>
+<tool-use-id>toolu_011QfhUdJFccREiwKc8KKiMr</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/b5176059-4895-4ae6-b4aa-3493601bff33/tasks/a8f766d40510f4070.output</output-file>
+<status>completed</status>
+<summary>Agent "Research plugin repo/source system" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have a thorough understanding of the codebase. Let me compile my findings.
+
+---
+
+**Research complete. Here's what I found:**
+
+## 1. Plugin Sources/Repositories
+
+Repos are configured in `ida-config.json` under `.Settings.plugin-repositories`. The `AggregatePluginRepo` (`repo/aggregate.py`) wraps named repos and lazily fetches them. There are concrete repo types:
+- `FileSystemPluginRepo` (`repo/fs.py`): walks a directory, indexes every `.zip` it finds
+- `JSONFilePluginRepo` (`repo/file.py`): deserializes a static `{version: 1, plugins: [...]}` JSON document
+- `GithubPluginRepo` (`repo/github.py`): searches GitHub
+- `PluginBundleRepo` (`repo/bundle.py`): offline bundles
+
+When installing with a plugin reference like `community/foo`, `repo_for_reference()` in `commands/plugin/__init__.py:182` resolves which child of the aggregate to query.
+
+## 2. Fetch/Download Flow
+
+`BasePluginRepo.fetch_compatible_plugin_from_spec()` resolves the spec (name + optional version pin) against platform and IDA version, finds a `PluginArchiveLocation` (url, sha256, metadata), downloads via `fetch_plugin_archive()`, verifies the SHA-256 hash, returns `(plugin_name, bytes)`.
+
+## 3. Source Tracking
+
+A plugin's "source" is its `urls.repository` field (the `host` property). This stays embedded in the installed `ida-plugin.json`. Upgrade anchors to the installed host so it queries the same repo.
+
+## 4. Version Resolution
+
+`find_plugin_from_spec()` in `BasePluginRepo` (`repo/__init__.py:240-291`) parses specs like `name&gt;=1.0.0`, iterates versions descending by semver, filters by platform and IDA version, returns the first match.
+
+## 5. Multi-Manifest Archives
+
+`get_metadatas_with_paths_from_plugin_archive()` (`plugin/__init__.py:749`) enumerates every `ida-plugin.json` in a zip. `PluginArchiveIndex.index_plugin_archive()` indexes all of them. But the **install command** enforces `len(items) != 1` in 5 places (`install.py:132,140,149,168,183`). The repo-based path does NOT enforce this (it fetches by name, which naturally picks one).
+
+## 6. Test Infrastructure
+
+- Fixtures in `tests/lib/fixtures.py`: `virtual_ida_environment` sets `HCLI_IDAUSR`, `HCLI_CURRENT_IDA_PLATFORM`, `HCLI_CURRENT_IDA_VERSION`. `virtual_ida_environment_with_venv` adds a Python venv for pip tests.
+- Test plugins in `tests/data/plugins/plugin1/`: src-v1 through src-v6 directories, each zipped. Makefile generates zips. Also `zydisinfo` for binary plugin testing.
+- Tests use direct library calls (`install_plugin_archive`, `uninstall_plugin`) and CLI invocation (`CliRunner` + `run_hcli` subprocess).
+- `test_plugin_install.py`: install, uninstall, upgrade, rollback, broken directories, archive validation
+- `test_plugin_records.py`: installed plugin enumeration, case-insensitive lookup
+
+## 7. `PluginMetadata` Model
+
+Currently has no `dependencies` field. The model uses `extra="allow"` (line 359), so unknown keys are silently accepted without error. The lint command warns about unexpected keys via `_check_unexpected_keys()`.
+
+## Key Places Needing Changes for Loose Dependencies
+
+1. **`PluginMetadata` model** (`lib/ida/plugin/__init__.py:358`): add `dependencies: list[str]` optional field
+2. **JSON Schema** (`commands/plugin/schema.py`): auto-generated from model, just needs field added
+3. **Install command** (`commands/plugin/install.py`): after installing the pack, iterate `dependencies` and install each from same source
+4. **Install library** (`lib/ida/plugin/install.py`): needs helper to install dependency plugins from same repo
+5. **Upgrade command** (`commands/plugin/upgrade.py`): after upgrading pack, install newly-added dependencies
+6. **Uninstall command** (`commands/plugin/uninstall.py`): detect if plugin has dependencies, prompt to remove them; detect if plugin IS a dependency, show info message
+7. **Status command** (`commands/plugin/status.py`): no structural change needed (dependencies are top-level plugins already visible)
+8. **Lint command** (`commands/plugin/lint.py`): validate `dependencies` entries (name format, optional `==version`)
+9. **`get_installed_plugin_records()`** (`lib/ida/plugin/install.py:299`): no change needed (dependencies are independent top-level plugins)</result>
+<usage><subagent_tokens>112921</subagent_tokens><tool_uses>24</tool_uses><duration_ms>70539</duration_ms></usage>
+</task-notification>
