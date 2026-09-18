@@ -1,0 +1,42 @@
+<task-notification>
+<task-id>a4a150afc23398c30</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/06f9bb1c-309c-48dc-b052-9f62fbb50f44/tasks/a4a150afc23398c30.output</output-file>
+<status>completed</status>
+<summary>Agent "Research bundle-as-named-repo path" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have the full picture. Here's the analysis:
+
+## Report: Plugin bundle .zip as a named repository -- does it work today?
+
+**No, it does not work.** Here's the precise breakdown:
+
+### The break point
+
+`AggregatePluginRepo._load()` at `src/hcli/lib/ida/plugin/repo/aggregate.py:66` calls:
+
+```python
+plugins = JSONFilePluginRepo.from_url(repo.url, repo_name=name).get_plugins()
+```
+
+`JSONFilePluginRepo.from_url()` at `src/hcli/lib/ida/plugin/repo/file.py:48-62` handles `file://` URLs by reading the file bytes and passing them to `from_bytes()` → `from_json()`, which calls `StaticPluginRepo.model_validate_json(doc)`. This expects a JSON document with `{"version": 1, "plugins": [...]}` shape.
+
+A plugin bundle .zip is not a JSON document. It's a ZIP archive containing `plugin-bundle.json` (with a different schema) and nested `plugins/*.zip` archives. When `from_url` reads the zip bytes and tries to JSON-parse them, it will fail with a JSON decode error.
+
+### What `--repo` does differently
+
+The `--repo` path in `src/hcli/commands/plugin/__init__.py:155-158` checks `is_plugin_bundle_zip(path)` and creates a `PluginBundleRepo(path)` instead. This class knows how to walk the zip, read `plugin-bundle.json`, and extract plugin metadata from the nested archives. This special handling does not exist in the named-repository path.
+
+### Structural compatibility
+
+`PluginBundleRepo` and `JSONFilePluginRepo` both inherit from `BasePluginRepo` and implement `get_plugins() -&gt; list[Plugin]`, so they're structurally compatible at the plugin-listing level. However:
+
+1. `AggregatePluginRepo._load()` hardcodes `JSONFilePluginRepo.from_url()` -- it has no dispatch to `PluginBundleRepo`.
+2. `PluginBundleRepo` needs a filesystem `Path`, not a URL. It opens the zip with `zipfile.ZipFile(path)`.
+3. `PluginBundleRepo` also provides `extract_wheelhouse()` and `find_target_for_platform()` for dependency installation, which `AggregatePluginRepo` doesn't know about.
+
+### What would need to change
+
+The `AggregatePluginRepo._load()` method would need to detect bundle URLs (e.g. `file://` pointing to a `.zip` with `plugin-bundle.json`) and instantiate `PluginBundleRepo` instead of `JSONFilePluginRepo`. The install/upgrade paths would also need to retrieve the `PluginBundleRepo` instance (not just the plugin list) so they can call `extract_wheelhouse()` for offline dependency installation.</result>
+<usage><subagent_tokens>128576</subagent_tokens><tool_uses>4</tool_uses><duration_ms>24669</duration_ms></usage>
+</task-notification>
