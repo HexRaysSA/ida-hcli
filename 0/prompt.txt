@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bhrv6z5tw</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/b5176059-4895-4ae6-b4aa-3493601bff33/tasks/bhrv6z5tw.output</output-file>
+<status>failed</status>
+<summary>Background command "Poll CI after 5 minutes for matrix tests" failed with exit code 1</summary>
+</task-notification>
