@@ -1,0 +1,7 @@
+## Markdown Annotations
+
+Command did not complete within its 120s timeout and was moved to the background (ID: bszxxrtuh). Output is being written to: /private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/a97345d5-5cdf-433b-8761-dc59bd737c86/tasks/bszxxrtuh.output. You will be notified when it completes. To check interim output, use Read on that file path.
+
+## Your task
+
+Address the annotation feedback above. The user has reviewed the markdown file and provided specific annotations and comments.
