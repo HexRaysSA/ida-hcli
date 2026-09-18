@@ -1,0 +1,1 @@
+remove --offline, maybe in the documentation for --no-reinstall-plugins we can mention this should be used for offline setups.
