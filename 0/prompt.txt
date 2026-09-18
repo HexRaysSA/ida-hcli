@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bwqaeaywg</task-id>
+<tool-use-id>toolu_01BWnHiPVfkWWVWWWhvkpLqg</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/cbba33a6-14b0-41e9-b9f7-e9284a71db4a/tasks/bwqaeaywg.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch the Test workflow run" completed (exit code 0)</summary>
+</task-notification>
