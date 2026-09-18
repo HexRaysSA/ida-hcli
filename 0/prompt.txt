@@ -1,0 +1,1 @@
+update test-binary-install and other reasonable steps to use 9.4
