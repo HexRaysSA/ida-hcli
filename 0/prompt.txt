@@ -1,0 +1,57 @@
+<task-notification>
+<task-id>abc8e885e41828899</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/6248b69a-8c88-47e2-a214-d90cb4cd72e1/tasks/abc8e885e41828899.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit HCLI env var handling" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have a complete picture. Here's the report:
+
+---
+
+**Task: Audit the interplay between `HCLI_CURRENT_IDA_PYTHON_EXE` and `IDAPYTHON_VENV_EXECUTABLE`**
+
+## Variable names
+
+| Variable | Purpose |
+|---|---|
+| `IDAPYTHON_VENV_EXECUTABLE` | IDA's own variable. IDA reads it at startup to activate a virtual environment. Both HCLI and IDA respect this. |
+| `HCLI_CURRENT_IDA_PYTHON_EXE` | HCLI-only override. IDA does not read this variable. It exists for test harnesses and edge cases. |
+
+## Current resolution logic
+
+`resolve_current_python()` in `src/hcli/lib/ida/python/__init__.py:247-275`:
+
+1. If `HCLI_CURRENT_IDA_PYTHON_EXE` is set, return it immediately. No probe, no validation.
+2. Else if `IDAPYTHON_VENV_EXECUTABLE` is set and points to an existing file, use it.
+3. Else probe IDA via idat to derive the interpreter.
+
+When `HCLI_CURRENT_IDA_PYTHON_EXE` wins, the idat probe is deliberately skipped (per the comment at line 215-217: "taken at face value").
+
+## What doctor shows today
+
+The `DoctorReport` model includes `python_exe_source` (e.g. `"$HCLI_CURRENT_IDA_PYTHON_EXE"`) and `idapython_venv_executable`. The text output shows:
+- `interpreter: /path/to/python (via $HCLI_CURRENT_IDA_PYTHON_EXE)` — so the user can see HCLI used its own override
+- `$IDAPYTHON_VENV_EXECUTABLE: &lt;value or "not set"&gt;`
+
+The doctor report **does not** include a field for the raw value of `HCLI_CURRENT_IDA_PYTHON_EXE` itself. It only shows up indirectly via the `python_exe_source` suffix.
+
+## Gaps
+
+1. **No warning when `HCLI_CURRENT_IDA_PYTHON_EXE` is set.** This is the main gap. When a user has this variable set (perhaps from old troubleshooting), HCLI silently uses it and skips IDA entirely. Doctor says "via $HCLI_CURRENT_IDA_PYTHON_EXE" next to the interpreter line but never flags that this is unusual or warns that IDA won't use this variable. A user who set it once and forgot about it may not notice.
+
+2. **No finding or warning about the divergence.** When `HCLI_CURRENT_IDA_PYTHON_EXE` is set, HCLI may install packages into a completely different Python than IDA actually loads. The `check_python_environment` function has one special case at line 394 (`if state.source == "$HCLI_CURRENT_IDA_PYTHON_EXE": return findings`) — it early-returns after the "python-exe-not-found" check, skipping later checks. But it never generates a warning saying "this variable overrides normal detection; IDA does not read it."
+
+3. **Doctor text doesn't display the raw `HCLI_CURRENT_IDA_PYTHON_EXE` value.** Unlike `$IDAPYTHON_VENV_EXECUTABLE` which gets its own line in the output, the HCLI override has no dedicated line. Users searching for "why is my doctor output different from what I expect" won't see the variable listed.
+
+4. **No guidance to unset it.** When the variable is set, doctor should suggest `unset HCLI_CURRENT_IDA_PYTHON_EXE` (or the platform equivalent) and explain that `$IDAPYTHON_VENV_EXECUTABLE` is the correct variable for selecting IDA's Python.
+
+## What to do
+
+Add a finding (severity "warning") in `check_python_environment` that fires when `state.source == "$HCLI_CURRENT_IDA_PYTHON_EXE"`. The message should:
+- State that the variable overrides normal IDA Python detection
+- Note that IDA itself does not read this variable
+- Recommend the user unset it and use `$IDAPYTHON_VENV_EXECUTABLE` instead
+- Display the raw value in the doctor report as its own line (like `$IDAPYTHON_VENV_EXECUTABLE` gets)</result>
+<usage><subagent_tokens>48180</subagent_tokens><tool_uses>12</tool_uses><duration_ms>56186</duration_ms></usage>
+</task-notification>
