@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b0bs5wsu4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/b5176059-4895-4ae6-b4aa-3493601bff33/tasks/b0bs5wsu4.output</output-file>
+<status>failed</status>
+<summary>Background command "Poll CI status after 2 minutes" failed with exit code 8</summary>
+</task-notification>
