@@ -1,0 +1,174 @@
+<task-notification>
+<task-id>ab8dbc4537dfe210e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/b7b277ac-b0d5-4cd7-8e06-a7eea8f5e406/tasks/ab8dbc4537dfe210e.output</output-file>
+<status>completed</status>
+<summary>Agent "Explore pip install and error handling" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here is the complete report on all six findings.
+
+---
+
+## 1. `pip_install_packages` function
+
+**File:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/__init__.py`, lines 411-433
+
+**Full signature:**
+```python
+def pip_install_packages(
+    python_exe: Path,
+    packages: list[str],
+    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+):
+```
+
+**Error handling:** It runs `subprocess.run` with `check=False`, then inspects `process.returncode`. On non-zero exit:
+1. Logs stdout and stderr at debug level (lines 428-429).
+2. Formats the pip output via `_format_pip_error(stdout, stderr)` (line 430).
+3. Calls `_raise_for_known_pip_errors(error_text, python_exe)` (line 431), which checks for two known patterns:
+   - `"externally-managed-environment"` in the output raises `CantInstallPackagesError` with a message about PEP 668 (line 377).
+   - `"no such option: --dry-run"` in the output raises `CantInstallPackagesError` about needing pip &gt;= 22.2 (lines 379-382).
+4. If neither known pattern matched, raises a generic `CantInstallPackagesError(error_text)` (line 432).
+
+**`CantInstallPackagesError`:** Defined at line 298 as a one-liner:
+```python
+class CantInstallPackagesError(ValueError): ...
+```
+It is a `ValueError` subclass with no additional fields or methods. The message is whatever string is passed to it (either a known-error explanation or the raw pip stdout+stderr).
+
+---
+
+## 2. Plugin install command progress patterns
+
+**File:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/install.py`
+
+**`rich.status.Status` usage** (spinner messages sent to stderr):
+- Line 100: `rich.status.Status("collecting environment", console=stderr_console)`
+- Lines 158-159: `rich.status.Status(f"fetching plugin from GitHub: {owner}/{repo}{tag_info}", console=stderr_console)`
+- Line 174: `rich.status.Status("fetching plugin", console=stderr_console)`
+- Line 201: `rich.status.Status("fetching plugin", console=stderr_console)`
+- Line 289: `rich.status.Status(status_text, console=stderr_console)` where `status_text` is `"upgrading plugin"` or `"installing plugin"`
+- Line 294: same variable `status_text`
+- Line 354: `rich.status.Status("rolling back installation", console=stderr_console)`
+
+**Success output** (line 360):
+```python
+console.print(f"[green]{verb}[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}{suffix}")
+```
+where `verb` is `"Upgraded"` or `"Installed"`, and `suffix` is `" [yellow](editable)[/yellow]"` for editable installs, otherwise empty.
+
+Also at line 248-250 (already-up-to-date case):
+```python
+console.print(f"[green]Already installed[/green] plugin: [blue]{plugin_name}[/blue]=={installed.version}")
+```
+
+**Error output patterns:**
+- Line 163: `console.print("[red]Cannot connect to GitHub - network unavailable.[/red]")`
+- Line 177: `console.print(f"[red]Cannot connect to {plugin_spec} - network unavailable.[/red]")`
+- Line 208: `console.print(f"[red]Error[/red]: plugin name '{e.name}' is ambiguous")`
+- Lines 282-283: `console.print(f"[red]Error[/red]: plugin bundle does not include dependencies...")`
+- Lines 370-374: `console.print(f"[red]Error[/red]: cannot install plugin ...")`
+- Line 386: `console.print(f"[red]Error[/red]: {e}")` -- the generic catch-all
+
+Additionally, in `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/install.py` (the library layer), more `rich.status.Status` calls are used during the internal install flow:
+- Line 708: `rich.status.Status("finding IDA installation", console=stderr_console)`
+- Line 730: `rich.status.Status("collecting existing Python dependencies", console=stderr_console)`
+- Lines 740-741: `rich.status.Status(f"installing Python dependencies: {', '.join(python_dependencies)}", console=stderr_console)`
+- Line 819: `rich.status.Status("finding IDA installation", console=stderr_console)` (editable path)
+- Line 843: `rich.status.Status("collecting existing Python dependencies", console=stderr_console)` (editable path)
+- Lines 864-865: `rich.status.Status(f"installing Python dependencies: {', '.join(python_dependencies)}", console=stderr_console)` (editable path)
+
+---
+
+## 3. `PIP_OPTIONS_DEFAULT`
+
+**File:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/__init__.py`, line 337
+
+```python
+PIP_OPTIONS_DEFAULT = PipOptions()
+```
+
+This is a default-constructed `PipOptions` dataclass (defined at lines 301-314), meaning all fields take their defaults:
+- `index_url`: `None`
+- `extra_index_urls`: `()`
+- `find_links`: `()`
+- `offline`: `False`
+- `isolated`: `False`
+- `no_cache_dir`: `False`
+- `disable_pip_version_check`: `False`
+- `no_build_isolation`: `False`
+
+So `PIP_OPTIONS_DEFAULT` produces zero extra pip arguments when `build_args()` is called -- it is a completely vanilla pip invocation.
+
+---
+
+## 4. `get_installed_plugin_paths`
+
+**File:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/install.py`, lines 392-393
+
+```python
+def get_installed_plugin_paths() -&gt; list[Path]:
+    return [r.path for r in get_installed_plugin_records()]
+```
+
+It returns a `list[Path]` -- the `.path` field of each `InstalledPluginRecord` returned by `get_installed_plugin_records()` (defined at lines 299-339). Each `InstalledPluginRecord.path` is the on-disk plugin directory (e.g., `$IDAUSR/plugins/&lt;name&gt;`). Only directories with a valid, parseable `ida-plugin.json` whose `plugin.name` matches the directory name are included; broken or mismatched directories are silently skipped.
+
+---
+
+## 5. `get_python_dependencies_from_plugin_directory` error handling
+
+**File:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/__init__.py`, lines 722-746
+
+The function can raise `ValueError` in three situations:
+
+1. **Line 734:** If `python_dependencies` is `"inline"` but the entry point is not a `.py` file:
+   ```
+   ValueError("Entry point must be a Python file (.py) for inline dependencies")
+   ```
+
+2. **Line 738:** If the entry point file cannot be read (implicit `FileNotFoundError` from `entry_point_path.read_text()`), or if the PEP 723 metadata parsing in `parse_pep723_metadata` fails -- these would propagate as their native exception types.
+
+3. **Lines 744-745:** If `python_dependencies` is neither a `list` nor the string `"inline"`:
+   ```
+   ValueError(f"Unexpected python_dependencies type: {type(metadata.plugin.python_dependencies).__name__}")
+   ```
+
+Note that when `python_dependencies` is `None` (or any non-list, non-string value), it falls through the `isinstance` checks and hits the final `else` clause at line 743, raising `ValueError`. However, the function does NOT check whether the entry point file exists before reading it -- a missing entry point file when `python_dependencies == "inline"` would raise `FileNotFoundError`, not `ValueError`.
+
+Callers in `install.py` do handle this: in the editable install path at line 846-849, the caller wraps the call in a `try/except Exception` and continues with `logger.debug("skipping unreadable plugin metadata...")` for existing plugins. But in the main non-editable path at lines 504 and 734, the exception would propagate uncaught from `get_python_dependencies_from_plugin_directory`.
+
+---
+
+## 6. Click command group for `ida python`
+
+**File:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/ida/python/__init__.py`
+
+**Group definition** (lines 6-16):
+```python
+@click.group()
+@click.option(
+    "--no-python-environment-check",
+    is_flag=True,
+    help="Do not warn when IDA's Python environment differs from the recommended setup.",
+)
+@click.pass_context
+def python(ctx: click.Context, no_python_environment_check: bool) -&gt; None:
+    """Use the Python environment that IDA loads."""
+    ctx.ensure_object(dict)
+    ctx.obj["no_python_environment_check"] = no_python_environment_check
+```
+
+The group has one shared option: `--no-python-environment-check` (a boolean flag stored in `ctx.obj`). The decorator stack is `@click.group()`, `@click.option(...)`, `@click.pass_context`.
+
+**`create_environment` registration** (line 19 and line 26):
+```python
+from .create_environment import create_environment
+...
+python.add_command(create_environment, name="create-environment")
+```
+
+The `create_environment` command itself is defined in `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/ida/python/create_environment.py` at lines 252-291. It uses `@click.command()` (not `@python.command()`), and is registered onto the group via `python.add_command(create_environment, name="create-environment")`. The command does NOT use `@click.pass_context` and does NOT read `ctx.obj["no_python_environment_check"]` -- it has its own `--no-configure` flag instead, and its own options: `--path`, `--python-version`, `--no-configure`, and `--json`.
+
+The other subcommands registered to the group are: `doctor`, `exec`, `explain-environment`, `find-script`, and `run-script` (lines 20-31).</result>
+<usage><subagent_tokens>52634</subagent_tokens><tool_uses>10</tool_uses><duration_ms>65424</duration_ms></usage>
+</task-notification>
