@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>a654439f7a3d5800d</task-id>
+<tool-use-id>toolu_01Wb6VQV9cxq3YQCYMo4GG4Z</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/f7f6d0cb-a250-48b6-a084-cdee7b944069/tasks/a654439f7a3d5800d.output</output-file>
+<status>completed</status>
+<summary>Agent "Read the proposal document" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+**Problem:** IDA allows many Python configurations (system Python, Homebrew, pyenv, Anaconda, etc.), and HCLI must figure out which Python IDA uses and install packages into it. The combinatorial complexity causes ~2000 lines of heuristics and is the top source of support requests. PEP 668 externally-managed errors, wrong interpreter detection, PATH shims, and venv detection gaps all contribute.
+
+**Recommended setup (four requirements):**
+1. Use a virtual environment (recommended location: `~/.idapro/venv`)
+2. Create the venv with pip available (`uv venv --seed`)
+3. Set `IDAPYTHON_VENV_EXECUTABLE` to the venv's Python interpreter
+4. The venv Python version must match the `libpython` registered with `idapyswitch`
+
+This collapses HCLI's complex resolution logic to: read `IDAPYTHON_VENV_EXECUTABLE`, verify version match, install packages. It also enables plugin manager support for IDA Home/Free (which lack `idat`).
+
+**HCLI's role:**
+- Audit environments and warn/reject non-recommended setups (especially during `hcli plugin ...` operations)
+- Provide environment-specific remediation guidance ("run this command to create a venv")
+- Offer `hcli ida python create-environment` to auto-create and configure the recommended setup
+- Link users to docs.hex-rays.com for authoritative setup documentation
+
+**Key principle for the HCLI docs site:** The primary Python setup documentation will live on docs.hex-rays.com, not on the HCLI docs site. The HCLI site should concisely describe the expected environment, explain what it means for HCLI operations, and point to docs.hex-rays.com for full setup instructions.</result>
+<usage><subagent_tokens>33410</subagent_tokens><tool_uses>1</tool_uses><duration_ms>15881</duration_ms></usage>
+</task-notification>
