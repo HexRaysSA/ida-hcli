@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>brvs20o5k</task-id>
+<tool-use-id>2615e647-832d-4f00-9bdc-f66e7426fa4a:inner:preamble-0</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/1d05fe0d-ac68-4996-8371-62cfdf77ddb2/tasks/brvs20o5k.output</output-file>
+<status>completed</status>
+<summary>Background command "plannotator annotate-last" completed (exit code 0)</summary>
+</task-notification>
