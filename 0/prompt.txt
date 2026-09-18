@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bnn6fga92</task-id>
+<tool-use-id>toolu_01JHQzfwgvxNXgwE3gjYyonx</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/c2e6a069-e577-48ef-8b81-b88d9ab998e4/tasks/bnn6fga92.output</output-file>
+<status>killed</status>
+<summary>Background command "Watch CI to completion" was stopped</summary>
+</task-notification>
