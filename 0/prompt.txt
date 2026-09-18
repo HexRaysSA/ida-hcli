@@ -1,0 +1,81 @@
+<task-notification>
+<task-id>ad5170cf88a72c11f</task-id>
+<tool-use-id>toolu_01F5rSh4ETYoh1MzxgzkUkDQ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/ec9aa125-1137-4e9f-9caa-136c762721fb/tasks/ad5170cf88a72c11f.output</output-file>
+<status>completed</status>
+<summary>Agent "Research test structure and fixtures" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here is the report.
+
+---
+
+## Test Structure for the Plugin System
+
+### Directory layout
+```
+tests/
+  conftest.py              -- autouse fixtures: probe cache clear, CliRunner stream pinning
+  lib/
+    fixtures.py            -- shared fixtures: temp dirs, env vars, virtual IDA environments
+    test_plugin_install.py       -- core install/uninstall/upgrade lib + CLI tests
+    test_plugin_records.py       -- installed plugin record queries, case-insensitive lookup
+    test_plugin_collisions.py    -- repo-level name collisions, host disambiguation, status
+    test_plugin_dependencies.py  -- loose dependency tests (recently added)
+    test_plugin_dependency_migration.py  -- create-environment dep migration flow
+    test_plugin_bundle.py        -- offline bundle manifest, repo, wheelhouse
+    test_plugin_bundle_commands.py -- CLI for bundle info/create
+    test_plugin.py               -- (likely metadata parsing)
+    test_plugin_index.py         -- (repo indexing)
+    test_plugin_pep723.py        -- PEP 723 inline script deps
+    test_plugin_reference.py     -- plugin reference parsing
+    test_plugin_settings.py      -- per-plugin config
+  data/plugins/
+    plugin1/                     -- fixture source dirs (src-v1..src-v6) + pre-built .zip files
+    zydisinfo/                   -- binary plugin fixture
+  integration/                   -- integration tests (download, full CLI flows)
+```
+
+### Key fixtures (from `fixtures.py`)
+- **`virtual_ida_environment`** — sets `HCLI_IDAUSR` to a temp dir, fakes `HCLI_CURRENT_IDA_PLATFORM` and `HCLI_CURRENT_IDA_VERSION`. Allows plugin operations without a real IDA install.
+- **`virtual_ida_environment_with_venv`** — extends above with a real Python venv at `$IDAUSR/venv`, setting `HCLI_CURRENT_IDA_PYTHON_EXE` and `VIRTUAL_ENV`. Needed for pip-related tests.
+- **`block_network`** — sets HTTP(S)_PROXY to a dead endpoint for airgapped tests.
+- **`temp_env_var` / `temp_env_var_path`** — context managers for env var manipulation (also syncs `hcli.env.ENV` attributes).
+- **`set_env_var` / `unset_env_var`** — monkeypatch-based versions for pytest fixtures.
+
+### How plugin archives are created in tests
+
+**Two approaches:**
+
+1. **Pre-built zip fixtures** on disk under `tests/data/plugins/`. E.g. `plugin1-v1.0.0.zip` with internal structure `src-v1/ida-plugin.json` + `src-v1/plugin1.py`. Used by `test_plugin_install.py` and integration tests.
+
+2. **Programmatic in-memory zip creation** via helper functions, used in dependency and collision tests:
+   - `_make_plugin_zip(name, version, deps=None)` in `test_plugin_dependencies.py` — creates a minimal zip `{name}/ida-plugin.json` + `{name}/{name}.py` with optional `dependencies` field.
+   - `_make_plugin_metadata(name, version, deps=None)` — constructs the metadata dict.
+   - `_make_fs_repo(archives)` — creates a temporary `FileSystemPluginRepo` from dict of `{filename: zip_bytes}`.
+   - `make_plugin_zip(source_zip, dest_path, new_name=None, ...)` in `test_plugin_collisions.py` — derives a new zip from an existing fixture by rewriting `ida-plugin.json` fields. Used for collision/host disambiguation tests.
+   - `_place_plugin(name, metadata)` in `test_plugin_dependency_migration.py` — writes plugin directory directly into `$IDAUSR/plugins/` without going through install flow.
+
+### Existing dependency tests (`test_plugin_dependencies.py`)
+Covers the **loose dependency** (`dependencies` field) use case:
+- `parse_dependency_spec` — bare name, pinned version, with host, rejects invalid formats
+- `PluginMetadata.dependencies` field — serialization, validation, empty/present
+- `install_dependencies` integration — install deps from FS repo, skip already-installed, upgrade outdated pinned, no-downgrade, partial failure, local-dir warning
+- Upgrade with dependencies — new deps installed, dropped deps reported, unsatisfied deps upgraded
+- Uninstall CLI — lists deps, `--yes` removes deps, non-interactive keeps deps
+- Lint validation — valid/invalid dependency specs
+
+### No existing component/suite test infrastructure
+There are **no tests for the `components` field**, no suite archive fixtures, and no helpers for creating nested component directories within archives. The `_make_plugin_zip` helper produces flat single-plugin archives. A suite test will need:
+- A helper that creates multi-manifest archives (suite + nested component dirs)
+- Test fixtures with component subdirectories inside parent plugin dir
+- Collision detection tests for component names vs. top-level plugins
+- Status display tests showing component counts and `--show-components` expansion
+
+### Status JSON output format
+Current JSON output from `plugin status --json` returns entries like:
+```json
+{"name": "...", "version": "...", "installed": true, "kind": "installed", "upgrade_checked": true, "in_repository": true, "upgradable_to": "..."}
+```
+The `kind` field exists but only reports `"installed"`. Components will need a new kind or additional fields.</result>
+<usage><subagent_tokens>74819</subagent_tokens><tool_uses>12</tool_uses><duration_ms>88979</duration_ms></usage>
+</task-notification>
