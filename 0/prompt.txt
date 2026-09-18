@@ -1,0 +1,34 @@
+wait, i'm doing some research on the side. i'll tell you shortly.
+
+---
+
+later:
+
+IDA will find and load ida-plugin.json at every level of nesting. There is no short-circuit.
+
+The scanning function enumerate_fs_recursive() (base/plugins.cpp:1557) recurses unconditionally into every subdirectory up to depth 10. The visitor (visit_file, line 1903) always returns 0, so nothing ever stops the traversal early. Finding an ida-plugin.json in a parent directory does not prevent IDA from descending into child directories and finding more manifests there.
+
+So a layout like this works:
+
+~/.idapro/plugins/
+  mybundle/
+    ida-plugin.json        ← discovered at depth 1
+    myplugin.dylib
+    component-a/
+      ida-plugin.json      ← also discovered at depth 2
+      component_a.dylib
+    component-b/
+      ida-plugin.json      ← also discovered at depth 3... wait, depth 2
+      component_b.dylib
+
+All three manifests get parsed and registered.
+
+The one constraint is the name field. Each ida-plugin.json must declare a unique plugin.name. When two manifests share the same name, the second one found is silently skipped (line 1960-1963) with a debug-level message. The traversal order within a directory is filesystem-dependent (whatever qfindfirst/qfindnext yields), so you can't rely on a particular one winning. As long as each manifest in the bundle declares a distinct name, all of them will load.
+
+Other things to note:
+
+- The entryPoint in each ida-plugin.json is resolved relative to that manifest's directory (line 1635-1637), so each component can point to its own binary.
+- At depth 0 (files directly in plugins/), IDA uses legacy discovery (raw DLL/script files without manifests). The ida-plugin.json mechanism only activates at depth >= 1. So your bundle root must be a subdirectory of plugins/, not plugins/ itself — which matches the layout you described.
+- Max recursion depth is 10, more than enough for any reasonable bundle structure.
+
+For the HCLI use case: unpacking a bundle zip into ~/.idapro/plugins/mybundle/ where mybundle/ contains both a top-level ida-plugin.json and sub-directories with their own manifests will work. IDA will register every plugin it finds, each as an independent plugin keyed by its name.
