@@ -1,0 +1,1 @@
+How are we ha handling scenarios where maybe these configurations are already present? like in the the shell profiles or the P list etc. Break down uh the matrix of the different scenarios and what we do if the content is already available
