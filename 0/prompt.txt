@@ -1,0 +1,3 @@
+> The issue is that install_plugin_archive with python_dependencies tries to actually install them via pip, which requires detecting the IDA Python interpreter. In CI, there's a stub IDA that can't run Python scripts.
+
+this isn't true. in CI IDA is present. try again.
