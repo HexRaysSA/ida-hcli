@@ -1,0 +1,1 @@
+ok, now thoroughly research the IDA online documentation https://docs.hex-rays.com/ for how Hex-Rays currently explains how to configure Python
