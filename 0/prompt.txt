@@ -1,0 +1,201 @@
+<task-notification>
+<task-id>ac1317ed3ef5ec6a4</task-id>
+<tool-use-id>toolu_01ULW1dEKJgmD1gpPKgXzDyC</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/e6dd9346-c5a7-4b95-af28-73a2896baaf3/tasks/ac1317ed3ef5ec6a4.output</output-file>
+<status>completed</status>
+<summary>Agent "Find component/bundle plugin code" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have a thorough understanding of the entire component/bundled plugin feature. Here is my complete report.
+
+---
+
+## Component / Bundled Plugin Feature -- Complete Report
+
+### 1. How Components Are Defined in Plugin Manifests (ida-plugin.json)
+
+The `components` field is defined on the `PluginMetadata` Pydantic model.
+
+**File:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/__init__.py`
+- **Lines 500-509:** The `components` field definition:
+  ```python
+  components: list[str] = Field(
+      default_factory=list,
+      description=(
+          "Subdirectory names of plugins bundled inside this suite's archive. "
+          "Each entry must match a subdirectory containing its own ida-plugin.json "
+          "whose plugin.name matches the entry. Components share the suite's "
+          "lifecycle and are hidden from top-level plugin listings."
+      ),
+      examples=[["hexrays-taint-engine", "hexrays-type-propagation"]],
+  )
+  ```
+- **Lines 520-536:** Validation via `validate_component_names()`:
+  - No version pins (`==`) allowed
+  - No host qualifiers (`@`) allowed
+  - Must be ASCII alphanumeric with underscores/hyphens
+  - Must not start/end with underscore or hyphen
+  - Must be unique within a single manifest
+
+**JSON Schema:** `/Users/user/code/hex-rays/ida-hcli/docs/schemas/ida-plugin.json` (lines 293-306) mirrors this definition.
+
+**Documentation:** `/Users/user/code/hex-rays/ida-hcli/docs/reference/plugin-packaging-and-format.md` (lines 207-242) describes the feature in detail, including the archive layout:
+```
+go-analysis-suite.zip
+  go-analysis-suite/
+    ida-plugin.json          (name: go-analysis-suite, components: [...])
+    go_suite.py
+    go-runtime-detector/
+      ida-plugin.json        (name: go-runtime-detector)
+      detector.py
+    go-string-extractor/
+      ida-plugin.json        (name: go-string-extractor)
+      extractor.py
+```
+
+Components are distinct from **dependencies** (field `dependencies`, lines 489-498 in the same file). Dependencies are loose references to independent plugins fetched from a repository. Components are tightly coupled sub-plugins physically bundled inside the same archive.
+
+---
+
+### 2. Installation Flow for Components
+
+The core component logic lives in a dedicated module:
+
+**File:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/components.py`
+
+Key functions:
+- `walk_component_tree_from_directory()` (line 22) -- recursively walks installed component subdirectories on disk, validates name matches, enforces `MAX_COMPONENT_DEPTH = 10`
+- `walk_component_tree_from_archive()` (line 62) -- same but inside a zip archive before installation
+- `collect_all_component_names_from_archive()` (line 117) -- collects all component names at any nesting depth
+- `find_root_manifest_in_archive()` (line 127) -- identifies the root manifest in a multi-manifest archive by finding the plugin whose name is NOT referenced as a component by any other manifest
+- `find_suite_for_component()` (line 160) -- checks if a given plugin name is a component of an installed suite
+- `check_component_name_collisions()` (line 180) -- checks component names against all installed plugins and their components
+
+**Install command handler:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/install.py`
+
+The install flow for components:
+
+1. **Plugin name resolution** (line 62-65): `_resolve_plugin_name_from_archive()` calls `find_root_manifest_in_archive()` to identify the root plugin. This means when you install an archive containing a suite, the system auto-detects the root.
+
+2. **Component-as-target guard** (lines 253-255): Before installing, checks if the target plugin name is already a component of an installed suite. If so, refuses with "uninstall the suite first."
+
+3. **Collision checking** (lines 257-264): If the plugin being installed has components, collects all component names from the archive and checks for collisions against installed top-level plugins and other suites' components. On upgrade (`is_upgrade`), the current suite is excluded from collision checks.
+
+4. **Extraction** (back in `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/install.py`):
+   - `_install_plugin_archive()` (line 741) calls `extract_zip_subdirectory_to()` (line 799) which extracts the entire plugin subdirectory, **including component subdirectories**, to `$IDAUSR/plugins/&lt;suite-name&gt;/`. Components are NOT installed as separate top-level directories -- they live as subdirectories within the suite directory.
+
+5. **Components are hidden from top-level enumeration**: `get_installed_plugin_records()` (line 299) only scans one level deep under `$IDAUSR/plugins/`, so component subdirectories within a suite are not listed as separate installed plugins.
+
+**Uninstall flow:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/uninstall.py`
+- Lines 32-35: Refuses to uninstall a component individually ("is a component of...")
+- Lines 47-60: When uninstalling a suite, lists all components and prompts for confirmation
+- The actual `uninstall_plugin()` (in install.py, line 1022) removes the entire suite directory at once, which implicitly removes all components.
+
+**Upgrade flow:** The upgrade path (install.py `upgrade_plugin_archive()`, line 1111) atomically moves the old suite to trash, installs the new version (which includes new components), and deletes the old rollback on success.
+
+**Status display:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/status.py`
+- `_collect_components()` (line 84) walks the component tree for each installed record
+- Components are shown as a count by default (e.g., "2 components")
+- `--show-components` flag (line 288-291) expands to show individual component names/versions
+- `--json` output includes a `components` array with name/version per component
+
+---
+
+### 3. Python Dependencies (pip_packages / pythonDependencies) -- NOT Recursive for Components
+
+**This is a critical finding: Python dependency installation is NOT recursive for components.**
+
+The installation of Python dependencies happens in `_install_plugin_archive()` at `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/install.py`, lines 772-793:
+
+```python
+python_dependencies = get_python_dependencies_from_plugin_archive(zip_data, metadata)
+```
+
+This call passes `metadata` -- which is the **root suite's metadata only**. The function `get_python_dependencies_from_plugin_archive()` (in `__init__.py`, line 744) reads `metadata.plugin.python_dependencies`, which is the root plugin's `pythonDependencies` field. It does NOT recursively collect `pythonDependencies` from component manifests.
+
+There is no code anywhere that:
+- Iterates over components to collect their `pythonDependencies`
+- Calls `get_python_dependencies_from_plugin_archive()` or `get_python_dependencies_from_plugin_directory()` for each component
+
+The same is true for `validate_can_install_python_dependencies()` (line 522) -- it validates only the root metadata's Python dependencies.
+
+Similarly, `collect_plugin_dependencies()` (line 402) iterates over `get_installed_plugin_records()`, which only returns top-level plugins. Components are subdirectories within a suite and are not enumerated by `get_installed_plugin_records()`, so their Python dependencies are never collected for the global dependency set.
+
+**Conclusion: If a component declares its own `pythonDependencies`, they will be silently ignored during installation.** The suite root must declare all needed Python dependencies in its own `pythonDependencies` field.
+
+---
+
+### 4. Plugin Configuration/Settings -- NOT Recursive for Components
+
+Settings handling during installation is also NOT recursive for components.
+
+**Install command:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/install.py`, lines 266-357
+
+The settings logic operates on `metadata.plugin.settings` -- which is only the root plugin's metadata. There is no iteration over component metadata to prompt for or install component settings.
+
+**Settings storage:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/settings.py`
+
+Settings are stored in `ida-config.json` keyed by plugin name. The settings system uses `find_installed_plugin()` (line 27) which calls `get_installed_plugin_records()` -- this only returns top-level plugins, not components.
+
+However, components have their own `ida-plugin.json` files which can declare settings. At runtime, a component plugin can call `get_current_plugin()` (line 166) which walks the call stack to find the plugin directory. Since the component's code lives under `$IDAUSR/plugins/&lt;suite-name&gt;/&lt;component-name&gt;/`, and the function matches against `$IDAUSR/plugins/`, it would find the suite directory name, not the component directory name. Specifically, the code at line 208 extracts `module_relative_path.parts[0]` which would be the suite name. So at runtime, `get_current_plugin()` from a component's code would return the suite name, not the component name.
+
+**Conclusion: Component settings are not handled during installation. If a component declares settings, they are not prompted for or configured.** Settings configuration is only done for the root suite plugin.
+
+---
+
+### 5. Test Files Related to Components
+
+**Primary test file:** `/Users/user/code/hex-rays/ida-hcli/tests/lib/test_plugin_components.py`
+
+This is a comprehensive test file (504 lines) covering:
+- Metadata field validation (lines 124-171): components field parsing, rejection of version pins, host qualifiers, duplicates, invalid names
+- `find_root_manifest_in_archive` (lines 178-200): single plugin, suite, ambiguous archive
+- `walk_component_tree_from_archive` (lines 208-232): flat and nested suites
+- Install suite (lines 240-275): verifies components are on disk but not listed as top-level installed plugins
+- Uninstall suite (lines 283-318): removal of entire suite, refusing component-level uninstall
+- Upgrade suite (lines 325-355): replacement of components, dropping removed components
+- Status display (lines 362-403): component count, `--show-components`, JSON output
+- Name collision checking (lines 410-445): component vs top-level, component vs other suite
+- `find_suite_for_component` (lines 453-468)
+- Lint (lines 475-503): validating suite directory, detecting missing component dirs
+
+**Other relevant test files:**
+- `/Users/user/code/hex-rays/ida-hcli/tests/lib/test_plugin_collisions.py` -- tests for name collision resolution (not specifically component-focused but tangentially related)
+- `/Users/user/code/hex-rays/ida-hcli/tests/lib/test_plugin_bundle.py` -- tests for the plugin bundle feature (offline installation bundles, distinct from component bundles)
+- `/Users/user/code/hex-rays/ida-hcli/tests/lib/test_plugin_bundle_commands.py` -- CLI tests for bundle commands
+- `/Users/user/code/hex-rays/ida-hcli/tests/lib/test_plugin_dependencies.py` -- tests for loose dependencies (the `dependencies` field, not `components`)
+- `/Users/user/code/hex-rays/ida-hcli/tests/lib/test_plugin_install.py` -- general install/uninstall/upgrade tests
+- `/Users/user/code/hex-rays/ida-hcli/tests/lib/test_plugin_settings.py` -- settings integration tests
+
+---
+
+### Summary of Key Files
+
+| Purpose | File Path |
+|---------|-----------|
+| Component tree walking/validation | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/components.py` |
+| Plugin metadata model (components field) | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/__init__.py` (line 500) |
+| Plugin install/uninstall/upgrade logic | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/install.py` |
+| Install command (collision checks, settings) | `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/install.py` |
+| Uninstall command (component guards) | `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/uninstall.py` |
+| Upgrade command | `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/upgrade.py` |
+| Status command (component display) | `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/status.py` |
+| Lint command (component validation) | `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/lint.py` |
+| Settings system | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/settings.py` |
+| Loose dependencies (distinct from components) | `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/dependencies.py` |
+| JSON schema | `/Users/user/code/hex-rays/ida-hcli/docs/schemas/ida-plugin.json` |
+| Documentation | `/Users/user/code/hex-rays/ida-hcli/docs/reference/plugin-packaging-and-format.md` |
+| Component tests | `/Users/user/code/hex-rays/ida-hcli/tests/lib/test_plugin_components.py` |
+
+### Key Architectural Observations
+
+1. **Components share the suite lifecycle**: installed together, uninstalled together, upgraded together. They are physically nested subdirectories within the suite's directory.
+
+2. **Components are hidden from top-level enumeration**: `get_installed_plugin_records()` does not recurse into suite subdirectories.
+
+3. **Neither `pythonDependencies` nor `settings` are processed recursively for components**: only the root suite's values are used during installation. This means the suite root must aggregate all Python dependencies from its components.
+
+4. **Components can nest up to 10 levels deep** (controlled by `MAX_COMPONENT_DEPTH` in components.py line 19).
+
+5. **Name collision checking** prevents installing a suite whose component names clash with existing top-level plugins or other suites' components.</result>
+<usage><subagent_tokens>142631</subagent_tokens><tool_uses>29</tool_uses><duration_ms>109565</duration_ms></usage>
+</task-notification>
