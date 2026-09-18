@@ -21,6 +21,29 @@ from hcli.lib.ida.plugin.install import (
 logger = logging.getLogger(__name__)
 
 
+def _find_installed_component(plugin_name: str) -> tuple[Path, str] | None:
+    """Search installed suites for a component at any nesting depth.
+
+    Returns (component_dir, canonical_name) or None. Matching is
+    case-insensitive, consistent with top-level plugin lookup.
+    """
+    from hcli.lib.ida.plugin.components import walk_component_tree_from_directory
+    from hcli.lib.ida.plugin.install import get_installed_plugin_records
+
+    wanted = plugin_name.lower()
+    for record in get_installed_plugin_records():
+        if not record.metadata.plugin.components:
+            continue
+        try:
+            tree = walk_component_tree_from_directory(record.path)
+        except ValueError:
+            continue
+        for comp_path, comp_meta in tree:
+            if comp_meta.plugin.name.lower() == wanted:
+                return comp_path, comp_meta.plugin.name
+    return None
+
+
 def resolve_plugin_name(plugin_name: str) -> str:
     """Return the canonical name of the installed plugin matching ``plugin_name``.
 
@@ -37,17 +60,19 @@ def resolve_plugin_name(plugin_name: str) -> str:
     except PluginNotInstalledError:
         pass
 
-    from hcli.lib.ida.plugin.components import find_suite_for_component
-
-    suite = find_suite_for_component(plugin_name)
-    if suite is not None:
-        return plugin_name
+    result = _find_installed_component(plugin_name)
+    if result is not None:
+        return result[1]
 
     raise PluginNotInstalledError(plugin_name)
 
 
 def resolve_plugin_directory(plugin_name: str) -> Path:
-    """Resolve plugin directory for a top-level or component plugin."""
+    """Resolve plugin directory for a top-level or component plugin.
+
+    For nested components (depth >= 2), returns the actual on-disk path
+    rather than assuming the component is a direct child of the suite root.
+    """
     from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
 
     try:
@@ -55,11 +80,9 @@ def resolve_plugin_directory(plugin_name: str) -> Path:
     except PluginNotInstalledError:
         pass
 
-    from hcli.lib.ida.plugin.components import find_suite_for_component
-
-    suite = find_suite_for_component(plugin_name)
-    if suite is not None:
-        return suite.path / plugin_name
+    result = _find_installed_component(plugin_name)
+    if result is not None:
+        return result[0]
 
     raise PluginNotInstalledError(plugin_name)
 

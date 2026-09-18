@@ -697,6 +697,8 @@ def test_install_config_without_prefix_targets_root(virtual_ida_environment, tmp
 
 
 def test_install_component_required_setting_nointeractive(virtual_ida_environment, tmp_path):
+    from hcli.lib.console import console
+
     zip_data = _make_suite_zip(
         "my-suite",
         "1.0.0",
@@ -705,7 +707,12 @@ def test_install_component_required_setting_nointeractive(virtual_ida_environmen
     zip_path = tmp_path / "suite.zip"
     zip_path.write_bytes(zip_data)
     runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(plugin_group, ["install", str(zip_path)])
+    old = console.is_interactive
+    console.is_interactive = False
+    try:
+        result = runner.invoke(plugin_group, ["install", str(zip_path)])
+    finally:
+        console.is_interactive = old
     assert result.exit_code != 0
     assert "comp-a" in result.output
     assert "api_key" in result.output
