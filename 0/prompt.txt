@@ -1,0 +1,1 @@
+And for cases where we don't really have a good solution, we should tell the user. What are those edge cases? Let's make sure those are clearly enclo and encoded in our decision tree
