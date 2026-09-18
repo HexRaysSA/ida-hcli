@@ -1,0 +1,128 @@
+<task-notification>
+<task-id>a5c5487253d548466</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/ec9aa125-1137-4e9f-9caa-136c762721fb/tasks/a5c5487253d548466.output</output-file>
+<status>completed</status>
+<summary>Agent "Research plugin install flow" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have a complete picture. Here's the report:
+
+---
+
+## Research: Plugin Installation Flow
+
+### 1. `install_plugin_archive()` (`src/hcli/lib/ida/plugin/install.py:802-808`)
+
+Public entry point. Validates the archive is either a source or binary plugin, then delegates to `_install_plugin_archive()` (line 741).
+
+`_install_plugin_archive()` (lines 741-799):
+- Params: `zip_data: bytes`, `name: str`, `pip_options`, `check_environment`
+- Calls `get_metadata_from_plugin_archive(zip_data, name)` to find the manifest matching `name`
+- Validates metadata, checks platform/version compat, checks for existing install
+- Installs Python (pip) dependencies, collecting *all* existing installed plugins' deps to pass together to pip
+- Calls `extract_zip_subdirectory_to(zip_data, plugin_subdirectory, destination_path)` to extract
+
+**Multi-manifest handling**: `get_metadata_from_plugin_archive()` (in `__init__.py:810-817`) iterates all `ida-plugin.json` files in the archive and returns the one matching `name`. So the library layer already supports multi-manifest archives. The restriction is only in the CLI layer.
+
+### 2. Five single-manifest constraints in `src/hcli/commands/plugin/install.py`
+
+All five are in the `install_plugin` CLI command handler, one per non-repo install path:
+
+| Line | Path | Error message |
+|------|------|---------------|
+| 133 | Local directory (non-editable) | "plugin directory must contain a single plugin" |
+| 141 | Local `.zip` file | "plugin archive must contain a single plugin for local file system installation" |
+| 150 | `file://` URL | "plugin archive must contain a single plugin for local file system installation" |
+| 168 | GitHub direct URL | "plugin archive must contain a single plugin for GitHub installation" |
+| 182 | `https://` URL | "plugin archive must contain a single plugin for HTTP URL installation" |
+
+The repo-based path (line 186+) **does not** have this check. `plugin_repo.fetch_compatible_plugin_from_spec()` returns `(plugin_name, buf)`, and the archive is used with `install_plugin_archive(buf, plugin_name)` which only extracts the named plugin's subtree.
+
+### 3. `extract_zip_subdirectory_to()` (`src/hcli/lib/ida/plugin/install.py:681-738`)
+
+- Params: `zip_data: bytes`, `subdirectory: Path`, `destination: Path`
+- Validates all entries first (no symlinks, no absolute paths, no `..`)
+- Stages extraction in the trash area (`$IDAUSR/.plugins-trash/&lt;name&gt;.staging-&lt;uuid&gt;`) for atomicity
+- Extracts all files under `subdirectory` in the archive, preserving relative structure
+- Atomically renames staging dir to `destination` via `os.rename()`
+- On failure, cleans up staging dir
+
+**For suites**: This function already extracts the full subtree under a plugin directory, including nested component subdirectories. No changes needed.
+
+### 4. Repo vs. non-repo install flows
+
+**Repo-based** (`plugin_spec` is a name like `"my-plugin"`):
+- Parses `plugin_spec` as a reference (`parse_plugin_reference`)
+- Resolves the repo to use (`repo_for_reference`)
+- Calls `plugin_repo.fetch_compatible_plugin_from_spec(bare_spec, platform, version, host=host)` which returns `(name, bytes)`
+- No multi-manifest check here
+- Calls `install_plugin_archive(buf, plugin_name)` or `upgrade_plugin_archive()`
+
+**Non-repo** (local dir, local zip, file://, GitHub URL, https://):
+- Fetches/reads the archive bytes
+- Enumerates all manifests via `get_metadatas_with_paths_from_plugin_archive(buf)`
+- Enforces `len(items) != 1` single-manifest constraint
+- Extracts `plugin_name` from the single manifest
+- Then calls `install_plugin_archive()` the same way
+
+### 5. Loose dependency flow (`src/hcli/lib/ida/plugin/dependencies.py`)
+
+After the main plugin is installed, `install_plugin` (line 364) checks `metadata.plugin.dependencies`. If non-empty, calls `_handle_install_dependencies()` which calls `install_dependencies()`:
+
+- Iterates each dependency spec (parsed via `parse_dependency_spec`)
+- For each: checks if already installed, handles version pins, fetches from the same `plugin_repo`, calls `install_plugin_archive()` or `upgrade_plugin_archive()`
+- Failures on individual deps don't abort the rest
+- Returns a `DependencyResult` with installed/skipped/upgraded/failed lists
+
+The `dependencies` field on `PluginMetadata` (line 488-506 of `__init__.py`) already exists with validation.
+
+### 6. Python (pip) dependency installation
+
+In `_install_plugin_archive()` (lines 772-793):
+- Calls `get_python_dependencies_from_plugin_archive()` to get pip deps from the manifest
+- Collects deps from ALL existing installed plugins to pass everything to pip at once (resolution consistency)
+- Calls `pip_install_packages(python_exe, all_python_dependencies, pip_options=pip_options)`
+
+**For suites**: Currently only collects deps from the main plugin. Component pip deps would need to be collected by walking the component tree. `get_python_dependencies_from_plugin_archive()` takes the metadata for one plugin, not the full archive.
+
+### 7. Trash-based rollback mechanism
+
+**Install**: `extract_zip_subdirectory_to()` stages in `$IDAUSR/.plugins-trash/&lt;name&gt;.staging-&lt;uuid&gt;`, then atomically renames to destination. On failure, staging is cleaned up. The destination either fully appears or doesn't exist.
+
+**Upgrade** (`upgrade_plugin_archive()`, lines 1111-1173):
+- `move_plugin_directory_to_trash(plugin_path, label=".rollback")` atomically moves existing install to trash
+- Calls `install_plugin_archive()` for the new version
+- On failure: removes partial new install, renames rollback copy back
+- On success: deletes rollback copy (best-effort)
+
+**Uninstall** (`uninstall_plugin()`, lines 1022-1057):
+- For symlinks: just `unlink()`
+- For dirs: `remove_plugin_directory()` which calls `move_plugin_directory_to_trash()` then `shutil.rmtree()`
+
+**Sweep** (`sweep_trash()`, lines 174-199): Called at start of install/uninstall/upgrade. Deletes anything in the trash directory.
+
+---
+
+### Key observations for `components` implementation:
+
+1. **`PluginMetadata` model** needs a new `components: list[str]` field (analogous to `dependencies`).
+
+2. **The five `len(items) != 1` checks** must be relaxed. For suite archives, there will be N+1 manifests (suite + components). The check should allow multiple manifests when the archive is a suite. Specifically: the CLI needs to pick the "root" manifest (the one at the shallowest depth or the one not referenced as a component by any other manifest in the archive).
+
+3. **`get_installed_plugin_records()`** (lines 299-339) only iterates `$IDAUSR/plugins/` at depth 1, so component subdirectories nested inside a suite directory are naturally hidden from the installed plugin list. No change needed.
+
+4. **`extract_zip_subdirectory_to()`** already extracts the full subtree, including nested dirs. Suites extract correctly as-is.
+
+5. **Python deps for suites**: The install path must walk the component tree and collect pip deps from all component manifests in addition to the suite manifest.
+
+6. **Name collision checking**: Needs new logic to walk installed suite component trees when checking if a name collides.
+
+7. **`pack_plugin_directory_to_zip()`** packs a directory recursively and preserves subdirectory structure, so packing a suite with component subdirectories works.
+
+8. **Status command**: `collect_status_report()` uses `get_installed_plugin_records()` which only sees top-level dirs. Needs new logic to read `components` field and show "(N components)" or expand them with `--show-components`.
+
+9. **Uninstall**: Currently just deletes the plugin directory. For suites, removing the directory removes all components (filesystem is truth). But needs to check if a requested uninstall target is a component (refuse) vs. a suite (cascade).
+
+10. **Upgrade**: `upgrade_plugin_archive()` does trash-and-replace of the whole directory, which naturally handles suite upgrades (dropped components disappear, new ones appear).</result>
+<usage><subagent_tokens>91630</subagent_tokens><tool_uses>15</tool_uses><duration_ms>108959</duration_ms></usage>
+</task-notification>
