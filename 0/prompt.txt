@@ -1,0 +1,1 @@
+Can you also add a test that tests this behavior? like demonstrate that this does in fact block network X both within the current process as well as for subprocesses such as pip that we might be invoking
