@@ -1,0 +1,5 @@
+definitely add text for 3 and 4.
+
+do A.
+
+use concise and direct wording, semi-informal, ASD-STE100 with reasonable compromises on jargon related to IDA, plugin manager, Python.
