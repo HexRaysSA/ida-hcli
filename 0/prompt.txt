@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>a92d6f77d6c80d7a6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/ec9aa125-1137-4e9f-9caa-136c762721fb/tasks/a92d6f77d6c80d7a6.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement status component display" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 3 status tests pass. Done.
+
+**Changes made to `src/hcli/commands/plugin/status.py`:**
+- Added import of `walk_component_tree_from_directory`
+- Added `ComponentInfo` model (name + version)
+- Added `components: list[ComponentInfo] | None = None` to `InstalledPluginStatusEntry`
+- Added `_collect_components()` helper that walks the component tree
+- Wired `components` into all 3 return paths of `_collect_installed_entry`
+- Updated `_render_status_row` to append `(N components)` to the status column
+- Updated `render_status_report_text` to accept `show_components` and render indented component rows
+- Added `--show-components` flag to the `get_plugin_status` command</result>
+<usage><subagent_tokens>143763</subagent_tokens><tool_uses>14</tool_uses><duration_ms>219292</duration_ms></usage>
+</task-notification>
