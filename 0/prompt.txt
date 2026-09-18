@@ -1,0 +1,26 @@
+<task-notification>
+<task-id>a1bf65d38a10803bf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/22f43f98-b18b-4f1f-97c4-db3b30190b62/tasks/a1bf65d38a10803bf.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit source for silent fallback patterns" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>`HCLI_IDAUSR` returns a `Path` that callers use for `$IDAUSR/venv`, `$IDAUSR/plugins`, etc. If the directory doesn't exist, the downstream operations (creating venv, listing plugins, etc.) will fail at the filesystem operation with clear errors. The `get_ida_user_dir` function is a "where is it?" lookup, not "does it exist?". A non-existent IDAUSR would create confusing output in `doctor` output (showing a path that doesn't exist), but the callers that write to it (create-environment, plugin install) would mkdir or fail with OS errors that mention the path. Not the same silent-swallow pattern.
+
+Let me check the `HCLI_KE_DOWNLOADS_DIR` case too. Already read it — line 103 uses it directly with `Path()`, no existence check, but it's only used to build paths where files will be written. The `resolve()` and `is_relative_to()` on line 112 would fail if the dir doesn't exist, but that would produce an OS error with the path. Not silent.
+
+Here's my audit summary:
+
+**Audit complete.** Beyond the two fixes already on the PR (dangling `$IDAPYTHON_VENV_EXECUTABLE` and dangling `$HCLI_CURRENT_IDA_PYTHON_EXE`), I found:
+
+1. **`$HCLI_CURRENT_IDA_INSTALL_DIR` / `$IDADIR`** (line 868-874 in `lib/ida/__init__.py`): No existence check when accepted. However, downstream callers like `find_current_ida_executable()` and `find_current_ida_platform()` validate with `.exists()` and raise `RuntimeError` with clear messages. Doctor's `collect_architecture_and_version` wraps these in try/except and reports the error. **Not the same bug class** — the errors surface promptly and aren't swallowed.
+
+2. **`$HCLI_IDAUSR`** (line 109-110): Returns Path without existence check. Callers use it for paths like `$IDAUSR/venv` and `$IDAUSR/plugins`. Filesystem operations on non-existent paths produce OS errors that name the path. **Not silent.**
+
+3. **`$HCLI_KE_DOWNLOADS_DIR`** (line 103 of `ke_url_handler.py`): Used to build download paths. Path traversal guard at line 112 would surface issues. **Not silent.**
+
+4. **`_derive_python_exe`**: Already validates each fallback step with `.is_file()` checks and raises when nothing works. **Correct.**
+
+No additional actionable findings — the two we fixed were the cases where a user-configured value was silently dropped, causing misleading diagnostic output. The remaining env vars either validate downstream with clear errors or are used for write-paths where filesystem errors surface immediately.</result>
+<usage><subagent_tokens>49336</subagent_tokens><tool_uses>41</tool_uses><duration_ms>246660</duration_ms></usage>
+</task-notification>
