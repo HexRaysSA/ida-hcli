@@ -1,0 +1,18 @@
+<task-notification>
+<task-id>a3365fbb8295efdf8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/ec9aa125-1137-4e9f-9caa-136c762721fb/tasks/a3365fbb8295efdf8.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement lint component validation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Done. Added component validation to lint.py:
+
+- `_check_components_in_directory()` — validates component tree on-disk using `walk_component_tree_from_directory`, checks for duplicate names, lints each component's metadata
+- `_check_components_in_archive()` — same for archives using `walk_component_tree_from_archive`
+- Called from `_lint_plugin_directory` and `_lint_plugin_archive` respectively
+
+Commit: `e5807efd` at `src/hcli/commands/plugin/lint.py`
+
+Note: mypy reports errors in `uninstall.py:34` and `test_plugin_components.py:459` related to `find_suite_for_component` returning `object` instead of a typed record — those are outside my scope (parent/other fork).</result>
+<usage><subagent_tokens>138278</subagent_tokens><tool_uses>8</tool_uses><duration_ms>117513</duration_ms></usage>
+</task-notification>
