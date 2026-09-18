@@ -1,0 +1,3 @@
+address #328 in a new worktree and PR.
+
+First, research the existing code base and then explain to me the current situation and how you'd propose to change it. Grill me on any design decisions or other concerns.
