@@ -1,0 +1,152 @@
+<task-notification>
+<task-id>abf67283f81e342c3</task-id>
+<tool-use-id>toolu_01X7XCHbYnw6Q3urh333eUM7</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/b5176059-4895-4ae6-b4aa-3493601bff33/tasks/abf67283f81e342c3.output</output-file>
+<status>completed</status>
+<summary>Agent "Research uninstall/upgrade/status flows" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have a thorough understanding of the codebase. Here is my complete report:
+
+---
+
+## Research Report: Plugin Uninstall, Upgrade, Status, Discovery, Trash, and Lint
+
+### 1. Uninstall Command
+
+**File:** `src/hcli/commands/plugin/uninstall.py` (lines 17–32)
+
+Thin CLI wrapper. Calls `sweep_trash()` then `uninstall_plugin_impl()` from `lib/ida/plugin/install.py`.
+
+**Core uninstall logic:** `src/hcli/lib/ida/plugin/install.py:uninstall_plugin()` (lines 1022–1058)
+
+- Tries `find_installed_plugin(name)` first. If that raises `PluginNotInstalledError`, falls back to `_uninstall_broken_plugin_directory(name)` which handles remnants from interrupted installs.
+- For a valid plugin:
+  - If the plugin path is a symlink (editable install): `path.unlink()` plus cleanup of the `.pth` file.
+  - Otherwise: `remove_plugin_directory(record.path)` (trash-then-delete pattern).
+- **No confirmation prompt** currently. No interactive/non-interactive distinction.
+- Python dependencies of the uninstalled plugin are intentionally **not pruned** (comment at line 1043–1046 explains why).
+
+### 2. Upgrade Command
+
+**File:** `src/hcli/commands/plugin/upgrade.py` (lines 44–173)
+
+- Calls `sweep_trash()` first.
+- Refuses file/URL sources — only repo-based upgrades.
+- Resolves the installed plugin via `find_installed_plugin(ref.name)`, then anchors the upgrade to the installed plugin's host/repo.
+- Fetches new version via `plugin_repo.fetch_compatible_plugin_from_spec()`.
+- Calls `upgrade_plugin_archive()` from `lib/ida/plugin/install.py`.
+
+**Core upgrade logic:** `src/hcli/lib/ida/plugin/install.py:upgrade_plugin_archive()` (lines 1111–1173)
+
+1. Validates the new archive metadata.
+2. Checks the plugin IS installed.
+3. `validate_can_upgrade_plugin()` checks platform, IDA version, Python deps.
+4. Compares versions — **refuses downgrades** (raises `PluginVersionDowngradeError`).
+5. `move_plugin_directory_to_trash(plugin_path, label=".rollback")` — atomically moves existing install to trash.
+6. Calls `install_plugin_archive()` to install the new version.
+7. If install fails: cleans up failed install, `os.rename(rollback_path, plugin_path)` to restore.
+8. If install succeeds: `shutil.rmtree(rollback_path)` to delete old version.
+
+### 3. Status Command
+
+**File:** `src/hcli/commands/plugin/status.py` (lines 1–287)
+
+**Models:** `InstalledPluginStatusEntry`, `NotFoundPluginStatusEntry`, `IncompatiblePluginStatusEntry`, `LegacyPluginStatusEntry`, all in a `StatusReport` Pydantic model.
+
+**Key flow** (`collect_status_report`, lines 149–198):
+- Calls `get_installed_plugin_records()` — the canonical plugin discovery.
+- For each record, optionally checks if upgrade is available via `plugin_repo.find_compatible_plugin_from_spec()`.
+- Also discovers "minimal" (incompatible) and "legacy" (single-file) plugins when showing all.
+- **No component or dependency awareness at all** — flat list of top-level plugins.
+
+**JSON output:** `StatusReport.model_dump(mode="json")` — a `plugins` array of entries.
+
+**Text output:** Rich table with columns: name, version, status (upgrade info or warnings).
+
+### 4. `get_installed_plugin_records()` — Plugin Discovery
+
+**File:** `src/hcli/lib/ida/plugin/install.py` (lines 299–339)
+
+This is the canonical installed-plugin discovery function:
+
+```python
+def get_installed_plugin_records() -&gt; list[InstalledPluginRecord]:
+```
+
+- Iterates **one level deep** in `get_plugins_directory()` (i.e. `$IDAUSR/plugins/`).
+- For each subdirectory:
+  - Must have `ida-plugin.json`
+  - Must pass `validate_metadata_in_plugin_directory()`
+  - Must have `metadata.plugin.name == plugin_path.name` (directory name matches plugin name)
+- Skips anything that fails validation.
+- Returns `list[InstalledPluginRecord]` where each record has `.path`, `.metadata`, `.name`, `.version`, `.host`.
+
+**Critical for dependencies design:** This function only looks one level deep, so nested components (suite subdirectories) are naturally excluded. But **dependencies installed as top-level plugins will appear here**. The function has no concept of "this plugin is a dependency of another".
+
+### 5. Trash-Based Rollback Mechanism
+
+**File:** `src/hcli/lib/ida/plugin/install.py` (lines 100–199)
+
+- **Trash directory:** `$IDAUSR/.plugins-trash` (constant `TRASH_DIR_NAME`). Lives **outside** `$IDAUSR/plugins/` so neither IDA nor hcli enumeration sees its contents.
+- `get_trash_directory()` (line 107): resolves `plugins_dir` symlinks first, so trash stays on same filesystem for atomic renames.
+- `move_plugin_directory_to_trash(path, label="")` (line 132): Atomically renames a plugin directory into trash with a UUID suffix. If files are locked (Windows DLL in use), `PluginInUseError` is raised.
+- `remove_plugin_directory(path)` (line 157): Move to trash, then `shutil.rmtree`. If rmtree fails, the plugin is logically removed; leftovers get swept later.
+- `sweep_trash()` (line 174): Best-effort cleanup of all trash entries. Called at the start of install/upgrade/uninstall commands.
+- **Staging during extraction** also uses the trash area (`extract_zip_subdirectory_to`, line 681): stages in `$IDAUSR/.plugins-trash/&lt;name&gt;.staging-&lt;uuid&gt;` then atomically renames to destination.
+- **Upgrade rollback** (line 1151): The old install is moved to trash with `.rollback` label. On failure, it's moved back. On success, the rollback copy is deleted.
+
+### 6. Lint Command
+
+**File:** `src/hcli/commands/plugin/lint.py` (lines 1–347)
+
+- Accepts a directory, .zip file, or HTTPS URL.
+- For directories: reads `ida-plugin.json`, validates via Pydantic, then validates entry point / logo paths exist, then runs metadata quality checks.
+- For archives: enumerates every `ida-plugin.json` in the zip, validates each.
+- **Metadata checks** (`_lint_metadata`, line 117): version format, idaVersions, description, categories, logoPath, keywords, license, authors/maintainers, unexpected keys.
+- **No validation of `dependencies` or `components` fields** — these don't exist in the schema yet.
+- The lint skips subcommand initialization in `__init__.py` line 96 (`ctx.invoked_subcommand in ("schema", ..., "lint")`).
+
+### 7. Install Command
+
+**File:** `src/hcli/commands/plugin/install.py` (lines 1–389)
+
+Five install paths (all converge on `install_plugin_archive` or `install_plugin_directory_editable`):
+1. Editable (`-e`): symlinks source dir
+2. Local directory (non-editable): `pack_plugin_directory_to_zip()` then archive install
+3. Local .zip file
+4. file:// URL
+5. GitHub URL / https:// URL
+6. Repository reference (default)
+
+**Single-manifest constraint** appears at lines 131, 140, 149, 167, 183: `if len(items) != 1: raise ValueError("plugin archive must contain a single plugin")`. The design doc says these must be relaxed for suite archives, and the repo-based install path (path 6) already skips this check.
+
+**Install library:** `src/hcli/lib/ida/plugin/install.py:_install_plugin_archive()` (line 741):
+- Gets metadata, validates archive, checks platform/version/deps
+- `extract_zip_subdirectory_to()` extracts only the matching plugin's subtree
+- Installs Python deps
+
+---
+
+### Key Adjacent Code
+
+- **`InstalledPluginRecord`** (line 279): frozen dataclass with `.path`, `.metadata`, `.name`, `.version`, `.host`. No field for relationship info (component-of, dependency-of).
+- **`PluginMetadata`** (line 358): The Pydantic model for `plugin` in `ida-plugin.json`. Currently has no `dependencies` or `components` fields.
+- **`IDAMetadataDescriptor`** (line 589): Top-level `ida-plugin.json` model. Contains `PluginMetadata`.
+- **`extract_zip_subdirectory_to()`** (line 681): Already extracts a subdirectory tree including nested subdirectories, which means suite component extraction would work.
+- **`get_metadatas_with_paths_from_plugin_archive()`** (plugin `__init__.py`, line 749): Enumerates every `ida-plugin.json` in a zip, which would find component manifests in a suite archive.
+
+### Existing Tests
+
+Test files in `tests/lib/`:
+- `test_plugin_install.py` — install/upgrade/uninstall
+- `test_plugin_records.py` — `get_installed_plugin_records`
+- `test_plugin_collisions.py` — name collision handling
+- `test_plugin.py` — metadata parsing, archive validation
+- `test_plugin_index.py` — archive indexing
+- `test_plugin_reference.py` — reference parsing
+- `test_plugin_settings.py` — config settings
+- `test_plugin_bundle.py` / `test_plugin_bundle_commands.py` — bundle repos
+- `test_plugin_pep723.py` — inline dependencies
+- `test_plugin_dependency_migration.py` — dependency migration</result>
+<usage><subagent_tokens>104303</subagent_tokens><tool_uses>16</tool_uses><duration_ms>85372</duration_ms></usage>
+</task-notification>
