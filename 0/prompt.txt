@@ -1,0 +1,116 @@
+<task-notification>
+<task-id>a123f322c57ef4e22</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/be143330-5c99-4ea7-b11b-35bdfadd042d/tasks/a123f322c57ef4e22.output</output-file>
+<status>completed</status>
+<summary>Agent "Find archive extraction logic in HCLI" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have a thorough understanding of the entire archive extraction flow. Here is my analysis:
+
+---
+
+## 1. How `install_plugin_archive()` works
+
+**File:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/install.py`
+
+The public entry point is `install_plugin_archive()` (line 802-808). It:
+
+1. Validates the archive is either a source or binary plugin archive via `is_source_plugin_archive()` / `is_binary_plugin_archive()`. If neither, raises `ValueError("Invalid plugin archive")`.
+2. Delegates to `_install_plugin_archive()` (line 741-799), which does the real work:
+   - Calls `get_metadata_from_plugin_archive(zip_data, name)` to find the `ida-plugin.json` for the named plugin inside the ZIP.
+   - Calls `validate_metadata_in_plugin_archive()` to verify entry points and logo paths exist in the archive.
+   - Finds the current IDA platform and version.
+   - Calls `validate_can_install_plugin()` which checks: plugin name validity, destination doesn't already exist (or if it does, whether it's broken), platform compatibility, IDA version compatibility, and Python dependency installability.
+   - Computes the destination path: `$IDAUSR/plugins/&lt;plugin-name&gt;`.
+   - Determines the subdirectory within the ZIP that contains the plugin by getting `metadata_path.parent` (the parent directory of `ida-plugin.json` inside the archive).
+   - Installs Python dependencies if any.
+   - Removes any stale `.pth` file from a previous editable install.
+   - Calls `extract_zip_subdirectory_to(zip_data, plugin_subdirectory, destination_path)` to extract.
+
+## 2. Multi-manifest validation
+
+**There is NO validation in `install_plugin_archive()` or `_install_plugin_archive()` that checks how many `ida-plugin.json` files exist in the archive.** These functions only search for a manifest matching the specific `name` parameter. If multiple manifests exist, they simply use the first one whose `metadata.plugin.name` matches.
+
+The multi-manifest check exists **only at the command level** in `src/hcli/commands/plugin/install.py`. Every source path (local directory, local ZIP, `file://`, GitHub URL, HTTPS URL) performs the check independently:
+
+```python
+items = list(get_metadatas_with_paths_from_plugin_archive(buf))
+if len(items) != 1:
+    raise ValueError("plugin archive must contain a single plugin for ...")
+```
+
+This appears at lines 131-133, 139-141, 148-150, 166-168, and 180-182. The error messages vary slightly by source type.
+
+**However, the repository-based install path (the `else` branch starting at line 185) does NOT perform this check.** When installing from a configured plugin repository, `plugin_repo.fetch_compatible_plugin_from_spec()` returns `(plugin_name, buf)` and the code proceeds directly without checking how many manifests the archive contains.
+
+The same single-manifest check also appears in `src/hcli/commands/plugin/bundle.py` at lines 81-86 for the bundle workflow.
+
+## 3. How extraction works
+
+**File:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/install.py`, function `extract_zip_subdirectory_to()` (line 681-738).
+
+The extraction is into a **named subdirectory** -- specifically `$IDAUSR/plugins/&lt;plugin-name&gt;`. The key details:
+
+- The `subdirectory` parameter indicates which directory inside the ZIP contains the plugin (the parent of where `ida-plugin.json` was found). If `ida-plugin.json` is at the archive root, `subdirectory` is `Path(".")` and the prefix becomes empty string `""`, meaning all entries are candidates.
+- If `ida-plugin.json` is inside e.g. `src-v2/ida-plugin.json`, then `subdirectory` is `Path("src-v2")` and only entries under `src-v2/` are extracted. The `src-v2/` prefix is stripped, so files land directly inside the destination.
+- Extraction uses a **staging directory** in a trash area (`$IDAUSR/.plugins-trash/&lt;name&gt;.staging-&lt;uuid&gt;`) on the same filesystem. All files are extracted there first, then the staging dir is atomically renamed to the final destination via `os.rename()`. This ensures the plugin directory appears all-at-once or not at all.
+- If anything fails, the staging directory is cleaned up (`shutil.rmtree`).
+
+**Filtering logic** (`should_extract_plugin_archive_path`, line 657-678):
+- Only entries under the plugin's subdirectory prefix are extracted.
+- The plugin directory entry itself is skipped.
+- `.git/` directories are skipped (to handle manually archived repos).
+
+**Security validation** (`validate_archive_entry`, line 629-654):
+- A full validation pass runs before any extraction begins (line 706-711).
+- Rejects symlinks (Unix symlink bit `0xA` in `external_attr`).
+- Rejects absolute paths.
+- Rejects path traversal (`..` in path components).
+
+## 4. Archive-related helpers
+
+All archive helpers live in `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/__init__.py`:
+
+- **`get_metadatas_with_paths_from_plugin_archive(zip_data, context)`** (line 749-772): Iterator that scans every entry in the ZIP for files named `ida-plugin.json`, attempts to parse each as `IDAMetadataDescriptor`, and yields `(Path, IDAMetadataDescriptor)` tuples for valid ones. Invalid manifests are silently skipped (logged at debug level).
+
+- **`get_metadata_from_plugin_archive(zip_data, name)`** (line 790-797): Iterates over all manifests (via the above) and returns the first one where `metadata.plugin.name == name`. Raises `ValueError` if no match.
+
+- **`get_metadata_path_from_plugin_archive(zip_data, name)`** (line 775-780): Same iteration, returns just the `Path`.
+
+- **`validate_metadata_in_plugin_archive(zip_data, metadata_path, metadata)`** (line 844-905): Validates paths in metadata are safe (no traversal), and that referenced files (entry point, logo) actually exist in the archive. For binary plugins, validates native entry points exist for all declared platforms.
+
+- **`is_plugin_archive(zip_data, name)`** (line 908-915): Boolean check combining metadata retrieval and validation.
+
+- **`is_source_plugin_archive(zip_data, name)`** / **`is_binary_plugin_archive(zip_data, name)`** (lines 918-958): Check if the archive is a valid source/binary plugin based on entry point extension.
+
+- **`does_plugin_path_exist_in_plugin_archive(zip_data, plugin_root, relative_path)`** (line 805-809): Checks existence of a path relative to the plugin root in the ZIP.
+
+## 5. No separate `archive.py` file
+
+There is no `src/hcli/lib/ida/plugin/archive.py`. All archive logic is split between:
+- `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/__init__.py` (manifest discovery, validation, metadata extraction)
+- `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/install.py` (ZIP extraction, path security, staging)
+
+## 6. Command-level handling
+
+**File:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/install.py`
+
+The `install_plugin` click command (line 87) handles multiple archive sources:
+
+| Source | Lines | Multi-manifest check? |
+|--------|-------|-----------------------|
+| `--editable` (local dir) | 106-119 | No (reads metadata directly from directory) |
+| Local dir (non-editable) | 122-133 | Yes: `len(items) != 1` raises ValueError |
+| Local `.zip` file | 136-141 | Yes: `len(items) != 1` raises ValueError |
+| `file://` URI | 144-151 | Yes: `len(items) != 1` raises ValueError |
+| GitHub direct URL | 153-169 | Yes: `len(items) != 1` raises ValueError |
+| `https://` URL | 171-183 | Yes: `len(items) != 1` raises ValueError |
+| Repository reference | 185-206 | **No check** -- trusts the repo to return a single-plugin archive |
+
+The `plugin_name` extracted in each branch is then passed to `install_plugin_archive(buf, plugin_name)` or `upgrade_plugin_archive(buf, plugin_name)`. Since `_install_plugin_archive` looks up metadata by name, a multi-manifest archive would silently work as long as the target name is found -- only the named plugin's subtree gets extracted.
+
+## Summary
+
+The archive extraction pipeline works as follows: find `ida-plugin.json` by plugin name inside the ZIP, determine its parent directory as the plugin subtree root, validate security (no symlinks/traversal/absolute paths), extract that subtree into a staging directory with the prefix stripped, then atomically rename the staging directory to `$IDAUSR/plugins/&lt;plugin-name&gt;`. The single-manifest constraint is enforced at the CLI command layer for direct installs (local files, URLs, GitHub) but is **not enforced** for repository-based installs, nor in the library-level `install_plugin_archive()` function itself.</result>
+<usage><subagent_tokens>65680</subagent_tokens><tool_uses>11</tool_uses><duration_ms>80561</duration_ms></usage>
+</task-notification>
