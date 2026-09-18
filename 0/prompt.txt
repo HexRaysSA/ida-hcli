@@ -1,0 +1,5 @@
+1. yes, it might register global menus, icons, etc. it is not useless.
+2. acceptable, because we can use plugin flags to not show them there
+3. globally unique plugin names
+4. not at this time. use nop.py
+5. dont update the indexer at this time. tight bundles will probably be constructed manually and added only to the private plugin repo, where the indexer is not used verbatim.
