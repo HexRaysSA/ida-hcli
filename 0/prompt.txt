@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bszxxrtuh</task-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/a97345d5-5cdf-433b-8761-dc59bd737c86/tasks/bszxxrtuh.output</output-file>
+<status>killed</status>
+<summary>Background command "plannotator annotate docs/plans/current-ida-registration.md" was stopped</summary>
+</task-notification>
