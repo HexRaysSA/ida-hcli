@@ -1,0 +1,3 @@
+read /Users/user/Obsidian/hex-rays/hcli/opinionated IDAPython setup.md
+
+help me find all the relevant issues in this project's issue tracker. anything related to Python versions, deps, installation, configuration, etc. list them in the markdown file, like "[#123](https://...): title of issue"
