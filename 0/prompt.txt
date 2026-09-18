@@ -1,0 +1,17 @@
+<task-notification>
+<task-id>a6862c665d2c2d53d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/099ceea2-439b-4b7d-80c8-2cfb47ac298d/tasks/a6862c665d2c2d53d.output</output-file>
+<status>completed</status>
+<summary>Agent "Read closed GitHub issues" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 18 closed issues have been read and summarized to `/tmp/closed-issues.md`. Each entry captures the problem, error messages, platform, root cause, and resolution. I also read and captured context from the 8 open issues (#288, #275, #291, #265, #144, #196, #108, #260).
+
+Key patterns across the issues:
+- **Python executable detection** is the single biggest category — Windows Store shim, `sys.executable` returning `idat.exe`, PATH fallback, venv inheritance all cause HCLI to find the wrong Python
+- **Externally-managed environments** (PEP 668) block pip installs on modern Linux/macOS when users don't use a venv
+- **venv awareness gap** — HCLI didn't understand `IDAPYTHON_VENV_EXECUTABLE`, `idapythonrc.py` activation, or idapyswitch/venv version mismatches
+- **Performance** — probing IDA to find Python takes ~3-5 seconds, unacceptable for MCP use
+- **IDA Home/Free** lacks `idat`, blocking plugin operations entirely</result>
+<usage><subagent_tokens>77195</subagent_tokens><tool_uses>23</tool_uses><duration_ms>126414</duration_ms></usage>
+</task-notification>
