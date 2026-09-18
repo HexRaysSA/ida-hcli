@@ -1,0 +1,50 @@
+<task-notification>
+<task-id>a36aa905e8d1d7c23</task-id>
+<tool-use-id>toolu_01BTnrnR4foeXEcUncqT5qqm</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/22f43f98-b18b-4f1f-97c4-db3b30190b62/tasks/a36aa905e8d1d7c23.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit check_python_environment completeness" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have the full picture. Let me trace through adversarial state combinations.
+
+**Adversarial case 1: venv-exe-not-found + no-venv + both use _render_create_environment_hint**
+
+State: `idapython_venv_executable=/gone/bin/python, idapython_venv_executable_exists=False, python_exe_exists=True, venv_root=None, source="derived from idat probe"`
+
+Findings: venv-exe-not-found, then no-venv. Both have `fix_hint=_render_create_environment_hint(state)` which says "Run create-environment... Or do it yourself: uv venv... export IDAPYTHON_VENV_EXECUTABLE=...". The fix hints are identical and both tell you to set IDAPYTHON_VENV_EXECUTABLE — but the venv-exe-not-found detail says the variable IS already set. The hint should say "recreate the environment or update the variable" rather than "set" it. However, `create-environment` does handle this (it overwrites/recreates), so the shared hint is technically correct albeit slightly misleading.
+
+**Adversarial case 2: python-exe-not-found without early return + no-venv + no-pip**
+
+State: `python_exe_exists=False, source="derived from idat probe", venv_root=None, pip_available=False`
+
+Findings: python-exe-not-found, no-venv, no-pip. The no-pip fix_hint says `Install pip with {exe} -m ensurepip --upgrade` where exe is a path that doesn't exist. This is confusing — the user would try to run a nonexistent binary. **This is a real issue.** The no-pip and no-venv checks should arguably be suppressed when the interpreter doesn't exist (same reasoning as the HCLI_CURRENT_IDA_PYTHON_EXE early return).
+
+**Adversarial case 3: venv-exe-not-found + idapythonrc-venv**
+
+State: `idapython_venv_executable=/gone/bin/python, idapython_venv_executable_exists=False, python_exe_exists=True, venv_root=None, idapythonrc_activates_venv=True, idapythonrc_path=some_path`
+
+Findings: venv-exe-not-found, no-venv, idapythonrc-venv. The idapythonrc-venv fix says "Set $IDAPYTHON_VENV_EXECUTABLE to the virtualenv's interpreter." But venv-exe-not-found just said the variable IS set but the target is gone. The hint should acknowledge the variable exists and suggest fixing the target, not "setting" it.
+
+**Adversarial case 4: missing-interpreter pattern vs description**
+
+State: `python_exe_exists=False, source="derived from idat probe"`
+
+Pattern: missing-interpreter, description says "No checks can run until this is corrected." But when source != "$HCLI_CURRENT_IDA_PYTHON_EXE", checks DO still run (no early return). **The pattern description contradicts the actual behavior.** This text is only accurate for the HCLI override case.
+
+**Adversarial case 5: uv_ephemeral checked before python_exe_exists**
+
+State: `uv_ephemeral=True, python_exe_exists=False`
+
+In check_python_environment, uv-ephemeral fires first. In identify_setup_pattern, uv-ephemeral returns before missing-interpreter is checked. This means a non-existent interpreter in a uv cache overlay shows as "Temporary uv environment" instead of "Missing interpreter." This is probably fine (uv-ephemeral is more specific), but in the check function, the uv-ephemeral finding's fix_hint mentions "set $IDAPYTHON_VENV_EXECUTABLE to IDA's real virtualenv" — which makes sense even though the exe doesn't exist.
+
+---
+
+**Summary of real issues found:**
+
+1. **(Medium) Adversarial case 2:** When `python_exe_exists=False` and `source != "$HCLI_CURRENT_IDA_PYTHON_EXE"`, downstream findings like no-pip suggest running the nonexistent interpreter (`{exe} -m ensurepip`). The early return should probably apply more broadly, or no-pip/no-venv should be gated on `python_exe_exists`.
+
+2. **(Low) Adversarial case 4:** The `missing-interpreter` pattern description says "No checks can run" but checks do run for probe-derived sources. The description is inaccurate.
+
+3. **(Low) Adversarial case 3:** The idapythonrc-venv fix hint says "Set $IDAPYTHON_VENV_EXECUTABLE" when the variable is already set (but dangling). Not critically wrong since "set" can mean "set to a correct value," but could confuse users.</result>
+<usage><subagent_tokens>158423</subagent_tokens><tool_uses>4</tool_uses><duration_ms>35985</duration_ms></usage>
+</task-notification>
