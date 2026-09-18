@@ -1,0 +1,3 @@
+yes, show all references to IDAPython and whatever configuration is/nt included there.
+
+also, move the proposed solution above the "challenges", because this will end up more like a design/proposal document
