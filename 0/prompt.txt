@@ -1,0 +1,4 @@
+commit the doc changes on a new branch.
+commit the dockerfile changes next.
+then update the GHA config to use the new setup.
+create PR and babysit CI.
