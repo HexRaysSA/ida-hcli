@@ -1,0 +1,2 @@
+<local-command-stderr>Shell command failed for pattern "!`plannotator annotate /Users/user/Obsidian/hex-rays/hcli/Implementation Plan - IDAPython Environment Consistency.md`": [stderr]
+File not found: /Users/user/Obsidian/hex-rays/hcli/Implementation</local-command-stderr>
