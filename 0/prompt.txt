@@ -1,0 +1,87 @@
+<task-notification>
+<task-id>a538bfad05db3c9ee</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/1d05fe0d-ac68-4996-8371-62cfdf77ddb2/tasks/a538bfad05db3c9ee.output</output-file>
+<status>completed</status>
+<summary>Agent "Find create-environment code" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here is a complete summary of what I found.
+
+---
+
+## The `create-environment` Command
+
+### Command entry point
+
+**File:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/ida/python/create_environment.py`
+
+This is the Click command definition. The constant `ENV_VAR = "IDAPYTHON_VENV_EXECUTABLE"` is defined at line 37. The command is registered as `create-environment` (via Click's `@click.command()` at line 252).
+
+### What it does when setting up the venv
+
+The core logic lives in `run_create_environment()` (line 150). It performs these steps:
+
+1. **Determine the Python version** (line 168-173): Calls `determine_target_python_version()` which probes IDA via `idat` to discover what Python version IDA uses. Falls back to `--python-version` if the probe fails.
+
+2. **Choose the target directory** (line 175-181): Defaults to `$IDAUSR/venv` (via `get_recommended_venv_dir()`). Can be overridden with `--path`.
+
+3. **Inspect the target** (line 186-187): Calls `inspect_target()` to classify what already exists at the path (`missing`, `healthy-venv`, `wrong-version-venv`, `broken-venv`, `not-a-venv`).
+
+4. **Handle existing healthy venv** (line 191-197): If a healthy venv already exists, it reuses it (no creation).
+
+5. **Create the venv when missing** (line 199-221): Looks for the registered Python exe from the idat probe, then checks for `uv`, then looks for a matching Python on PATH. Calls `plan_virtual_environment()` to choose between `uv venv --seed` or `python -m venv`, then `create_virtual_environment()` to execute it. If `venv` (not `uv`) is used, it also runs `ensurepip --upgrade`.
+
+6. **Configure `IDAPYTHON_VENV_EXECUTABLE`** (line 225-237): This is the key part. After creating the venv, the code builds a set-command via `render_set_env_var_command()` and then optionally persists it:
+
+### How `IDAPYTHON_VENV_EXECUTABLE` gets configured
+
+The function `configure_env_var()` (line 88-139) handles this:
+
+- **On Windows** (line 103-111): Shows a `setx IDAPYTHON_VENV_EXECUTABLE "&lt;path&gt;"` command. If interactive, asks the user to confirm and runs `set_windows_user_env_var()` which calls `setx`.
+
+- **On POSIX** (line 113-139): Detects the user's shell (bash/zsh/fish/sh), determines the profile file (`.zshrc`, `.bashrc`, `.config/fish/config.fish`, `.profile`), and renders the appropriate export line (`export IDAPYTHON_VENV_EXECUTABLE="&lt;path&gt;"` or `set -gx` for fish). If interactive, asks the user to confirm appending to the profile. On macOS, also prints a note about `launchctl setenv` for Finder/Dock-launched IDA.
+
+- It checks whether the variable is **already correctly set** (line 229-231) and skips configuration if so.
+
+- If `--no-configure` is passed, it skips the configuration step entirely and just prints the command the user should run.
+
+### Where `IDAPYTHON_VENV_EXECUTABLE` is read/checked
+
+The env var is read in several places:
+
+1. **`/Users/user/code/hex-rays/ida-hcli/src/hcli/env.py`** (line 79):
+   ```python
+   IDAPYTHON_VENV_EXECUTABLE: str | None = _env_optional("IDAPYTHON_VENV_EXECUTABLE")
+   ```
+   This reads it from the process environment at import time. Empty strings are treated as unset.
+
+2. **`/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/__init__.py`** -- `resolve_current_python()` (line 247-275): This is the main resolution function. The precedence order is:
+   - `$HCLI_CURRENT_IDA_PYTHON_EXE` (highest priority override)
+   - `$IDAPYTHON_VENV_EXECUTABLE` -- if set and the file exists on disk, it is used directly **without launching idat**
+   - Fallback: probe IDA via `idat` and derive the executable from the probe result
+
+3. **`/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/__init__.py`** -- `_derive_python_exe()` (line 113-199): When the idat probe runs, the probe script (line 25-57) also reads `IDAPYTHON_VENV_EXECUTABLE` from inside IDA's Python and returns it as `idapython_venv_executable` in the `IdatProbe` model. The derivation logic uses this to validate/select the correct venv interpreter. Specifically:
+   - Lines 126-127: extracts the venv root from the env var value
+   - Lines 146-147: prefers prefix candidates that match the requested venv root
+   - Lines 160-162: accepts `sys.executable` when it matches the requested venv root
+   - Lines 168-169: accepts `sys.executable` when it exactly matches the env var path
+   - Lines 175-183: On IDA 9.4+ macOS (where `sys.executable` may be the idat binary), trusts the env var directly if it points to an existing, valid venv python
+
+4. **`/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/environment.py`** -- `collect_python_environment_state()` (line 232-300): Reads `ENV.IDAPYTHON_VENV_EXECUTABLE` (line 270-272) and records both its value and whether it exists on disk, for the health check system.
+
+5. **`/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/environment.py`** -- `check_python_environment()` (line 334-530): Multiple findings reference the env var:
+   - `venv-exe-not-found` (line 363-379): error when the var is set but the file doesn't exist
+   - `no-venv-exe-var` (line 484-507): warning when a venv is active but the var doesn't point to it
+   - Various setup patterns reference it (e.g., `dangling-venv-exe`, `shell-activated-venv`, `properly-configured`)
+
+6. **`/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/environment.py`** -- `collect_python_environment()` (line 946-997): Also reads the env var directly from `os.environ` (line 957) as a fallback alongside `ENV.IDAPYTHON_VENV_EXECUTABLE`.
+
+### Supporting files
+
+- **Venv creation logic:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/venv_create.py` -- Contains `inspect_target`, `determine_target_python_version`, `plan_virtual_environment`, `create_virtual_environment`, `append_to_shell_profile`, `set_windows_user_env_var`, `detect_shell`, `get_shell_profile_path`, `render_profile_line`.
+
+- **Environment health checks:** `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/python/environment.py` -- Contains `check_python_environment`, `collect_python_environment_state`, `venv_executable_points_at`, and the environment report/doctor infrastructure.
+
+- **Tests:** `/Users/user/code/hex-rays/ida-hcli/tests/lib/test_python_venv_create.py`, `/Users/user/code/hex-rays/ida-hcli/tests/lib/test_python_environment.py`, `/Users/user/code/hex-rays/ida-hcli/tests/lib/test_python_environment_commands.py`, `/Users/user/code/hex-rays/ida-hcli/tests/lib/test_ida_python.py`.</result>
+<usage><subagent_tokens>52837</subagent_tokens><tool_uses>7</tool_uses><duration_ms>54034</duration_ms></usage>
+</task-notification>
