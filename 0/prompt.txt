@@ -1,0 +1,112 @@
+<task-notification>
+<task-id>a2083343a313e3621</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/b5176059-4895-4ae6-b4aa-3493601bff33/tasks/a2083343a313e3621.output</output-file>
+<status>completed</status>
+<summary>Agent "Review docs for dependency coverage" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have a complete picture. Here's the report:
+
+---
+
+## Files ranked by how much updating they need
+
+### 1. `docs/reference/packaging-your-existing-plugin.md` — NEEDS UPDATE (moderate)
+
+The "new optional fields" list at line 135-139 enumerates `pythonDependencies`, `keywords`, `platforms`, `license`, `settings` but **omits `dependencies`**. The parallel section in `plugin-packaging-and-format.md` already has it (line 96), so this file is inconsistent.
+
+**Specific change:** Add `.plugin.dependencies` to the optional fields list after line 139, similar to line 96 in the other file:
+```
+  - `.plugin.dependencies` is a list of plugins to install alongside this one (e.g., `["dep-a", "dep-b==1.0.0"]`)
+```
+
+### 2. `docs/user-guide/plugin-manager.md` — NEEDS UPDATE (moderate)
+
+This is the primary user-facing doc for install/upgrade/uninstall. It has no mention of dependency behavior at all. Three areas need updates:
+
+- **After the Quickstart section (around line 42-43):** The install example `hcli plugin install hint-calls` → `Installed plugin: hint-calls==0.1.3` doesn't show dependency output. This could optionally show dependency messages, but at minimum the user guide should mention that plugins can declare dependencies somewhere.
+
+- **In the "As a user of IDA..." section (lines 105-128):** The command list and descriptions should note that `install` and `upgrade` handle dependencies automatically, and `uninstall` prompts about dependency removal. Specifically:
+  - After the install/upgrade command list, add a paragraph explaining that if a plugin declares dependencies, they are fetched and installed automatically from the same repository. On upgrade, new dependencies are installed and dropped ones are reported. On uninstall, you're prompted to remove them.
+  - Mention the `--yes` flag on `uninstall` for scripted/CI use.
+
+- **In the "As a plugin author..." section (lines 205-214):** Add a reference to the `dependencies` field as a way to declare loose plugin dependencies.
+
+### 3. `docs/reference/plugins-AGENT.md` — NEEDS UPDATE (small)
+
+This is an AI-agent instruction template for packaging plugins. The `ida-plugin.json` template at lines 10-65 lists all known fields but **does not include `dependencies`**. It should.
+
+**Specific change:** Add to the JSON template (after `settings`, around line 43):
+```json
+  "dependencies": [
+    // other plugins that should be installed alongside this one.
+    // bare name, name==version, or name@host with optional version pin.
+    "dep-plugin-name",
+  ],
+```
+
+### 4. `docs/reference/plugin-packaging-and-format.md` — ALREADY UPDATED (no change needed)
+
+Line 96 already has:
+```
+  - `.plugin.dependencies` is a list of plugins to install alongside this one (e.g., `["dep-a", "dep-b==1.0.0"]`)
+```
+
+The JSON schema reference section is also fine. **No changes needed.**
+
+### 5. `docs/schemas/ida-plugin.json` — ALREADY UPDATED (no change needed)
+
+Lines 278-291 already include the `dependencies` field with description and examples. **No changes needed.**
+
+### 6. `docs/reference/plugin-repository-architecture.md` — NO CHANGE NEEDED
+
+This doc describes infrastructure (indexer, repos, name identity). Dependencies don't change the repo architecture. The "IDA Plugin Manager" section at line 32 mentions install/upgrade/uninstall in passing but not at a level where dependency behavior needs to be spelled out. **No changes needed.**
+
+### 7. `docs/reference/plugin-bundle-spec.md` — MIGHT NEED UPDATE (small, debatable)
+
+The bundle spec describes collecting `pythonDependencies` (line 215) during bundle creation. The question is whether `bundle create` should also pull in a plugin's declared `dependencies` (other plugin archives). Currently the bundle spec has no mention of `dependencies`. This is arguably correct for v1 since bundle creation takes explicit plugin specs as arguments. But it might be worth noting that if a plugin declares `dependencies`, the bundle creator should include those too. This is a **design question** — if bundle create doesn't auto-pull deps, then this file needs no change. If it should, that's a separate feature.
+
+**Recommendation:** No change now. The bundle spec is about explicit plugin lists. Dependency auto-resolution in bundle creation can be a follow-up.
+
+### 8. `docs/getting-started/quick-start.md` — NO CHANGE NEEDED
+
+The quick-start shows high-level usage examples. The install/search examples don't mention advanced features like settings either. Dependencies would be noise here. **No changes needed.**
+
+### 9. `docs/how-to/test-plugin-before-publishing.md` — MINOR UPDATE (small)
+
+The "Pre-Publishing Checklist" at lines 325-365 lists metadata fields to verify but doesn't mention `dependencies`. Since this is an optional field and most plugin authors won't use it, this is low priority. However, the "Metadata Completeness" checklist could include it for completeness.
+
+**Optional change:** Add to the checklist around line 338:
+```
+- [ ] `dependencies` lists companion plugins (if applicable)
+```
+
+### 10. `docs/changelog.md` — NEEDS UPDATE (small)
+
+The changelog should document the new feature. It goes under a new version entry (or under `[0.24.0]` if that's still the current unreleased version, or under a new section).
+
+**Specific change:** Add an entry documenting:
+- Added `dependencies` field to `ida-plugin.json` for declaring loose plugin dependencies
+- `install` and `upgrade` auto-fetch declared dependencies
+- `uninstall` prompts to remove dependency plugins (`--yes` for scripted use)
+
+---
+
+## Summary (priority order)
+
+| Priority | File | Change size |
+|----------|------|-------------|
+| 1 | `docs/reference/packaging-your-existing-plugin.md` | Add `dependencies` to optional fields list |
+| 2 | `docs/user-guide/plugin-manager.md` | Add dependency behavior to install/upgrade/uninstall sections |
+| 3 | `docs/reference/plugins-AGENT.md` | Add `dependencies` to JSON template |
+| 4 | `docs/how-to/test-plugin-before-publishing.md` | Add dependencies to checklist (optional) |
+| 5 | `docs/changelog.md` | Add changelog entry |
+| — | `docs/reference/plugin-packaging-and-format.md` | Already done |
+| — | `docs/schemas/ida-plugin.json` | Already done |
+| — | `docs/reference/plugin-repository-architecture.md` | No change needed |
+| — | `docs/reference/plugin-bundle-spec.md` | No change needed (bundle dep auto-pull is a separate feature) |
+| — | `docs/getting-started/quick-start.md` | No change needed |
+
+No `docs/plans/spec.md` or `docs/plans/design.md` exist in this repo.</result>
+<usage><subagent_tokens>93637</subagent_tokens><tool_uses>14</tool_uses><duration_ms>60637</duration_ms></usage>
+</task-notification>
