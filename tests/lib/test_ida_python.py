@@ -494,8 +494,11 @@ def test_get_virtual_env_version_prefers_the_interpreter_over_pyvenv_cfg(tmp_pat
     venv = tmp_path / "venv"
     _write_fake_venv(venv, "9.9.9")
 
-    # replace the unrunnable stub with the interpreter running this test,
-    # so probing succeeds and disagrees with the stale pyvenv.cfg
+    # Point home at the real interpreter's directory so the symlinked
+    # Python can find its standard library (required since Python 3.13).
+    real_home = Path(sys.executable).resolve().parent
+    (venv / "pyvenv.cfg").write_text(f"home = {real_home}\nversion = 9.9.9\n", encoding="utf-8")
+
     python = _venv_launcher_for_ida(venv)
     python.unlink()
     python.symlink_to(sys.executable)
