@@ -1,0 +1,3 @@
+first, explain how you'd describe this style that we're now using. how would i give this to someone else to work with?
+
+ok now review the rest of the documentation site and propose which pages should most likely be re-written with this style.
