@@ -1,0 +1,5 @@
+i need some help re-writing user facing text to sound less sloppy.
+
+@docs/reference/ida-detection.md 
+
+use concise and direct wording, semi-informal, ASD-STE100 with compromises on jargon related to IDA, plugin manager, Python
