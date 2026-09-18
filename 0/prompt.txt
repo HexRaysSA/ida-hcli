@@ -1,0 +1,102 @@
+<task-notification>
+<task-id>ad34281fc94da5667</task-id>
+<tool-use-id>toolu_01Eb5hgQV8aT9zz4JTpjz12t</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/f45a6fa4-e9bc-42fc-94fc-8e8f17c19f33/tasks/ad34281fc94da5667.output</output-file>
+<status>completed</status>
+<summary>Agent "Find Python env check code and docs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have a complete picture. Here is my report:
+
+---
+
+## Summary
+
+**`--no-python-environment-check` exists and is defined in two places as a Click group-level option:**
+
+1. **`src/hcli/commands/plugin/__init__.py:63-68`** — on the `plugin` group  
+2. **`src/hcli/commands/ida/python/__init__.py:8-10`** — on the `ida python` group
+
+Both store the flag in `ctx.obj["no_python_environment_check"]`. It is consumed in:
+
+- **`src/hcli/commands/plugin/install.py:94`** — `check_environment = not ctx.obj.get("no_python_environment_check", False)`  
+- **`src/hcli/commands/plugin/upgrade.py:45`** — same pattern  
+- **`src/hcli/commands/ida/python/_common.py:14-18`** — `is_python_environment_check_disabled()`, used by `exec`, `run-script`, `find-script` to skip `warn_python_environment()`
+
+---
+
+## Where warnings/errors are shown to users (and where the flag is NOT mentioned):
+
+### 1. `format_environment_warnings()` — `src/hcli/lib/ida/python/environment.py:537-554`
+This renders the compact warning/error block shown on stderr during `plugin install`, `plugin upgrade`, `exec`, `run-script`, `find-script`. The final line says:
+&gt; `Run 'hcli ida python doctor' for details and fixes.`
+
+**The flag `--no-python-environment-check` is NOT mentioned here.** This is a key place to add it.
+
+### 2. `format_environment_findings_plain()` — `src/hcli/lib/ida/python/environment.py:557-563`
+Plain text variant used in `PythonEnvironmentError` exception messages (shown when errors block an install). Same footer:
+&gt; `Run 'hcli ida python doctor' for details and fixes.`
+
+**The flag is NOT mentioned here either.** This is where `plugin install` shows the error before aborting.
+
+### 3. `validate_python_environment()` — `src/hcli/lib/ida/python/environment.py:577-597`
+Called by `resolve_python_for_dependencies()` during install/upgrade. If it finds errors, it raises `PythonEnvironmentError`, which wraps `format_environment_findings_plain()`.
+
+### 4. `warn_python_environment()` — `src/hcli/lib/ida/python/environment.py:600-615`
+Called by `_common.py:get_python_exe()` for `exec`/`run-script`/`find-script`. Prints warnings on stderr but never blocks. **No mention of the flag.**
+
+### 5. `render_doctor_report_text()` — `src/hcli/commands/ida/python/doctor.py:228-291`
+The `doctor` command itself renders findings. **Does not mention the flag.** This is reasonable since `doctor` is the place you go to *understand* the findings, but it could still mention the flag in the context of "if you want to proceed anyway."
+
+---
+
+## Website/documentation that should mention the flag:
+
+### 1. `docs/user-guide/ida-python-environment.md:76`
+**Already mentions it!** This is the only place:
+&gt; "To skip the check, pass `--no-python-environment-check` to the `plugin` or `ida python` group, for example `hcli plugin --no-python-environment-check install &lt;name&gt;`."
+
+### 2. `docs/user-guide/plugin-manager.md:53`
+Says: "If something is wrong, the install stops and points you to `hcli ida python doctor` for details."
+**Does NOT mention `--no-python-environment-check`.**
+
+### 3. `docs/reference/environment-variables.md` — no mention of the flag.
+
+### 4. `docs/advanced/ci-cd-integration.md` — no mention.
+
+### 5. `docs/advanced/docker/README.md` — no mention (though Docker users may benefit from knowing about it).
+
+---
+
+## Where to add mentions of `--no-python-environment-check`:
+
+### In HCLI output (code changes):
+
+**A. `format_environment_warnings()` at `environment.py:553`** — After the `Run 'hcli ida python doctor'` line, add a line like:
+&gt; "To proceed anyway, pass `--no-python-environment-check` to the command group."
+
+**But only for warnings-only situations or when the setup could plausibly work.** The function already distinguishes errors vs warnings. For error-level findings, the flag should still be mentioned, since the user asked for it to be surfaced when the environment "could work" — and many error findings (like "no-venv") still produce a working setup for some users (e.g., system Python on older Linux distros).
+
+**B. `format_environment_findings_plain()` at `environment.py:563`** — Same addition for the plain-text variant (shown in exception messages during `plugin install` errors).
+
+**C. `doctor` command at `doctor.py:266-276`** — After rendering findings, could add a note like "To install plugins despite these findings, pass `--no-python-environment-check` to `hcli plugin install`."
+
+### In documentation (docs changes):
+
+**D. `docs/user-guide/plugin-manager.md:53`** — Add mention of the flag alongside the existing `doctor` reference.
+
+**E. `docs/user-guide/ida-python-environment.md:76`** — Already covered. No changes needed.
+
+---
+
+## Recent PRs that made the setup more opinionated:
+
+Starting from commit `f4c572fe` ("Add IDA Python environment health check, doctor, and create-environment"), followed by:
+- `69a6ad61` — Detect when IDAPYTHON_VENV_EXECUTABLE points to a missing file
+- `d1c3e040` — Detect when HCLI_CURRENT_IDA_PYTHON_EXE points to a missing interpreter
+- `e2317abf` — Only return early from python-exe-not-found for explicit user overrides
+- `819d68ec` — Suppress no-venv and no-pip findings when the interpreter is missing
+- `b51f9a20` — Document --create-python-environment across the docs site
+- `43af2b6c` — Use --create-python-environment in the example Dockerfile
+- `ece97dff` — Add --create-python-environment to CI install steps</result>
+<usage><subagent_tokens>70482</subagent_tokens><tool_uses>24</tool_uses><duration_ms>146319</duration_ms></usage>
+</task-notification>
