@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bf9b1qqej</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/e5d0985e-8f1a-49c8-b206-e6cdc971f3f1/tasks/bf9b1qqej.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch CI checks until they complete" completed (exit code 0)</summary>
+</task-notification>
