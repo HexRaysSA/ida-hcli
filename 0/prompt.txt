@@ -1,0 +1,3 @@
+pass --no-python-environment-check to the command group.
+
+I'm not sure that users will know what a command group is. Can we use different wording and or maybe show an example of what this means
