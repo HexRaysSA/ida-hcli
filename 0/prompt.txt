@@ -1,0 +1,6 @@
+1. this is already a known problem. won't fix here.
+2. good
+3. ack. the indexer must be handled specially. fine.
+4. thats fine
+
+update the design document.
