@@ -1,0 +1,1 @@
+ok, now go read all those issues, the referenced files, and the skill. then create a new markdown file that is comprehensive and complete, explaining the sorts of problems people have, how they manifest, the source of the problem, and how the proposed recommendatiosn address this.
