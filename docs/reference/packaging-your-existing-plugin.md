@@ -83,7 +83,7 @@ and a more complete `ida-plugin.json` looks like:
       "windows-x86_64",
       "linux-x86_64",
       "macos-x86_64",
-      "macos-aarch64",
+      "macos-aarch64"
     ],
     "description": "A lightweight terminal integration for IDA Pro that lets you open a fully functional terminal within the IDA GUI.\nQuickly access shell commands, scripts, or tooling without leaving your reversing environment.",
     "license": "MIT",
@@ -94,7 +94,7 @@ and a more complete `ida-plugin.json` looks like:
     "keywords": [
       "terminal",
       "shell",
-      "cli",
+      "cli"
     ],
     "pythonDependencies": [
       "pydantic>=2.12"
@@ -117,7 +117,7 @@ and a more complete `ida-plugin.json` looks like:
         "required": true,
         "default": "darcula",
         "name": "color theme",
-        "documentation": "the color theme name, picked from https://windowsterminalthemes.dev/",
+        "documentation": "the color theme name, picked from https://windowsterminalthemes.dev/"
       }
     ]
   }
