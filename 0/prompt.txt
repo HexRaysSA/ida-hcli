@@ -1,0 +1,119 @@
+<task-notification>
+<task-id>a414f275c2f96642d</task-id>
+<tool-use-id>toolu_0167R5tpDKAzybU6GUC7d7kj</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/ec9aa125-1137-4e9f-9caa-136c762721fb/tasks/a414f275c2f96642d.output</output-file>
+<status>completed</status>
+<summary>Agent "Research upgrade/uninstall/status flows" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good — `components` is not implemented anywhere yet.
+
+Here is my report:
+
+---
+
+**Task: Research upgrade, uninstall, status, lint commands and existing dependency behavior**
+
+## 1. Upgrade (`src/hcli/commands/plugin/upgrade.py`)
+
+**Flow:**
+- Lines 55–191: `upgrade_plugin(ctx, plugin, no_build_isolation)`
+- Sweeps trash, resolves IDA env, validates plugin spec (rejects local files/URLs)
+- Finds installed plugin via `find_installed_plugin(ref.name)` (line 87) — anchors upgrade to installed host
+- Saves `old_deps = list(installed.metadata.plugin.dependencies)` (line 93) before upgrade
+- Fetches new archive from plugin repo
+- Calls `upgrade_plugin_archive(buf, plugin_name, ...)` (from `install.py` lib, line 1111)
+
+**Upgrade implementation** (`src/hcli/lib/ida/plugin/install.py:1111–1174`):
+- Validates metadata, checks platform/IDA version compat
+- Rejects version downgrades
+- `move_plugin_directory_to_trash(plugin_path, label=".rollback")` — atomic rename into trash
+- Calls `install_plugin_archive()` to install new version
+- On failure: rolls back by renaming trash copy back
+- On success: deletes rollback copy
+
+**Dependency handling** (lines 193–242):
+- `_handle_upgrade_dependencies()` compares old vs new deps
+- Reports dropped deps ("these dependencies were removed... they remain installed")
+- Calls `install_dependencies()` for new deps
+
+## 2. Uninstall (`src/hcli/commands/plugin/uninstall.py`)
+
+**Flow** (lines 25–89):
+- Before uninstalling, reads `record.metadata.plugin.dependencies` to capture dep names (lines 31–39)
+- Calls `uninstall_plugin_impl(plugin)` — the library function
+- Library function (`install.py:1022–1058`): handles symlinks (editable installs) vs directories, uses `remove_plugin_directory()` (trash-and-delete)
+- After uninstall, lists installed deps and asks "Remove them too?" (default **no**, line 74)
+- Non-interactive mode: prints "Remove them manually" and returns (line 77)
+- With `--yes`: cascades removal
+
+**No component awareness.** The command has no concept of components; it does not refuse uninstalling something that is a component of a suite, and there's no cascading confirmation for suite uninstall.
+
+## 3. Status (`src/hcli/commands/plugin/status.py`)
+
+**Discovery** (lines 149–198, `collect_status_report`):
+- `get_installed_plugin_records()` — iterates `$IDAUSR/plugins/`, reads `ida-plugin.json` for each immediate child dir where `metadata.plugin.name == path.name`
+- Also discovers "incompatible" plugins (`get_installed_minimal_plugins`) and "legacy" single-file plugins (`get_installed_legacy_plugins`)
+- Each record becomes an `InstalledPluginStatusEntry` with optional upgrade check against repo
+
+**Display** (lines 201–240, `render_status_report_text`):
+- Table columns: name, version, status (upgrade info)
+- No component count, no `--show-components` flag
+- JSON output: `StatusReport(plugins=[...])` — flat list, no `components` sub-array
+
+**Key: `get_installed_plugin_records()`** (`install.py:299–339`) does a **one-level-deep** scan: it only looks at immediate children of `$IDAUSR/plugins/`. This means nested component manifests are NOT discovered as top-level plugins. This is the correct behavior per the design doc. But component directories *inside* a suite directory are silently skipped since `metadata.plugin.name != plugin_path.name` (line 333) — the name is the suite's component name, but path.name would be the subdirectory within the suite.
+
+## 4. Lint (`src/hcli/commands/plugin/lint.py`)
+
+**Directory lint** (lines 199–240, `_lint_plugin_directory`):
+- Validates `ida-plugin.json` with pydantic, calls `validate_metadata_in_plugin_directory`, then `_lint_metadata`
+- `_lint_metadata` (lines 117–183): checks version format, ida_versions, description, categories, logo, keywords, license, authors/maintainers
+- `_check_dependency_specs` (lines 186–196): validates each `dependencies` entry via `parse_dependency_spec()`
+- No `components` validation
+
+**Archive lint** (lines 243–316, `_lint_plugin_archive`):
+- Enumerates ALL `ida-plugin.json` files in the archive (finds every manifest)
+- Validates and lints each one independently
+- Already finds multiple manifests — suitable for suite validation
+
+## 5. Existing dependency-aware behavior
+
+**dependencies field** (`PluginMetadata`, `__init__.py:488–506`):
+- `dependencies: list[str]` with validation via `parse_dependency_spec`
+- Accepts `name`, `name==version`, `name@host` forms
+
+**install_dependencies** (`dependencies.py:30–81`):
+- Iterates each dependency spec
+- For each: checks if installed, skips if satisfying, upgrades if pinned version newer, installs if missing
+- Non-fatal: individual failures don't abort remaining installs
+
+**install command** (`install.py:364–376`):
+- After installing the plugin itself, calls `_handle_install_dependencies` if `metadata.plugin.dependencies` is non-empty
+- Only works when `plugin_repo` is available (warns and lists deps to install manually otherwise)
+
+**upgrade command** (`upgrade.py:153–165`):
+- After upgrading, handles dependency changes (adds new, notes dropped)
+
+**uninstall command** (`uninstall.py:52–89`):
+- Reads deps before deletion, asks to cascade remove (default no)
+
+## 6. Key observations for components implementation
+
+1. **Five `len(items) != 1` checks** in `install.py` (lines 133, 141, 150, 168, 182) reject multi-manifest archives. These need relaxing for suite archives — the repo-based path (line 186+) already has no such check.
+
+2. **`get_installed_plugin_records()`** only looks one level deep — correct for hiding components from top-level listings.
+
+3. **`extract_zip_subdirectory_to()`** already extracts a whole subtree including nested subdirectories — components will come along for free.
+
+4. **`get_metadatas_with_paths_from_plugin_archive()`** already enumerates ALL `ida-plugin.json` in an archive — good for pre-extraction scanning.
+
+5. **No `components` field** exists on `PluginMetadata` yet — it needs to be added.
+
+6. **`uninstall_plugin()`** already removes directories transactionally via trash — suite uninstall naturally removes all components.
+
+7. **`upgrade_plugin_archive()`** does trash-and-reinstall — suite upgrade naturally replaces all components atomically.
+
+8. **Status display** needs component count on suite rows and `--show-components` flag. JSON output needs `components` array.
+
+9. **Lint** needs to validate component references (subdirectory exists, name matches manifest).</result>
+<usage><subagent_tokens>90947</subagent_tokens><tool_uses>16</tool_uses><duration_ms>99297</duration_ms></usage>
+</task-notification>
