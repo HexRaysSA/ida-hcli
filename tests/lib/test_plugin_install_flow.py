@@ -106,3 +106,11 @@ def test_upgrade_cli_reports_dependencies_dropped_by_a_component(virtual_ida_env
     assert "Upgraded plugin: tools==2.0.0" in output
     assert "dependencies were removed from tools" in output
     assert "lib" in output and "remain installed" in output
+
+
+def test_dropped_dependencies_report_required_flag_changes():
+    old = _descriptor("pack", ["b", {"plugin": "c", "required": False}])
+    new = _descriptor("pack", [{"plugin": "b", "required": False}, "c"])
+    removed, changed = find_dropped_dependencies(old, new)
+    assert removed == []
+    assert changed == ["b -> b (optional)", "c (optional) -> c"]

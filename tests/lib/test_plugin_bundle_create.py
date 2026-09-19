@@ -210,3 +210,24 @@ def test_plan_bundle_contents_expands_incomplete_index_entries_by_fetching(tmp_p
     assert _names(contents) == {"a": "1.0.0"}
     assert contents.python_requirements == ["requests"]
     assert contents.archives[0].platforms == tuple(PLATFORMS)
+
+
+def test_plan_bundle_contents_rejects_archive_that_differs_from_index(tmp_path):
+    import hashlib
+
+    from test_plugin_resolve import HOST, _manifest
+
+    from hcli.lib.ida.plugin import IDAMetadataDescriptor
+    from hcli.lib.ida.plugin.exceptions import PlanMetadataMismatchError
+    from hcli.lib.ida.plugin.repo import Plugin, PluginArchiveLocation
+    from hcli.lib.ida.plugin.repo.file import JSONFilePluginRepo
+
+    zip_data = _zip("a", "1.0.0")
+    path = tmp_path / "a.zip"
+    path.write_bytes(zip_data)
+    stale = IDAMetadataDescriptor.model_validate(_manifest("a", "2.0.0"))
+    location = PluginArchiveLocation(url=path.as_uri(), sha256=hashlib.sha256(zip_data).hexdigest(), metadata=stale)
+    repo = JSONFilePluginRepo([Plugin(name="a", host=HOST, versions={"2.0.0": [location]})])
+
+    with pytest.raises(PlanMetadataMismatchError):
+        plan_bundle_contents(["a"], repo, PLATFORMS)

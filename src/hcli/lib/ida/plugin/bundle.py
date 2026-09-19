@@ -286,11 +286,15 @@ def plan_bundle_contents(
 
     Raises:
         DependencyResolutionError: a required dependency is unavailable or conflicts.
+        PlanMetadataMismatchError: a fetched archive's metadata differs from the index entry.
         PlatformIncompatibleError: a local root does not support a target platform.
         ValueError: a spec is malformed, an archive digest does not match, or an
             archive cannot be read.
     """
+    import hashlib
+
     from hcli.lib.ida import IDAConfigJson
+    from hcli.lib.ida.plugin.execute import verify_planned_archive
     from hcli.lib.ida.plugin.resolve import (
         LocalArchiveSource,
         LocationSource,
@@ -302,6 +306,7 @@ def plan_bundle_contents(
     by_sha: dict[str, tuple[str, str, bytes, bool]] = {}
     platforms_by_sha: dict[str, list[str]] = {}
     fetched: dict[str, bytes] = {}
+    verified: set[str] = set()
     requirements: dict[str, None] = {}
     omitted: dict[tuple[str, str], OmittedOptionalDependency] = {}
 
@@ -338,6 +343,12 @@ def plan_bundle_contents(
                     else:
                         fetched[sha256] = source.repo.fetch_location(source.location)
                 data = fetched[sha256]
+                if sha256 not in verified:
+                    digest = hashlib.sha256(data).hexdigest()
+                    if digest != sha256:
+                        raise ValueError(f"hash mismatch for {source.url}: expected {sha256}, found {digest}")
+                    verify_planned_archive(node, data, source.repo_name or source.url)
+                    verified.add(sha256)
             else:
                 raise TypeError(f"cannot bundle {node.name} from {type(source).__name__}")
 

@@ -336,29 +336,48 @@ def report_interrupted_install(error: BaseException) -> None:
             console.print(f"  {path}")
 
 
-def _declared_dependencies(metadata: IDAMetadataDescriptor) -> dict[str, str]:
-    declared: dict[str, str] = {}
+@dataclass(frozen=True)
+class _DeclaredDependency:
+    text: str
+    name: str
+    host: str | None
+    version_spec: str
+    required: bool
+
+    @property
+    def constraint(self) -> tuple[str, str | None, str, bool]:
+        return self.name, self.host, self.version_spec, self.required
+
+    def render(self) -> str:
+        return self.text if self.required else f"{self.text} (optional)"
+
+
+def _declared_dependencies(metadata: IDAMetadataDescriptor) -> dict[str, _DeclaredDependency]:
+    declared: dict[str, _DeclaredDependency] = {}
     for _, spec in iter_dependency_specs(metadata):
         try:
             parsed = parse_dependency_spec(spec.plugin)
         except ValueError:
             continue
-        declared[parsed.name.lower()] = spec.plugin
+        name = parsed.name.lower()
+        declared[name] = _DeclaredDependency(spec.plugin, name, parsed.host, parsed.version_spec, spec.required)
     return declared
 
 
 def find_dropped_dependencies(old: IDAMetadataDescriptor, new: IDAMetadataDescriptor) -> tuple[list[str], list[str]]:
-    """Dependency specs that ``new`` no longer declares, and those whose spec text changed.
+    """Dependency specs that ``new`` no longer declares, and those whose constraint changed.
 
     Returns ``(removed, changed)``: removed holds the old spec strings of names
-    that vanished; changed holds ``old -> new`` for names whose version or host
-    constraint differs.
+    that vanished; changed holds ``old -> new`` for names whose version pin,
+    host, or required flag differs.
     """
     before = _declared_dependencies(old)
     after = _declared_dependencies(new)
-    removed = [before[name] for name in sorted(before) if name not in after]
+    removed = [before[name].text for name in sorted(before) if name not in after]
     changed = [
-        f"{before[name]} -> {after[name]}" for name in sorted(before) if name in after and before[name] != after[name]
+        f"{before[name].render()} -> {after[name].render()}"
+        for name in sorted(before)
+        if name in after and before[name].constraint != after[name].constraint
     ]
     return removed, changed
 
