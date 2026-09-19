@@ -356,6 +356,10 @@ class BasePluginRepo(ABC):
         """Return the configured repository name that serves ``location``, when known."""
         return None
 
+    def get_location_owner(self, location: PluginArchiveLocation) -> "BasePluginRepo":
+        """The concrete repository object that serves ``location``; aggregates route to a child."""
+        return self
+
     def _fetch_and_verify(self, location: PluginArchiveLocation) -> tuple[str, bytes]:
         plugin_name = location.metadata.plugin.name
         logger.debug("plugin name: %s", plugin_name)

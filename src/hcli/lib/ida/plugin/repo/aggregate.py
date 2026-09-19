@@ -160,6 +160,12 @@ class AggregatePluginRepo(BasePluginRepo):
     def describe_location_source(self, location: PluginArchiveLocation) -> str | None:
         return self._owner_of_location(location)
 
+    def get_location_owner(self, location: PluginArchiveLocation) -> BasePluginRepo:
+        owner = self._owner_of_location(location)
+        if owner is None:
+            return self
+        return self._children[owner].get_location_owner(location)
+
     def fetch_location(self, location: PluginArchiveLocation) -> bytes:
         """Fetch through the child repository that served ``location``.
 

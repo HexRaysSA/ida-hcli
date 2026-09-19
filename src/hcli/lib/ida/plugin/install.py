@@ -692,64 +692,81 @@ def should_extract_plugin_archive_path(plugin_dir_prefix: str, file_info: zipfil
     return str(relative_path) != "."
 
 
+def _archive_prefix(subdirectory: Path) -> str:
+    if not subdirectory or subdirectory == Path("."):
+        return ""
+    return subdirectory.as_posix() + "/"
+
+
+def validate_archive_subdirectory(zip_data: bytes, subdirectory: Path) -> None:
+    """Check every entry under ``subdirectory`` is safe to extract.
+
+    Raises:
+        ValueError: when an entry is a symlink, absolute, or escapes the directory.
+    """
+    plugin_dir_prefix = _archive_prefix(subdirectory)
+    with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
+        for file_info in zip_file.infolist():
+            if not should_extract_plugin_archive_path(plugin_dir_prefix, file_info):
+                continue
+            relative_path = pathlib.PurePosixPath(file_info.filename).relative_to(plugin_dir_prefix.rstrip("/"))
+            validate_archive_entry(file_info, relative_path)
+
+
+def extract_zip_subdirectory_into(zip_data: bytes, subdirectory: Path, target_dir: Path) -> None:
+    """Extract ``subdirectory`` of the archive into the existing, empty ``target_dir``.
+
+    Entries are validated before anything is written, so a rejected archive
+    leaves ``target_dir`` empty.
+    """
+    validate_archive_subdirectory(zip_data, subdirectory)
+    plugin_dir_prefix = _archive_prefix(subdirectory)
+
+    with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
+        for file_info in zip_file.infolist():
+            if not should_extract_plugin_archive_path(plugin_dir_prefix, file_info):
+                continue
+
+            relative_path = pathlib.PurePosixPath(file_info.filename).relative_to(plugin_dir_prefix.rstrip("/"))
+            target_path = target_dir / relative_path
+
+            if file_info.is_dir():
+                logger.debug("creating directory: %s", relative_path)
+                target_path.mkdir(parents=True, exist_ok=True)
+            else:
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    with zip_file.open(file_info.filename) as source_file, target_path.open("wb") as target_file:
+                        logger.debug("creating file:      %s", relative_path)
+                        shutil.copyfileobj(source_file, target_file)
+                except OSError as e:
+                    if e.errno == errno.ENOSPC:
+                        raise NoSpaceError(target_path.parent) from e
+                    raise
+
+
 def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination: Path):
-    """Extract a subdirectory from a zip archive to a destination path."""
+    """Extract a subdirectory from a zip archive to a destination path.
+
+    Content is staged in the trash area beside the destination's plugins
+    directory, normally the same filesystem, so the final rename is atomic and
+    the fully formed plugin directory appears all at once.
+    """
     if destination.exists():
         raise FileExistsError(f"Destination already exists: {destination}")
 
-    with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
-        if not subdirectory or subdirectory == Path("."):
-            # subdirectory represents the root (e.g., None or Path("."))
-            plugin_dir_prefix = ""
-        else:
-            plugin_dir_prefix = subdirectory.as_posix() + "/"
+    staging_root = get_trash_directory(destination.parent)
+    staging_root.mkdir(parents=True, exist_ok=True)
+    temp_path = staging_root / f"{destination.name}.staging-{uuid.uuid4().hex[:8]}"
+    temp_path.mkdir()
 
-        # Stage in the trash area beside the destination's plugins directory
-        # rather than in the system temp dir: (normally) the same filesystem,
-        # so the final rename is atomic on all platforms and the fully-formed
-        # plugin directory appears all at once. An interrupted install never
-        # leaves a partial destination, and abandoned staging directories are
-        # swept by later plugin commands.
-        staging_root = get_trash_directory(destination.parent)
-        staging_root.mkdir(parents=True, exist_ok=True)
-        temp_path = staging_root / f"{destination.name}.staging-{uuid.uuid4().hex[:8]}"
-        temp_path.mkdir()
-
-        try:
-            # do validation pass before extracting any content to prevent any half-extracted content
-            for file_info in zip_file.infolist():
-                if not should_extract_plugin_archive_path(plugin_dir_prefix, file_info):
-                    continue
-
-                relative_path = pathlib.PurePosixPath(file_info.filename).relative_to(plugin_dir_prefix.rstrip("/"))
-                validate_archive_entry(file_info, relative_path)
-
-            for file_info in zip_file.infolist():
-                if not should_extract_plugin_archive_path(plugin_dir_prefix, file_info):
-                    continue
-
-                relative_path = pathlib.PurePosixPath(file_info.filename).relative_to(plugin_dir_prefix.rstrip("/"))
-                target_path = temp_path / relative_path
-
-                if file_info.is_dir():
-                    logger.debug("creating directory: %s", relative_path)
-                    target_path.mkdir(parents=True, exist_ok=True)
-                else:
-                    target_path.parent.mkdir(parents=True, exist_ok=True)
-                    try:
-                        with zip_file.open(file_info.filename) as source_file, target_path.open("wb") as target_file:
-                            logger.debug("creating file:      %s", relative_path)
-                            shutil.copyfileobj(source_file, target_file)
-                    except OSError as e:
-                        if e.errno == errno.ENOSPC:
-                            raise NoSpaceError(target_path.parent) from e
-                        raise
-
-            logger.debug("creating plugin directory: %s", destination)
-            os.rename(temp_path, destination)
-        except BaseException:
-            shutil.rmtree(temp_path, ignore_errors=True)
-            raise
+    try:
+        extract_zip_subdirectory_into(zip_data, subdirectory, temp_path)
+        logger.debug("creating plugin directory: %s", destination)
+        os.rename(temp_path, destination)
+    except BaseException:
+        shutil.rmtree(temp_path, ignore_errors=True)
+        raise
 
 
 def _install_plugin_archive(

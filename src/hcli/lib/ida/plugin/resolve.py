@@ -49,6 +49,7 @@ from hcli.lib.ida.plugin.exceptions import (
     PlatformIncompatibleError,
     PluginAccessDeniedError,
     PluginAlreadyInstalledError,
+    PluginNotInstalledError,
     PluginVersionDowngradeError,
 )
 from hcli.lib.ida.plugin.install import InstalledPluginRecord, find_installed_plugin_in
@@ -479,7 +480,14 @@ class EditableRoot:
     directory: Path
 
 
-RootRequest = RepositoryRoot | LocationRoot | ArchiveRoot | EditableRoot
+@dataclass(frozen=True)
+class InstalledRoot:
+    """Retain an installed plugin and repair its dependency closure."""
+
+    name: str
+
+
+RootRequest = RepositoryRoot | LocationRoot | ArchiveRoot | EditableRoot | InstalledRoot
 
 
 class _Graph:
@@ -892,6 +900,21 @@ class _Planner:
                     is_root=True,
                 )
 
+            if isinstance(request, InstalledRoot):
+                installed = self.context.find_installed(request.name)
+                if installed is None:
+                    raise PluginNotInstalledError(request.name)
+                metadata = self.context.expand_installed(installed)
+                return PlannedNode(
+                    PluginIdentity.from_metadata(metadata),
+                    metadata,
+                    InstalledSource(installed.path),
+                    "retain",
+                    installed,
+                    edge,
+                    is_root=True,
+                )
+
             if isinstance(request, ArchiveRoot):
                 from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
                 from hcli.lib.ida.plugin.enrich import expand_metadata_from_archive
@@ -972,6 +995,11 @@ class _Planner:
             else:
                 _, descriptor = find_root_manifest_in_archive(request.zip_data)
             plugin = descriptor.plugin
+        elif isinstance(request, InstalledRoot):
+            installed = self.context.find_installed(request.name)
+            if installed is None:
+                raise PluginNotInstalledError(request.name)
+            plugin = installed.metadata.plugin
         else:
             from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory
 

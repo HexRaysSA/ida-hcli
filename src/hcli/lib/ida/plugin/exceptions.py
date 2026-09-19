@@ -284,3 +284,29 @@ class MissingConfigurationError(DependencyResolutionError):
         self.arguments = list(arguments)
         listing = "\n".join(f"  {argument}" for argument in self.arguments)
         super().__init__(f"missing required settings; supply them with:\n{listing}")
+
+
+class PlanMetadataMismatchError(DependencyResolutionError):
+    """A fetched artifact or source directory does not match the metadata that was planned."""
+
+    def __init__(self, name: str, version: str, source: str, differences: Sequence[str]):
+        self.name = name
+        self.version = version
+        self.source = source
+        self.differences = list(differences)
+        listing = "; ".join(self.differences)
+        super().__init__(f"{name}=={version} from {source} does not match the planned metadata: {listing}")
+
+
+class InstallExecutionError(PluginInstallationError):
+    """A required step failed and the plugin directories were rolled back.
+
+    ``result`` describes what was attempted. ``recovery`` is set when the
+    rollback itself was incomplete.
+    """
+
+    def __init__(self, message: str, cause: BaseException, result: object, recovery: Exception | None = None):
+        self.cause = cause
+        self.result = result
+        self.recovery = recovery
+        super().__init__(message)
