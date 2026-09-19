@@ -84,6 +84,8 @@ logger = logging.getLogger(__name__)
 
 NodeOutcome = Literal["installed", "upgraded", "editable", "present", "unavailable", "rolled_back"]
 
+ArtifactKey = tuple[PluginIdentity, str, str | None]
+
 BOUNDARY_ERRORS: tuple[type[BaseException], ...] = (
     DependencyResolutionError,
     PluginInstallationError,
@@ -138,7 +140,7 @@ class InstallResult:
         return [n for n in self.nodes if n.outcome == "present"]
 
     @property
-    def diagnostics(self):
+    def diagnostics(self) -> list[EdgeDiagnostic]:
         diagnostics = list(self.plan.diagnostics)
         for branch in self.plan.optional_branches:
             diagnostics.extend(branch.diagnostics)
@@ -165,7 +167,7 @@ class PreparedInstall:
     plan: InstallPlan
     current_platform: str
     current_version: str | None
-    artifacts: dict[PluginIdentity, VerifiedArtifact]
+    artifacts: dict[ArtifactKey, VerifiedArtifact]
     branch_failures: dict[int, str]
     pip_options: PipOptions
     python_exe: Path | None
@@ -299,6 +301,16 @@ def _selection_key(node: PlannedNode) -> tuple[str, str, str | None]:
     return node.version, node.identity.host, artifact
 
 
+def _artifact_key(node: PlannedNode) -> ArtifactKey:
+    """Identity plus the version and digest that distinguish one selection of it from another."""
+    version, _, artifact = _selection_key(node)
+    return node.identity, version, artifact
+
+
+def _owned_names(node: PlannedNode) -> list[str]:
+    return [node.name.lower(), *(name.lower() for name in node.component_names())]
+
+
 def is_same_selection(left: PlannedNode, right: PlannedNode) -> bool:
     """Whether two planned nodes name the same version, host, and artifact."""
     lv, lh, la = _selection_key(left)
@@ -308,14 +320,27 @@ def is_same_selection(left: PlannedNode, right: PlannedNode) -> bool:
     return la is None or ra is None or la == ra
 
 
+def _all_nodes(plan: InstallPlan) -> list[PlannedNode]:
+    nodes = list(plan.ordered_nodes())
+    for branch in plan.optional_branches:
+        nodes.extend(branch.nodes[i] for i in branch.order)
+    return nodes
+
+
+def _mutating_python_requirements(plan: InstallPlan) -> list[str]:
+    seen: dict[str, None] = {}
+    for node in _all_nodes(plan):
+        if node.mutates:
+            for requirement in node.python_requirements():
+                seen.setdefault(requirement, None)
+    return list(seen)
+
+
 def _bundle_owners(plan: InstallPlan) -> list[object]:
     from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 
     owners: list[object] = []
-    nodes = list(plan.ordered_nodes())
-    for branch in plan.optional_branches:
-        nodes.extend(branch.nodes[i] for i in branch.order)
-    for node in nodes:
+    for node in _all_nodes(plan):
         if not node.mutates or not isinstance(node.source, LocationSource):
             continue
         owner = node.source.repo.get_location_owner(node.source.location)
@@ -327,10 +352,7 @@ def _bundle_owners(plan: InstallPlan) -> list[object]:
 def _all_remote_from_bundles(plan: InstallPlan) -> bool:
     from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 
-    nodes = list(plan.ordered_nodes())
-    for branch in plan.optional_branches:
-        nodes.extend(branch.nodes[i] for i in branch.order)
-    for node in nodes:
+    for node in _all_nodes(plan):
         if (
             node.mutates
             and isinstance(node.source, LocationSource)
@@ -365,7 +387,7 @@ def _effective_pip_options(
         matched = True
         find_links.extend(bundle_options.find_links)
     if not matched:
-        if not plan.combined_python_requirements(plan.all_branches()):
+        if not _mutating_python_requirements(plan):
             return user_options
         targets: list[str] = []
         for owner in owners:
@@ -401,11 +423,11 @@ def prepare_install(
         ValueError: a required archive or directory is malformed.
         PipNotAvailableError, DependencyInstallationError: Python requirements cannot be installed.
     """
-    artifacts: dict[PluginIdentity, VerifiedArtifact] = {}
+    artifacts: dict[ArtifactKey, VerifiedArtifact] = {}
     for node in plan.ordered_nodes():
         artifact = _verify_node(node, context.artifacts)
         if artifact is not None:
-            artifacts[node.identity] = artifact
+            artifacts[_artifact_key(node)] = artifact
 
     branch_failures: dict[int, str] = {}
     for branch in plan.optional_branches:
@@ -413,7 +435,8 @@ def prepare_install(
             continue
         for identity in branch.order:
             node = branch.nodes[identity]
-            if identity in artifacts:
+            key = _artifact_key(node)
+            if key in artifacts:
                 continue
             try:
                 artifact = _verify_node(node, context.artifacts)
@@ -421,7 +444,7 @@ def prepare_install(
                 branch_failures[branch.index] = str(e)
                 break
             if artifact is not None:
-                artifacts[identity] = artifact
+                artifacts[key] = artifact
 
     stack = ExitStack()
     try:
@@ -460,6 +483,7 @@ class _Executor:
         self.result = InstallResult(self.plan)
         self.present: set[PluginIdentity] = set()
         self.accepted_nodes: dict[PluginIdentity, PlannedNode] = {}
+        self.owned_names: dict[str, PluginIdentity] = {}
         self.accepted_branches: list[int] = []
         self._site_dir: Path | None = None
         self._site_dir_checked = False
@@ -542,7 +566,7 @@ class _Executor:
             entry.outcome = "editable"
         else:
             self._check_destination(node, destination)
-            artifact = self.prepared.artifacts[node.identity]
+            artifact = self.prepared.artifacts[_artifact_key(node)]
             staging = self.txn.make_staging_directory(node.name)
             extract_zip_subdirectory_into(artifact.zip_data, artifact.manifest_path.parent, staging)
             pth = self._pth_path(node.name)
@@ -557,6 +581,34 @@ class _Executor:
         self.result.nodes.append(entry)
         self.present.add(node.identity)
         self.accepted_nodes[node.identity] = node
+        for name in _owned_names(node):
+            self.owned_names[name] = node.identity
+
+    def _forget_node(self, identity: PluginIdentity) -> None:
+        self.present.discard(identity)
+        self.accepted_nodes.pop(identity, None)
+        for name in [n for n, owner in self.owned_names.items() if owner == identity]:
+            del self.owned_names[name]
+
+    def _find_branch_conflict(self, branch: OptionalBranch, nodes: list[PlannedNode]) -> tuple[PlannedNode, str] | None:
+        """A node of ``branch`` that cannot coexist with what earlier steps installed, and why."""
+        for node in nodes:
+            accepted = self.accepted_nodes.get(node.identity)
+            if accepted is not None:
+                if not is_same_selection(accepted, node):
+                    return node, (
+                        f"{node.name} is already present at {accepted.version}"
+                        f" but this branch selected {node.version}; version reselection is unsupported"
+                    )
+                continue
+            for name in _owned_names(node):
+                owner = self.owned_names.get(name)
+                if owner is not None and owner != node.identity:
+                    return node, (
+                        f"{node.name} claims the plugin name '{name}', which {owner.name} already owns;"
+                        " only one plugin can own a name"
+                    )
+        return None
 
     def _requirement_for(self, target: str, key: str, branch: int | None) -> ConfigurationRequirement | None:
         pool = self.plan.configuration if branch is None else self.plan.optional_branches[branch].configuration
@@ -632,18 +684,12 @@ class _Executor:
             return
 
         nodes = [branch.nodes[i] for i in branch.order]
-        for node in nodes:
-            accepted = self.accepted_nodes.get(node.identity)
-            if accepted is not None and not is_same_selection(accepted, node):
-                message = (
-                    f"{node.name} is already present at {accepted.version}"
-                    f" but this branch selected {node.version}; version reselection is unsupported"
-                )
-                self.result.execution_diagnostics.append(
-                    EdgeDiagnostic(branch.edge, node.identity, "conflict", message)
-                )
-                self._skip_branch(branch, message)
-                return
+        conflict = self._find_branch_conflict(branch, nodes)
+        if conflict is not None:
+            node, message = conflict
+            self.result.execution_diagnostics.append(EdgeDiagnostic(branch.edge, node.identity, "conflict", message))
+            self._skip_branch(branch, message)
+            return
         requirements: list[str] = []
         for node in nodes:
             for requirement in node.python_requirements():
@@ -671,7 +717,7 @@ class _Executor:
             logger.debug("optional branch %s failed: %s", branch.edge.spec.plugin, e)
             self.txn.rollback_to(savepoint)
             for entry in self.result.nodes[before:]:
-                self.present.discard(entry.identity)
+                self._forget_node(entry.identity)
             del self.result.nodes[before:]
             self._skip_branch(branch, str(e))
             return

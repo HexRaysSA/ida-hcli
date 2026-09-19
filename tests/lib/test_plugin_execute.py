@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from fixtures import *
 from test_plugin_bundle import _build_bundle_zip, _make_manifest
-from test_plugin_resolve import HOST, _fs_repo, _manifest, _repo, _zip
+from test_plugin_resolve import HOST, _fs_repo, _manifest, _repo, _suite_zip, _zip
 
 from hcli.lib.ida import find_current_ida_platform, get_ida_config
 from hcli.lib.ida.plugin import IDAMetadataDescriptor
@@ -582,3 +582,136 @@ def test_bundle_without_matching_target_fails_before_mutation_when_requirements_
         prepare_install(plan, context, check_environment=False)
 
     assert _installed_names() == set()
+
+
+def _mixed_repo(tmp_path: Path, reachable: list[bytes], unreachable: list[bytes]) -> JSONFilePluginRepo:
+    """An index where only ``reachable`` archives can be fetched."""
+    index = PluginArchiveIndex()
+    for i, buf in enumerate(reachable):
+        path = tmp_path / f"reachable-{i}.zip"
+        path.write_bytes(buf)
+        index.index_plugin_archive(buf, path.as_uri())
+    for i, buf in enumerate(unreachable):
+        index.index_plugin_archive(buf, f"mem://unreachable-{i}.zip")
+    return JSONFilePluginRepo(index.get_plugins())
+
+
+def test_branch_artifacts_are_keyed_by_selection_not_identity(virtual_ida_environment, tmp_path):
+    repo = _mixed_repo(
+        tmp_path,
+        reachable=[
+            _zip("a", deps=[{"plugin": "x", "required": False}, {"plugin": "y", "required": False}]),
+            _zip("y", deps=["d==2.0.0"]),
+            _zip("d", "1.0.0"),
+            _zip("d", "2.0.0"),
+        ],
+        unreachable=[_zip("x", deps=["d==1.0.0"])],
+    )
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+
+    with prepare_install(plan, context, check_environment=False) as prepared:
+        assert list(prepared.branch_failures) == [0]
+        assert sorted((key[0].name, key[1]) for key in prepared.artifacts) == [
+            ("a", "1.0.0"),
+            ("d", "1.0.0"),
+            ("d", "2.0.0"),
+            ("y", "1.0.0"),
+        ]
+        result = execute_install(prepared)
+
+    assert _installed_names() == {"a", "y", "d"}
+    assert _installed_version("d") == "2.0.0"
+    assert [b.edge.spec.plugin for b, _ in result.unavailable_optionals] == ["x"]
+
+
+def test_rolled_back_branch_does_not_leave_stale_acceptance_for_later_branches(virtual_ida_environment, tmp_path):
+    repo = _fs_repo(
+        tmp_path / "repo",
+        _zip("a", deps=[{"plugin": "x", "required": False}, {"plugin": "y", "required": False}]),
+        _zip("x", deps=["d==1.0.0"]),
+        _zip("y", deps=["d==2.0.0"]),
+        _zip("d", "1.0.0"),
+        _zip("d", "2.0.0"),
+    )
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+    _break_destination("x")
+
+    result = _run(context, plan)
+
+    assert _installed_names() == {"a", "x", "y", "d"}
+    assert _installed_version("d") == "2.0.0"
+    assert [b.edge.spec.plugin for b, _ in result.unavailable_optionals] == ["x"]
+    assert result.execution_diagnostics == []
+    assert {n.name: n.outcome for n in result.nodes if n.branch == 1} == {"d": "installed", "y": "installed"}
+
+
+def test_later_branch_claiming_a_name_owned_by_an_earlier_branch_is_skipped(virtual_ida_environment, tmp_path):
+    repo = _fs_repo(
+        tmp_path / "repo",
+        _zip("a", deps=[{"plugin": "foo", "required": False}, {"plugin": "suite", "required": False}]),
+        _zip("foo"),
+        _suite_zip("suite", "1.0.0", [("foo", "2.0.0", {})]),
+    )
+    context = _context(repo)
+    result = _run(context, _plan(context, repo, "a"))
+
+    assert _installed_names() == {"a", "foo"}
+    assert [
+        (b.edge.spec.plugin, "'foo'" in reason and "foo already owns" in reason)
+        for b, reason in result.unavailable_optionals
+    ] == [("suite", True)]
+    assert [(d.kind, d.target and d.target.name) for d in result.execution_diagnostics] == [("conflict", "suite")]
+
+
+def test_later_branch_whose_name_is_a_component_of_an_earlier_branch_is_skipped(virtual_ida_environment, tmp_path):
+    repo = _fs_repo(
+        tmp_path / "repo",
+        _zip("a", deps=[{"plugin": "suite", "required": False}, {"plugin": "foo", "required": False}]),
+        _zip("foo"),
+        _suite_zip("suite", "1.0.0", [("foo", "2.0.0", {})]),
+    )
+    context = _context(repo)
+    result = _run(context, _plan(context, repo, "a"))
+
+    assert _installed_names() == {"a", "suite"}
+    assert [(b.edge.spec.plugin, "suite already owns" in reason) for b, reason in result.unavailable_optionals] == [
+        ("foo", True)
+    ]
+    assert [d.kind for d in result.execution_diagnostics] == ["conflict"]
+
+
+def test_bundle_without_matching_target_proceeds_when_only_retained_nodes_need_python(
+    virtual_ida_environment_with_venv, tmp_path
+):
+    fs = _fs_repo(tmp_path / "repo", _zip("lib", python_deps=["packaging==25.0"]))
+    context = _context(fs)
+    _run(context, _plan(context, fs, "lib"))
+
+    current = find_current_ida_platform()
+    other = "windows-x86_64" if current != "windows-x86_64" else "linux-x86_64"
+    manifest = _make_manifest(
+        targetPlatformTags=[
+            {
+                "id": "elsewhere",
+                "idaPlatform": other,
+                "pythonVersion": "3.12",
+                "implementation": "cp",
+                "abis": ["cp312", "abi3", "none"],
+                "pipPlatformTags": ["any"],
+                "wheelhouse": "dependencies/python/elsewhere",
+            }
+        ]
+    )
+    bundle = _build_bundle_zip(manifest, plugin_zips={"a.zip": _zip("a", deps=["lib"])})
+    path = tmp_path / "bundle.zip"
+    path.write_bytes(bundle)
+    repo = PluginBundleRepo(path)
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+
+    result = _run(context, plan)
+
+    assert _committed(result) == ["a"]
+    assert [n.name for n in result.present] == ["lib"]
