@@ -202,7 +202,7 @@ A plugin can declare other plugins as loose dependencies via the `dependencies` 
 
 A string entry is a required dependency. The object form sets `required` to `false` to mark the dependency optional: HCLI installs it when it can and skips it otherwise. Objects accept only the `plugin` and `required` keys.
 
-When a user installs or upgrades a plugin that declares dependencies, HCLI fetches each one from the same repository and installs it as an independent top-level plugin. Dependencies that are already installed and satisfy the spec are skipped. If a pinned dependency is installed at a lower version, it is upgraded automatically; a higher installed version is not downgraded.
+When a user installs or upgrades a plugin that declares dependencies, HCLI resolves each one from the same repository, including dependencies of dependencies at any depth, and installs it as an independent top-level plugin. A dependency must name a top-level plugin, never a suite component. Dependencies that are already installed and satisfy the spec are skipped. If a pinned dependency is installed at a lower version, it is upgraded automatically; a higher installed version is not downgraded. A required dependency that cannot be resolved blocks the install, and any changes already made are rolled back.
 
 Dependencies are not bundled inside the declaring plugin's archive. Each dependency is its own plugin with its own `ida-plugin.json` and its own archive in the repository.
 
@@ -246,7 +246,7 @@ Version pins (`==`) and host qualifiers (`@`) are not valid in `components` entr
 
 A `components` entry can also be the full `ida-plugin.json` document of the component instead of its name. This form appears in repository indexes: when HCLI indexes an archive, it embeds every component descriptor into the root manifest and replaces `"pythonDependencies": "inline"` with the list read from each entry point, so a consumer of the index can plan an install without downloading the archive. Only the suite root is published in the index; components are never listed on their own. Authors do not need to write the embedded form by hand. If a manifest does embed a component, the embedded name and version must match the component's own `ida-plugin.json`, and names must be unique across both forms.
 
-Components can declare their own `pythonDependencies`. When a suite is installed, HCLI collects dependencies from the root and every component at every nesting depth, then installs them together. The `hcli plugin dependencies install` command also covers component dependencies.
+Components can declare their own `pythonDependencies`. When a suite is installed, HCLI collects dependencies from the root and every component at every nesting depth, then installs them together.
 
 Components can declare their own `settings`. During install, HCLI prompts for (or accepts via `--config`) settings declared by any component. To pass a component setting on the command line, prefix the key with the component name: `--config component-name.key=value`. Keys without a component prefix target the root plugin.
 

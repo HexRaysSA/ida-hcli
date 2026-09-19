@@ -196,7 +196,7 @@ python -m pip install \
   <all dependency specs>
 ```
 
-HCLI includes dependency specs from already installed HCLI-managed plugins plus the plugin being installed or upgraded. Already installed packages may satisfy requirements if pip considers them compatible. HCLI does not use `--ignore-installed` by default.
+Plugin dependencies are resolved from the bundle like from any other repository. HCLI installs the Python requirements of every plugin in the install plan, including plugin dependencies and plugins that stay at their installed version, in one pip invocation. Already installed packages may satisfy requirements if pip considers them compatible. HCLI does not use `--ignore-installed` by default.
 
 No hash pinning is required. The user trusts the plugin bundle author.
 
@@ -204,7 +204,7 @@ HCLI does not uninstall Python dependencies when plugins are uninstalled. Orphan
 
 ## Bundle creation behavior
 
-`hcli plugin bundle create` accepts explicit plugin versions and local plugin ZIP paths as positional arguments. Repository plugin references must include an exact version, for example `oplog==0.1.3`. Bare latest resolution is intentionally not part of the first version. `--path` selects the output archive path.
+`hcli plugin bundle create` accepts repository plugin references, local plugin ZIP paths, and local plugin directories as positional arguments. A repository reference may pin an exact version, for example `oplog==0.1.3`. An unpinned reference selects the latest version compatible with each target platform. `--path` selects the output archive path.
 
 Targeting uses `--platform` and `--python`, both required and repeatable. Each accepts `current` (auto-detect this machine), `all` (all supported values), or a specific value. `--platform` accepts the canonical IDA platform name (e.g. `linux-x86_64`) or short aliases (`linux`, `windows`, `macos-arm64`, `macos-intel`). `--python` accepts a `major.minor` version string (e.g. `3.12`). HCLI builds the cross product of all resolved platforms and Python versions. Duplicate targets are deduplicated.
 
@@ -212,7 +212,7 @@ The supported Python versions for `--python all` are maintained as a hardcoded c
 
 A legacy `--target` flag (e.g. `--target linux-x86_64-cp312`) is accepted for scripting but hidden from help. It cannot be combined with `--platform` or `--python`.
 
-Bundle creation resolves all selected plugin archives, reads their `ida-plugin.json` metadata, collects all `pythonDependencies`, and materializes a flat wheelhouse per target tuple. A single online Linux builder can create wheelhouses for all target platforms when all dependencies publish compatible wheels.
+Bundle creation plans an install of each named plugin for each target platform, with no IDA version filter and no installed plugins. Every required plugin dependency at any depth is included. Optional dependencies are excluded unless named on the command line. Archives are deduplicated by content hash across plugins and platforms. When a plugin ships separate archives per platform, each archive is stored with a platform suffix in its filename. A required dependency that cannot be resolved for a target platform fails the build. HCLI collects the `pythonDependencies` of every included archive and materializes a flat wheelhouse per target tuple. A single online Linux builder can create wheelhouses for all target platforms when all dependencies publish compatible wheels.
 
 The preferred wheelhouse materialization path is one `pip download` invocation per target. For cross-target downloads HCLI must pass all compatibility options together:
 

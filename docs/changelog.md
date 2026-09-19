@@ -31,9 +31,14 @@ For complete details including contributors and full diffs, see the [GitHub Rele
 - Named plugin repositories with two defaults: `community` (public, anonymous) and `hexrays` (private, requires login with an active IDA license). Custom repositories can be added with `hcli plugin repo add`.
 - `hcli plugin repo list | add | remove | set-default` commands for managing repositories.
 - `repo/name` syntax for installing plugins from a specific repository, e.g. `hcli plugin install hexrays/some-plugin`.
-- `dependencies` field in `ida-plugin.json` for declaring companion plugins. Declared dependencies are fetched from the same repository and installed as independent top-level plugins during `install` and `upgrade`. On uninstall, HCLI lists dependency plugins and offers to remove them (`--yes` to confirm automatically).
+- `dependencies` field in `ida-plugin.json` for declaring companion plugins. Dependencies are resolved recursively from the repository index before any download and installed as independent top-level plugins during `install` and `upgrade`. String entries are required and block the install when they cannot be resolved. The object form `{"plugin": "name", "required": false}` marks a dependency optional.
+- `--dependency-config plugin.key=value` option on `install` and `upgrade` for configuring dependency settings.
+- `hcli plugin install --upgrade` installs missing dependencies of an already installed plugin.
+- Plugin bundles include every required plugin dependency of the plugins they are built for, and `bundle create` accepts unpinned plugin references and plugin directories.
+- On uninstall, HCLI reports installed plugins that depend on the removed plugin, including suite components, and offers to remove dependencies that no other plugin declares (`--yes` to confirm automatically).
 
 ### Changed
+- Plugin `install` and `upgrade` are transactional. On failure, added plugins are removed, upgraded plugins are restored, and configuration changes are reverted. Python environment changes are not rolled back.
 - Community plugins are fetched from the Hex-Rays portal (`community.plugins.hex-rays.com`).
 - `hcli plugin search` spans all configured repositories and reports any it could not reach.
 

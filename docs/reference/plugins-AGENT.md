@@ -27,10 +27,12 @@ Here are your specific instructions. Ask for guidance and clarification along th
     "packagename[>=version]",
   ],
   "dependencies": [
-    # other plugins that should be installed alongside this one.
+    # other top-level plugins installed alongside this one, resolved recursively.
     # bare name, name==version, or name@host with optional version pin.
+    # a string entry is required; the object form can mark it optional.
     # "dep-plugin-name",
     # "dep-plugin-name==1.0.0",
+    # {"plugin": "dep-plugin-name", "required": false},
   ],
   "components": [
     # tightly-coupled sub-plugins bundled in the same archive.

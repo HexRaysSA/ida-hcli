@@ -121,26 +121,67 @@ Plugins are written to `$IDAUSR/plugins`, which is typically `~/.idapro/plugins`
 
 ### Plugin dependencies
 
-A plugin can declare other plugins as dependencies in its `ida-plugin.json`. When you install or upgrade such a plugin, HCLI fetches the declared dependencies from the same repository and installs them as independent top-level plugins. If a dependency is already installed and satisfies the version requirement, it is skipped.
+A plugin can declare other plugins as dependencies in its `ida-plugin.json`. Each entry is a plugin reference string or an object with a `plugin` reference and a `required` flag. A string entry is required. Set `required` to `false` in the object form to mark a dependency optional.
 
-On upgrade, HCLI installs any newly-added dependencies and tells you about any that were removed from the manifest (they stay installed so you can remove them yourself if no longer needed).
+When you install or upgrade a plugin, HCLI plans the whole dependency tree before it downloads anything. Dependencies of dependencies are included at any depth. Each dependency is installed as an independent top-level plugin from the same repository. A dependency must name a top-level plugin. It may not name a suite component.
 
-On uninstall, HCLI lists installed dependencies and asks whether to remove them:
+A required dependency that cannot be resolved blocks the install. An optional dependency that cannot be resolved is skipped and reported.
+
+HCLI selects a version for each dependency as follows:
+
+| Dependency state | Result |
+|---|---|
+| Not installed, no pin | Latest version compatible with your platform and IDA version |
+| Not installed, `==` pin | The pinned version |
+| Installed, no pin or pin equal to the installed version | Installed version is kept |
+| Installed at a lower version than the pin | Upgraded to the pinned version |
+| Installed at a higher version than the pin | Installed version is kept, with a warning |
+| Installed from a different repository host than the reference | Install fails |
+
+Dependencies that declare required settings can be configured on the command line with `--dependency-config plugin.key=value`. In an interactive terminal, HCLI prompts for missing required settings before it changes anything.
+
+The install output lists the root plugin first and then every dependency with the plugin that pulled it in:
 
 ```console
-❯ hcli plugin uninstall my-suite
-Uninstalled plugin: my-suite
+❯ hcli plugin install my-plugin
+Installed plugin: my-plugin==2.0.0
+  Installed dependency: dep-a==1.0.0 (required by my-plugin)
+  Present dependency: dep-b (required by dep-a)
+  Unavailable optional dependency: dep-c: no version compatible with linux-x86_64 and IDA 9.1 was found in the allowed repositories
+```
+
+Plugin installation is transactional. If any step fails, HCLI removes the plugins it added during that operation, restores the previous versions of plugins it upgraded, and reverts configuration changes. Python environment changes are not rolled back. The output names what was rolled back and any directories kept for manual recovery.
+
+If a plugin is installed but some of its dependencies are missing, run `hcli plugin install --upgrade <plugin-name>`. When the installed version is already the newest available, this installs the missing dependencies and leaves the plugin as it is.
+
+On upgrade, HCLI installs newly declared dependencies and tells you about dependencies removed from the manifest. They stay installed so you can remove them yourself if no longer needed.
+
+On uninstall, HCLI reports installed plugins that depend on the plugin you are removing, including declarations made by suite components:
+
+```console
+❯ hcli plugin uninstall dep-a
+These installed plugins depend on dep-a:
+  my-plugin requires dep-a
+  tool-a (component of tools) optionally uses dep-a
+Uninstall anyway? [Y/n]
+```
+
+It also lists the dependencies of the removed plugin and offers to remove those that no other installed plugin declares:
+
+```console
+❯ hcli plugin uninstall my-plugin
+Uninstalled plugin: my-plugin
 These plugins were listed as dependencies:
-  dep-a    1.0.0
-  dep-b    2.3.0
+  dep-a==1.0.0
+  dep-b==2.3.0  (kept: still declared by other-plugin)
 Remove them too? [y/N]
 ```
 
-Pass `--yes` (`-y`) to confirm automatically in scripts. In non-interactive mode without `--yes`, dependencies are listed but not removed.
+Removal is not recursive: dependencies of a removed companion stay installed. Pass `--yes` (`-y`) to confirm automatically in scripts. In non-interactive mode without `--yes`, companions are listed but not removed.
 
 ### Plugin suites
 
-Some plugins are distributed as a suite: a root plugin that bundles tightly-coupled sub-plugins called components. Components share the suite's lifecycle. When you install or remove a suite, all its components go with it.
+Some plugins are distributed as a suite: a root plugin that bundles tightly-coupled sub-plugins called components. Components share the suite's lifecycle. When you install or remove a suite, all its components go with it. A dependency declared by another plugin must name the suite root. Components cannot be dependency targets.
 
 `hcli plugin status` shows a count of components next to each suite. Use `--show-components` to expand the listing:
 
@@ -213,7 +254,7 @@ current version: 9.4
 Installed plugin: plugin1==1.0.0
 ```
 
-Dependencies are installed from the bundle's embedded wheelhouse, so pip does not need network access.
+A bundle contains the plugins named when it was created plus every required plugin dependency at any depth, so plugin dependencies resolve from the bundle without network access. Python dependencies are installed from the bundle's embedded wheelhouse, so pip does not need network access either.
 
 To restore the default configuration later, re-add the built-in repositories with their canonical URLs:
 

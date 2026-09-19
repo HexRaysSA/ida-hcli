@@ -22,6 +22,8 @@ For each repo, it will watch for releases. When it sees a release, it will inspe
 In either case, it'll expect to find an `ida-plugin.json` file in the archive describing the plugin.
 The service will index all the found archives and their metadata, and expose this to HCLI
 (and/or other plugin managers, like a planned GUI version within IDA).
+Each published entry embeds the full metadata of every suite component and lists concrete Python dependencies,
+so a plugin manager can plan an install from the index alone.
 
 !!! note
 
@@ -31,6 +33,7 @@ The service will index all the found archives and their metadata, and expose thi
 ## IDA Plugin Manager
 
 HCLI fetches the plugin repository JSON from each configured repository to list/search for plugins and retrieve download URLs.
+Before it downloads any archive, HCLI plans the full set of plugins to install from the index, including plugin dependencies at any depth.
 After various validation steps, HCLI then extracts the archive subdirectory containing
  `ida-plugin.json` into `$IDAUSR/plugins/`, and the plugin is installed.
 If there are Python dependencies declared within the metadata file, then these are installed via pip first.
