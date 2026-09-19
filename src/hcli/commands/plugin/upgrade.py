@@ -109,8 +109,8 @@ def upgrade_plugin(ctx, plugin: str, dependency_config: tuple[str, ...], no_buil
 
         from hcli.commands.plugin import repo_for_reference
 
-        root_repo: BasePluginRepo = repo_for_reference(ctx, ref)
         dependency_repo: BasePluginRepo = ctx.obj["plugin_repo"]
+        root_repo: BasePluginRepo = repo_for_reference(ctx, ref) if ref.repo else dependency_repo
 
         logger.info("finding plugin in repository")
         try:

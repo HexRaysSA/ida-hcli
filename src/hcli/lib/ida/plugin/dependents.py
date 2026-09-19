@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from hcli.lib.ida.plugin import DependencySpec, IDAMetadataDescriptor, iter_dependency_specs, iter_expanded_components
 from hcli.lib.ida.plugin.install import InstalledPluginRecord, find_installed_plugin_in
-from hcli.lib.ida.plugin.reference import parse_dependency_spec
+from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_dependency_spec
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +21,20 @@ class DependencyDeclaration:
     declarer: str
     spec: DependencySpec
     target: str
+    host: str | None = None
 
     @property
     def declared_by_component(self) -> bool:
         return self.declarer.lower() != self.owner.name.lower()
+
+    def names(self, name: str, host: str) -> bool:
+        """Whether this declaration refers to the plugin ``name`` published at ``host``.
+
+        A declaration without a host qualifier names the plugin at any host.
+        """
+        if self.target.lower() != name.lower():
+            return False
+        return self.host is None or normalize_plugin_host(self.host) == normalize_plugin_host(host)
 
     def describe_declarer(self) -> str:
         if self.declared_by_component:
@@ -60,11 +70,15 @@ def _expand_or_report(record: InstalledPluginRecord, broken: list[str] | None) -
 
 def get_owned_names(record: InstalledPluginRecord, broken: list[str] | None = None) -> set[str]:
     """Lowercase names of ``record`` and every readable component beneath it."""
-    names = {record.name.lower()}
-    names.update(
-        component.plugin.name.lower() for _, component in iter_expanded_components(_expand_or_report(record, broken))
-    )
-    return names
+    return set(_owned_hosts(record, broken))
+
+
+def _owned_hosts(record: InstalledPluginRecord, broken: list[str] | None) -> dict[str, str]:
+    """Host of ``record`` and of every readable component beneath it, keyed by lowercase name."""
+    hosts = {record.name.lower(): record.host}
+    for _, component in iter_expanded_components(_expand_or_report(record, broken)):
+        hosts.setdefault(component.plugin.name.lower(), component.plugin.host)
+    return hosts
 
 
 def collect_dependency_declarations(
@@ -76,22 +90,29 @@ def collect_dependency_declarations(
         expanded = _expand_or_report(record, broken)
         for path, spec in iter_dependency_specs(expanded):
             try:
-                target = parse_dependency_spec(spec.plugin).name
+                reference = parse_dependency_spec(spec.plugin)
             except ValueError as e:
                 logger.debug("skipping malformed dependency %r of %s: %s", spec.plugin, record.name, e)
                 continue
             declarer = path[-1] if path else record.name
-            declarations.append(DependencyDeclaration(record, declarer, spec, target))
+            declarations.append(DependencyDeclaration(record, declarer, spec, reference.name, reference.host))
     return declarations
 
 
 def find_dependents(
     records: list[InstalledPluginRecord], record: InstalledPluginRecord, broken: list[str] | None = None
 ) -> list[DependencyDeclaration]:
-    """Declarations from other installed plugins that name ``record`` or one of its components."""
-    owned = get_owned_names(record, broken)
+    """Declarations from other installed plugins that name ``record`` or one of its components.
+
+    A host-qualified declaration only counts when its host matches the installed plugin.
+    """
+    owned = _owned_hosts(record, broken)
     others = [r for r in records if r.path != record.path]
-    return [d for d in collect_dependency_declarations(others, broken) if d.target.lower() in owned]
+    return [
+        d
+        for d in collect_dependency_declarations(others, broken)
+        if d.target.lower() in owned and d.names(d.target, owned[d.target.lower()])
+    ]
 
 
 def find_companions(
@@ -104,15 +125,14 @@ def find_companions(
         name = declaration.target.lower()
         if name in owned or name in companions:
             continue
-        installed = find_installed_plugin_in(records, declaration.target)
+        installed = find_installed_plugin_in(records, declaration.target, declaration.host)
         if installed is not None:
             companions[name] = installed
     return list(companions.values())
 
 
 def find_remaining_declarers(
-    records: Iterable[InstalledPluginRecord], name: str, broken: list[str] | None = None
+    records: Iterable[InstalledPluginRecord], companion: InstalledPluginRecord, broken: list[str] | None = None
 ) -> list[DependencyDeclaration]:
-    """Declarations among ``records`` that still name ``name``."""
-    wanted = name.lower()
-    return [d for d in collect_dependency_declarations(records, broken) if d.target.lower() == wanted]
+    """Declarations among ``records`` that still name ``companion``, respecting host qualifiers."""
+    return [d for d in collect_dependency_declarations(records, broken) if d.names(companion.name, companion.host)]

@@ -817,38 +817,6 @@ def install_plugin_archive(
     )
 
 
-def repair_installed_plugin(
-    name: str,
-    *,
-    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
-    check_environment: bool = True,
-    current_platform: str | None = None,
-    current_version: str | None = None,
-    plugin_repo: BasePluginRepo | None = None,
-    config_values: Mapping[tuple[str, str], str | bool] | None = None,
-    require_configuration: bool = True,
-) -> InstallResult:
-    """Keep the installed plugin ``name`` and install whatever its dependency closure is missing.
-
-    Raises:
-        PluginNotInstalledError: when ``name`` is not installed.
-        DependencyResolutionError, InstallExecutionError: as for ``install_plugin_archive``.
-    """
-    from hcli.lib.ida.plugin.resolve import InstalledRoot
-
-    logger.info("repairing plugin: %s", name)
-    return _plan_and_execute(
-        [InstalledRoot(name)],
-        plugin_repo=plugin_repo,
-        current_platform=current_platform,
-        current_version=current_version,
-        pip_options=pip_options,
-        check_environment=check_environment,
-        config_values=config_values,
-        require_configuration=require_configuration,
-    )
-
-
 # Files/directories under a plugin source tree we never want to ship into a
 # distributable archive (dev / VCS / OS noise).
 _PLUGIN_DIRECTORY_SKIP_PARTS = frozenset({".git", ".hg", ".svn", "__pycache__", ".DS_Store"})

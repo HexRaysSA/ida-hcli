@@ -10,7 +10,6 @@ from hcli.lib.ida.plugin import (
     MAX_COMPONENT_DEPTH,
     IDAMetadataDescriptor,
     get_metadatas_with_paths_from_plugin_archive,
-    get_python_dependencies_from_plugin_archive,
     get_python_dependencies_from_plugin_directory,
     iter_component_names,
 )
@@ -117,18 +116,6 @@ def walk_component_tree_from_archive(
     return result
 
 
-def collect_python_dependencies_from_archive(
-    zip_data: bytes,
-    root_path: Path,
-    root_metadata: IDAMetadataDescriptor,
-) -> list[str]:
-    """Collect pythonDependencies from the root and every component in a suite archive."""
-    deps = list(get_python_dependencies_from_plugin_archive(zip_data, root_metadata))
-    for _comp_path, comp_meta in walk_component_tree_from_archive(zip_data, root_path, root_metadata):
-        deps.extend(get_python_dependencies_from_plugin_archive(zip_data, comp_meta))
-    return deps
-
-
 def collect_python_dependencies_from_directory(
     plugin_dir: Path,
     metadata: IDAMetadataDescriptor,
@@ -202,44 +189,6 @@ def find_suite_for_component(name: str) -> InstalledPluginRecord | None:
                 return record
 
     return None
-
-
-def check_component_name_collisions(
-    component_names: set[str],
-    *,
-    exclude_suite: str | None = None,
-) -> list[str]:
-    """Check component names against all installed plugins and their components.
-
-    Returns a list of human-readable collision descriptions.
-    """
-    from hcli.lib.ida.plugin.install import get_installed_plugin_records
-
-    collisions: list[str] = []
-    records = get_installed_plugin_records()
-
-    for name in sorted(component_names):
-        for record in records:
-            if exclude_suite and record.name == exclude_suite:
-                continue
-
-            if record.name == name:
-                collisions.append(f"'{name}' collides with installed top-level plugin '{record.name}'")
-                continue
-
-            if not record.metadata.plugin.components:
-                continue
-
-            try:
-                tree = walk_component_tree_from_directory(record.path)
-            except ValueError:
-                continue
-
-            for _, comp_meta in tree:
-                if comp_meta.plugin.name == name:
-                    collisions.append(f"'{name}' collides with a component of suite '{record.name}'")
-
-    return collisions
 
 
 def find_undeclared_plugins_in_directory(

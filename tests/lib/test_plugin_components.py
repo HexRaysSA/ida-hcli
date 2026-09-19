@@ -15,7 +15,6 @@ from pydantic import ValidationError
 from hcli.commands.plugin import plugin as plugin_group
 from hcli.lib.ida.plugin import IDAMetadataDescriptor
 from hcli.lib.ida.plugin.components import (
-    check_component_name_collisions,
     collect_all_component_names_from_archive,
     find_root_manifest_in_archive,
     find_suite_for_component,
@@ -438,49 +437,6 @@ def test_status_json_includes_components(virtual_ida_environment):
 
 
 # ---------------------------------------------------------------------------
-# Name collision checking
-# ---------------------------------------------------------------------------
-
-
-def test_collision_component_vs_toplevel(virtual_ida_environment):
-    standalone = _make_standalone_zip("comp-a", "1.0.0")
-    install_plugin_archive(standalone, "comp-a")
-
-    suite_zip = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0")])
-    path, meta = find_root_manifest_in_archive(suite_zip)
-    component_names = collect_all_component_names_from_archive(suite_zip, path, meta)
-
-    collisions = check_component_name_collisions(component_names)
-    assert len(collisions) == 1
-    assert "comp-a" in collisions[0]
-
-
-def test_collision_component_vs_other_suite(virtual_ida_environment):
-    suite1 = _make_suite_zip("suite-1", "1.0.0", [("shared-comp", "1.0.0")])
-    install_plugin_archive(suite1, "suite-1")
-
-    suite2_zip = _make_suite_zip("suite-2", "1.0.0", [("shared-comp", "2.0.0")])
-    path, meta = find_root_manifest_in_archive(suite2_zip)
-    component_names = collect_all_component_names_from_archive(suite2_zip, path, meta)
-
-    collisions = check_component_name_collisions(component_names)
-    assert len(collisions) == 1
-    assert "shared-comp" in collisions[0]
-
-
-def test_no_collision_when_same_suite_excluded(virtual_ida_environment):
-    suite = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0")])
-    install_plugin_archive(suite, "my-suite")
-
-    suite_v2 = _make_suite_zip("my-suite", "2.0.0", [("comp-a", "1.1.0")])
-    path, meta = find_root_manifest_in_archive(suite_v2)
-    component_names = collect_all_component_names_from_archive(suite_v2, path, meta)
-
-    collisions = check_component_name_collisions(component_names, exclude_suite="my-suite")
-    assert len(collisions) == 0
-
-
-# ---------------------------------------------------------------------------
 # find_suite_for_component
 # ---------------------------------------------------------------------------
 
@@ -541,38 +497,6 @@ def test_lint_suite_missing_component_dir(virtual_ida_environment, tmp_path):
 # ---------------------------------------------------------------------------
 # Recursive Python dependency collection
 # ---------------------------------------------------------------------------
-
-
-def test_collect_python_deps_from_archive():
-    from hcli.lib.ida.plugin.components import collect_python_dependencies_from_archive
-
-    zip_data = _make_suite_zip(
-        "my-suite",
-        "1.0.0",
-        [("comp-a", "1.0.0", {"python_dependencies": ["pyyaml"]})],
-        suite_python_deps=["requests"],
-    )
-    path, meta = find_root_manifest_in_archive(zip_data)
-    deps = collect_python_dependencies_from_archive(zip_data, path, meta)
-    assert "requests" in deps
-    assert "pyyaml" in deps
-
-
-def test_collect_nested_python_deps_from_archive():
-    from hcli.lib.ida.plugin.components import collect_python_dependencies_from_archive
-
-    zip_data = _make_nested_suite_zip(
-        "my-suite",
-        "1.0.0",
-        [("comp-a", "1.0.0", [("sub-x", "0.1.0")]), ("comp-b", "2.0.0", [])],
-        suite_python_deps=["requests"],
-        comp_python_deps={"comp-a": ["pyyaml"], "sub-x": ["toml"]},
-    )
-    path, meta = find_root_manifest_in_archive(zip_data)
-    deps = collect_python_dependencies_from_archive(zip_data, path, meta)
-    assert "requests" in deps
-    assert "pyyaml" in deps
-    assert "toml" in deps
 
 
 def test_collect_python_deps_from_directory(virtual_ida_environment, tmp_path):
@@ -763,14 +687,9 @@ def test_config_get_for_component(virtual_ida_environment):
     )
     install_plugin_archive(zip_data, "my-suite", require_configuration=False)
 
-    from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
-    from hcli.lib.ida.plugin.settings import set_setting_for_metadata
-
-    comp_dir = get_plugin_directory("my-suite") / "comp-a"
-    comp_meta = get_metadata_from_plugin_directory(comp_dir)
-    set_setting_for_metadata("comp-a", "api_key", "test-val", comp_meta)
-
     runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["config", "comp-a", "set", "api_key", "test-val"])
+    assert result.exit_code == 0, result.output
     result = runner.invoke(plugin_group, ["config", "comp-a", "get", "api_key"])
     assert result.exit_code == 0, result.output
     assert "test-val" in result.output
@@ -824,24 +743,6 @@ def test_suite_install_creates_root_entry_point(virtual_ida_environment):
 # ---------------------------------------------------------------------------
 # Depth-2+ nested component tests (grandchildren)
 # ---------------------------------------------------------------------------
-
-
-def test_nested_deps_depth2_collected_from_archive():
-    """Root -> comp-a -> sub-x: all three levels' deps are collected."""
-    from hcli.lib.ida.plugin.components import collect_python_dependencies_from_archive
-
-    zip_data = _make_nested_suite_zip(
-        "my-suite",
-        "1.0.0",
-        [("comp-a", "1.0.0", [("sub-x", "0.1.0")])],
-        suite_python_deps=["requests"],
-        comp_python_deps={"comp-a": ["pyyaml"], "sub-x": ["toml"]},
-    )
-    path, meta = find_root_manifest_in_archive(zip_data)
-    deps = collect_python_dependencies_from_archive(zip_data, path, meta)
-    assert "requests" in deps
-    assert "pyyaml" in deps
-    assert "toml" in deps
 
 
 def test_nested_deps_depth2_collected_from_directory(virtual_ida_environment, tmp_path):

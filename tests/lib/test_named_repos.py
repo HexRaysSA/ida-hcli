@@ -446,3 +446,31 @@ def test_prefixed_root_resolves_dependencies_across_all_repositories(virtual_ida
     assert result.exit_code == 0, result.output
     installed = {r.name: r.version for r in get_installed_plugin_records()}
     assert installed == {"app": "2.0.0", "lib": "2.0.0"}
+
+
+def test_bare_name_upgrade_finds_plugin_installed_from_non_default_repository(
+    virtual_ida_environment, block_network, tmp_path
+):
+    main_dir = tmp_path / "main"
+    extra_dir = tmp_path / "extra"
+    _fs_repo(main_dir, _zip("lib", "1.0.0"))
+    _fs_repo(extra_dir, _zip("app", "1.0.0", deps=["lib"]))
+    runner = CliRunner(mix_stderr=False)
+    for args in (
+        ("repo", "remove", "hexrays"),
+        ("repo", "remove", "community"),
+        ("repo", "add", "main", main_dir.as_uri()),
+        ("repo", "add", "extra", extra_dir.as_uri()),
+        ("repo", "set-default", "main"),
+    ):
+        result = _invoke(runner, *args)
+        assert result.exit_code == 0, result.output
+    result = _invoke(runner, "install", "extra/app")
+    assert result.exit_code == 0, result.output
+
+    (extra_dir / "app-2.zip").write_bytes(_zip("app", "2.0.0", deps=["lib"]))
+    result = _invoke(runner, "upgrade", "app")
+
+    assert result.exit_code == 0, result.output
+    installed = {r.name: r.version for r in get_installed_plugin_records()}
+    assert installed == {"app": "2.0.0", "lib": "1.0.0"}

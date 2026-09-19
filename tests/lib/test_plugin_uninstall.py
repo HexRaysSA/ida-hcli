@@ -165,7 +165,7 @@ def test_find_remaining_declarers_after_removal(virtual_ida_environment, tmp_pat
     records = get_installed_plugin_records()
     remaining = [r for r in records if r.name != "pack"]
 
-    declarers = find_remaining_declarers(remaining, "LIB")
+    declarers = find_remaining_declarers(remaining, find_installed_plugin("lib"))
 
     assert [d.declarer for d in declarers] == ["other"]
 
@@ -222,3 +222,22 @@ def test_uninstall_keeps_companion_when_a_declarer_tree_cannot_be_inspected(virt
     assert not is_plugin_installed("pack")
     assert is_plugin_installed("lib")
     assert "kept: could not inspect components of suite" in " ".join(result.output.split())
+
+
+def test_host_qualified_declarations_ignore_plugins_from_another_host(virtual_ida_environment, tmp_path):
+    from test_plugin_resolve import OTHER_HOST
+
+    _install(tmp_path, _zip("dep", host=OTHER_HOST), _zip("app", deps=[{"plugin": f"dep@{HOST}", "required": False}]))
+    records = get_installed_plugin_records()
+    dep = find_installed_plugin("dep")
+    app = find_installed_plugin("app")
+
+    assert find_dependents(records, dep) == []
+    assert find_companions(records, app) == []
+    assert find_remaining_declarers([app], dep) == []
+
+    unqualified = _zip("app2", deps=["dep"])
+    _install(tmp_path, unqualified)
+    records = get_installed_plugin_records()
+    assert [d.declarer for d in find_dependents(records, dep)] == ["app2"]
+    assert [c.name for c in find_companions(records, find_installed_plugin("app2"))] == ["dep"]

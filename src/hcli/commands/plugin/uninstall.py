@@ -53,7 +53,7 @@ def _remove_companions(companions: list[InstalledPluginRecord], yes: bool) -> No
     console.print("These plugins were listed as dependencies:")
     for companion in companions:
         broken: list[str] = []
-        declarers = find_remaining_declarers(remaining, companion.name, broken)
+        declarers = find_remaining_declarers(remaining, companion, broken)
         if declarers:
             still = ", ".join(sorted({d.describe_declarer() for d in declarers}))
             console.print(f"  {companion.name}=={companion.version}  (kept: still declared by {still})")

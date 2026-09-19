@@ -232,20 +232,6 @@ def has_plugin_setting(plugin_name: str, key: str) -> bool:
     return key in plugin_config.settings
 
 
-def set_setting_for_metadata(
-    plugin_name: str,
-    key: str,
-    value: str | bool,
-    metadata: IDAMetadataDescriptor,
-):
-    """Set a setting given pre-loaded metadata.
-
-    Does not perform installed-plugin lookup. Used during install when the
-    target may be a component not yet discoverable as a top-level plugin.
-    """
-    _write_setting(plugin_name, key, value, metadata)
-
-
 def has_setting_in_config(plugin_name: str, key: str) -> bool:
     """Check if a setting value exists in ida-config.json.
 

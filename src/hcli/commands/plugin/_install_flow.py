@@ -304,6 +304,10 @@ def report_install_result(result: InstallResult, *, present_label: str = "Alread
         console.print(f"  [yellow]Unavailable[/yellow] optional dependency: {branch.edge.spec.plugin}: {reason}")
     for warning in _collect_warnings(result):
         console.print(f"[yellow]Warning[/yellow]: {warning}")
+    for diagnostic in result.diagnostics:
+        logger.debug(
+            "dependency diagnostic: %s: %s: %s", diagnostic.kind, diagnostic.edge.describe(), diagnostic.message
+        )
 
 
 def report_install_failure(error: InstallExecutionError) -> None:

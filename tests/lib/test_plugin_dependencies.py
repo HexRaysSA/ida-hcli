@@ -264,8 +264,7 @@ def test_install_pack_upgrades_outdated_pinned_dep(virtual_ida_environment):
     with _make_fs_repo({"dep-a-v2.zip": dep_a_v2}) as repo:
         result = install_plugin_archive(pack_zip, "my-pack", plugin_repo=repo, check_environment=False)
 
-    dep = result.node_for_name("dep-a")
-    assert dep is not None
+    dep = next(n for n in result.nodes if n.name == "dep-a")
     assert dep.outcome == "upgraded"
     assert dep.previous_version == "1.0.0"
     assert _get_installed_version("dep-a") == "2.0.0"
@@ -516,8 +515,7 @@ def test_upgrade_pack_upgrades_unsatisfied_deps(virtual_ida_environment):
         install_plugin_archive(pack_v1, "my-pack", plugin_repo=repo, check_environment=False)
         result = upgrade_plugin_archive(pack_v2, "my-pack", plugin_repo=repo, check_environment=False)
 
-    dep = result.node_for_name("dep-a")
-    assert dep is not None
+    dep = next(n for n in result.nodes if n.name == "dep-a")
     assert dep.outcome == "upgraded"
     assert _get_installed_version("dep-a") == "2.0.0"
 
