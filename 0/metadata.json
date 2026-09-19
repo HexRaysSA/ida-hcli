@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "01M2WVTWRYTWPJFP2RPKZKVJFA",
+  "session_id": "a69fdd3e-1664-4a16-bd1d-b6380d087226",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-19T12:56:37.581592Z",
+  "branch": "multi-plugin-archives",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/hcli/commands/plugin/bundle.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-6",
+  "turn_id": "47e195e075a0",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 27,
+    "cache_creation_tokens": 38839,
+    "cache_read_tokens": 925645,
+    "output_tokens": 11625,
+    "api_call_count": 23
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-19T12:56:37.568966Z",
+    "agent_lines": 2,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2,
+    "total_lines_changed": 4,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 235,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".codex/hooks.json": 88,
+        ".pi/extensions/entire/index.ts": 147
+      }
+    }
+  ]
+}

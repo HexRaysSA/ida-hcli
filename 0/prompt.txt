@@ -1,0 +1,11 @@
+create PR for this branch. then do a thorough review of the final diff of this PR.
+
+of course, highlight any bugs. but also pay close attention to keeping this consistent, concise, clear. fix inconsistencies throughout, maintaining style with the existing codebase.
+
+then ensure any relevant documentation is updated. make as minimal changes as possible.
+
+finally, update the PR description to reflect the final implementation.
+
+---
+
+is it complete and thorough? i'm not sure
