@@ -123,9 +123,9 @@ Plugins are written to `$IDAUSR/plugins`, which is typically `~/.idapro/plugins`
 
 A plugin can declare other plugins as dependencies in its `ida-plugin.json`. Each entry is a plugin reference string or an object with a `plugin` reference and a `required` flag. A string entry is required. Set `required` to `false` in the object form to mark a dependency optional.
 
-When you install or upgrade a plugin, HCLI plans the whole dependency tree before it downloads anything. Dependencies of dependencies are included at any depth. Each dependency is installed as an independent top-level plugin from the same repository. A dependency must name a top-level plugin. It may not name a suite component.
+When you install or upgrade a plugin, HCLI plans the whole dependency tree before it downloads anything. Dependencies of dependencies are included at any depth. Each dependency is installed as an independent top-level plugin. Dependencies are looked up across every configured repository, or in the one given with `--repo`; a `repo/` prefix on the command line scopes only the plugin you named. A plugin named on the command line that no repository carries fails with `plugin '<name>' was not found`. A dependency must name a top-level plugin. It may not name a suite component.
 
-A required dependency that cannot be resolved blocks the install. An optional dependency that cannot be resolved is skipped and reported. An optional dependency is also skipped when it needs a different version of a plugin that the same operation already installed for an earlier dependency. The output names the conflict.
+A required dependency that cannot be resolved blocks the install. An optional dependency that cannot be resolved is skipped and reported. An optional dependency is also skipped when it needs a different version of a plugin that the same operation already installed for an earlier dependency, or when it claims a plugin name, its own or a component's, that an earlier optional dependency already owns. The output names the conflict.
 
 HCLI selects a version for each dependency as follows:
 
@@ -138,7 +138,7 @@ HCLI selects a version for each dependency as follows:
 | Installed at a higher version than the pin | Installed version is kept, with a warning |
 | Installed from a different repository host than the reference | Install fails |
 
-Dependencies that declare required settings can be configured on the command line with `--dependency-config plugin.key=value`. In an interactive terminal, HCLI prompts for missing required settings before it changes anything.
+Dependencies that declare required settings can be configured on the command line with `--dependency-config plugin.key=value`. A value for an optional dependency that turned out to be unavailable is ignored with a warning. In an interactive terminal, HCLI prompts for missing required settings before it changes anything.
 
 The install output lists the root plugin first and then every dependency with the plugin that pulled it in:
 
@@ -152,7 +152,7 @@ Installed plugin: my-plugin==2.0.0
 
 Plugin installation is transactional. If any step fails, HCLI removes the plugins it added during that operation, restores the previous versions of plugins it upgraded, and reverts configuration changes. Python environment changes are not rolled back. The output names what was rolled back and any directories kept for manual recovery.
 
-If a plugin is installed but some of its dependencies are missing, run `hcli plugin install --upgrade <plugin-name>`. When the installed version is already the newest available, this installs the missing dependencies and leaves the plugin as it is.
+If a plugin is installed but some of its dependencies are missing, run `hcli plugin install --upgrade <plugin-name>`. When the installed version is already the newest available, or when you pass a local archive older than the installed version, this installs the missing dependencies and leaves the plugin as it is.
 
 On upgrade, HCLI installs newly declared dependencies and tells you about dependencies removed from the manifest or declared with a different version or host. Removed dependencies stay installed so you can remove them yourself if no longer needed.
 
@@ -177,7 +177,7 @@ These plugins were listed as dependencies:
 Remove them too? [y/N]
 ```
 
-Removal is not recursive: dependencies of a removed companion stay installed. Pass `--yes` (`-y`) to confirm automatically in scripts. In non-interactive mode without `--yes`, companions are listed but not removed.
+A companion is also kept when HCLI cannot read the component tree of another installed plugin, because that tree may still declare it. Removal is not recursive: dependencies of a removed companion stay installed. Pass `--yes` (`-y`) to confirm automatically in scripts. In non-interactive mode without `--yes`, companions are listed but not removed.
 
 ### Plugin suites
 
