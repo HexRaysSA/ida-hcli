@@ -39,6 +39,7 @@ from hcli.lib.ida.plugin import (
 )
 from hcli.lib.ida.plugin.exceptions import (
     AmbiguousPluginReferenceError,
+    BrokenPluginInstallationError,
     DependencyConflictError,
     DependencyResolutionError,
     DependencyTargetsComponentError,
@@ -269,6 +270,7 @@ class InstallPlan:
     configuration: list[ConfigurationRequirement]
     warnings: list[str] = field(default_factory=list)
     configuration_values: dict[tuple[str, str], str | bool] = field(default_factory=dict)
+    observed_settings: dict[tuple[str, str], tuple[bool, str | bool | None]] = field(default_factory=dict)
     installed_python_requirements: dict[str, list[str]] = field(default_factory=dict)
     _settings_targets: dict[str, list[_SettingsTarget]] = field(default_factory=dict, repr=False)
 
@@ -348,10 +350,6 @@ class InstallPlan:
             except ValueError as e:
                 raise ValueError(f"invalid value for {target.display_name}.{key}: {e}") from e
             self.configuration_values[(target.display_name, key)] = value
-
-    @property
-    def mutating_nodes(self) -> list[PlannedNode]:
-        return [node for node in self.ordered_nodes() if node.mutates]
 
     def has_settings_target(self, name: str) -> bool:
         """Whether ``name`` is a plugin or component anywhere in the plan, including optional branches."""
@@ -1100,6 +1098,7 @@ class _Planner:
         branches = self._plan_optional(graph, closure.optional_edges)
 
         targets: dict[str, list[_SettingsTarget]] = {}
+        observed: dict[tuple[str, str], tuple[bool, str | bool | None]] = {}
 
         def register(node: PlannedNode, branch: int | None) -> None:
             for path, descriptor in node.iter_manifests():
@@ -1108,6 +1107,11 @@ class _Planner:
                 targets.setdefault(descriptor.plugin.name.lower(), []).append(target)
                 if path:
                     targets.setdefault(qualified.lower(), []).append(target)
+                for setting in descriptor.plugin.settings:
+                    observed.setdefault(
+                        (descriptor.plugin.name, setting.key),
+                        self.context.stored_setting(descriptor.plugin.name, setting.key),
+                    )
 
         for node in graph.nodes.values():
             register(node, None)
@@ -1124,7 +1128,10 @@ class _Planner:
             optional_branches=branches,
             configuration=configuration,
             warnings=closure.warnings,
-            installed_python_requirements=_installed_python_requirements(self.context),
+            observed_settings=observed,
+            installed_python_requirements=_installed_python_requirements(
+                self.context, {identity.name for identity in graph.nodes}
+            ),
             _settings_targets=targets,
         )
 
@@ -1175,12 +1182,20 @@ class _Planner:
         return branches
 
 
-def _installed_python_requirements(context: ResolutionContext) -> dict[str, list[str]]:
-    """Python requirements of every installed plugin and its components, keyed by lowercased name."""
+def _installed_python_requirements(context: ResolutionContext, superseded: set[str]) -> dict[str, list[str]]:
+    """Python requirements of every installed plugin and its components, keyed by lowercased name.
+
+    Plugins named in ``superseded`` are replaced by the plan and skipped.
+
+    Raises:
+        BrokenPluginInstallationError: an installed plugin the plan keeps has an unreadable component tree.
+    """
     from hcli.lib.ida.plugin.components import collect_python_dependencies_from_directory
 
     requirements: dict[str, list[str]] = {}
     for record in context.installed:
+        if record.name.lower() in superseded:
+            continue
         try:
             expanded = context.expand_installed(record)
             descriptors = [expanded, *(d for _, d in iter_expanded_components(expanded))]
@@ -1193,9 +1208,9 @@ def _installed_python_requirements(context: ResolutionContext) -> dict[str, list
         except DependencyResolutionError:
             try:
                 collected = collect_python_dependencies_from_directory(record.path, record.metadata)
-            except Exception as e:
-                logger.debug("skipping Python requirements of unreadable plugin %s: %s", record.name, e)
-                continue
+            except (OSError, ValueError) as e:
+                logger.debug("cannot read Python requirements of installed plugin %s: %s", record.name, e)
+                raise BrokenPluginInstallationError(record.name, record.path) from e
         requirements[record.name.lower()] = collected
     return requirements
 

@@ -41,9 +41,10 @@ class PublishedDirectory:
 
 @dataclass(frozen=True)
 class ReplacedDirectory:
+    """``path`` was moved to ``checkpoint_path``; whatever now sits at ``path`` is new."""
+
     path: Path
     checkpoint_path: Path
-    was_symlink: bool
 
 
 @dataclass(frozen=True)
@@ -129,12 +130,12 @@ class InstallTransaction:
             PluginInUseError: when the existing destination cannot be moved because files are in use.
         """
         self._check_open()
-        if destination.is_symlink() or destination.exists():
-            self._checkpoint(destination)
+        replaced = self._checkpoint(destination)
         os.rename(staged, destination)
         if staged in self.staging:
             self.staging.remove(staged)
-        self.journal.append(PublishedDirectory(destination))
+        if not replaced:
+            self.journal.append(PublishedDirectory(destination))
 
     def replace_directory(self, staged: Path, destination: Path) -> None:
         """Replace an existing ``destination``; fails when nothing is there to replace.
@@ -151,8 +152,7 @@ class InstallTransaction:
     def link_directory(self, source: Path, destination: Path) -> None:
         """Create a symlink at ``destination``, checkpointing any existing entry first."""
         self._check_open()
-        if destination.is_symlink() or destination.exists():
-            self._checkpoint(destination)
+        replaced = self._checkpoint(destination)
         try:
             destination.symlink_to(source, target_is_directory=True)
         except OSError as e:
@@ -160,10 +160,17 @@ class InstallTransaction:
                 f"Failed to create symlink {destination} -> {source}: {e}. "
                 "On Windows, symlink creation requires Developer Mode or administrator privileges."
             ) from e
-        self.journal.append(PublishedDirectory(destination))
+        if not replaced:
+            self.journal.append(PublishedDirectory(destination))
 
-    def _checkpoint(self, destination: Path) -> None:
-        was_symlink = destination.is_symlink()
+    def _checkpoint(self, destination: Path) -> bool:
+        """Move an existing ``destination`` aside and journal the move; false when nothing was there.
+
+        The journal entry is written before the caller fills ``destination``, so
+        a failure between the two still restores the prior content on rollback.
+        """
+        if not (destination.is_symlink() or destination.exists()):
+            return False
         checkpoint = self.trash_dir / f"{destination.name}.checkpoint-{uuid.uuid4().hex[:8]}"
         try:
             os.rename(destination, checkpoint)
@@ -171,7 +178,8 @@ class InstallTransaction:
             if is_file_in_use_error(e):
                 raise PluginInUseError(destination.name, destination) from e
             raise
-        self.journal.append(ReplacedDirectory(destination, checkpoint, was_symlink))
+        self.journal.append(ReplacedDirectory(destination, checkpoint))
+        return True
 
     def write_pth(self, path: Path, content: str) -> None:
         self._check_open()
@@ -273,8 +281,17 @@ class InstallTransaction:
         _open_transactions.discard(self)
 
     def _undo(self, position: int, *, original: BaseException | None) -> None:
+        """Undo journal entries above ``position``.
+
+        A failing step is recorded and its checkpoint kept under the recovery
+        directory. An interrupt (``KeyboardInterrupt``, ``SystemExit``) stops
+        the rollback; every checkpoint not yet restored is moved to the recovery
+        directory before the interrupt propagates, so a later trash sweep cannot
+        delete prior content.
+        """
         failures: list[Exception] = []
         retained: list[Path] = []
+        recovery: Path | None = None
         while len(self.journal) > position:
             entry = self.journal.pop()
             try:
@@ -283,7 +300,20 @@ class InstallTransaction:
                 logger.debug("rollback step failed for %s: %s", entry, e)
                 failures.append(e)
                 if isinstance(entry, ReplacedDirectory) and entry.checkpoint_path.exists():
-                    retained.append(self._retain(entry.checkpoint_path, entry.path.name))
+                    recovery = recovery or self._make_recovery_directory()
+                    retained.append(self._retain(entry.checkpoint_path, entry.path.name, recovery))
+            except BaseException:
+                pending = [entry, *self.journal[position:]]
+                del self.journal[position:]
+                for pending_entry in pending:
+                    if isinstance(pending_entry, ReplacedDirectory) and pending_entry.checkpoint_path.exists():
+                        recovery = recovery or self._make_recovery_directory()
+                        retained.append(self._retain(pending_entry.checkpoint_path, pending_entry.path.name, recovery))
+                if retained:
+                    logger.warning(
+                        "rollback interrupted; prior content retained at: %s", ", ".join(str(p) for p in retained)
+                    )
+                raise
         if failures:
             raise RollbackError(original, failures, retained) from original
 
@@ -316,10 +346,15 @@ class InstallTransaction:
                     del config.plugins[entry.plugin_name]
             set_ida_config(config)
 
-    def _retain(self, checkpoint: Path, name: str) -> Path:
+    def _make_recovery_directory(self) -> Path:
         recovery = self.trash_dir / f"{RECOVERY_DIR_PREFIX}{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
         recovery.mkdir(parents=True, exist_ok=True)
+        return recovery
+
+    def _retain(self, checkpoint: Path, name: str, recovery: Path) -> Path:
         target = recovery / name
+        if target.exists() or target.is_symlink():
+            target = recovery / f"{name}-{uuid.uuid4().hex[:6]}"
         try:
             os.rename(checkpoint, target)
         except OSError as e:

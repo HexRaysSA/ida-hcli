@@ -184,7 +184,7 @@ def test_present_unpinned_retains_installed(virtual_ida_environment):
     assert b.operation == "retain"
     assert b.version == "1.0.0"
     assert isinstance(b.source, InstalledSource)
-    assert plan.mutating_nodes == [_node(plan, "a")]
+    assert [n.name for n in plan.ordered_nodes() if n.mutates] == ["a"]
 
 
 def test_present_at_pin_retains_installed(virtual_ida_environment):
@@ -795,7 +795,7 @@ def test_combined_python_requirements_include_untouched_installed_plugins(virtua
     )
     plan = _plan(repo, "a")
     assert plan.combined_python_requirements() == ["pyyaml", "packaging==25.0", "packaging==24.0"]
-    assert plan.installed_python_requirements == {"other": ["packaging==24.0"], "kept": ["pyyaml"]}
+    assert plan.installed_python_requirements == {"other": ["packaging==24.0"]}
 
 
 def test_combined_python_requirements_include_installed_components(virtual_ida_environment):
@@ -807,3 +807,21 @@ def test_combined_python_requirements_include_installed_components(virtual_ida_e
     repo = _repo(_zip("a", python_deps=["requests"]))
     plan = _plan(repo, "a")
     assert plan.combined_python_requirements() == ["requests", "click", "rich"]
+
+
+def test_unreadable_installed_component_tree_fails_planning_unless_superseded(virtual_ida_environment):
+    from hcli.lib.ida.plugin.exceptions import BrokenPluginInstallationError
+    from hcli.lib.ida.plugin.install import get_plugins_directory
+
+    install_plugin_archive(
+        _suite_zip("suite", "1.0.0", [("comp", "1.0.0", {"python_deps": ["pyyaml"]})]), "suite", check_environment=False
+    )
+    (get_plugins_directory() / "suite" / "comp" / "ida-plugin.json").write_text("{not json")
+    repo = _repo(_zip("a"), _suite_zip("suite", "2.0.0", [("comp", "2.0.0", {})]))
+
+    with pytest.raises(BrokenPluginInstallationError, match="suite"):
+        _plan(repo, "a")
+
+    plan = _plan(repo, "suite", upgrade=True)
+    assert _names(plan) == ["suite"]
+    assert plan.installed_python_requirements == {}

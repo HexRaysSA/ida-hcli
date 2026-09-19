@@ -224,9 +224,6 @@ class DependencyResolutionError(Exception):
         self.chain = tuple(chain)
         super().__init__(message)
 
-    def describe_chain(self) -> str:
-        return " -> ".join(self.chain)
-
 
 class DependencyUnavailableError(DependencyResolutionError):
     """A dependency target cannot be selected from the allowed sources."""

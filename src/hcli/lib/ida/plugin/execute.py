@@ -53,7 +53,6 @@ from hcli.lib.ida.plugin.install import (
 )
 from hcli.lib.ida.plugin.reference import normalize_plugin_host
 from hcli.lib.ida.plugin.resolve import (
-    ConfigurationRequirement,
     EdgeDiagnostic,
     EditableSource,
     InstalledSource,
@@ -76,6 +75,7 @@ from hcli.lib.ida.python import (
     PIP_OPTIONS_DEFAULT,
     CantInstallPackagesError,
     PipOptions,
+    PythonNotFoundError,
     pip_install_packages,
     verify_pip_can_install_packages,
 )
@@ -146,13 +146,6 @@ class InstallResult:
             diagnostics.extend(branch.diagnostics)
         diagnostics.extend(self.execution_diagnostics)
         return diagnostics
-
-    def node_for_name(self, name: str) -> NodeResult | None:
-        wanted = name.lower()
-        for node in self.nodes:
-            if node.identity.name == wanted:
-                return node
-        return None
 
     def mark_rolled_back(self) -> None:
         for node in self.nodes:
@@ -328,10 +321,19 @@ def _all_nodes(plan: InstallPlan) -> list[PlannedNode]:
     return nodes
 
 
-def _required_mutating_python_requirements(plan: InstallPlan) -> list[str]:
+def _is_bundle_sourced(node: PlannedNode) -> bool:
+    from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
+
+    return isinstance(node.source, LocationSource) and isinstance(
+        node.source.repo.get_location_owner(node.source.location), PluginBundleRepo
+    )
+
+
+def _required_bundle_python_requirements(plan: InstallPlan) -> list[str]:
+    """Requirements of required nodes that a bundle supplies, whose wheels only a bundle wheelhouse carries."""
     seen: dict[str, None] = {}
     for node in plan.ordered_nodes():
-        if node.mutates:
+        if node.mutates and _is_bundle_sourced(node):
             for requirement in node.python_requirements():
                 seen.setdefault(requirement, None)
     return list(seen)
@@ -373,8 +375,8 @@ def _effective_pip_options(
     become unavailable for that reason; the required branch raises instead.
 
     Raises:
-        BundleTargetUnavailableError: a required node needs Python packages from a
-            bundle that has no wheelhouse for this platform.
+        BundleTargetUnavailableError: a required node supplied by a bundle needs
+            Python packages, and no bundle has a wheelhouse for this platform.
     """
     from hcli.lib.ida.plugin.bundle import bundle_dependency_source
     from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
@@ -402,7 +404,7 @@ def _effective_pip_options(
             assert isinstance(owner, PluginBundleRepo)
             targets.extend(owner.target_ids)
         error = BundleTargetUnavailableError(current_platform, python_version, targets)
-        if _required_mutating_python_requirements(plan):
+        if _required_bundle_python_requirements(plan):
             raise error
         return user_options, str(error)
     combined = PipOptions(
@@ -514,14 +516,17 @@ class _Executor:
             return None
         return self._site_dir / _editable_pth_filename(plugin_name)
 
-    def _pip(self, requirements: list[str]) -> None:
-        if not requirements:
-            return
-        python_exe = self.prepared.python_exe
-        if python_exe is None:
-            python_exe = resolve_python_for_dependencies(
-                requirements, check_environment=self.prepared.check_environment
-            )
+    def _python(self, requirements: list[str]) -> Path:
+        """IDA's Python for ``requirements``; resolved once during preparation when the required plan needed it.
+
+        Raises:
+            PythonNotFoundError, PluginInstallationError: as for ``resolve_python_for_dependencies``.
+        """
+        if self.prepared.python_exe is not None:
+            return self.prepared.python_exe
+        return resolve_python_for_dependencies(requirements, check_environment=self.prepared.check_environment)
+
+    def _pip(self, requirements: list[str], python_exe: Path) -> None:
         self.result.pip_attempted = True
         try:
             pip_install_packages(python_exe, requirements, pip_options=self.prepared.pip_options)
@@ -632,18 +637,16 @@ class _Executor:
                     )
         return None
 
-    def _requirement_for(self, target: str, key: str, branch: int | None) -> ConfigurationRequirement | None:
-        pool = self.plan.configuration if branch is None else self.plan.optional_branches[branch].configuration
-        for requirement in pool:
-            if requirement.plugin_name == target and requirement.key == key:
-                return requirement
-        return None
+    def _apply_configuration(self, nodes: list[PlannedNode]) -> None:
+        """Write the supplied values for settings of ``nodes``, including plugins the plan keeps as they are.
 
-    def _apply_configuration(self, nodes: list[PlannedNode], branch: int | None) -> None:
+        Each write checks that the stored value is still what planning observed.
+
+        Raises:
+            PreconditionChangedError: a setting changed since planning.
+        """
         targets: dict[str, tuple[str, IDAMetadataDescriptor]] = {}
         for node in nodes:
-            if not node.mutates:
-                continue
             for _, descriptor in node.iter_manifests():
                 targets.setdefault(descriptor.plugin.name.lower(), (descriptor.plugin.name, descriptor))
         for (target, key), value in self.plan.configuration_values.items():
@@ -651,28 +654,22 @@ class _Executor:
             if found is None:
                 continue
             display_name, descriptor = found
-            requirement = self._requirement_for(display_name, key, branch)
-            if requirement is None:
-                self.txn.set_config_key(display_name, key, value, descriptor)
-            else:
-                self.txn.set_config_key(
-                    display_name,
-                    key,
-                    value,
-                    descriptor,
-                    expected_existing=requirement.reason == "invalid",
-                    expected_value=requirement.current_value,
-                )
+            existed, current = self.plan.observed_settings.get((display_name, key), (False, None))
+            self.txn.set_config_key(
+                display_name, key, value, descriptor, expected_existing=existed, expected_value=current
+            )
 
     def _run_required(self) -> None:
         missing = self.plan.missing_configuration()
         if missing and self.require_configuration:
             raise MissingConfigurationError([r.argument() for r in missing])
         self._check_destinations(self.plan.ordered_nodes())
-        self._pip(self.plan.combined_python_requirements())
+        requirements = self.plan.combined_python_requirements()
+        if requirements:
+            self._pip(requirements, self._python(requirements))
         for node in self.plan.ordered_nodes():
             self._apply_node(node, None)
-        self._apply_configuration(self.plan.ordered_nodes(), None)
+        self._apply_configuration(self.plan.ordered_nodes())
 
     def _skip_branch(self, branch: OptionalBranch, reason: str) -> None:
         self.result.unavailable_optionals.append((branch, reason))
@@ -721,25 +718,28 @@ class _Executor:
         if requirements and self.prepared.bundle_target_error is not None:
             self._skip_branch(branch, self.prepared.bundle_target_error)
             return
+        python_exe: Path | None = None
+        if requirements:
+            try:
+                python_exe = self._python(requirements)
+            except (PythonNotFoundError, PluginInstallationError) as e:
+                self._skip_branch(branch, str(e))
+                return
         savepoint: Savepoint = self.txn.savepoint()
         before = len(self.result.nodes)
         try:
-            self._check_destinations([node for node in nodes if node.identity not in self.present])
-            if requirements:
+            pending = [node for node in nodes if node.identity not in self.present]
+            self._check_destinations(pending)
+            if python_exe is not None:
                 combined = self.plan.combined_python_requirements([*self.accepted_branches, branch.index])
-                python_exe = self.prepared.python_exe or resolve_python_for_dependencies(
-                    requirements, check_environment=self.prepared.check_environment
-                )
                 try:
                     verify_pip_can_install_packages(python_exe, combined, pip_options=self.prepared.pip_options)
                 except CantInstallPackagesError as e:
                     raise DependencyInstallationError(requirements, str(e)) from e
-                self._pip(requirements)
-            for node in nodes:
-                if node.identity in self.present:
-                    continue
+                self._pip(requirements, python_exe)
+            for node in pending:
                 self._apply_node(node, branch.index)
-            self._apply_configuration(nodes, branch.index)
+            self._apply_configuration(pending)
         except BOUNDARY_ERRORS as e:
             logger.debug("optional branch %s failed: %s", branch.edge.spec.plugin, e)
             self.txn.rollback_to(savepoint)

@@ -18,6 +18,7 @@ from hcli.lib.ida.plugin.install import get_plugins_directory, get_trash_directo
 from hcli.lib.ida.plugin.transaction import (
     InstallTransaction,
     PreconditionChangedError,
+    ReplacedDirectory,
     RollbackError,
     is_transaction_active,
 )
@@ -304,3 +305,50 @@ def test_commit_survives_undeletable_checkpoint(virtual_ida_environment, caplog)
     assert (plugins / "plug" / "plug.py").read_text() == "new"
     assert checkpoints[0].exists()
     assert any("could not remove" in r.getMessage() for r in caplog.records)
+
+
+def test_replacement_is_one_journal_entry_and_restores_on_rollback(virtual_ida_environment):
+    plugins = get_plugins_directory()
+    _write_plugin(plugins / "plug", "old")
+    txn = _txn()
+
+    txn.replace_directory(_stage(txn, "new"), plugins / "plug")
+
+    assert [type(entry).__name__ for entry in txn.journal] == ["ReplacedDirectory"]
+    assert (plugins / "plug" / "plug.py").read_text() == "new"
+    txn.rollback()
+    assert (plugins / "plug" / "plug.py").read_text() == "old"
+    assert list(get_trash_directory(plugins).iterdir()) == []
+
+
+class _InterruptedUndoTransaction(InstallTransaction):
+    """Raises ``KeyboardInterrupt`` when rollback reaches the named plugin directory."""
+
+    def __init__(self, plugins_dir: Path, interrupt_on: str):
+        super().__init__(plugins_dir)
+        self.interrupt_on = interrupt_on
+
+    def _undo_entry(self, entry) -> None:
+        if isinstance(entry, ReplacedDirectory) and entry.path.name == self.interrupt_on:
+            raise KeyboardInterrupt
+        super()._undo_entry(entry)
+
+
+def test_interrupt_during_rollback_retains_every_unrestored_checkpoint(virtual_ida_environment):
+    plugins = get_plugins_directory()
+    _write_plugin(plugins / "first", "old-first")
+    _write_plugin(plugins / "second", "old-second")
+    txn = _InterruptedUndoTransaction(plugins, "second")
+    txn.replace_directory(_stage(txn, "new-first"), plugins / "first")
+    txn.replace_directory(_stage(txn, "new-second"), plugins / "second")
+
+    with pytest.raises(KeyboardInterrupt):
+        txn.rollback(RuntimeError("boom"))
+
+    assert not is_transaction_active()
+    assert txn.journal == []
+    sweep_trash()
+    recovery = [p for p in get_trash_directory(plugins).iterdir() if p.name.startswith("recovery-")]
+    assert len(recovery) == 1
+    assert (recovery[0] / "first" / "plug.py").read_text() == "old-first"
+    assert (recovery[0] / "second" / "plug.py").read_text() == "old-second"
