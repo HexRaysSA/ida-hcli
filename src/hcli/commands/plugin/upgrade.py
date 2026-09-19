@@ -17,31 +17,22 @@ from hcli.lib.ida import (
     find_current_ida_platform,
     find_current_ida_version,
 )
-from hcli.lib.ida.plugin import IDAMetadataDescriptor, iter_dependency_specs
 from hcli.lib.ida.plugin.exceptions import InstallExecutionError, PluginNotInstalledError
 from hcli.lib.ida.plugin.install import find_installed_plugin, plan_plugin_operation, sweep_trash
-from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_dependency_spec, parse_plugin_reference
+from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo
 from hcli.lib.ida.plugin.resolve import RepositoryRoot
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 
-from ._install_flow import collect_configuration, report_install_failure, report_install_result, validate_bundle_target
+from ._install_flow import (
+    collect_configuration,
+    report_dropped_dependencies,
+    report_install_failure,
+    report_install_result,
+    report_interrupted_install,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _dependency_names(metadata: IDAMetadataDescriptor) -> set[str]:
-    return {parse_dependency_spec(spec.plugin).name for _, spec in iter_dependency_specs(metadata)}
-
-
-def _report_dropped_dependencies(old: IDAMetadataDescriptor, new: IDAMetadataDescriptor) -> None:
-    dropped = _dependency_names(old) - _dependency_names(new)
-    if not dropped:
-        return
-    console.print(f"[yellow]Note[/yellow]: these dependencies were removed from [blue]{new.plugin.name}[/blue]:")
-    for name in sorted(dropped):
-        console.print(f"  {name}")
-    console.print("They remain installed; remove them manually if no longer needed.")
 
 
 @click.command()
@@ -121,7 +112,6 @@ def upgrade_plugin(ctx, plugin: str, dependency_config: tuple[str, ...], no_buil
             console.print("Please check your internet connection.")
             raise click.Abort()
 
-        validate_bundle_target(plugin_repo, operation.plan, pip_options, current_ida_platform)
         collect_configuration(operation, dependency_config=dependency_config)
 
         try:
@@ -131,9 +121,12 @@ def upgrade_plugin(ctx, plugin: str, dependency_config: tuple[str, ...], no_buil
             logger.debug("error: %s", e, exc_info=True)
             report_install_failure(e)
             raise click.Abort()
+        except KeyboardInterrupt as e:
+            report_interrupted_install(e)
+            raise click.Abort()
 
         report_install_result(result, present_label="Already up to date")
-        _report_dropped_dependencies(installed.metadata, operation.root.metadata)
+        report_dropped_dependencies(installed.metadata, operation.root.metadata)
 
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)

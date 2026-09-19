@@ -8,14 +8,12 @@ from collections.abc import Iterable
 import rich_click as click
 
 from hcli.lib.console import console
-from hcli.lib.ida.plugin import PluginSettingDescriptor
+from hcli.lib.ida.plugin import IDAMetadataDescriptor, PluginSettingDescriptor, iter_dependency_specs
 from hcli.lib.ida.plugin.exceptions import InstallExecutionError
 from hcli.lib.ida.plugin.execute import InstallResult, NodeResult
 from hcli.lib.ida.plugin.install import PlannedOperation
-from hcli.lib.ida.plugin.repo import BasePluginRepo
-from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
+from hcli.lib.ida.plugin.reference import parse_dependency_spec
 from hcli.lib.ida.plugin.resolve import ConfigurationRequirement, InstallPlan, PlannedNode, ResolutionContext
-from hcli.lib.ida.python import PipOptions
 
 from ._prompt import prompt_plugin_settings
 
@@ -100,12 +98,25 @@ def _prompt_root_settings(
     return answers_all
 
 
+def render_dependency_chain(plan: InstallPlan, name: str) -> str:
+    """The root-to-dependency path that selected ``name``, as ``root -> mid -> name``."""
+    lowered = name.lower()
+    candidates = list(plan.ordered_nodes())
+    for branch in plan.optional_branches:
+        candidates.extend(branch.nodes.values())
+    for node in candidates:
+        if node.name.lower() == lowered:
+            return " -> ".join([*node.selected_by.chain, node.name])
+    return name
+
+
 def _prompt_dependency_settings(
+    plan: InstallPlan,
     requirements: dict[str, list[ConfigurationRequirement]],
 ) -> dict[tuple[str, str], str | bool]:
     answers_all: dict[tuple[str, str], str | bool] = {}
     for name, group in requirements.items():
-        console.print(f"\nconfigure dependency [blue]{name}[/blue]:")
+        console.print(f"\nconfigure dependency [blue]{name}[/blue] [dim]({render_dependency_chain(plan, name)})[/dim]:")
         descriptors = [r.descriptor for r in group]
         existing: dict[str, str | bool] = {r.key: r.current_value for r in group if r.current_value is not None}
         answers = prompt_plugin_settings(descriptors, existing)
@@ -150,7 +161,7 @@ def collect_configuration(
         configured_targets = {target.lower() for target, _ in cli_values}
         requirements = _group_by_target(plan.missing_configuration(plan.all_branches()))
         answers = _prompt_root_settings(operation, configured_targets, requirements)
-        answers.update(_prompt_dependency_settings(requirements))
+        answers.update(_prompt_dependency_settings(plan, requirements))
         plan.apply_configuration_values(answers)
 
     missing = plan.missing_configuration()
@@ -163,31 +174,6 @@ def collect_configuration(
         "plugin requires configuration but console is not interactive. "
         f"Please provide settings via command line: {arguments}"
     )
-
-
-def validate_bundle_target(
-    repo: BasePluginRepo | None, plan: InstallPlan, pip_options: PipOptions, current_platform: str
-) -> None:
-    """Refuse a bundle install whose Python requirements have no wheelhouse for this platform.
-
-    Raises:
-        click.Abort: after printing the available bundle targets.
-    """
-    if not isinstance(repo, PluginBundleRepo) or pip_options.has_custom_sources:
-        return
-    if not plan.combined_python_requirements(plan.all_branches()):
-        return
-    from hcli.lib.ida.python import detect_current_python_version
-
-    python_version = detect_current_python_version()
-    if repo.find_target_for_platform(current_platform, python_version) is not None:
-        return
-    available = ", ".join(repo.target_ids) or "none"
-    console.print(
-        f"[red]Error[/red]: plugin bundle does not include dependencies for {current_platform}, Python {python_version}."
-    )
-    console.print(f"Available targets in this bundle: {available}")
-    raise click.Abort()
 
 
 def _planned_node(plan: InstallPlan, node: NodeResult) -> PlannedNode | None:
@@ -270,3 +256,59 @@ def report_install_failure(error: InstallExecutionError) -> None:
         console.print("Kept for manual recovery:")
         for path in result.recovery.retained_paths:
             console.print(f"  {path}")
+
+
+def report_interrupted_install(error: BaseException) -> None:
+    """Print what an interrupted operation rolled back and any recovery paths."""
+    console.print("[red]Interrupted[/red]: installation was cancelled")
+    result = getattr(error, "install_result", None)
+    if not isinstance(result, InstallResult):
+        return
+    rolled_back = [node.display for node in result.nodes if node.outcome == "rolled_back"]
+    if rolled_back:
+        console.print(f"Rolled back: {', '.join(rolled_back)}")
+    if result.recovery is not None and result.recovery.retained_paths:
+        console.print("Kept for manual recovery:")
+        for path in result.recovery.retained_paths:
+            console.print(f"  {path}")
+
+
+def _declared_dependencies(metadata: IDAMetadataDescriptor) -> dict[str, str]:
+    declared: dict[str, str] = {}
+    for _, spec in iter_dependency_specs(metadata):
+        try:
+            parsed = parse_dependency_spec(spec.plugin)
+        except ValueError:
+            continue
+        declared[parsed.name.lower()] = spec.plugin
+    return declared
+
+
+def find_dropped_dependencies(old: IDAMetadataDescriptor, new: IDAMetadataDescriptor) -> tuple[list[str], list[str]]:
+    """Dependency specs that ``new`` no longer declares, and those whose spec text changed.
+
+    Returns ``(removed, changed)``: removed holds the old spec strings of names
+    that vanished; changed holds ``old -> new`` for names whose version or host
+    constraint differs.
+    """
+    before = _declared_dependencies(old)
+    after = _declared_dependencies(new)
+    removed = [before[name] for name in sorted(before) if name not in after]
+    changed = [
+        f"{before[name]} -> {after[name]}" for name in sorted(before) if name in after and before[name] != after[name]
+    ]
+    return removed, changed
+
+
+def report_dropped_dependencies(old: IDAMetadataDescriptor, new: IDAMetadataDescriptor) -> None:
+    """Print dependencies an upgrade stopped declaring or now constrains differently."""
+    removed, changed = find_dropped_dependencies(old, new)
+    if removed:
+        console.print(f"[yellow]Note[/yellow]: these dependencies were removed from [blue]{new.plugin.name}[/blue]:")
+        for spec in removed:
+            console.print(f"  {spec}")
+        console.print("They remain installed; remove them manually if no longer needed.")
+    if changed:
+        console.print(f"[yellow]Note[/yellow]: these dependency constraints changed in [blue]{new.plugin.name}[/blue]:")
+        for line in changed:
+            console.print(f"  {line}")

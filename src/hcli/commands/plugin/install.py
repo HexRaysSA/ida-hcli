@@ -36,7 +36,12 @@ from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, pars
 from hcli.lib.ida.plugin.resolve import ArchiveRoot, EditableRoot, RepositoryRoot, RootRequest
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 
-from ._install_flow import collect_configuration, report_install_failure, report_install_result, validate_bundle_target
+from ._install_flow import (
+    collect_configuration,
+    report_install_failure,
+    report_install_result,
+    report_interrupted_install,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +210,6 @@ def install_plugin(
             console.print("Please check your internet connection.")
             raise click.Abort()
 
-        validate_bundle_target(plugin_repo, operation.plan, pip_options, current_ida_platform)
         collect_configuration(operation, config=config, dependency_config=dependency_config)
 
         try:
@@ -214,6 +218,9 @@ def install_plugin(
         except InstallExecutionError as e:
             logger.debug("error: %s", e, exc_info=True)
             report_install_failure(e)
+            raise click.Abort()
+        except KeyboardInterrupt as e:
+            report_interrupted_install(e)
             raise click.Abort()
 
         report_install_result(result)

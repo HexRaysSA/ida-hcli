@@ -746,3 +746,28 @@ def test_combined_python_requirements_dedupe_in_order(virtual_ida_environment):
     plan = _plan(repo, "pack")
     assert plan.combined_python_requirements() == ["numpy", "requests", "pyyaml", "rich"]
     assert plan.combined_python_requirements(branches=[0]) == ["numpy", "requests", "pyyaml", "rich", "click"]
+
+
+def test_component_settings_target_is_qualified_when_ambiguous(virtual_ida_environment):
+    repo = _repo(
+        _zip("pack", deps=[{"plugin": "suite-a", "required": False}, {"plugin": "suite-b", "required": False}]),
+        _suite_zip("suite-a", "1.0.0", [("comp", "1.0.0", {"settings": [MODE]})]),
+        _suite_zip("suite-b", "1.0.0", [("comp", "1.0.0", {"settings": [MODE]})]),
+    )
+    plan = _plan(repo, "pack")
+
+    with pytest.raises(
+        ValueError, match=r"ambiguous configuration target 'comp'.*suite-a/comp\.mode.*suite-b/comp\.mode"
+    ):
+        plan.apply_configuration_values({("comp", "mode"): "fast"})
+
+    plan.apply_configuration_values({("suite-a/comp", "mode"): "fast", ("Suite-B/Comp", "mode"): "slow"})
+    assert plan.missing_configuration(plan.all_branches()) == []
+
+
+def test_unambiguous_component_settings_target_accepts_bare_name(virtual_ida_environment):
+    repo = _repo(_suite_zip("pack", "1.0.0", [("comp", "1.0.0", {"settings": [MODE]})]))
+    plan = _plan(repo, "pack")
+    plan.apply_configuration_values({("comp", "mode"): "fast"})
+    plan.apply_configuration_values({("pack/comp", "mode"): "fast"})
+    assert plan.missing_configuration() == []

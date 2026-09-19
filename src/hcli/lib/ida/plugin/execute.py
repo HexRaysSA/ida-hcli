@@ -30,6 +30,7 @@ from hcli.lib.ida.plugin import (
 )
 from hcli.lib.ida.plugin.exceptions import (
     BrokenPluginInstallationError,
+    BundleTargetUnavailableError,
     DependencyInstallationError,
     DependencyResolutionError,
     DependencyUnavailableError,
@@ -53,6 +54,7 @@ from hcli.lib.ida.plugin.install import (
 from hcli.lib.ida.plugin.reference import normalize_plugin_host
 from hcli.lib.ida.plugin.resolve import (
     ConfigurationRequirement,
+    EdgeDiagnostic,
     EditableSource,
     InstalledSource,
     InstallPlan,
@@ -88,8 +90,6 @@ BOUNDARY_ERRORS: tuple[type[BaseException], ...] = (
     PreconditionChangedError,
     PluginAccessDeniedError,
     httpx.HTTPError,
-    OSError,
-    ValueError,
 )
 
 
@@ -125,6 +125,7 @@ class InstallResult:
     plan: InstallPlan
     nodes: list[NodeResult] = field(default_factory=list)
     unavailable_optionals: list[tuple[OptionalBranch, str]] = field(default_factory=list)
+    execution_diagnostics: list[EdgeDiagnostic] = field(default_factory=list)
     pip_attempted: bool = False
     recovery: RollbackError | None = None
 
@@ -141,6 +142,7 @@ class InstallResult:
         diagnostics = list(self.plan.diagnostics)
         for branch in self.plan.optional_branches:
             diagnostics.extend(branch.diagnostics)
+        diagnostics.extend(self.execution_diagnostics)
         return diagnostics
 
     def node_for_name(self, name: str) -> NodeResult | None:
@@ -279,7 +281,31 @@ def _verify_node(node: PlannedNode, cache: PhysicalArtifactCache) -> VerifiedArt
             f"hash mismatch for {source.url}: expected {source.location.sha256}, found {digest}",
             node.selected_by.chain,
         )
-    return _verify_archive(node, zip_data, label)
+    try:
+        return _verify_archive(node, zip_data, label)
+    except ValueError as e:
+        raise DependencyUnavailableError(
+            node.selected_by.spec.plugin, f"invalid archive at {source.url}: {e}", node.selected_by.chain
+        ) from e
+
+
+def _selection_key(node: PlannedNode) -> tuple[str, str, str | None]:
+    source = node.source
+    artifact: str | None = None
+    if isinstance(source, LocationSource):
+        artifact = source.location.sha256
+    elif isinstance(source, LocalArchiveSource):
+        artifact = source.sha256
+    return node.version, node.identity.host, artifact
+
+
+def is_same_selection(left: PlannedNode, right: PlannedNode) -> bool:
+    """Whether two planned nodes name the same version, host, and artifact."""
+    lv, lh, la = _selection_key(left)
+    rv, rh, ra = _selection_key(right)
+    if (lv, lh) != (rv, rh):
+        return False
+    return la is None or ra is None or la == ra
 
 
 def _bundle_owners(plan: InstallPlan) -> list[object]:
@@ -301,7 +327,10 @@ def _bundle_owners(plan: InstallPlan) -> list[object]:
 def _all_remote_from_bundles(plan: InstallPlan) -> bool:
     from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 
-    for node in plan.ordered_nodes():
+    nodes = list(plan.ordered_nodes())
+    for branch in plan.optional_branches:
+        nodes.extend(branch.nodes[i] for i in branch.order)
+    for node in nodes:
         if (
             node.mutates
             and isinstance(node.source, LocationSource)
@@ -336,7 +365,13 @@ def _effective_pip_options(
         matched = True
         find_links.extend(bundle_options.find_links)
     if not matched:
-        return user_options
+        if not plan.combined_python_requirements(plan.all_branches()):
+            return user_options
+        targets: list[str] = []
+        for owner in owners:
+            assert isinstance(owner, PluginBundleRepo)
+            targets.extend(owner.target_ids)
+        raise BundleTargetUnavailableError(current_platform, python_version, targets)
     combined = PipOptions(
         find_links=tuple(find_links),
         offline=user_options.offline or _all_remote_from_bundles(plan),
@@ -424,6 +459,7 @@ class _Executor:
         self.require_configuration = require_configuration
         self.result = InstallResult(self.plan)
         self.present: set[PluginIdentity] = set()
+        self.accepted_nodes: dict[PluginIdentity, PlannedNode] = {}
         self.accepted_branches: list[int] = []
         self._site_dir: Path | None = None
         self._site_dir_checked = False
@@ -520,6 +556,7 @@ class _Executor:
                 entry.outcome = "installed"
         self.result.nodes.append(entry)
         self.present.add(node.identity)
+        self.accepted_nodes[node.identity] = node
 
     def _requirement_for(self, target: str, key: str, branch: int | None) -> ConfigurationRequirement | None:
         pool = self.plan.configuration if branch is None else self.plan.optional_branches[branch].configuration
@@ -595,6 +632,18 @@ class _Executor:
             return
 
         nodes = [branch.nodes[i] for i in branch.order]
+        for node in nodes:
+            accepted = self.accepted_nodes.get(node.identity)
+            if accepted is not None and not is_same_selection(accepted, node):
+                message = (
+                    f"{node.name} is already present at {accepted.version}"
+                    f" but this branch selected {node.version}; version reselection is unsupported"
+                )
+                self.result.execution_diagnostics.append(
+                    EdgeDiagnostic(branch.edge, node.identity, "conflict", message)
+                )
+                self._skip_branch(branch, message)
+                return
         requirements: list[str] = []
         for node in nodes:
             for requirement in node.python_requirements():
@@ -644,9 +693,11 @@ def execute_install(
 ) -> InstallResult:
     """Apply a prepared plan. Without ``transaction`` one is created and committed here.
 
-    Boundary failures that happen before anything was changed propagate as
-    themselves. Once a step has mutated state, a required failure is reported as
-    ``InstallExecutionError`` after rollback.
+    Failures that happen before anything was changed propagate as themselves.
+    Once a step has mutated state, any failure is reported as
+    ``InstallExecutionError`` after rollback; ``KeyboardInterrupt`` and
+    ``SystemExit`` propagate unchanged with the rolled-back result attached as
+    ``install_result``.
 
     With ``require_configuration`` false, required settings without a value do
     not block; only supplied values are written and the caller collects the rest.
@@ -686,11 +737,14 @@ def execute_install(
             recovery = rollback_error
         result.mark_rolled_back()
         result.recovery = recovery
-        if isinstance(e, BOUNDARY_ERRORS) and mutated:
-            message = f"installation failed: {e}"
-            if result.pip_attempted:
-                message += ". Python packages that pip installed were not rolled back"
-            if recovery is not None:
-                message += f". {recovery}"
-            raise InstallExecutionError(message, e, result, recovery) from e
-        raise
+        if not mutated:
+            raise
+        if not isinstance(e, Exception):
+            setattr(e, "install_result", result)  # noqa: B010
+            raise
+        message = f"installation failed: {e}"
+        if result.pip_attempted:
+            message += ". Python packages that pip installed were not rolled back"
+        if recovery is not None:
+            message += f". {recovery}"
+        raise InstallExecutionError(message, e, result, recovery) from e

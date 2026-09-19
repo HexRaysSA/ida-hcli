@@ -252,6 +252,7 @@ class _SettingsTarget:
     display_name: str
     metadata: PluginMetadata
     branch: int | None
+    qualified_name: str
 
 
 @dataclass
@@ -308,10 +309,11 @@ class InstallPlan:
 
         String values for boolean settings are parsed. Names are resolved
         case-insensitively against every plugin and component in the plan,
-        including optional branches.
+        including optional branches. A component name shared by several suites
+        must be qualified as ``suite/component``.
 
         Raises:
-            ValueError: for an unknown target, unknown key, or invalid value.
+            ValueError: for an unknown or ambiguous target, unknown key, or invalid value.
         """
         from hcli.lib.ida.plugin.settings import parse_setting_value
 
@@ -319,6 +321,12 @@ class InstallPlan:
             targets = self._settings_targets.get(target_name.lower())
             if not targets:
                 raise ValueError(f"unknown plugin or component in configuration: {target_name!r}")
+            qualified = sorted({t.qualified_name for t in targets})
+            if len(qualified) > 1:
+                raise ValueError(
+                    f"ambiguous configuration target {target_name!r}: it names several components; "
+                    f"use one of: {', '.join(f'{q}.{key}' for q in qualified)}"
+                )
             target = targets[0]
             try:
                 descriptor = target.metadata.get_setting(key)
@@ -891,6 +899,22 @@ class _Planner:
             f"{installed.name} is installed at {installed.version}, newer than the available {metadata.plugin.version}; keeping it"
         ]
 
+    def _retained_root(
+        self, installed: InstalledPluginRecord, edge: DependencyEdge, warnings: list[str]
+    ) -> PlannedNode:
+        """A root kept as installed; its on-disk tree, not the index, supplies metadata and dependencies."""
+        metadata = self.context.expand_installed(installed)
+        return PlannedNode(
+            PluginIdentity.from_metadata(metadata),
+            metadata,
+            InstalledSource(installed.path),
+            "retain",
+            installed,
+            edge,
+            is_root=True,
+            warnings=warnings,
+        )
+
     def _select_root(self, request: RootRequest) -> Callable[[_Graph, DependencyEdge], PlannedNode]:
         def select(graph: _Graph, edge: DependencyEdge) -> PlannedNode:
             if isinstance(request, EditableRoot):
@@ -920,16 +944,7 @@ class _Planner:
                 installed = self.context.find_installed(request.name)
                 if installed is None:
                     raise PluginNotInstalledError(request.name)
-                metadata = self.context.expand_installed(installed)
-                return PlannedNode(
-                    PluginIdentity.from_metadata(metadata),
-                    metadata,
-                    InstalledSource(installed.path),
-                    "retain",
-                    installed,
-                    edge,
-                    is_root=True,
-                )
+                return self._retained_root(installed, edge, [])
 
             if isinstance(request, ArchiveRoot):
                 from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
@@ -943,6 +958,9 @@ class _Planner:
                 self._check_compatible(metadata)
                 installed = self.context.find_installed(metadata.plugin.name)
                 operation, warnings = self._root_installed_state(request.upgrade, installed, metadata, None, True)
+                if operation == "retain":
+                    assert installed is not None
+                    return self._retained_root(installed, edge, warnings)
                 archive_sha256 = self.context.artifacts.store(request.zip_data)
                 return PlannedNode(
                     PluginIdentity.from_metadata(metadata),
@@ -972,11 +990,14 @@ class _Planner:
                     host = installed_host
                 location, repo = self._find_location(request.repo, reference, host, edge)
 
-            metadata, sha256 = self._ensure_expanded(location, repo, edge)
-            installed = self.context.find_installed(metadata.plugin.name)
+            installed = self.context.find_installed(location.metadata.plugin.name)
             operation, warnings = self._root_installed_state(
-                request.upgrade, installed, metadata, reference.host, bool(reference.version_spec)
+                request.upgrade, installed, location.metadata, reference.host, bool(reference.version_spec)
             )
+            if operation == "retain":
+                assert installed is not None
+                return self._retained_root(installed, edge, warnings)
+            metadata, sha256 = self._ensure_expanded(location, repo, edge)
             if repo_name is None:
                 repo_name = repo.describe_location_source(location)
             return PlannedNode(
@@ -1069,10 +1090,12 @@ class _Planner:
         targets: dict[str, list[_SettingsTarget]] = {}
 
         def register(node: PlannedNode, branch: int | None) -> None:
-            for _, descriptor in node.iter_manifests():
-                targets.setdefault(descriptor.plugin.name.lower(), []).append(
-                    _SettingsTarget(descriptor.plugin.name, descriptor.plugin, branch)
-                )
+            for path, descriptor in node.iter_manifests():
+                qualified = _label(node.name, path)
+                target = _SettingsTarget(descriptor.plugin.name, descriptor.plugin, branch, qualified)
+                targets.setdefault(descriptor.plugin.name.lower(), []).append(target)
+                if path:
+                    targets.setdefault(qualified.lower(), []).append(target)
 
         for node in graph.nodes.values():
             register(node, None)

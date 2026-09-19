@@ -298,6 +298,20 @@ class PlanMetadataMismatchError(DependencyResolutionError):
         super().__init__(f"{name}=={version} from {source} does not match the planned metadata: {listing}")
 
 
+class BundleTargetUnavailableError(PluginInstallationError):
+    """Python requirements must come from a bundle, but no wheelhouse matches this IDA and Python."""
+
+    def __init__(self, platform: str, python_version: str, targets: Sequence[str]):
+        self.platform = platform
+        self.python_version = python_version
+        self.targets = list(targets)
+        available = ", ".join(self.targets) or "none"
+        super().__init__(
+            f"plugin bundle does not include Python dependencies for {platform}, Python {python_version}. "
+            f"Available targets: {available}"
+        )
+
+
 class InstallExecutionError(PluginInstallationError):
     """A required step failed and the plugin directories were rolled back.
 
