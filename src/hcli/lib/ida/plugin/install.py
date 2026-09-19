@@ -179,8 +179,15 @@ def sweep_trash() -> None:
     Leftovers accumulate from interrupted operations: partially deleted
     uninstalls, staging directories, stale upgrade rollbacks. Call this only
     between plugin operations, never while one is in flight: an active upgrade
-    keeps its rollback copy in the trash.
+    keeps its rollback copy in the trash. Recovery directories left by a
+    failed rollback are never swept.
     """
+    from hcli.lib.ida.plugin.transaction import RECOVERY_DIR_PREFIX, is_transaction_active
+
+    if is_transaction_active():
+        logger.debug("skipping trash sweep: a plugin transaction is active")
+        return
+
     try:
         trash_dir = get_trash_directory()
         if not trash_dir.is_dir():
@@ -191,6 +198,9 @@ def sweep_trash() -> None:
         return
 
     for entry in entries:
+        if entry.name.startswith(RECOVERY_DIR_PREFIX):
+            logger.debug("keeping recovery directory: %s", entry)
+            continue
         logger.debug("sweeping trash: %s", entry)
         try:
             if entry.is_dir() and not entry.is_symlink():
