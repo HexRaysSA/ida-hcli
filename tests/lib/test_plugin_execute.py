@@ -632,7 +632,7 @@ def test_repair_of_retained_root_uses_installed_tree_and_never_fetches_root(virt
 
 
 def test_bundle_without_matching_target_fails_before_mutation_when_requirements_exist(
-    virtual_ida_environment, tmp_path
+    virtual_ida_environment_with_venv, tmp_path
 ):
     current = find_current_ida_platform()
     other = "windows-x86_64" if current != "windows-x86_64" else "linux-x86_64"
@@ -841,7 +841,7 @@ def test_optional_branch_broken_destination_skips_pip(virtual_ida_environment_wi
 
 
 def test_bundle_without_matching_target_only_skips_optional_branches_with_requirements(
-    virtual_ida_environment, tmp_path
+    virtual_ida_environment_with_venv, tmp_path
 ):
     current = find_current_ida_platform()
     other = "windows-x86_64" if current != "windows-x86_64" else "linux-x86_64"
