@@ -18,7 +18,7 @@ from pydantic import ValidationError
 
 from hcli.commands.plugin import plugin as plugin_group
 from hcli.commands.plugin.lint import _check_dependency_specs
-from hcli.lib.ida.plugin import IDAMetadataDescriptor
+from hcli.lib.ida.plugin import DependencySpec, IDAMetadataDescriptor
 from hcli.lib.ida.plugin.dependencies import install_dependencies
 from hcli.lib.ida.plugin.install import (
     get_installed_plugin_records,
@@ -152,7 +152,7 @@ def _metadata_with_deps(deps: list[str]) -> dict:
 def test_metadata_with_dependencies():
     data = _metadata_with_deps(["dep-a", "dep-b==1.0.0"])
     descriptor = IDAMetadataDescriptor.model_validate(data)
-    assert descriptor.plugin.dependencies == ["dep-a", "dep-b==1.0.0"]
+    assert [spec.plugin for spec in descriptor.plugin.dependencies] == ["dep-a", "dep-b==1.0.0"]
 
 
 def test_metadata_without_dependencies():
@@ -169,7 +169,7 @@ def test_metadata_empty_dependencies():
 def test_metadata_with_host_dependency():
     data = _metadata_with_deps(["dep-a@https://github.com/org/repo"])
     descriptor = IDAMetadataDescriptor.model_validate(data)
-    assert descriptor.plugin.dependencies == ["dep-a@https://github.com/org/repo"]
+    assert [spec.plugin for spec in descriptor.plugin.dependencies] == ["dep-a@https://github.com/org/repo"]
 
 
 def test_metadata_rejects_invalid_dependency_spec():
@@ -394,7 +394,7 @@ def test_upgrade_pack_reports_dropped_deps(virtual_ida_environment):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             _handle_upgrade_dependencies(
-                old_deps=list(meta_v1.plugin.dependencies),
+                old_deps=[spec.plugin for spec in meta_v1.plugin.dependencies],
                 new_metadata=meta_v2,
                 plugin_repo=repo,
                 current_ida_platform="macos-aarch64",
@@ -528,7 +528,10 @@ def test_lint_invalid_dependency_spec():
         },
     }
     descriptor = IDAMetadataDescriptor.model_validate(data)
-    descriptor.plugin.dependencies = ["dep-a", "!!!invalid"]
+    descriptor.plugin.dependencies = [
+        DependencySpec(plugin="dep-a"),
+        DependencySpec.model_construct(plugin="!!!invalid"),
+    ]
     count = _check_dependency_specs(descriptor, "test")
     assert count == 1
 

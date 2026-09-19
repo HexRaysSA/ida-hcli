@@ -38,7 +38,7 @@ def uninstall_plugin(plugin: str, yes: bool) -> None:
             record = find_installed_plugin(plugin)
             for spec in record.metadata.plugin.dependencies:
                 try:
-                    dep_names.append(parse_dependency_spec(spec).name)
+                    dep_names.append(parse_dependency_spec(spec.plugin).name)
                 except ValueError:
                     pass
         except PluginNotInstalledError:

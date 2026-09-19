@@ -552,7 +552,7 @@ def _handle_install_dependencies(
             f"but they cannot be auto-installed from a local source."
         )
         for dep in metadata.plugin.dependencies:
-            console.print(f"  {dep}")
+            console.print(f"  {dep.plugin}")
         console.print("Install them manually from a plugin repository.")
         return
 

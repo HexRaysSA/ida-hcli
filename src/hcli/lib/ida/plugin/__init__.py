@@ -19,6 +19,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    StrictBool,
     ValidationError,
     field_serializer,
     field_validator,
@@ -26,6 +27,9 @@ from pydantic import (
 )
 
 from hcli.lib.util.logging import m
+
+if typing.TYPE_CHECKING:
+    from hcli.lib.ida.plugin.reference import PluginReference
 
 logger = logging.getLogger(__name__)
 
@@ -356,6 +360,63 @@ class PluginSettingDescriptor(BaseModel):
                 raise ChoiceValueError(self.key, candidate_value, self.choices)
 
 
+def _allow_string_items(schema: dict[str, typing.Any]) -> None:
+    schema["items"] = {"anyOf": [{"type": "string"}, schema["items"]]}
+
+
+class DependencySpec(BaseModel):
+    """One entry of `plugin.dependencies`.
+
+    A string entry in a manifest is normalized to `{"plugin": <string>}` and is
+    therefore required. Object entries can mark the dependency optional.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")  # type: ignore
+
+    plugin: str = Field(
+        description=(
+            "Plugin reference: a bare name, name==version, or name@host with an "
+            "optional version pin. Only `==` pins are accepted."
+        ),
+        examples=["go-runtime-detector", "go-string-extractor==1.2.0"],
+    )
+    required: StrictBool = Field(
+        default=True,
+        description=(
+            "Whether the dependency must be installed for this plugin to be installed. "
+            "Optional dependencies are installed when they can be, and skipped otherwise."
+        ),
+    )
+
+    @field_validator("plugin", mode="after")
+    @classmethod
+    def validate_plugin_reference(cls, value: str) -> str:
+        from hcli.lib.ida.plugin.reference import parse_dependency_spec
+
+        if not value.strip():
+            raise ValueError("dependency plugin reference must not be empty")
+        ref = parse_dependency_spec(value)
+        if ref.version_spec:
+            pinned = ref.version_spec[len("==") :]
+            if not pinned.strip():
+                raise ValueError(f"dependency version pin must not be empty: {value!r}")
+            try:
+                parse_plugin_version(pinned)
+            except ValueError as e:
+                raise ValueError(f"dependency version pin is not a valid version: {value!r}") from e
+        return value
+
+    @property
+    def reference(self) -> "PluginReference":
+        from hcli.lib.ida.plugin.reference import parse_dependency_spec
+
+        return parse_dependency_spec(self.plugin)
+
+    @property
+    def name(self) -> str:
+        return self.reference.name
+
+
 class PluginMetadata(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
@@ -486,15 +547,23 @@ class PluginMetadata(BaseModel):
         description="User-configurable settings exposed by the plugin.",
     )
 
-    dependencies: list[str] = Field(
+    dependencies: list[DependencySpec] = Field(
         default_factory=list,
         description=(
-            "Plugins to install alongside this one. Each entry is a plugin "
-            "reference: a bare name, name==version, or name@host with optional "
-            "version pin. Dependencies are fetched from the declaring plugin's "
-            "source and installed as independent top-level plugins."
+            "Plugins to install alongside this one. Each entry is either a plugin "
+            "reference string (a bare name, name==version, or name@host with optional "
+            "version pin) or an object with `plugin` and `required` fields. A string "
+            "entry is a required dependency. Dependencies are fetched from the "
+            "declaring plugin's source and installed as independent top-level plugins."
         ),
-        examples=[["go-runtime-detector", "go-string-extractor==1.2.0"]],
+        examples=[
+            [
+                "go-runtime-detector",
+                "go-string-extractor==1.2.0",
+                {"plugin": "go-type-recovery", "required": False},
+            ]
+        ],
+        json_schema_extra=_allow_string_items,
     )
 
     components: list[str] = Field(
@@ -508,14 +577,32 @@ class PluginMetadata(BaseModel):
         examples=[["hexrays-taint-engine", "hexrays-type-propagation"]],
     )
 
-    @field_validator("dependencies", mode="after")
+    @field_validator("dependencies", mode="before")
     @classmethod
-    def validate_dependency_specs(cls, specs: list[str]) -> list[str]:
-        from hcli.lib.ida.plugin.reference import parse_dependency_spec
+    def normalize_dependency_entries(cls, entries: object) -> object:
+        if not isinstance(entries, list):
+            return entries
+        normalized: list[object] = []
+        for entry in entries:
+            if isinstance(entry, str):
+                normalized.append({"plugin": entry})
+            elif isinstance(entry, (dict, DependencySpec)):
+                normalized.append(entry)
+            else:
+                raise ValueError(  # noqa: TRY004
+                    f"dependency entries must be strings or objects, got {type(entry).__name__}: {entry!r}"
+                )
+        return normalized
 
+    @field_serializer("dependencies")
+    def serialize_dependency_entries(self, specs: list[DependencySpec]) -> list[str | dict[str, object]]:
+        out: list[str | dict[str, object]] = []
         for spec in specs:
-            parse_dependency_spec(spec)
-        return specs
+            if spec.required:
+                out.append(spec.plugin)
+            else:
+                out.append({"plugin": spec.plugin, "required": False})
+        return out
 
     @field_validator("components", mode="after")
     @classmethod

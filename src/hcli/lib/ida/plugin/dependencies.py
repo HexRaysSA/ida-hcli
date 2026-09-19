@@ -56,7 +56,7 @@ def install_dependencies(
     result = DependencyResult()
 
     for spec in metadata.plugin.dependencies:
-        ref = parse_dependency_spec(spec)
+        ref = parse_dependency_spec(spec.plugin)
         dep_name = ref.name
         try:
             _install_one_dependency(

@@ -89,7 +89,7 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             console.print(f"[red]Error[/red]: plugin '{ref.name}' is not installed")
             raise click.Abort()
 
-        old_deps = list(installed.metadata.plugin.dependencies)
+        old_deps = [spec.plugin for spec in installed.metadata.plugin.dependencies]
 
         if ref.host is not None and normalize_plugin_host(installed.host) != normalize_plugin_host(ref.host):
             console.print(
@@ -203,7 +203,7 @@ def _handle_upgrade_dependencies(
     from hcli.lib.ida.plugin.dependencies import install_dependencies
     from hcli.lib.ida.plugin.reference import parse_dependency_spec
 
-    new_deps = list(new_metadata.plugin.dependencies)
+    new_deps = [spec.plugin for spec in new_metadata.plugin.dependencies]
     if not old_deps and not new_deps:
         return
 

@@ -189,9 +189,11 @@ def _check_dependency_specs(metadata: IDAMetadataDescriptor, source_name: str) -
     recommendation_count = 0
     for i, spec in enumerate(metadata.plugin.dependencies):
         try:
-            parse_dependency_spec(spec)
+            parse_dependency_spec(spec.plugin)
         except ValueError as e:
-            console.print(f"[red]Error[/red] ({source_name}): plugin.dependencies[{i}]: invalid spec '{spec}': {e}")
+            console.print(
+                f"[red]Error[/red] ({source_name}): plugin.dependencies[{i}]: invalid spec '{spec.plugin}': {e}"
+            )
             recommendation_count += 1
     return recommendation_count
 
