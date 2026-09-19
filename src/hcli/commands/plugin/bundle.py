@@ -19,6 +19,7 @@ from hcli.lib.ida.plugin import (
     get_metadatas_with_paths_from_plugin_archive,
     get_version_from_plugin_archive,
 )
+from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
 from hcli.lib.ida.plugin.bundle import (
     ALL_PLATFORMS,
     SUPPORTED_PYTHON_VERSIONS,
@@ -76,15 +77,18 @@ def _resolve_plugin_bytes(
     current_platform: str | None = None,
 ) -> tuple[str, bytes]:
     path = Path(spec).expanduser()
+
+    if path.is_dir() and (path / "ida-plugin.json").is_file():
+        from hcli.lib.ida.plugin.install import pack_plugin_directory_to_zip
+
+        buf = pack_plugin_directory_to_zip(path.resolve())
+        _, meta = find_root_manifest_in_archive(buf)
+        return meta.plugin.name, buf
+
     if path.exists() and spec.endswith(".zip"):
         buf = path.read_bytes()
-        items = list(get_metadatas_with_paths_from_plugin_archive(buf))
-        if not items:
-            raise ValueError(f"no ida-plugin.json found in {spec}")
-        if len(items) != 1:
-            names = ", ".join(item[1].plugin.name for item in items)
-            raise ValueError(f"plugin archive must contain a single plugin, found: {names}")
-        return items[0][1].plugin.name, buf
+        _, meta = find_root_manifest_in_archive(buf)
+        return meta.plugin.name, buf
 
     host: str | None = None
     clean_spec = spec
@@ -250,7 +254,10 @@ def create(
         plugin_index = PluginArchiveIndex()
 
         for spec in plugin_specs:
-            is_local = Path(spec).exists() and spec.endswith(".zip")
+            spec_path = Path(spec).expanduser()
+            is_local = (spec_path.is_dir() and (spec_path / "ida-plugin.json").is_file()) or (
+                spec_path.exists() and spec.endswith(".zip")
+            )
 
             archives_by_hash: dict[str, tuple[str, bytes]] = {}
             hash_by_platform: dict[str, str] = {}
