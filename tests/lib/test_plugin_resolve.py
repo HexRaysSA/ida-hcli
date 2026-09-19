@@ -784,3 +784,26 @@ def test_root_not_in_repository_is_reported_as_plugin_not_found(virtual_ida_envi
 
     with pytest.raises(DependencyUnavailableError, match="dependency 'missing' is unavailable \\(required by a\\)"):
         _plan(repo, "a")
+
+
+def test_combined_python_requirements_include_untouched_installed_plugins(virtual_ida_environment):
+    install_plugin_archive(_zip("other", python_deps=["packaging==24.0"]), "other", check_environment=False)
+    install_plugin_archive(_zip("kept", "1.0.0", python_deps=["pyyaml"]), "kept", check_environment=False)
+    repo = _repo(
+        _zip("a", deps=["kept"], python_deps=["packaging==25.0"]),
+        _zip("kept", "2.0.0", python_deps=["pyyaml>=6"]),
+    )
+    plan = _plan(repo, "a")
+    assert plan.combined_python_requirements() == ["pyyaml", "packaging==25.0", "packaging==24.0"]
+    assert plan.installed_python_requirements == {"other": ["packaging==24.0"], "kept": ["pyyaml"]}
+
+
+def test_combined_python_requirements_include_installed_components(virtual_ida_environment):
+    install_plugin_archive(
+        _suite_zip("suite", "1.0.0", [("comp", "1.0.0", {"python_deps": ["rich"]})], python_deps=["click"]),
+        "suite",
+        check_environment=False,
+    )
+    repo = _repo(_zip("a", python_deps=["requests"]))
+    plan = _plan(repo, "a")
+    assert plan.combined_python_requirements() == ["requests", "click", "rich"]

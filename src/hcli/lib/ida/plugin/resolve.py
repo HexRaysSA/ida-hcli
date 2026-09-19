@@ -269,6 +269,7 @@ class InstallPlan:
     configuration: list[ConfigurationRequirement]
     warnings: list[str] = field(default_factory=list)
     configuration_values: dict[tuple[str, str], str | bool] = field(default_factory=dict)
+    installed_python_requirements: dict[str, list[str]] = field(default_factory=dict)
     _settings_targets: dict[str, list[_SettingsTarget]] = field(default_factory=dict, repr=False)
 
     def ordered_nodes(self) -> list[PlannedNode]:
@@ -282,20 +283,28 @@ class InstallPlan:
         return None
 
     def combined_python_requirements(self, branches: Iterable[int] = ()) -> list[str]:
-        """Python requirements of every planned node, plus those of the given branches.
+        """Python requirements of everything present after the operation.
 
-        Retained nodes contribute too so a combined pip check sees constraints
-        from everything that will be present after the operation.
+        Planned nodes and the given branches contribute their requirements, and
+        so does every installed plugin the plan leaves untouched, so a combined
+        pip check sees the constraints of the whole environment.
         """
         seen: dict[str, None] = {}
+        superseded: set[str] = {identity.name for identity in self.nodes}
         for node in self.ordered_nodes():
             for requirement in node.python_requirements():
                 seen.setdefault(requirement, None)
         for index in branches:
             branch = self.optional_branches[index]
             for identity in branch.order:
+                superseded.add(identity.name)
                 for requirement in branch.nodes[identity].python_requirements():
                     seen.setdefault(requirement, None)
+        for name, requirements in self.installed_python_requirements.items():
+            if name in superseded:
+                continue
+            for requirement in requirements:
+                seen.setdefault(requirement, None)
         return list(seen)
 
     def missing_configuration(self, branches: Iterable[int] = ()) -> list[ConfigurationRequirement]:
@@ -1115,6 +1124,7 @@ class _Planner:
             optional_branches=branches,
             configuration=configuration,
             warnings=closure.warnings,
+            installed_python_requirements=_installed_python_requirements(self.context),
             _settings_targets=targets,
         )
 
@@ -1163,6 +1173,31 @@ class _Planner:
                 worklist.append((nested, graph, branch.index))
 
         return branches
+
+
+def _installed_python_requirements(context: ResolutionContext) -> dict[str, list[str]]:
+    """Python requirements of every installed plugin and its components, keyed by lowercased name."""
+    from hcli.lib.ida.plugin.components import collect_python_dependencies_from_directory
+
+    requirements: dict[str, list[str]] = {}
+    for record in context.installed:
+        try:
+            expanded = context.expand_installed(record)
+            descriptors = [expanded, *(d for _, d in iter_expanded_components(expanded))]
+            collected = [
+                requirement
+                for descriptor in descriptors
+                if isinstance(descriptor.plugin.python_dependencies, list)
+                for requirement in descriptor.plugin.python_dependencies
+            ]
+        except DependencyResolutionError:
+            try:
+                collected = collect_python_dependencies_from_directory(record.path, record.metadata)
+            except Exception as e:
+                logger.debug("skipping Python requirements of unreadable plugin %s: %s", record.name, e)
+                continue
+        requirements[record.name.lower()] = collected
+    return requirements
 
 
 def plan_install(context: ResolutionContext, roots: Sequence[RootRequest]) -> InstallPlan:

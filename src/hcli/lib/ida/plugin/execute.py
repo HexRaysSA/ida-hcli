@@ -172,6 +172,7 @@ class PreparedInstall:
     pip_options: PipOptions
     python_exe: Path | None
     check_environment: bool
+    bundle_target_error: str | None = None
     _stack: ExitStack = field(default_factory=ExitStack, repr=False)
 
     def close(self) -> None:
@@ -223,7 +224,7 @@ def _describe_source(node: PlannedNode) -> str:
     return str(source.path)
 
 
-def _verify_archive(node: PlannedNode, zip_data: bytes, label: str) -> VerifiedArtifact:
+def verify_planned_archive(node: PlannedNode, zip_data: bytes, label: str) -> VerifiedArtifact:
     """Run every archive check and compare the expanded manifest with the plan.
 
     Raises:
@@ -264,7 +265,7 @@ def _verify_node(node: PlannedNode, cache: PhysicalArtifactCache) -> VerifiedArt
             raise PlanMetadataMismatchError(node.name, node.version, str(source.directory), differences)
         return None
     if isinstance(source, LocalArchiveSource):
-        return _verify_archive(node, cache.get(source.sha256), "local archive")
+        return verify_planned_archive(node, cache.get(source.sha256), "local archive")
 
     label = source.repo_name or source.url
     if source.artifact_sha256 is not None and source.artifact_sha256 in cache:
@@ -284,7 +285,7 @@ def _verify_node(node: PlannedNode, cache: PhysicalArtifactCache) -> VerifiedArt
             node.selected_by.chain,
         )
     try:
-        return _verify_archive(node, zip_data, label)
+        return verify_planned_archive(node, zip_data, label)
     except ValueError as e:
         raise DependencyUnavailableError(
             node.selected_by.spec.plugin, f"invalid archive at {source.url}: {e}", node.selected_by.chain
@@ -327,9 +328,9 @@ def _all_nodes(plan: InstallPlan) -> list[PlannedNode]:
     return nodes
 
 
-def _mutating_python_requirements(plan: InstallPlan) -> list[str]:
+def _required_mutating_python_requirements(plan: InstallPlan) -> list[str]:
     seen: dict[str, None] = {}
-    for node in _all_nodes(plan):
+    for node in plan.ordered_nodes():
         if node.mutates:
             for requirement in node.python_requirements():
                 seen.setdefault(requirement, None)
@@ -364,17 +365,26 @@ def _all_remote_from_bundles(plan: InstallPlan) -> bool:
 
 def _effective_pip_options(
     plan: InstallPlan, user_options: PipOptions, current_platform: str, stack: ExitStack
-) -> PipOptions:
-    """Combine bundle wheelhouses into pip options; user sources always win untouched."""
+) -> tuple[PipOptions, str | None]:
+    """Combine bundle wheelhouses into pip options; user sources always win untouched.
+
+    The second element explains why no bundle wheelhouse matches this IDA and
+    Python, when that is the case. Optional branches that need Python packages
+    become unavailable for that reason; the required branch raises instead.
+
+    Raises:
+        BundleTargetUnavailableError: a required node needs Python packages from a
+            bundle that has no wheelhouse for this platform.
+    """
     from hcli.lib.ida.plugin.bundle import bundle_dependency_source
     from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
     from hcli.lib.ida.python import detect_current_python_version, merge_bundle_pip_options
 
     if user_options.has_custom_sources:
-        return user_options
+        return user_options, None
     owners = _bundle_owners(plan)
     if not owners:
-        return user_options
+        return user_options, None
 
     python_version = detect_current_python_version()
     find_links: list[Path | str] = []
@@ -387,13 +397,14 @@ def _effective_pip_options(
         matched = True
         find_links.extend(bundle_options.find_links)
     if not matched:
-        if not _mutating_python_requirements(plan):
-            return user_options
         targets: list[str] = []
         for owner in owners:
             assert isinstance(owner, PluginBundleRepo)
             targets.extend(owner.target_ids)
-        raise BundleTargetUnavailableError(current_platform, python_version, targets)
+        error = BundleTargetUnavailableError(current_platform, python_version, targets)
+        if _required_mutating_python_requirements(plan):
+            raise error
+        return user_options, str(error)
     combined = PipOptions(
         find_links=tuple(find_links),
         offline=user_options.offline or _all_remote_from_bundles(plan),
@@ -401,7 +412,7 @@ def _effective_pip_options(
         no_cache_dir=True,
         disable_pip_version_check=True,
     )
-    return merge_bundle_pip_options(user_options, combined)
+    return merge_bundle_pip_options(user_options, combined), None
 
 
 def prepare_install(
@@ -448,7 +459,7 @@ def prepare_install(
 
     stack = ExitStack()
     try:
-        effective = _effective_pip_options(plan, pip_options, context.current_platform, stack)
+        effective, bundle_target_error = _effective_pip_options(plan, pip_options, context.current_platform, stack)
         requirements = plan.combined_python_requirements()
         python_exe: Path | None = None
         if requirements:
@@ -470,6 +481,7 @@ def prepare_install(
         pip_options=effective,
         python_exe=python_exe,
         check_environment=check_environment,
+        bundle_target_error=bundle_target_error,
         _stack=stack,
     )
 
@@ -538,15 +550,25 @@ class _Executor:
                 f"not {node.installed.name} {node.installed.version} as planned"
             )
 
+    def _destination(self, node: PlannedNode) -> Path:
+        try:
+            return get_plugin_directory(node.name)
+        except ValueError as e:
+            raise InvalidPluginNameError(node.name, str(e)) from e
+
+    def _check_destinations(self, nodes: list[PlannedNode]) -> None:
+        """Recheck every destination before pip runs, since Python changes are never rolled back."""
+        for node in nodes:
+            if node.operation == "editable" and node.installed is None:
+                continue
+            self._check_destination(node, self._destination(node))
+
     def _apply_node(self, node: PlannedNode, branch: int | None) -> None:
         previous = node.installed.version if node.installed is not None else None
         entry = NodeResult(
             node.identity, node.name, node.version, node.operation, "present", branch, previous, _describe_source(node)
         )
-        try:
-            destination = get_plugin_directory(node.name)
-        except ValueError as e:
-            raise InvalidPluginNameError(node.name, str(e)) from e
+        destination = self._destination(node)
 
         if node.operation == "retain":
             self._check_destination(node, destination)
@@ -646,6 +668,7 @@ class _Executor:
         missing = self.plan.missing_configuration()
         if missing and self.require_configuration:
             raise MissingConfigurationError([r.argument() for r in missing])
+        self._check_destinations(self.plan.ordered_nodes())
         self._pip(self.plan.combined_python_requirements())
         for node in self.plan.ordered_nodes():
             self._apply_node(node, None)
@@ -695,9 +718,13 @@ class _Executor:
             for requirement in node.python_requirements():
                 if requirement not in requirements:
                     requirements.append(requirement)
+        if requirements and self.prepared.bundle_target_error is not None:
+            self._skip_branch(branch, self.prepared.bundle_target_error)
+            return
         savepoint: Savepoint = self.txn.savepoint()
         before = len(self.result.nodes)
         try:
+            self._check_destinations([node for node in nodes if node.identity not in self.present])
             if requirements:
                 combined = self.plan.combined_python_requirements([*self.accepted_branches, branch.index])
                 python_exe = self.prepared.python_exe or resolve_python_for_dependencies(
@@ -716,10 +743,14 @@ class _Executor:
         except BOUNDARY_ERRORS as e:
             logger.debug("optional branch %s failed: %s", branch.edge.spec.plugin, e)
             self.txn.rollback_to(savepoint)
+            rolled_back = [entry.display for entry in self.result.nodes[before:]]
             for entry in self.result.nodes[before:]:
                 self._forget_node(entry.identity)
             del self.result.nodes[before:]
-            self._skip_branch(branch, str(e))
+            reason = str(e)
+            if rolled_back:
+                reason += f"; rolled back {', '.join(rolled_back)}"
+            self._skip_branch(branch, reason)
             return
         self.accepted_branches.append(branch.index)
 

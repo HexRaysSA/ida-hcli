@@ -17,6 +17,7 @@ from test_plugin_resolve import HOST, _fs_repo, _manifest, _repo, _suite_zip, _z
 from hcli.lib.ida import find_current_ida_platform, get_ida_config
 from hcli.lib.ida.plugin import IDAMetadataDescriptor
 from hcli.lib.ida.plugin.exceptions import (
+    BrokenPluginInstallationError,
     BundleTargetUnavailableError,
     DependencyInstallationError,
     DependencyUnavailableError,
@@ -43,7 +44,7 @@ from hcli.lib.ida.plugin.resolve import (
     ResolutionContext,
     plan_install,
 )
-from hcli.lib.ida.plugin.transaction import InstallTransaction
+from hcli.lib.ida.plugin.transaction import InstallTransaction, PreconditionChangedError
 
 
 def _context(repo: BasePluginRepo | None) -> ResolutionContext:
@@ -122,19 +123,34 @@ def test_required_failure_rolls_back_everything_new(virtual_ida_environment, tmp
     repo = _fs_repo(tmp_path / "repo", _zip("a", deps=["b"]), _zip("b", deps=["c"]), _zip("c"))
     context = _context(repo)
     plan = _plan(context, repo, "a")
-    _break_destination("a")
+    txn = _FailingTransaction(get_plugins_directory(), "a", PermissionError("disk is read-only"))
 
-    with pytest.raises(InstallExecutionError) as excinfo:
-        _run(context, plan)
+    with (
+        pytest.raises(InstallExecutionError) as excinfo,
+        prepare_install(plan, context, check_environment=False) as prepared,
+    ):
+        execute_install(prepared, transaction=txn)
 
     result = excinfo.value.result
     assert isinstance(result, InstallResult)
     assert result.committed_operations == []
     assert [(n.name, n.outcome) for n in result.nodes] == [("c", "rolled_back"), ("b", "rolled_back")]
     assert result.recovery is None
+    assert _installed_names() == set()
+
+
+def test_broken_destination_of_last_node_fails_before_any_mutation(virtual_ida_environment, tmp_path):
+    repo = _fs_repo(tmp_path / "repo", _zip("a", deps=["b"]), _zip("b", deps=["c"]), _zip("c"))
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+    _break_destination("a")
+
+    with pytest.raises(BrokenPluginInstallationError):
+        _run(context, plan)
+
     assert _installed_names() == {"a"}
     assert (get_plugins_directory() / "a" / "junk.txt").exists()
-    assert list(get_trash_directory(get_plugins_directory()).iterdir()) == []
+    assert not get_trash_directory(get_plugins_directory()).exists()
 
 
 def test_optional_dependency_with_missing_child_is_not_installed(virtual_ida_environment, tmp_path):
@@ -155,7 +171,7 @@ def test_optional_dependency_with_missing_child_is_not_installed(virtual_ida_env
     assert result.node_for_name("b") is None
 
 
-def test_optional_branch_failure_is_rolled_back_to_its_savepoint(virtual_ida_environment, tmp_path):
+def test_optional_branch_broken_destination_is_skipped_before_it_starts(virtual_ida_environment, tmp_path):
     repo = _fs_repo(
         tmp_path / "repo",
         _zip("a", deps=[{"plugin": "b", "required": False}]),
@@ -173,6 +189,28 @@ def test_optional_branch_failure_is_rolled_back_to_its_savepoint(virtual_ida_env
     assert not (get_plugins_directory() / "c").exists()
     assert {n.name: n.outcome for n in result.nodes} == {"a": "installed", "b": "unavailable", "c": "unavailable"}
     assert len(result.unavailable_optionals) == 1
+    assert "remnants" in result.unavailable_optionals[0][1]
+    assert "rolled back" not in result.unavailable_optionals[0][1]
+
+
+def test_optional_branch_rollback_names_the_nodes_it_undid(virtual_ida_environment, tmp_path):
+    repo = _fs_repo(
+        tmp_path / "repo",
+        _zip("a", deps=[{"plugin": "b", "required": False}]),
+        _zip("b", deps=["c"]),
+        _zip("c"),
+    )
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+    txn = _FailingTransaction(get_plugins_directory(), "b", PreconditionChangedError("b changed underneath us"))
+
+    with prepare_install(plan, context, check_environment=False) as prepared:
+        result = execute_install(prepared, transaction=txn)
+
+    assert _committed(result) == ["a"]
+    assert _installed_names() == {"a"}
+    assert {n.name: n.outcome for n in result.nodes} == {"a": "installed", "b": "unavailable", "c": "unavailable"}
+    assert result.unavailable_optionals[0][1] == "b changed underneath us; rolled back c==1.0.0"
 
 
 def test_optional_branch_artifact_failure_recorded_at_prepare(virtual_ida_environment, tmp_path):
@@ -206,15 +244,17 @@ def test_failed_root_restores_upgraded_dependency_exactly(virtual_ida_environmen
     plan = _plan(context, repo, "a")
     b = plan.node_for_name("b")
     assert b is not None and b.operation == "upgrade"
-    _break_destination("a")
+    txn = _FailingTransaction(get_plugins_directory(), "a", PermissionError("disk is read-only"))
 
-    with pytest.raises(InstallExecutionError):
-        _run(context, plan)
+    with (
+        pytest.raises(InstallExecutionError),
+        prepare_install(plan, context, check_environment=False) as prepared,
+    ):
+        execute_install(prepared, transaction=txn)
 
     assert _installed_version("b") == "1.0.0"
     assert extra.read_text() == "local edits"
     assert not (get_plugins_directory() / "c").exists()
-    assert list(get_trash_directory(get_plugins_directory()).iterdir()) == []
 
 
 def _write_editable_source(directory: Path, name: str, version: str, *, deps: list | None = None) -> Path:
@@ -233,10 +273,13 @@ def test_editable_replacement_failure_restores_previous_link(virtual_ida_environ
 
     plan = plan_install(context, [EditableRoot(second), ArchiveRoot(_zip("b"))])
     assert [n.name for n in plan.ordered_nodes()] == ["a", "b"]
-    _break_destination("b")
+    txn = _FailingTransaction(get_plugins_directory(), "b", PermissionError("disk is read-only"))
 
-    with pytest.raises(InstallExecutionError):
-        _run(context, plan)
+    with (
+        pytest.raises(InstallExecutionError),
+        prepare_install(plan, context, check_environment=False) as prepared,
+    ):
+        execute_install(prepared, transaction=txn)
 
     link = get_plugins_directory() / "a"
     assert link.is_symlink() and link.resolve() == first.resolve()
@@ -331,13 +374,15 @@ def test_configuration_is_written_and_rolled_back_with_the_plan(virtual_ida_envi
     repo = _fs_repo(tmp_path / "repo", _zip("a", deps=["b"]), _zip("b", settings=_settings()))
     context = _context(repo)
     plan = _plan(context, repo, "a")
-    _break_destination("a")
+    txn = _FailingTransaction(get_plugins_directory(), "a", PermissionError("disk is read-only"))
 
-    with pytest.raises(InstallExecutionError):
-        _run(context, plan, config_values={("b", "token"): "secret"})
+    with (
+        pytest.raises(InstallExecutionError),
+        prepare_install(plan, context, check_environment=False) as prepared,
+    ):
+        execute_install(prepared, transaction=txn, config_values={("b", "token"): "secret"})
     assert "b" not in get_ida_config().plugins
 
-    shutil.rmtree(get_plugins_directory() / "a")
     context = _context(repo)
     result = _run(context, _plan(context, repo, "a"), config_values={("b", "token"): "secret"})
     assert _committed(result) == ["b", "a"]
@@ -715,3 +760,89 @@ def test_bundle_without_matching_target_proceeds_when_only_retained_nodes_need_p
 
     assert _committed(result) == ["a"]
     assert [n.name for n in result.present] == ["lib"]
+
+
+def test_installed_plugin_requirements_join_preflight(virtual_ida_environment_with_venv, tmp_path):
+    install_plugin_archive(_zip("c", python_deps=["packaging==24.0"]), "c", check_environment=False)
+    repo = _fs_repo(tmp_path / "repo", _zip("a", python_deps=["packaging==25.0"]))
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+
+    with pytest.raises(DependencyInstallationError):
+        prepare_install(plan, context)
+
+    assert _installed_names() == {"c"}
+    assert "packaging==24.0" in _pip_freeze()
+
+
+def test_broken_destination_is_detected_before_pip(virtual_ida_environment_with_venv, tmp_path):
+    repo = _fs_repo(tmp_path / "repo", _zip("a", python_deps=["packaging==25.0"]))
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+    _break_destination("a")
+
+    with pytest.raises(BrokenPluginInstallationError):
+        _run(context, plan)
+
+    assert _installed_names() == {"a"}
+    assert "packaging" not in _pip_freeze()
+
+
+def test_optional_branch_broken_destination_skips_pip(virtual_ida_environment_with_venv, tmp_path):
+    repo = _fs_repo(
+        tmp_path / "repo",
+        _zip("a", deps=[{"plugin": "b", "required": False}]),
+        _zip("b", python_deps=["packaging==25.0"]),
+    )
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+    _break_destination("b")
+
+    with prepare_install(plan, context) as prepared:
+        result = execute_install(prepared)
+
+    assert _committed(result) == ["a"]
+    assert result.pip_attempted is False
+    assert len(result.unavailable_optionals) == 1
+    assert "packaging" not in _pip_freeze()
+
+
+def test_bundle_without_matching_target_only_skips_optional_branches_with_requirements(
+    virtual_ida_environment, tmp_path
+):
+    current = find_current_ida_platform()
+    other = "windows-x86_64" if current != "windows-x86_64" else "linux-x86_64"
+    manifest = _make_manifest(
+        targetPlatformTags=[
+            {
+                "id": "elsewhere",
+                "idaPlatform": other,
+                "pythonVersion": "3.12",
+                "implementation": "cp",
+                "abis": ["cp312", "abi3", "none"],
+                "pipPlatformTags": ["any"],
+                "wheelhouse": "dependencies/python/elsewhere",
+            }
+        ]
+    )
+    bundle = _build_bundle_zip(
+        manifest,
+        plugin_zips={
+            "a.zip": _zip("a", deps=[{"plugin": "b", "required": False}, {"plugin": "c", "required": False}]),
+            "b.zip": _zip("b", python_deps=["packaging==25.0"]),
+            "c.zip": _zip("c"),
+        },
+    )
+    path = tmp_path / "bundle.zip"
+    path.write_bytes(bundle)
+    repo = PluginBundleRepo(path)
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+
+    result = _run(context, plan)
+
+    assert _committed(result) == ["a", "c"]
+    assert result.pip_attempted is False
+    assert {n.name: n.outcome for n in result.nodes} == {"a": "installed", "b": "unavailable", "c": "installed"}
+    assert len(result.unavailable_optionals) == 1
+    assert "elsewhere" in result.unavailable_optionals[0][1]
