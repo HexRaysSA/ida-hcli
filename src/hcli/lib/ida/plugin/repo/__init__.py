@@ -17,6 +17,7 @@ from hcli.lib.ida.plugin import (
     Platform,
     get_metadatas_with_paths_from_plugin_archive,
     is_ida_version_compatible,
+    iter_component_names,
     parse_plugin_version,
     split_plugin_version_spec,
     validate_metadata_in_plugin_archive,
@@ -377,16 +378,41 @@ class PluginArchiveIndex:
     def index_plugin_archive(
         self, buf: bytes, url: str, expected_host: str | None = None, context: dict[str, str] | None = None
     ):
-        """Parse the given plugin archive and index the encountered plugins.
+        """Parse the given plugin archive and index the root plugins it contains.
+
+        A root is a manifest that no other manifest in the archive declares as a
+        component. Each root is published with its component tree embedded and
+        inline Python dependencies materialized; roots whose tree cannot be
+        expanded are skipped with a warning. Suite components are never
+        published on their own.
 
         Optionally filter out plugins whose host does not match the expected host.
         """
+        from hcli.lib.ida.plugin.enrich import expand_metadata_from_archive
+
         if context is None:
             context = {}
         logging.debug(m("indexing plugin archive: %s", url, **context))
-        for path, metadata in get_metadatas_with_paths_from_plugin_archive(buf, context=context):
+
+        manifests = dict(get_metadatas_with_paths_from_plugin_archive(buf, context=context))
+        component_paths: set[Path] = set()
+        for path, manifest in manifests.items():
+            component_paths.update(
+                path.parent / component_name / "ida-plugin.json"
+                for component_name in iter_component_names(manifest.plugin)
+            )
+
+        h = hashlib.sha256()
+        h.update(buf)
+        sha256 = h.hexdigest()
+
+        for path, root_metadata in manifests.items():
+            if path in component_paths:
+                logger.debug(m("skipping suite component: %s", path, **context))
+                continue
+
             try:
-                validate_metadata_in_plugin_archive(buf, path, metadata)
+                validate_metadata_in_plugin_archive(buf, path, root_metadata)
             except ValueError as e:
                 logger.debug(
                     m(
@@ -395,17 +421,27 @@ class PluginArchiveIndex:
                         **dict(
                             context,
                             path=str(path),
-                            plugin_name=metadata.plugin.name,
-                            plugin_version=metadata.plugin.version,
+                            plugin_name=root_metadata.plugin.name,
+                            plugin_version=root_metadata.plugin.version,
                             error=str(e),
                         ),
                     )
                 )
-                return
+                continue
 
-            h = hashlib.sha256()
-            h.update(buf)
-            sha256 = h.hexdigest()
+            try:
+                metadata = expand_metadata_from_archive(buf, path)
+            except ValueError as e:
+                logger.warning(
+                    m(
+                        "skipping plugin %s==%s: failed to expand metadata: %s",
+                        root_metadata.plugin.name,
+                        root_metadata.plugin.version,
+                        e,
+                        **dict(context, path=str(path), url=url),
+                    )
+                )
+                continue
 
             name = metadata.plugin.name
             host = metadata.plugin.host

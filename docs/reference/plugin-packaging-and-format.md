@@ -185,7 +185,7 @@ Example settings configuration:
 
 ### Plugin Dependencies
 
-A plugin can declare other plugins as loose dependencies via the `dependencies` field. Each entry is a plugin reference: a bare name, a name with a version pin, or a name with a repository host URL and optional version pin.
+A plugin can declare other plugins as loose dependencies via the `dependencies` field. Each entry is either a plugin reference string or an object with a `plugin` reference and a `required` flag. A reference is a bare name, a name with an `==` version pin, or a name with a repository host URL and optional version pin. Only `==` pins are accepted, and the pinned version must be a valid version number.
 
 ```json
 {
@@ -193,11 +193,14 @@ A plugin can declare other plugins as loose dependencies via the `dependencies` 
     "dependencies": [
       "go-runtime-detector",
       "go-string-extractor==1.2.0",
-      "helper@https://github.com/org/repo"
+      "helper@https://github.com/org/repo",
+      { "plugin": "go-type-recovery", "required": false }
     ]
   }
 }
 ```
+
+A string entry is a required dependency. The object form sets `required` to `false` to mark the dependency optional: HCLI installs it when it can and skips it otherwise. Objects accept only the `plugin` and `required` keys.
 
 When a user installs or upgrades a plugin that declares dependencies, HCLI fetches each one from the same repository and installs it as an independent top-level plugin. Dependencies that are already installed and satisfy the spec are skipped. If a pinned dependency is installed at a lower version, it is upgraded automatically; a higher installed version is not downgraded.
 
@@ -240,6 +243,8 @@ HCLI installs the entire suite directory into `$IDAUSR/plugins/<suite-name>/`. C
 Component names must not collide with any installed top-level plugin or with components of other installed suites. HCLI checks for collisions before installing. Uninstalling a component individually is not allowed; uninstall the suite root instead.
 
 Version pins (`==`) and host qualifiers (`@`) are not valid in `components` entries since the components are always bundled in the same archive.
+
+A `components` entry can also be the full `ida-plugin.json` document of the component instead of its name. This form appears in repository indexes: when HCLI indexes an archive, it embeds every component descriptor into the root manifest and replaces `"pythonDependencies": "inline"` with the list read from each entry point, so a consumer of the index can plan an install without downloading the archive. Only the suite root is published in the index; components are never listed on their own. Authors do not need to write the embedded form by hand. If a manifest does embed a component, the embedded name and version must match the component's own `ida-plugin.json`, and names must be unique across both forms.
 
 Components can declare their own `pythonDependencies`. When a suite is installed, HCLI collects dependencies from the root and every component at every nesting depth, then installs them together. The `hcli plugin dependencies install` command also covers component dependencies.
 

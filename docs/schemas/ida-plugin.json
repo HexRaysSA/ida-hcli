@@ -27,6 +27,65 @@
       "title": "Contact",
       "type": "object"
     },
+    "DependencySpec": {
+      "additionalProperties": false,
+      "description": "One entry of `plugin.dependencies`.\n\nA string entry in a manifest is normalized to `{\"plugin\": <string>}` and is\ntherefore required. Object entries can mark the dependency optional.",
+      "properties": {
+        "plugin": {
+          "description": "Plugin reference: a bare name, name==version, or name@host with an optional version pin. Only `==` pins are accepted.",
+          "examples": [
+            "go-runtime-detector",
+            "go-string-extractor==1.2.0"
+          ],
+          "title": "Plugin",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "description": "Whether the dependency must be installed for this plugin to be installed. Optional dependencies are installed when they can be, and skipped otherwise.",
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "plugin"
+      ],
+      "title": "DependencySpec",
+      "type": "object"
+    },
+    "IDAMetadataDescriptor": {
+      "description": "Top-level descriptor for `ida-plugin.json`.",
+      "properties": {
+        "$schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional JSON Schema URL used by editors like VSCode for validation.",
+          "title": "$Schema"
+        },
+        "IDAMetadataDescriptorVersion": {
+          "const": 1,
+          "description": "Version of the IDA metadata descriptor schema. Must be `1`.",
+          "title": "Idametadatadescriptorversion",
+          "type": "integer"
+        },
+        "plugin": {
+          "$ref": "#/$defs/PluginMetadata",
+          "description": "Plugin metadata."
+        }
+      },
+      "required": [
+        "IDAMetadataDescriptorVersion",
+        "plugin"
+      ],
+      "type": "object"
+    },
     "PluginMetadata": {
       "additionalProperties": true,
       "properties": {
@@ -277,21 +336,32 @@
           "type": "array"
         },
         "dependencies": {
-          "description": "Plugins to install alongside this one. Each entry is a plugin reference: a bare name, name==version, or name@host with optional version pin. Dependencies are fetched from the declaring plugin's source and installed as independent top-level plugins.",
+          "description": "Plugins to install alongside this one. Each entry is either a plugin reference string (a bare name, name==version, or name@host with optional version pin) or an object with `plugin` and `required` fields. A string entry is a required dependency. Dependencies are fetched from the declaring plugin's source and installed as independent top-level plugins.",
           "examples": [
             [
               "go-runtime-detector",
-              "go-string-extractor==1.2.0"
+              "go-string-extractor==1.2.0",
+              {
+                "plugin": "go-type-recovery",
+                "required": false
+              }
             ]
           ],
           "items": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/DependencySpec"
+              }
+            ]
           },
           "title": "Dependencies",
           "type": "array"
         },
         "components": {
-          "description": "Subdirectory names of plugins bundled inside this suite's archive. Each entry must match a subdirectory containing its own ida-plugin.json whose plugin.name matches the entry. Components share the suite's lifecycle and are hidden from top-level plugin listings.",
+          "description": "Plugins bundled inside this suite's archive. Each entry is either the name of a subdirectory containing its own ida-plugin.json whose plugin.name matches the entry, or the full ida-plugin.json descriptor of that component. Components share the suite's lifecycle and are hidden from top-level plugin listings.",
           "examples": [
             [
               "hexrays-taint-engine",
@@ -299,7 +369,14 @@
             ]
           ],
           "items": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/IDAMetadataDescriptor"
+              }
+            ]
           },
           "title": "Components",
           "type": "array"
@@ -471,37 +548,7 @@
       "type": "object"
     }
   },
+  "$ref": "#/$defs/IDAMetadataDescriptor",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Top-level descriptor for `ida-plugin.json`.",
-  "properties": {
-    "$schema": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Optional JSON Schema URL used by editors like VSCode for validation.",
-      "title": "$Schema"
-    },
-    "IDAMetadataDescriptorVersion": {
-      "const": 1,
-      "description": "Version of the IDA metadata descriptor schema. Must be `1`.",
-      "title": "Idametadatadescriptorversion",
-      "type": "integer"
-    },
-    "plugin": {
-      "$ref": "#/$defs/PluginMetadata",
-      "description": "Plugin metadata."
-    }
-  },
-  "required": [
-    "IDAMetadataDescriptorVersion",
-    "plugin"
-  ],
-  "title": "ida-plugin.json",
-  "type": "object"
+  "title": "ida-plugin.json"
 }

@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel
 
+from hcli.lib.ida.plugin import validate_expanded_for_planning
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, fetch_plugin_repo_bytes
 
 
@@ -23,7 +24,24 @@ class JSONFilePluginRepo(BasePluginRepo):
         return self.plugins
 
     def to_json(self):
-        doc = StaticPluginRepo(plugins=self.get_plugins()).model_dump_json()
+        """Render the repository document.
+
+        Raises:
+            ValueError: when a published location is missing embedded components
+                or concrete Python dependencies.
+        """
+        plugins = self.get_plugins()
+        for plugin in plugins:
+            for version, locations in plugin.versions.items():
+                for location in locations:
+                    try:
+                        validate_expanded_for_planning(location.metadata)
+                    except ValueError as e:
+                        raise ValueError(
+                            f"{plugin.name}=={version} at {location.url} is not fully expanded: {e}"
+                        ) from e
+
+        doc = StaticPluginRepo(plugins=plugins).model_dump_json()
         # pydantic doesn't have a way to emit json with sorted keys
         # and we want a deterministic file,
         # so we re-encode here.
