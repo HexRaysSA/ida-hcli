@@ -261,13 +261,13 @@ class InstallTransaction:
         self._check_open()
         for entry in self.journal:
             if isinstance(entry, ReplacedDirectory):
-                _remove_path(entry.checkpoint_path)
+                _discard_path(entry.checkpoint_path)
         self.journal.clear()
         self._finish()
 
     def _finish(self) -> None:
         for staged in self.staging:
-            _remove_path(staged)
+            _discard_path(staged)
         self.staging.clear()
         self.finished = True
         _open_transactions.discard(self)
@@ -326,6 +326,14 @@ class InstallTransaction:
             logger.debug("could not move checkpoint %s into %s: %s", checkpoint, recovery, e)
             return checkpoint
         return target
+
+
+def _discard_path(path: Path) -> None:
+    """Remove leftover transaction state, leaving it for a later sweep if that fails."""
+    try:
+        _remove_path(path)
+    except OSError as e:
+        logger.warning("could not remove %s: %s; it will be removed by a later sweep", path, e)
 
 
 def _remove_path(path: Path) -> None:

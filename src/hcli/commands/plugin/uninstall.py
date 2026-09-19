@@ -104,8 +104,11 @@ def uninstall_plugin(plugin: str, yes: bool) -> None:
 
         if record is not None:
             records = get_installed_plugin_records()
-            dependents = find_dependents(records, record)
-            companions = find_companions(records, record)
+            broken: list[str] = []
+            dependents = find_dependents(records, record, broken)
+            companions = find_companions(records, record, broken)
+            for description in dict.fromkeys(broken):
+                console.print(f"[yellow]Warning[/yellow]: could not inspect components of {description}")
             if dependents:
                 _print_dependents(record, dependents)
             has_components = _print_components(record)

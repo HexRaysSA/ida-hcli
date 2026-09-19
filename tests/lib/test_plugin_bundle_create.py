@@ -167,3 +167,36 @@ def test_bundle_create_accepts_unpinned_repository_spec(tmp_path):
         assert list(plugin.versions) == ["1.5.0"]
     finally:
         bundle_repo.close()
+
+
+def test_plan_bundle_contents_reports_omitted_optional_dependencies(tmp_path):
+    repo = _fs_repo(
+        tmp_path / "repo",
+        _zip("a", deps=[{"plugin": "b", "required": False}, {"plugin": "ghost", "required": False}]),
+        _zip("b"),
+    )
+
+    contents = plan_bundle_contents(["a"], repo, PLATFORMS)
+
+    omitted = {(o.spec, o.declared_by): o.reason for o in contents.omitted_optional}
+    assert set(omitted) == {("b", "a"), ("ghost", "a")}
+    assert omitted[("b", "a")] == "optional dependencies are bundled only when named as roots"
+    assert "ghost" in omitted[("ghost", "a")]
+
+    contents = plan_bundle_contents(["a", "b"], repo, PLATFORMS)
+    assert [(o.spec, o.declared_by) for o in contents.omitted_optional] == [("ghost", "a")]
+
+
+def test_bundle_create_prints_omitted_optional_dependencies(tmp_path):
+    repo_dir = tmp_path / "repo"
+    _fs_repo(repo_dir, _zip("a", deps=[{"plugin": "b", "required": False}]), _zip("b"))
+    out = tmp_path / "bundle.zip"
+
+    result = CliRunner().invoke(
+        bundle,
+        ["create", "--path", str(out), "--target", "linux-x86_64-cp312", "--repo", str(repo_dir), "a"],
+        obj={"pip_options": PipOptions()},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "omitted optional dependency: b (used by a)" in result.output

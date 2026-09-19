@@ -230,12 +230,22 @@ class BundleArchive:
         return f"{self.name}-{self.version}.zip"
 
 
+@dataclass(frozen=True)
+class OmittedOptionalDependency:
+    """An optional dependency the bundle leaves out, and why."""
+
+    spec: str
+    declared_by: str
+    reason: str
+
+
 @dataclass
 class BundleContents:
     """Archives and Python requirements that make up a bundle."""
 
     archives: list[BundleArchive] = field(default_factory=list)
     python_requirements: list[str] = field(default_factory=list)
+    omitted_optional: list[OmittedOptionalDependency] = field(default_factory=list)
 
     def archives_for_name(self, name: str) -> list[BundleArchive]:
         return [a for a in self.archives if a.name == name]
@@ -271,7 +281,8 @@ def plan_bundle_contents(
     Each platform is planned separately against an empty installed state so the
     builder's own plugins never satisfy a dependency. The required closure of
     every root is included; optional dependencies are included only when named
-    as roots. Archives are deduplicated by digest across roots and platforms.
+    as roots, and each omitted one is listed in ``omitted_optional``. Archives
+    are deduplicated by digest across roots and platforms.
 
     Raises:
         DependencyResolutionError: a required dependency is unavailable or conflicts.
@@ -292,6 +303,7 @@ def plan_bundle_contents(
     platforms_by_sha: dict[str, list[str]] = {}
     fetched: dict[str, bytes] = {}
     requirements: dict[str, None] = {}
+    omitted: dict[tuple[str, str], OmittedOptionalDependency] = {}
 
     for platform in target_platforms:
         context = ResolutionContext(
@@ -305,6 +317,14 @@ def plan_bundle_contents(
         plan = plan_install(context, roots)
         for requirement in plan.combined_python_requirements():
             requirements.setdefault(requirement, None)
+        for branch in plan.optional_branches:
+            target = branch.target
+            if target is not None and target in plan.nodes:
+                continue
+            spec = branch.edge.spec.plugin
+            declared_by = branch.edge.chain[-1] if branch.edge.chain else "?"
+            reason = branch.unavailable_reason or "optional dependencies are bundled only when named as roots"
+            omitted.setdefault((spec, declared_by), OmittedOptionalDependency(spec, declared_by, reason))
 
         for node in plan.ordered_nodes():
             source = node.source
@@ -323,7 +343,7 @@ def plan_bundle_contents(
             by_sha[sha256] = (node.name, node.version, data, node.is_root or (existing is not None and existing[3]))
             platforms_by_sha.setdefault(sha256, []).append(platform)
 
-    contents = BundleContents(python_requirements=list(requirements))
+    contents = BundleContents(python_requirements=list(requirements), omitted_optional=list(omitted.values()))
     for sha256, (name, version, data, is_root) in by_sha.items():
         platforms = tuple(dict.fromkeys(platforms_by_sha[sha256]))
         contents.archives.append(BundleArchive(name, version, sha256, data, platforms, is_root))

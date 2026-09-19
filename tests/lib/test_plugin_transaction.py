@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -278,3 +280,27 @@ def test_interrupt_during_step_rolls_back_and_propagates(virtual_ida_environment
     assert (plugins / "plug" / "plug.py").read_text() == "old"
     assert list(get_trash_directory(plugins).iterdir()) == []
     assert not is_transaction_active()
+
+
+@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="needs POSIX permissions as non-root")
+def test_commit_survives_undeletable_checkpoint(virtual_ida_environment, caplog):
+    plugins = get_plugins_directory()
+    _write_plugin(plugins / "plug", "old")
+    txn = _txn()
+    txn.replace_directory(_stage(txn, "new"), plugins / "plug")
+    trash = get_trash_directory(plugins)
+    checkpoints = [p for p in trash.iterdir() if p.name.startswith("plug.checkpoint-")]
+    assert len(checkpoints) == 1
+    os.chmod(trash, stat.S_IRUSR | stat.S_IXUSR)
+
+    try:
+        with caplog.at_level(logging.WARNING, logger="hcli.lib.ida.plugin.transaction"):
+            txn.commit()
+    finally:
+        os.chmod(trash, stat.S_IRWXU)
+
+    assert txn.finished
+    assert not is_transaction_active()
+    assert (plugins / "plug" / "plug.py").read_text() == "new"
+    assert checkpoints[0].exists()
+    assert any("could not remove" in r.getMessage() for r in caplog.records)

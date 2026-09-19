@@ -269,6 +269,11 @@ def create(
     for archive in contents.archives:
         role = "" if archive.is_root else "  (dependency)"
         console.print(f"    {archive.name}=={archive.version}{role}")
+    for omitted in contents.omitted_optional:
+        console.print(
+            f"  [yellow]omitted[/yellow] optional dependency: {omitted.spec} (used by {omitted.declared_by}); "
+            "add it as an explicit root to include it"
+        )
     console.print(f"  targets: {len(pip_targets)}")
     for t in pip_targets:
         console.print(f"    {t.ida_platform}  Python {t.python_version}")

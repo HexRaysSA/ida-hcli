@@ -33,30 +33,47 @@ class DependencyDeclaration:
 
 
 def expand_installed_record(record: InstalledPluginRecord) -> IDAMetadataDescriptor:
-    """Expanded metadata for ``record``, falling back to the root manifest when the tree is broken."""
+    """Expanded metadata for ``record`` including every component manifest beneath it.
+
+    Raises:
+        ValueError: a component manifest is missing, malformed, or inconsistent with its parent.
+    """
     from hcli.lib.ida.plugin.enrich import expand_metadata_from_directory
 
+    return expand_metadata_from_directory(record.path)
+
+
+def _expand_or_report(record: InstalledPluginRecord, broken: list[str] | None) -> IDAMetadataDescriptor:
+    """Expanded metadata, or the root manifest alone when the component tree cannot be read.
+
+    A broken tree is logged and, when ``broken`` is given, described there as
+    ``name: reason`` so callers can tell the user which declarations were not seen.
+    """
     try:
-        return expand_metadata_from_directory(record.path)
+        return expand_installed_record(record)
     except ValueError as e:
-        logger.debug("cannot expand installed plugin %s: %s", record.name, e)
+        logger.warning("could not inspect components of %s: %s", record.name, e)
+        if broken is not None:
+            broken.append(f"{record.name}: {e}")
         return record.metadata
 
 
-def get_owned_names(record: InstalledPluginRecord) -> set[str]:
-    """Lowercase names of ``record`` and every component beneath it."""
+def get_owned_names(record: InstalledPluginRecord, broken: list[str] | None = None) -> set[str]:
+    """Lowercase names of ``record`` and every readable component beneath it."""
     names = {record.name.lower()}
     names.update(
-        component.plugin.name.lower() for _, component in iter_expanded_components(expand_installed_record(record))
+        component.plugin.name.lower() for _, component in iter_expanded_components(_expand_or_report(record, broken))
     )
     return names
 
 
-def collect_dependency_declarations(records: Iterable[InstalledPluginRecord]) -> list[DependencyDeclaration]:
-    """Every dependency declared by ``records`` and their components, in record order."""
+def collect_dependency_declarations(
+    records: Iterable[InstalledPluginRecord], broken: list[str] | None = None
+) -> list[DependencyDeclaration]:
+    """Every dependency declared by ``records`` and their readable components, in record order."""
     declarations: list[DependencyDeclaration] = []
     for record in records:
-        expanded = expand_installed_record(record)
+        expanded = _expand_or_report(record, broken)
         for path, spec in iter_dependency_specs(expanded):
             try:
                 target = parse_dependency_spec(spec.plugin).name
@@ -68,18 +85,22 @@ def collect_dependency_declarations(records: Iterable[InstalledPluginRecord]) ->
     return declarations
 
 
-def find_dependents(records: list[InstalledPluginRecord], record: InstalledPluginRecord) -> list[DependencyDeclaration]:
+def find_dependents(
+    records: list[InstalledPluginRecord], record: InstalledPluginRecord, broken: list[str] | None = None
+) -> list[DependencyDeclaration]:
     """Declarations from other installed plugins that name ``record`` or one of its components."""
-    owned = get_owned_names(record)
+    owned = get_owned_names(record, broken)
     others = [r for r in records if r.path != record.path]
-    return [d for d in collect_dependency_declarations(others) if d.target.lower() in owned]
+    return [d for d in collect_dependency_declarations(others, broken) if d.target.lower() in owned]
 
 
-def find_companions(records: list[InstalledPluginRecord], record: InstalledPluginRecord) -> list[InstalledPluginRecord]:
+def find_companions(
+    records: list[InstalledPluginRecord], record: InstalledPluginRecord, broken: list[str] | None = None
+) -> list[InstalledPluginRecord]:
     """Installed top-level plugins that ``record`` or its components declare as dependencies."""
-    owned = get_owned_names(record)
+    owned = get_owned_names(record, broken)
     companions: dict[str, InstalledPluginRecord] = {}
-    for declaration in collect_dependency_declarations([record]):
+    for declaration in collect_dependency_declarations([record], broken):
         name = declaration.target.lower()
         if name in owned or name in companions:
             continue
@@ -89,7 +110,9 @@ def find_companions(records: list[InstalledPluginRecord], record: InstalledPlugi
     return list(companions.values())
 
 
-def find_remaining_declarers(records: Iterable[InstalledPluginRecord], name: str) -> list[DependencyDeclaration]:
+def find_remaining_declarers(
+    records: Iterable[InstalledPluginRecord], name: str, broken: list[str] | None = None
+) -> list[DependencyDeclaration]:
     """Declarations among ``records`` that still name ``name``."""
     wanted = name.lower()
-    return [d for d in collect_dependency_declarations(records) if d.target.lower() == wanted]
+    return [d for d in collect_dependency_declarations(records, broken) if d.target.lower() == wanted]
