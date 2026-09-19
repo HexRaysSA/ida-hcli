@@ -255,7 +255,7 @@ def test_plugin_all(virtual_ida_environment_with_venv):
         assert row_contains("plugin1", "1.0.0", "upgradable to 6.0.0")(p.stdout)
 
         p = run_hcli(f"plugin --repo {repo_path.absolute()} upgrade plugin1==2.0.0")
-        assert "Installed plugin: plugin1==2.0.0\n" == p.stdout
+        assert "Upgraded plugin: plugin1==2.0.0\n" == p.stdout
 
         # downgrade not supported
         with pytest.raises(subprocess.CalledProcessError) as e:

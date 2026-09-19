@@ -35,7 +35,9 @@ logger = logging.getLogger(__name__)
 HOST = "https://github.com/test/test-pack"
 
 
-def _make_plugin_metadata(name: str, version: str, deps: list[str] | None = None) -> dict:
+def _make_plugin_metadata(
+    name: str, version: str, deps: list | None = None, settings: list[dict] | None = None
+) -> dict:
     plugin: dict = {
         "name": name,
         "version": version,
@@ -45,12 +47,14 @@ def _make_plugin_metadata(name: str, version: str, deps: list[str] | None = None
     }
     if deps is not None:
         plugin["dependencies"] = deps
+    if settings is not None:
+        plugin["settings"] = settings
     return {"IDAMetadataDescriptorVersion": 1, "plugin": plugin}
 
 
-def _make_plugin_zip(name: str, version: str, deps: list[str] | None = None) -> bytes:
+def _make_plugin_zip(name: str, version: str, deps: list | None = None, settings: list[dict] | None = None) -> bytes:
     buf = io.BytesIO()
-    metadata = _make_plugin_metadata(name, version, deps)
+    metadata = _make_plugin_metadata(name, version, deps, settings)
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr(f"{name}/ida-plugin.json", json.dumps(metadata))
         zf.writestr(f"{name}/{name}.py", "# plugin")
@@ -64,6 +68,34 @@ def _make_fs_repo(archives: dict[str, bytes]) -> Iterator[FileSystemPluginRepo]:
         for filename, data in archives.items():
             (repo_dir / filename).write_bytes(data)
         yield FileSystemPluginRepo(repo_dir)
+
+
+def _write_fs_repo(root: Path, archives: dict[str, bytes]) -> Path:
+    repo_dir = root / "repo"
+    repo_dir.mkdir(exist_ok=True)
+    for filename, data in archives.items():
+        (repo_dir / filename).write_bytes(data)
+    return repo_dir
+
+
+@contextlib.contextmanager
+def _noninteractive_console() -> Iterator[None]:
+    from hcli.lib.console import console
+
+    old = console.is_interactive
+    console.is_interactive = False
+    try:
+        yield
+    finally:
+        console.is_interactive = old
+
+
+def _invoke(runner: CliRunner, repo_dir: Path, *args: str):
+    with _noninteractive_console():
+        return runner.invoke(plugin_group, ["--repo", str(repo_dir), *args])
+
+
+API_KEY = {"key": "api_key", "type": "string", "required": True, "name": "API key"}
 
 
 def _get_installed_version(name: str) -> str | None:
@@ -287,26 +319,114 @@ def test_install_pack_without_repo_succeeds_when_deps_present(virtual_ida_enviro
     assert is_plugin_installed("my-pack")
 
 
-def test_install_pack_local_directory_warns_about_deps(virtual_ida_environment, capsys):
-    from hcli.commands.plugin.install import _handle_install_dependencies
-    from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT
+def test_install_cli_local_archive_blocks_on_missing_dependency(virtual_ida_environment, tmp_path):
+    pack_zip = tmp_path / "my-pack.zip"
+    pack_zip.write_bytes(_make_plugin_zip("my-pack", "1.0.0", deps=["dep-a", "dep-b"]))
+    repo_dir = _write_fs_repo(tmp_path, {"dep-a.zip": _make_plugin_zip("dep-a", "1.0.0")})
 
-    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a", "dep-b"])
-    _, metadata = _parse_metadata(pack_zip, "my-pack")
+    result = _invoke(CliRunner(mix_stderr=False), repo_dir, "install", str(pack_zip))
 
-    _handle_install_dependencies(
-        metadata=metadata,
-        plugin_repo=None,
-        current_ida_platform="macos-aarch64",
-        current_ida_version="9.1",
-        pip_options=PIP_OPTIONS_DEFAULT,
-        check_environment=False,
+    assert result.exit_code != 0
+    assert "dep-b" in result.output
+    assert "unavailable" in result.output
+    assert not is_plugin_installed("my-pack")
+    assert not is_plugin_installed("dep-a")
+
+
+def test_install_cli_reports_dependency_edges(virtual_ida_environment, tmp_path):
+    repo_dir = _write_fs_repo(
+        tmp_path,
+        {
+            "my-pack.zip": _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"]),
+            "dep-a.zip": _make_plugin_zip("dep-a", "1.0.0", deps=["dep-b"]),
+            "dep-b.zip": _make_plugin_zip("dep-b", "1.0.0"),
+        },
     )
 
-    captured = capsys.readouterr()
-    assert "cannot be auto-installed" in captured.out
-    assert "dep-a" in captured.out
-    assert "dep-b" in captured.out
+    result = _invoke(CliRunner(mix_stderr=False), repo_dir, "install", "my-pack")
+
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    assert lines[0] == "Installed plugin: my-pack==1.0.0"
+    assert "  Installed dependency: dep-b==1.0.0 (required by dep-a)" in lines
+    assert "  Installed dependency: dep-a==1.0.0 (required by my-pack)" in lines
+
+
+def test_install_cli_dependency_config_required_before_mutation(virtual_ida_environment, tmp_path):
+    repo_dir = _write_fs_repo(
+        tmp_path,
+        {
+            "my-pack.zip": _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"]),
+            "dep-a.zip": _make_plugin_zip("dep-a", "1.0.0", settings=[API_KEY]),
+        },
+    )
+    runner = CliRunner(mix_stderr=False)
+
+    result = _invoke(runner, repo_dir, "install", "my-pack")
+    assert result.exit_code != 0
+    assert "--dependency-config dep-a.api_key=<value>" in result.output
+    assert not is_plugin_installed("my-pack")
+    assert not is_plugin_installed("dep-a")
+
+    result = _invoke(runner, repo_dir, "install", "my-pack", "--dependency-config", "dep-a.api_key=secret")
+    assert result.exit_code == 0, result.output
+    assert is_plugin_installed("my-pack")
+    assert is_plugin_installed("dep-a")
+
+    from hcli.lib.ida import get_ida_config
+
+    assert get_ida_config().plugins["dep-a"].settings["api_key"] == "secret"
+
+
+def test_install_cli_dependency_config_rejects_unknown_target(virtual_ida_environment, tmp_path):
+    repo_dir = _write_fs_repo(tmp_path, {"my-pack.zip": _make_plugin_zip("my-pack", "1.0.0")})
+
+    result = _invoke(CliRunner(mix_stderr=False), repo_dir, "install", "my-pack", "--dependency-config", "nope.k=v")
+
+    assert result.exit_code != 0
+    assert "unknown plugin or component in configuration: 'nope'" in result.output
+    assert not is_plugin_installed("my-pack")
+
+
+def test_install_cli_optional_dependency_skipped_without_config(virtual_ida_environment, tmp_path):
+    repo_dir = _write_fs_repo(
+        tmp_path,
+        {
+            "my-pack.zip": _make_plugin_zip("my-pack", "1.0.0", deps=[{"plugin": "opt", "required": False}]),
+            "opt.zip": _make_plugin_zip("opt", "1.0.0", settings=[API_KEY]),
+        },
+    )
+
+    result = _invoke(CliRunner(mix_stderr=False), repo_dir, "install", "my-pack")
+
+    assert result.exit_code == 0, result.output
+    assert is_plugin_installed("my-pack")
+    assert not is_plugin_installed("opt")
+    assert "Unavailable optional dependency: opt" in result.output
+    assert "api_key" in result.output
+
+
+def test_install_cli_upgrade_repairs_missing_dependency(virtual_ida_environment, tmp_path):
+    repo_dir = _write_fs_repo(
+        tmp_path,
+        {
+            "my-pack.zip": _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"]),
+            "dep-a.zip": _make_plugin_zip("dep-a", "1.0.0"),
+        },
+    )
+    runner = CliRunner(mix_stderr=False)
+    assert _invoke(runner, repo_dir, "install", "my-pack").exit_code == 0
+    uninstall_plugin("dep-a")
+
+    result = _invoke(runner, repo_dir, "install", "my-pack")
+    assert result.exit_code != 0
+    assert "already installed" in result.output
+
+    result = _invoke(runner, repo_dir, "install", "--upgrade", "my-pack")
+    assert result.exit_code == 0, result.output
+    assert "Already installed plugin: my-pack==1.0.0" in result.output
+    assert "Installed dependency: dep-a==1.0.0" in result.output
+    assert is_plugin_installed("dep-a")
 
 
 def test_install_pack_without_dependencies(virtual_ida_environment):
@@ -338,38 +458,48 @@ def test_upgrade_pack_installs_new_deps(virtual_ida_environment):
     assert _get_installed_version("my-pack") == "2.0.0"
 
 
-def test_upgrade_pack_reports_dropped_deps(virtual_ida_environment):
-    from hcli.commands.plugin.upgrade import _handle_upgrade_dependencies
-    from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT
+def test_upgrade_cli_reports_dropped_dependencies(virtual_ida_environment, tmp_path):
+    repo_dir = _write_fs_repo(
+        tmp_path,
+        {
+            "my-pack-1.zip": _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a", "dep-b"]),
+            "my-pack-2.zip": _make_plugin_zip("my-pack", "2.0.0", deps=["dep-a"]),
+            "dep-a.zip": _make_plugin_zip("dep-a", "1.0.0"),
+            "dep-b.zip": _make_plugin_zip("dep-b", "1.0.0"),
+        },
+    )
+    runner = CliRunner(mix_stderr=False)
+    assert _invoke(runner, repo_dir, "install", "my-pack==1.0.0").exit_code == 0
 
-    pack_v1 = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a", "dep-b"])
-    pack_v2 = _make_plugin_zip("my-pack", "2.0.0", deps=["dep-a"])
-    dep_a_zip = _make_plugin_zip("dep-a", "1.0.0")
-    dep_b_zip = _make_plugin_zip("dep-b", "1.0.0")
+    result = _invoke(runner, repo_dir, "upgrade", "my-pack")
 
-    with _make_fs_repo({"dep-a.zip": dep_a_zip, "dep-b.zip": dep_b_zip}) as repo:
-        install_plugin_archive(pack_v1, "my-pack", plugin_repo=repo, check_environment=False)
-        _, meta_v1 = _parse_metadata(pack_v1, "my-pack")
-
-        upgrade_plugin_archive(pack_v2, "my-pack", plugin_repo=repo, check_environment=False)
-        _, meta_v2 = _parse_metadata(pack_v2, "my-pack")
-
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            _handle_upgrade_dependencies(
-                old_deps=[spec.plugin for spec in meta_v1.plugin.dependencies],
-                new_metadata=meta_v2,
-                plugin_repo=repo,
-                current_ida_platform="macos-aarch64",
-                current_ida_version="9.1",
-                pip_options=PIP_OPTIONS_DEFAULT,
-                check_environment=False,
-            )
-        output = buf.getvalue()
-
-    assert "dep-b" in output
-    assert "removed" in output.lower() or "remain installed" in output
+    assert result.exit_code == 0, result.output
+    assert "Upgraded plugin: my-pack==2.0.0" in result.output
+    assert "Present dependency: dep-a" in result.output
+    assert "dep-b" in result.output
+    assert "remain installed" in result.output
     assert is_plugin_installed("dep-b")
+    assert _get_installed_version("my-pack") == "2.0.0"
+
+
+def test_upgrade_cli_current_root_reports_up_to_date(virtual_ida_environment, tmp_path):
+    repo_dir = _write_fs_repo(
+        tmp_path,
+        {
+            "my-pack.zip": _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"]),
+            "dep-a.zip": _make_plugin_zip("dep-a", "1.0.0"),
+        },
+    )
+    runner = CliRunner(mix_stderr=False)
+    assert _invoke(runner, repo_dir, "install", "my-pack").exit_code == 0
+    uninstall_plugin("dep-a")
+
+    result = _invoke(runner, repo_dir, "upgrade", "my-pack")
+
+    assert result.exit_code == 0, result.output
+    assert "Already up to date plugin: my-pack==1.0.0" in result.output
+    assert "Installed dependency: dep-a==1.0.0" in result.output
+    assert is_plugin_installed("dep-a")
 
 
 def test_upgrade_pack_upgrades_unsatisfied_deps(virtual_ida_environment):

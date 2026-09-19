@@ -52,7 +52,7 @@ from hcli.lib.util.io import NoSpaceError
 if TYPE_CHECKING:
     from hcli.lib.ida.plugin.execute import InstallResult
     from hcli.lib.ida.plugin.repo import BasePluginRepo
-    from hcli.lib.ida.plugin.resolve import InstallPlan, ResolutionContext, RootRequest
+    from hcli.lib.ida.plugin.resolve import InstallPlan, PlannedNode, ResolutionContext, RootRequest
 
 logger = logging.getLogger(__name__)
 
@@ -686,6 +686,71 @@ def _execute_plan(
         return execute_install(prepared, config_values=config_values, require_configuration=require_configuration)
 
 
+@dataclass
+class PlannedOperation:
+    """An install plan together with the environment snapshot it was built from.
+
+    Callers inspect ``plan`` (selected versions, missing configuration, optional
+    branches) and collect setting values before anything is fetched or written,
+    then call ``execute``.
+    """
+
+    context: ResolutionContext
+    plan: InstallPlan
+
+    @property
+    def root(self) -> PlannedNode:
+        return self.plan.nodes[self.plan.roots[0]]
+
+    def execute(
+        self,
+        *,
+        pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+        check_environment: bool = True,
+        config_values: Mapping[tuple[str, str], str | bool] | None = None,
+        require_configuration: bool = True,
+    ) -> InstallResult:
+        """Fetch, verify, and apply the plan through a journaled transaction.
+
+        Raises:
+            DependencyResolutionError: an artifact cannot be fetched, differs from the
+                plan, or required settings still have no value; nothing was mutated.
+            PipNotAvailableError, DependencyInstallationError: Python requirements cannot be installed.
+            InstallExecutionError: a step failed after mutations began; they were rolled back.
+        """
+        return _execute_plan(
+            self.plan,
+            self.context,
+            pip_options=pip_options,
+            check_environment=check_environment,
+            config_values=config_values,
+            require_configuration=require_configuration,
+        )
+
+
+def plan_plugin_operation(
+    roots: Sequence[RootRequest],
+    *,
+    plugin_repo: BasePluginRepo | None,
+    current_platform: str | None = None,
+    current_version: str | None = None,
+) -> PlannedOperation:
+    """Snapshot the environment and plan ``roots`` without fetching or writing anything.
+
+    Repository roots are selected from the index only; their archives are
+    fetched during ``PlannedOperation.execute``.
+
+    Raises:
+        DependencyResolutionError, PluginAlreadyInstalledError, PluginVersionDowngradeError,
+            InstalledPluginNameConflictError, PlatformIncompatibleError,
+            IDAVersionIncompatibleError, ValueError: as for ``plan_install``.
+    """
+    from hcli.lib.ida.plugin.resolve import plan_install
+
+    context = _build_resolution_context(plugin_repo, current_platform, current_version)
+    return PlannedOperation(context, plan_install(context, roots))
+
+
 def _plan_and_execute(
     roots: Sequence[RootRequest],
     *,
@@ -697,13 +762,10 @@ def _plan_and_execute(
     config_values: Mapping[tuple[str, str], str | bool] | None,
     require_configuration: bool,
 ) -> InstallResult:
-    from hcli.lib.ida.plugin.resolve import plan_install
-
-    context = _build_resolution_context(plugin_repo, current_platform, current_version)
-    plan = plan_install(context, roots)
-    return _execute_plan(
-        plan,
-        context,
+    operation = plan_plugin_operation(
+        roots, plugin_repo=plugin_repo, current_platform=current_platform, current_version=current_version
+    )
+    return operation.execute(
         pip_options=pip_options,
         check_environment=check_environment,
         config_values=config_values,

@@ -335,6 +335,13 @@ class InstallPlan:
     def mutating_nodes(self) -> list[PlannedNode]:
         return [node for node in self.ordered_nodes() if node.mutates]
 
+    def has_settings_target(self, name: str) -> bool:
+        """Whether ``name`` is a plugin or component anywhere in the plan, including optional branches."""
+        return name.lower() in self._settings_targets
+
+    def all_branches(self) -> list[int]:
+        return [branch.index for branch in self.optional_branches]
+
 
 class PhysicalArtifactCache:
     """Verified archive bytes keyed by digest, shared between planning and execution."""
@@ -602,6 +609,8 @@ class _Planner:
                     reason += "; " + "; ".join(extra)
             raise DependencyUnavailableError(edge.spec.plugin, reason, edge.chain) from None
         except AmbiguousPluginReferenceError as e:
+            if edge.parent is None:
+                raise AmbiguousPluginReferenceError(e.name, e.candidates, e.version_spec or reference.version_spec)
             candidates = ", ".join(f"{name}@{chost}" for name, chost in e.candidates)
             raise DependencyUnavailableError(
                 edge.spec.plugin,

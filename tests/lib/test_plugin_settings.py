@@ -43,7 +43,7 @@ def test_plugin_settings_integration(virtual_ida_environment_with_venv):
 
         with pytest.raises(subprocess.CalledProcessError) as e:
             _ = run_hcli(f"{repo} install plugin1==5.0.0 --config foo=bar")
-        assert "Error: 'unknown setting: foo'\n" == e.value.stdout
+        assert "Error: unknown setting for plugin1: 'foo'\n" == e.value.stdout
 
         p = run_hcli(f"{repo} install plugin1==5.0.0 --config key1=bar")
         assert "Installed plugin: plugin1==5.0.0\n" == p.stdout
