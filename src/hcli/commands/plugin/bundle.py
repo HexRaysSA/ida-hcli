@@ -19,7 +19,6 @@ from hcli.lib.ida.plugin import (
     get_metadatas_with_paths_from_plugin_archive,
     get_version_from_plugin_archive,
 )
-from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
 from hcli.lib.ida.plugin.bundle import (
     ALL_PLATFORMS,
     SUPPORTED_PYTHON_VERSIONS,
@@ -27,6 +26,7 @@ from hcli.lib.ida.plugin.bundle import (
     resolve_platform_alias,
     to_manifest_target,
 )
+from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
 from hcli.lib.ida.plugin.reference import parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo, PluginArchiveIndex
 from hcli.lib.ida.plugin.repo.bundle import (
@@ -217,7 +217,7 @@ def create(
     bundle_repo: str | None,
     plugin_specs: tuple[str, ...],
 ) -> None:
-    """Create a plugin bundle from plugin specs and/or local ZIPs."""
+    """Create a plugin bundle from plugin specs, local directories, and/or ZIPs."""
     pip_options: PipOptions = ctx.obj.get("pip_options", PIP_OPTIONS_DEFAULT)
     parent_repo = ctx.obj.get("plugin_repo")
 
