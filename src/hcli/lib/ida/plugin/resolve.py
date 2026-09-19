@@ -366,10 +366,14 @@ class PhysicalArtifactCache:
 
 @dataclass
 class ResolutionContext:
-    """Everything the planner reads. Built once per operation and never re-detected."""
+    """Everything the planner reads. Built once per operation and never re-detected.
+
+    ``current_version`` may be ``None`` for packaging workflows that target any
+    IDA version; the planner then skips IDA version filtering.
+    """
 
     current_platform: str
-    current_version: str
+    current_version: str | None
     installed: list[InstalledPluginRecord]
     installed_config: IDAConfigJson
     dependency_repo: BasePluginRepo | None
@@ -578,10 +582,13 @@ class _Planner:
         platforms = metadata.plugin.platforms
         if self.context.current_platform not in platforms:
             raise PlatformIncompatibleError(self.context.current_platform, platforms)
-        if metadata.plugin.ida_versions and not is_ida_version_compatible(
-            self.context.current_version, metadata.plugin.ida_versions
+        current_version = self.context.current_version
+        if (
+            current_version is not None
+            and metadata.plugin.ida_versions
+            and not is_ida_version_compatible(current_version, metadata.plugin.ida_versions)
         ):
-            raise IDAVersionIncompatibleError(self.context.current_version, metadata.plugin.ida_versions)
+            raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
 
     def _find_location(
         self,
@@ -594,14 +601,14 @@ class _Planner:
         if repo is None:
             raise DependencyUnavailableError(edge.spec.plugin, "no plugin repository is available", edge.chain)
         try:
-            location = repo.find_compatible_plugin_from_spec(
+            location = repo.find_plugin_from_spec(
                 spec, self.context.current_platform, self.context.current_version, host=host
             )
         except KeyError:
-            reason = (
-                f"no version compatible with {self.context.current_platform} and IDA "
-                f"{self.context.current_version} was found in the allowed repositories"
-            )
+            target = self.context.current_platform
+            if self.context.current_version is not None:
+                target += f" and IDA {self.context.current_version}"
+            reason = f"no version compatible with {target} was found in the allowed repositories"
             notes = getattr(repo, "notes", None)
             if callable(notes):
                 extra = notes()

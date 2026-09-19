@@ -162,7 +162,7 @@ class PreparedInstall:
 
     plan: InstallPlan
     current_platform: str
-    current_version: str
+    current_version: str | None
     artifacts: dict[PluginIdentity, VerifiedArtifact]
     branch_failures: dict[int, str]
     pip_options: PipOptions

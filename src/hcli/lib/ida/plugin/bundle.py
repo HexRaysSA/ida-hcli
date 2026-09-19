@@ -3,15 +3,20 @@ from __future__ import annotations
 import logging
 import re
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from packaging.tags import mac_platforms
 
+from hcli.lib.ida.plugin.repo import BasePluginRepo
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo, PluginBundleTargetPlatformTag
 from hcli.lib.ida.python import PipOptions
+
+if TYPE_CHECKING:
+    from hcli.lib.ida.plugin.resolve import ArchiveRoot, RepositoryRoot
 
 logger = logging.getLogger(__name__)
 
@@ -207,3 +212,119 @@ def bundle_dependency_source(
             disable_pip_version_check=True,
             find_links=(wh_path,),
         )
+
+
+@dataclass(frozen=True)
+class BundleArchive:
+    """One plugin archive selected for a bundle and the target platforms it serves."""
+
+    name: str
+    version: str
+    sha256: str
+    data: bytes
+    platforms: tuple[str, ...]
+    is_root: bool
+
+    @property
+    def filename(self) -> str:
+        return f"{self.name}-{self.version}.zip"
+
+
+@dataclass
+class BundleContents:
+    """Archives and Python requirements that make up a bundle."""
+
+    archives: list[BundleArchive] = field(default_factory=list)
+    python_requirements: list[str] = field(default_factory=list)
+
+    def archives_for_name(self, name: str) -> list[BundleArchive]:
+        return [a for a in self.archives if a.name == name]
+
+
+def _bundle_root(spec: str, repo: BasePluginRepo | None) -> ArchiveRoot | RepositoryRoot:
+    """Turn one ``bundle create`` argument into a planner root.
+
+    Raises:
+        ValueError: when a repository reference is malformed or no repository is available.
+    """
+    from hcli.lib.ida.plugin.install import pack_plugin_directory_to_zip
+    from hcli.lib.ida.plugin.reference import parse_plugin_reference
+    from hcli.lib.ida.plugin.resolve import ArchiveRoot, RepositoryRoot
+
+    path = Path(spec).expanduser()
+    if path.is_dir() and (path / "ida-plugin.json").is_file():
+        return ArchiveRoot(pack_plugin_directory_to_zip(path.resolve()))
+    if path.is_file() and spec.endswith(".zip"):
+        return ArchiveRoot(path.read_bytes())
+    if repo is None:
+        raise ValueError(f"no plugin repository available to resolve '{spec}'")
+    return RepositoryRoot(parse_plugin_reference(spec), repo)
+
+
+def plan_bundle_contents(
+    specs: Sequence[str],
+    repo: BasePluginRepo | None,
+    target_platforms: Sequence[str],
+) -> BundleContents:
+    """Select every archive a bundle needs for ``specs`` on ``target_platforms``.
+
+    Each platform is planned separately against an empty installed state so the
+    builder's own plugins never satisfy a dependency. The required closure of
+    every root is included; optional dependencies are included only when named
+    as roots. Archives are deduplicated by digest across roots and platforms.
+
+    Raises:
+        DependencyResolutionError: a required dependency is unavailable or conflicts.
+        PlatformIncompatibleError: a local root does not support a target platform.
+        ValueError: a spec is malformed, an archive digest does not match, or an
+            archive cannot be read.
+    """
+    from hcli.lib.ida import IDAConfigJson
+    from hcli.lib.ida.plugin.resolve import (
+        LocalArchiveSource,
+        LocationSource,
+        ResolutionContext,
+        plan_install,
+    )
+
+    roots = [_bundle_root(spec, repo) for spec in specs]
+    by_sha: dict[str, tuple[str, str, bytes, bool]] = {}
+    platforms_by_sha: dict[str, list[str]] = {}
+    fetched: dict[str, bytes] = {}
+    requirements: dict[str, None] = {}
+
+    for platform in target_platforms:
+        context = ResolutionContext(
+            current_platform=platform,
+            current_version=None,
+            installed=[],
+            installed_config=IDAConfigJson(),
+            dependency_repo=repo,
+            index_only=True,
+        )
+        plan = plan_install(context, roots)
+        for requirement in plan.combined_python_requirements():
+            requirements.setdefault(requirement, None)
+
+        for node in plan.ordered_nodes():
+            source = node.source
+            if isinstance(source, LocalArchiveSource):
+                sha256 = source.sha256
+                data = context.artifacts.get(sha256)
+            elif isinstance(source, LocationSource):
+                sha256 = source.location.sha256
+                if sha256 not in fetched:
+                    fetched[sha256] = source.repo.fetch_location(source.location)
+                data = fetched[sha256]
+            else:
+                raise TypeError(f"cannot bundle {node.name} from {type(source).__name__}")
+
+            existing = by_sha.get(sha256)
+            by_sha[sha256] = (node.name, node.version, data, node.is_root or (existing is not None and existing[3]))
+            platforms_by_sha.setdefault(sha256, []).append(platform)
+
+    contents = BundleContents(python_requirements=list(requirements))
+    for sha256, (name, version, data, is_root) in by_sha.items():
+        platforms = tuple(dict.fromkeys(platforms_by_sha[sha256]))
+        contents.archives.append(BundleArchive(name, version, sha256, data, platforms, is_root))
+    return contents
