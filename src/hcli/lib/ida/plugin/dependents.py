@@ -46,7 +46,9 @@ def expand_installed_record(record: InstalledPluginRecord) -> IDAMetadataDescrip
 def get_owned_names(record: InstalledPluginRecord) -> set[str]:
     """Lowercase names of ``record`` and every component beneath it."""
     names = {record.name.lower()}
-    names.update(component.plugin.name.lower() for _, component in iter_expanded_components(expand_installed_record(record)))
+    names.update(
+        component.plugin.name.lower() for _, component in iter_expanded_components(expand_installed_record(record))
+    )
     return names
 
 
