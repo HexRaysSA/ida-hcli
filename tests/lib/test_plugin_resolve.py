@@ -36,6 +36,7 @@ from hcli.lib.ida.plugin.resolve import (
     InstalledSource,
     InstallPlan,
     LocalArchiveSource,
+    LocationRoot,
     LocationSource,
     PluginIdentity,
     RepositoryRoot,
@@ -600,6 +601,16 @@ def test_editable_root_links_directory(virtual_ida_environment, tmp_path):
     a = _node(plan, "a")
     assert a.operation == "editable"
     assert isinstance(a.source, EditableSource) and a.source.directory == plugin_dir.resolve()
+    assert _names(plan) == ["b", "a"]
+
+
+def test_location_root_uses_the_given_archive_location(virtual_ida_environment):
+    repo = _repo(_zip("a", "1.0.0", deps=["b"]), _zip("a", "2.0.0"), _zip("b"))
+    location = repo.find_plugin_from_spec("a==1.0.0")
+    plan = plan_install(_context(repo), [LocationRoot(location, repo, repo_name="named")])
+    a = _node(plan, "a")
+    assert a.version == "1.0.0"
+    assert isinstance(a.source, LocationSource) and a.source.location == location and a.source.repo_name == "named"
     assert _names(plan) == ["b", "a"]
 
 
