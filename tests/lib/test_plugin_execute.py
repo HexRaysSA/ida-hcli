@@ -13,7 +13,7 @@ import pytest
 from fixtures import *
 from fixtures import temp_env_var
 from test_plugin_bundle import _build_bundle_zip, _make_manifest
-from test_plugin_resolve import HOST, _fs_repo, _manifest, _repo, _suite_zip, _zip
+from test_plugin_resolve import HOST, _fs_repo, _manifest, _place_installed, _repo, _suite_zip, _zip
 
 from hcli.lib.ida import find_current_ida_platform, get_ida_config
 from hcli.lib.ida.plugin import IDAMetadataDescriptor
@@ -24,6 +24,7 @@ from hcli.lib.ida.plugin.exceptions import (
     DependencyUnavailableError,
     InstallExecutionError,
     PlanMetadataMismatchError,
+    PluginInstallationError,
 )
 from hcli.lib.ida.plugin.execute import InstallResult, execute_install, prepare_install
 from hcli.lib.ida.plugin.install import (
@@ -45,7 +46,8 @@ from hcli.lib.ida.plugin.resolve import (
     ResolutionContext,
     plan_install,
 )
-from hcli.lib.ida.plugin.transaction import InstallTransaction, PreconditionChangedError
+from hcli.lib.ida.plugin.transaction import InstallTransaction, PreconditionChangedError, PublishedDirectory
+from hcli.lib.ida.python import PythonNotFoundError
 
 
 def _context(repo: BasePluginRepo | None) -> ResolutionContext:
@@ -992,3 +994,77 @@ def test_bundle_without_matching_target_proceeds_when_requirements_come_from_ano
     assert _committed(result) == ["lib", "a"]
     assert result.pip_attempted is True
     assert "packaging==25.0" in _pip_freeze()
+
+
+def test_plan_without_python_work_never_probes_python(virtual_ida_environment, tmp_path):
+    _place_installed(_zip("kept", python_deps=["packaging==24.0"]), "kept")
+    _place_installed(_suite_zip("suite", "1.0.0", [("comp", "1.0.0", {"python_deps": ["pyyaml"]})]), "suite")
+    (get_plugins_directory() / "suite" / "comp" / "ida-plugin.json").write_text("{not json")
+    repo = _fs_repo(tmp_path / "repo", _zip("a", deps=["kept"]))
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+
+    with temp_env_var("IDAPYTHON_VENV_EXECUTABLE", str(tmp_path / "missing-python")):
+        result = _run(context, plan)
+
+    assert _committed(result) == ["a"]
+    assert result.pip_attempted is False
+    assert _installed_names() == {"a", "kept", "suite"}
+
+
+def test_plan_with_python_work_still_needs_python(virtual_ida_environment, tmp_path):
+    repo = _fs_repo(tmp_path / "repo", _zip("a", python_deps=["packaging==25.0"]))
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+
+    with (
+        temp_env_var("IDAPYTHON_VENV_EXECUTABLE", str(tmp_path / "missing-python")),
+        pytest.raises(PythonNotFoundError),
+    ):
+        _run(context, plan)
+
+    assert _installed_names() == set()
+
+
+class _UnremovableTransaction(_FailingTransaction):
+    """Fails publication of ``target`` and refuses to remove ``stuck`` during rollback."""
+
+    def __init__(self, plugins_dir: Path, target: str, error: BaseException, stuck: str):
+        super().__init__(plugins_dir, target, error)
+        self.stuck = stuck
+
+    def _undo_entry(self, entry) -> None:
+        if isinstance(entry, PublishedDirectory) and entry.path.name == self.stuck:
+            raise OSError(f"cannot remove {entry.path.name}")
+        super()._undo_entry(entry)
+
+
+def test_failed_optional_branch_rollback_keeps_branch_failure_as_cause(virtual_ida_environment, tmp_path):
+    repo = _fs_repo(
+        tmp_path / "repo",
+        _zip("a", deps=[{"plugin": "c", "required": False}]),
+        _zip("c", deps=["b"]),
+        _zip("b"),
+    )
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+    txn = _UnremovableTransaction(get_plugins_directory(), "c", PluginInstallationError("c is corrupt"), stuck="b")
+
+    try:
+        with (
+            pytest.raises(
+                InstallExecutionError, match=r"c is corrupt.*rollback incomplete.*cannot remove b"
+            ) as excinfo,
+            prepare_install(plan, context, check_environment=False) as prepared,
+        ):
+            execute_install(prepared, transaction=txn)
+    finally:
+        if not txn.finished:
+            txn.rollback()
+
+    recovery = excinfo.value.recovery
+    assert recovery is not None
+    assert isinstance(recovery.original, PluginInstallationError)
+    assert isinstance(excinfo.value.cause, PluginInstallationError)
+    assert [str(f) for f in recovery.failures] == ["cannot remove b"]
+    assert _installed_names() == {"b"}

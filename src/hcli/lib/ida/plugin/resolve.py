@@ -18,6 +18,7 @@ import hashlib
 import logging
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Literal
 
@@ -271,7 +272,8 @@ class InstallPlan:
     warnings: list[str] = field(default_factory=list)
     configuration_values: dict[tuple[str, str], str | bool] = field(default_factory=dict)
     observed_settings: dict[tuple[str, str], tuple[bool, str | bool | None]] = field(default_factory=dict)
-    installed_python_requirements: dict[str, list[str]] = field(default_factory=dict)
+    _installed_requirements: Callable[[], dict[str, list[str]]] | None = field(default=None, repr=False)
+    _installed_requirements_cache: dict[str, list[str]] | None = field(default=None, repr=False)
     _settings_targets: dict[str, list[_SettingsTarget]] = field(default_factory=dict, repr=False)
 
     def ordered_nodes(self) -> list[PlannedNode]:
@@ -284,12 +286,49 @@ class InstallPlan:
                 return node
         return None
 
+    def mutating_python_requirements(self, branches: Iterable[int] = ()) -> list[str]:
+        """Python requirements of the nodes the operation installs or upgrades.
+
+        Retained nodes and untouched installed plugins do not count, so an
+        empty result means the operation has no Python work to do.
+        """
+        seen: dict[str, None] = {}
+        for node in self.ordered_nodes():
+            if node.mutates:
+                for requirement in node.python_requirements():
+                    seen.setdefault(requirement, None)
+        for index in branches:
+            branch = self.optional_branches[index]
+            for identity in branch.order:
+                node = branch.nodes[identity]
+                if node.mutates:
+                    for requirement in node.python_requirements():
+                        seen.setdefault(requirement, None)
+        return list(seen)
+
+    def installed_python_requirements(self) -> dict[str, list[str]]:
+        """Python requirements of installed plugins the plan does not replace, keyed by lowercased name.
+
+        Computed on first use so plans without Python work never read
+        installed component trees.
+
+        Raises:
+            BrokenPluginInstallationError: an installed plugin the plan keeps has an unreadable component tree.
+        """
+        if self._installed_requirements_cache is None:
+            supplier = self._installed_requirements
+            self._installed_requirements_cache = supplier() if supplier is not None else {}
+        return self._installed_requirements_cache
+
     def combined_python_requirements(self, branches: Iterable[int] = ()) -> list[str]:
         """Python requirements of everything present after the operation.
 
         Planned nodes and the given branches contribute their requirements, and
         so does every installed plugin the plan leaves untouched, so a combined
         pip check sees the constraints of the whole environment.
+
+        Raises:
+            BrokenPluginInstallationError: as for ``installed_python_requirements``.
         """
         seen: dict[str, None] = {}
         superseded: set[str] = {identity.name for identity in self.nodes}
@@ -302,7 +341,7 @@ class InstallPlan:
                 superseded.add(identity.name)
                 for requirement in branch.nodes[identity].python_requirements():
                     seen.setdefault(requirement, None)
-        for name, requirements in self.installed_python_requirements.items():
+        for name, requirements in self.installed_python_requirements().items():
             if name in superseded:
                 continue
             for requirement in requirements:
@@ -1129,8 +1168,8 @@ class _Planner:
             configuration=configuration,
             warnings=closure.warnings,
             observed_settings=observed,
-            installed_python_requirements=_installed_python_requirements(
-                self.context, {identity.name for identity in graph.nodes}
+            _installed_requirements=partial(
+                _installed_python_requirements, self.context, {identity.name for identity in graph.nodes}
             ),
             _settings_targets=targets,
         )

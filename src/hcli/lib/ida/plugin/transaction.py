@@ -285,9 +285,10 @@ class InstallTransaction:
 
         A failing step is recorded and its checkpoint kept under the recovery
         directory. An interrupt (``KeyboardInterrupt``, ``SystemExit``) stops
-        the rollback; every checkpoint not yet restored is moved to the recovery
-        directory before the interrupt propagates, so a later trash sweep cannot
-        delete prior content.
+        the rollback; every checkpoint not yet restored, and every published
+        directory not yet removed, is moved to the recovery directory before
+        the interrupt propagates, so a later trash sweep cannot delete prior
+        content and no half-applied plugin stays in the plugins directory.
         """
         failures: list[Exception] = []
         retained: list[Path] = []
@@ -309,9 +310,14 @@ class InstallTransaction:
                     if isinstance(pending_entry, ReplacedDirectory) and pending_entry.checkpoint_path.exists():
                         recovery = recovery or self._make_recovery_directory()
                         retained.append(self._retain(pending_entry.checkpoint_path, pending_entry.path.name, recovery))
+                    elif isinstance(pending_entry, PublishedDirectory) and (
+                        pending_entry.path.is_symlink() or pending_entry.path.exists()
+                    ):
+                        recovery = recovery or self._make_recovery_directory()
+                        retained.append(self._retain(pending_entry.path, pending_entry.path.name, recovery))
                 if retained:
                     logger.warning(
-                        "rollback interrupted; prior content retained at: %s", ", ".join(str(p) for p in retained)
+                        "rollback interrupted; unrestored content retained at: %s", ", ".join(str(p) for p in retained)
                     )
                 raise
         if failures:

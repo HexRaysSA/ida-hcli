@@ -18,6 +18,7 @@ from hcli.lib.ida.plugin.install import get_plugins_directory, get_trash_directo
 from hcli.lib.ida.plugin.transaction import (
     InstallTransaction,
     PreconditionChangedError,
+    PublishedDirectory,
     ReplacedDirectory,
     RollbackError,
     is_transaction_active,
@@ -329,7 +330,7 @@ class _InterruptedUndoTransaction(InstallTransaction):
         self.interrupt_on = interrupt_on
 
     def _undo_entry(self, entry) -> None:
-        if isinstance(entry, ReplacedDirectory) and entry.path.name == self.interrupt_on:
+        if isinstance(entry, (ReplacedDirectory, PublishedDirectory)) and entry.path.name == self.interrupt_on:
             raise KeyboardInterrupt
         super()._undo_entry(entry)
 
@@ -352,3 +353,26 @@ def test_interrupt_during_rollback_retains_every_unrestored_checkpoint(virtual_i
     assert len(recovery) == 1
     assert (recovery[0] / "first" / "plug.py").read_text() == "old-first"
     assert (recovery[0] / "second" / "plug.py").read_text() == "old-second"
+
+
+def test_interrupt_during_rollback_moves_unremoved_published_directories_out_of_plugins(virtual_ida_environment):
+    plugins = get_plugins_directory()
+    _write_plugin(plugins / "old", "old")
+    txn = _InterruptedUndoTransaction(plugins, "second")
+    txn.publish_directory(_stage(txn, "new-first"), plugins / "first")
+    txn.replace_directory(_stage(txn, "new-old"), plugins / "old")
+    txn.publish_directory(_stage(txn, "new-second"), plugins / "second")
+
+    with pytest.raises(KeyboardInterrupt):
+        txn.rollback(RuntimeError("boom"))
+
+    assert not is_transaction_active()
+    assert txn.journal == []
+    assert not (plugins / "first").exists()
+    assert not (plugins / "second").exists()
+    sweep_trash()
+    recovery = [p for p in get_trash_directory(plugins).iterdir() if p.name.startswith("recovery-")]
+    assert len(recovery) == 1
+    assert (recovery[0] / "old" / "plug.py").read_text() == "old"
+    assert (recovery[0] / "first" / "plug.py").read_text() == "new-first"
+    assert (recovery[0] / "second" / "plug.py").read_text() == "new-second"

@@ -13,6 +13,7 @@ from fixtures import *
 from hcli.lib.ida import IDAConfigJson, PluginConfig, PluginRepository, find_current_ida_platform
 from hcli.lib.ida.plugin import ALL_PLATFORMS, IDAMetadataDescriptor
 from hcli.lib.ida.plugin.exceptions import (
+    BrokenPluginInstallationError,
     DependencyConflictError,
     DependencyResolutionError,
     DependencyTargetsComponentError,
@@ -24,7 +25,12 @@ from hcli.lib.ida.plugin.exceptions import (
     PluginNotFoundError,
     PluginVersionDowngradeError,
 )
-from hcli.lib.ida.plugin.install import install_plugin_archive, uninstall_plugin
+from hcli.lib.ida.plugin.install import (
+    extract_zip_subdirectory_to,
+    get_plugins_directory,
+    install_plugin_archive,
+    uninstall_plugin,
+)
 from hcli.lib.ida.plugin.reference import parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveIndex, PluginArchiveLocation
 from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
@@ -100,6 +106,13 @@ def _suite_zip(name: str, version: str, components: list[tuple[str, str, dict]],
             )
             zf.writestr(f"{name}/{comp_name}/{comp_name}.py", "# component")
     return buf.getvalue()
+
+
+def _place_installed(buf: bytes, name: str) -> Path:
+    """Unpack an archive into the plugins directory without running the installer, so pip never runs."""
+    destination = get_plugins_directory() / name
+    extract_zip_subdirectory_to(buf, Path(name), destination)
+    return destination
 
 
 def _repo(*archives: bytes) -> JSONFilePluginRepo:
@@ -732,7 +745,7 @@ def test_apply_configuration_values_validates_and_parses(virtual_ida_environment
 
 
 def test_combined_python_requirements_dedupe_in_order(virtual_ida_environment):
-    install_plugin_archive(_zip("kept", python_deps=["pyyaml"]), "kept", check_environment=False)
+    _place_installed(_zip("kept", python_deps=["pyyaml"]), "kept")
     repo = _repo(
         _suite_zip(
             "pack",
@@ -787,41 +800,60 @@ def test_root_not_in_repository_is_reported_as_plugin_not_found(virtual_ida_envi
 
 
 def test_combined_python_requirements_include_untouched_installed_plugins(virtual_ida_environment):
-    install_plugin_archive(_zip("other", python_deps=["packaging==24.0"]), "other", check_environment=False)
-    install_plugin_archive(_zip("kept", "1.0.0", python_deps=["pyyaml"]), "kept", check_environment=False)
+    _place_installed(_zip("other", python_deps=["packaging==24.0"]), "other")
+    _place_installed(_zip("kept", "1.0.0", python_deps=["pyyaml"]), "kept")
     repo = _repo(
         _zip("a", deps=["kept"], python_deps=["packaging==25.0"]),
         _zip("kept", "2.0.0", python_deps=["pyyaml>=6"]),
     )
     plan = _plan(repo, "a")
+    assert plan.mutating_python_requirements() == ["packaging==25.0"]
     assert plan.combined_python_requirements() == ["pyyaml", "packaging==25.0", "packaging==24.0"]
-    assert plan.installed_python_requirements == {"other": ["packaging==24.0"]}
+    assert plan.installed_python_requirements() == {"other": ["packaging==24.0"]}
 
 
 def test_combined_python_requirements_include_installed_components(virtual_ida_environment):
-    install_plugin_archive(
-        _suite_zip("suite", "1.0.0", [("comp", "1.0.0", {"python_deps": ["rich"]})], python_deps=["click"]),
-        "suite",
-        check_environment=False,
+    _place_installed(
+        _suite_zip("suite", "1.0.0", [("comp", "1.0.0", {"python_deps": ["rich"]})], python_deps=["click"]), "suite"
     )
     repo = _repo(_zip("a", python_deps=["requests"]))
     plan = _plan(repo, "a")
     assert plan.combined_python_requirements() == ["requests", "click", "rich"]
 
 
-def test_unreadable_installed_component_tree_fails_planning_unless_superseded(virtual_ida_environment):
-    from hcli.lib.ida.plugin.exceptions import BrokenPluginInstallationError
-    from hcli.lib.ida.plugin.install import get_plugins_directory
-
-    install_plugin_archive(
-        _suite_zip("suite", "1.0.0", [("comp", "1.0.0", {"python_deps": ["pyyaml"]})]), "suite", check_environment=False
+def test_mutating_python_requirements_cover_only_installed_or_upgraded_nodes(virtual_ida_environment):
+    _place_installed(_zip("kept", python_deps=["pyyaml"]), "kept")
+    repo = _repo(
+        _zip("a", deps=["kept", {"plugin": "opt", "required": False}]),
+        _zip("opt", python_deps=["click"]),
     )
-    (get_plugins_directory() / "suite" / "comp" / "ida-plugin.json").write_text("{not json")
-    repo = _repo(_zip("a"), _suite_zip("suite", "2.0.0", [("comp", "2.0.0", {})]))
+    plan = _plan(repo, "a")
+    assert _names(plan) == ["kept", "a"]
+    assert plan.mutating_python_requirements() == []
+    assert plan.mutating_python_requirements(branches=[0]) == ["click"]
+    assert plan.combined_python_requirements() == ["pyyaml"]
 
+
+def test_unreadable_installed_component_tree_blocks_only_plans_with_python_work(virtual_ida_environment):
+    _place_installed(_suite_zip("suite", "1.0.0", [("comp", "1.0.0", {"python_deps": ["pyyaml"]})]), "suite")
+    (get_plugins_directory() / "suite" / "comp" / "ida-plugin.json").write_text("{not json")
+    repo = _repo(
+        _zip("a"),
+        _zip("b", python_deps=["requests"]),
+        _suite_zip("suite", "2.0.0", [("comp", "2.0.0", {})]),
+    )
+
+    plan = _plan(repo, "a")
+    assert _names(plan) == ["a"]
+    assert plan.mutating_python_requirements() == []
     with pytest.raises(BrokenPluginInstallationError, match="suite"):
-        _plan(repo, "a")
+        plan.combined_python_requirements()
+
+    plan = _plan(repo, "b")
+    assert plan.mutating_python_requirements() == ["requests"]
+    with pytest.raises(BrokenPluginInstallationError, match="suite"):
+        plan.combined_python_requirements()
 
     plan = _plan(repo, "suite", upgrade=True)
     assert _names(plan) == ["suite"]
-    assert plan.installed_python_requirements == {}
+    assert plan.installed_python_requirements() == {}

@@ -19,7 +19,7 @@ from hcli.lib.ida import (
 )
 from hcli.lib.ida.plugin import IDAMetadataDescriptor
 from hcli.lib.ida.plugin.dependents import expand_installed_record
-from hcli.lib.ida.plugin.exceptions import InstallExecutionError, PluginNotInstalledError
+from hcli.lib.ida.plugin.exceptions import InstallExecutionError, PluginNotFoundError, PluginNotInstalledError
 from hcli.lib.ida.plugin.install import (
     InstalledPluginRecord,
     find_installed_plugin,
@@ -124,6 +124,14 @@ def upgrade_plugin(ctx, plugin: str, dependency_config: tuple[str, ...], no_buil
         except (httpx.ConnectError, httpx.TimeoutException):
             console.print("[red]Cannot connect to plugin repository - network unavailable.[/red]")
             console.print("Please check your internet connection.")
+            raise click.Abort()
+        except PluginNotFoundError as e:
+            console.print(f"[red]Error[/red]: {e}")
+            if ref.host is None and not ref.repo:
+                console.print(
+                    f"The installed copy of '{installed.name}' came from {installed.host}. "
+                    "Add a repository that serves that host, or uninstall and reinstall from a configured one."
+                )
             raise click.Abort()
 
         collect_configuration(operation, dependency_config=dependency_config)

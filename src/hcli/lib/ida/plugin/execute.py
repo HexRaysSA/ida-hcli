@@ -385,7 +385,7 @@ def _effective_pip_options(
     if user_options.has_custom_sources:
         return user_options, None
     owners = _bundle_owners(plan)
-    if not owners:
+    if not owners or not plan.mutating_python_requirements(plan.all_branches()):
         return user_options, None
 
     python_version = detect_current_python_version()
@@ -462,9 +462,10 @@ def prepare_install(
     stack = ExitStack()
     try:
         effective, bundle_target_error = _effective_pip_options(plan, pip_options, context.current_platform, stack)
-        requirements = plan.combined_python_requirements()
         python_exe: Path | None = None
-        if requirements:
+        requirements: list[str] = []
+        if plan.mutating_python_requirements():
+            requirements = plan.combined_python_requirements()
             python_exe = resolve_python_for_dependencies(requirements, check_environment=check_environment)
             try:
                 verify_pip_can_install_packages(python_exe, requirements, pip_options=effective)
@@ -664,8 +665,8 @@ class _Executor:
         if missing and self.require_configuration:
             raise MissingConfigurationError([r.argument() for r in missing])
         self._check_destinations(self.plan.ordered_nodes())
-        requirements = self.plan.combined_python_requirements()
-        if requirements:
+        if self.plan.mutating_python_requirements():
+            requirements = self.plan.combined_python_requirements()
             self._pip(requirements, self._python(requirements))
         for node in self.plan.ordered_nodes():
             self._apply_node(node, None)
@@ -742,7 +743,10 @@ class _Executor:
             self._apply_configuration(pending)
         except BOUNDARY_ERRORS as e:
             logger.debug("optional branch %s failed: %s", branch.edge.spec.plugin, e)
-            self.txn.rollback_to(savepoint)
+            try:
+                self.txn.rollback_to(savepoint)
+            except RollbackError as rollback_error:
+                raise RollbackError(e, rollback_error.failures, rollback_error.retained_paths) from e
             rolled_back = [entry.display for entry in self.result.nodes[before:]]
             for entry in self.result.nodes[before:]:
                 self._forget_node(entry.identity)
@@ -759,6 +763,14 @@ class _Executor:
         for branch in self.plan.optional_branches:
             self._run_branch(branch)
         return self.result
+
+
+def _merge_rollback_errors(first: RollbackError | None, second: RollbackError) -> RollbackError:
+    if first is None:
+        return second
+    return RollbackError(
+        first.original, [*first.failures, *second.failures], [*first.retained_paths, *second.retained_paths]
+    )
 
 
 def execute_install(
@@ -804,14 +816,17 @@ def execute_install(
     except BaseException as e:
         result = executor.result
         mutated = len(txn.journal) > savepoint.position or result.pip_attempted
+        failure: BaseException = e
         recovery: RollbackError | None = None
+        if isinstance(e, RollbackError) and e.original is not None:
+            failure, recovery = e.original, e
         try:
             if own:
                 txn.rollback(e)
             else:
                 txn.rollback_to(savepoint)
         except RollbackError as rollback_error:
-            recovery = rollback_error
+            recovery = _merge_rollback_errors(recovery, rollback_error)
         result.mark_rolled_back()
         result.recovery = recovery
         if not mutated:
@@ -819,9 +834,9 @@ def execute_install(
         if not isinstance(e, Exception):
             setattr(e, "install_result", result)  # noqa: B010
             raise
-        message = f"installation failed: {e}"
+        message = f"installation failed: {failure}"
         if result.pip_attempted:
             message += ". Python packages that pip installed were not rolled back"
         if recovery is not None:
             message += f". {recovery}"
-        raise InstallExecutionError(message, e, result, recovery) from e
+        raise InstallExecutionError(message, failure, result, recovery) from e

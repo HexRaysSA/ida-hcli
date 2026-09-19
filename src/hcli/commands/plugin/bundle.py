@@ -226,7 +226,8 @@ def create(
                 archive_filename = f"{archive.name}-{archive.version}{suffix}.zip"
 
             dest = plugins_dir / archive_filename
-            dest.write_bytes(archive.data)
+            if not dest.exists():
+                dest.write_bytes(archive.data)
 
         target_manifests = []
         if all_python_deps:
