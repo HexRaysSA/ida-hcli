@@ -238,6 +238,15 @@ class DependencyUnavailableError(DependencyResolutionError):
         super().__init__(f"dependency '{spec}' is unavailable{via}: {reason}", chain)
 
 
+class PluginNotFoundError(DependencyUnavailableError):
+    """A plugin named directly by the user cannot be selected from the allowed sources."""
+
+    def __init__(self, spec: str, reason: str):
+        DependencyResolutionError.__init__(self, f"plugin '{spec}' was not found: {reason}")
+        self.spec = spec
+        self.reason = reason
+
+
 class DependencyConflictError(DependencyResolutionError):
     """Two declarations need different selections for one plugin identity."""
 

@@ -52,10 +52,14 @@ def _remove_companions(companions: list[InstalledPluginRecord], yes: bool) -> No
     removable: list[InstalledPluginRecord] = []
     console.print("These plugins were listed as dependencies:")
     for companion in companions:
-        declarers = find_remaining_declarers(remaining, companion.name)
+        broken: list[str] = []
+        declarers = find_remaining_declarers(remaining, companion.name, broken)
         if declarers:
             still = ", ".join(sorted({d.describe_declarer() for d in declarers}))
             console.print(f"  {companion.name}=={companion.version}  (kept: still declared by {still})")
+        elif broken:
+            names = ", ".join(sorted({description.split(":", 1)[0] for description in broken}))
+            console.print(f"  {companion.name}=={companion.version}  (kept: could not inspect components of {names})")
         else:
             console.print(f"  {companion.name}=={companion.version}")
             removable.append(companion)

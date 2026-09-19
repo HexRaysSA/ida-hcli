@@ -542,3 +542,20 @@ def test_uninstall_while_file_in_use_is_atomic(virtual_ida_environment):
 
     uninstall_plugin("plugin1")
     assert not is_plugin_installed("plugin1")
+
+
+def test_install_upgrade_flag_with_older_local_archive_keeps_installed_version(virtual_ida_environment):
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "plugin1==2.0.0"])
+    assert result.exit_code == 0, result.output
+
+    older = PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip"
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", "-U", str(older)])
+
+    assert result.exit_code == 0, result.output
+    assert "Already installed plugin: plugin1==2.0.0" in " ".join(result.output.split())
+    assert ("plugin1", "2.0.0") in get_installed_plugins()
+
+    result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", str(older)])
+    assert result.exit_code != 0
+    assert ("plugin1", "2.0.0") in get_installed_plugins()

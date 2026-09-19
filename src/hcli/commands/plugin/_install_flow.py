@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 
 import rich_click as click
 
@@ -27,36 +28,63 @@ def _split_config_item(item: str, flag: str) -> tuple[str, str]:
     return key, value
 
 
+def unavailable_optional_targets(plan: InstallPlan) -> set[str]:
+    """Lowercase names of optional dependencies the plan could not select."""
+    names: set[str] = set()
+    for branch in plan.optional_branches:
+        if branch.available:
+            continue
+        try:
+            names.add(parse_dependency_spec(branch.edge.spec.plugin).name.lower())
+        except ValueError:
+            continue
+    return names
+
+
+@dataclass
+class ParsedConfiguration:
+    """Setting values from the command line, and dependency items that no planned node can take."""
+
+    values: dict[tuple[str, str], str] = field(default_factory=dict)
+    ignored: list[str] = field(default_factory=list)
+
+
 def parse_configuration_arguments(
     plan: InstallPlan,
     root_name: str,
     config: Iterable[str],
     dependency_config: Iterable[str],
-) -> dict[tuple[str, str], str]:
+) -> ParsedConfiguration:
     """Turn ``--config`` and ``--dependency-config`` items into ``(target, key)`` values.
 
     A ``--config`` key with a dot targets the named component when the plan
-    knows it; otherwise the whole key belongs to the root plugin.
+    knows it; otherwise the whole key belongs to the root plugin. A
+    ``--dependency-config`` item for an optional dependency the plan could not
+    select is reported in ``ignored`` rather than applied.
 
     Raises:
         ValueError: an item is not ``key=value``, or a dependency item has no target.
     """
-    values: dict[tuple[str, str], str] = {}
+    parsed = ParsedConfiguration()
     for item in config:
         key, value = _split_config_item(item, "--config")
         if "." in key:
             prefix, suffix = key.split(".", 1)
             if plan.has_settings_target(prefix):
-                values[(prefix, suffix)] = value
+                parsed.values[(prefix, suffix)] = value
                 continue
-        values[(root_name, key)] = value
+        parsed.values[(root_name, key)] = value
+    unavailable = unavailable_optional_targets(plan)
     for item in dependency_config:
         key, value = _split_config_item(item, "--dependency-config")
         if "." not in key:
             raise ValueError(f"invalid --dependency-config format: {item}, expected plugin.key=value")
         target, suffix = key.split(".", 1)
-        values[(target, suffix)] = value
-    return values
+        if not plan.has_settings_target(target) and target.lower() in unavailable:
+            parsed.ignored.append(item)
+            continue
+        parsed.values[(target, suffix)] = value
+    return parsed
 
 
 def _stored_values(
@@ -70,26 +98,56 @@ def _stored_values(
     return existing
 
 
+def take_root_requirements(
+    root: PlannedNode, requirements: dict[str, list[ConfigurationRequirement]]
+) -> dict[str, list[ConfigurationRequirement]]:
+    """Remove and return the requirements that belong to ``root`` or one of its components.
+
+    Whatever remains in ``requirements`` belongs to dependencies.
+    """
+    owned = {descriptor.plugin.name.lower() for _, descriptor in root.iter_manifests()}
+    taken: dict[str, list[ConfigurationRequirement]] = {}
+    for name in list(requirements):
+        if name.lower() in owned:
+            taken[name.lower()] = requirements.pop(name)
+    return taken
+
+
 def _prompt_root_settings(
     operation: PlannedOperation,
     configured_targets: set[str],
     requirements: dict[str, list[ConfigurationRequirement]],
 ) -> dict[tuple[str, str], str | bool]:
+    """Prompt for the root plugin and its components.
+
+    Targets given on the command line are prompted only for required settings
+    still missing; other targets are prompted for every setting they declare.
+    """
     answers_all: dict[tuple[str, str], str | bool] = {}
     root = operation.root
+    root_requirements = take_root_requirements(root, requirements)
     if not root.mutates:
         return answers_all
     for _, descriptor in root.iter_manifests():
         name = descriptor.plugin.name
-        if name.lower() in configured_targets or not descriptor.plugin.settings:
+        required = root_requirements.get(name.lower(), [])
+        required_keys = {r.key for r in required}
+        existing: dict[str, str | bool]
+        if name.lower() in configured_targets:
+            if not required:
+                continue
+            descriptors = [r.descriptor for r in required]
+            existing = {r.key: r.current_value for r in required if r.current_value is not None}
+        elif descriptor.plugin.settings:
+            descriptors = list(descriptor.plugin.settings)
+            existing = _stored_values(operation.context, name, descriptor.plugin.settings)
+        else:
             continue
         if name != root.name:
             console.print(f"\nconfigure component [blue]{name}[/blue]:")
-        existing = _stored_values(operation.context, name, descriptor.plugin.settings)
-        answers = prompt_plugin_settings(descriptor.plugin.settings, existing)
+        answers = prompt_plugin_settings(descriptors, existing)
         if answers is None:
             raise click.Abort()
-        required_keys = {r.key for r in requirements.pop(name, [])}
         for key, answer in answers.items():
             setting = descriptor.plugin.get_setting(key)
             if key not in required_keys and setting.default == answer:
@@ -154,11 +212,16 @@ def collect_configuration(
         click.Abort: the user cancelled a prompt.
     """
     plan = operation.plan
-    cli_values = parse_configuration_arguments(plan, operation.root.name, config, dependency_config)
-    plan.apply_configuration_values(cli_values)
+    parsed = parse_configuration_arguments(plan, operation.root.name, config, dependency_config)
+    for item in parsed.ignored:
+        console.print(
+            f"[yellow]Warning[/yellow]: ignoring --dependency-config {item}: "
+            "that optional dependency is unavailable and will not be installed"
+        )
+    plan.apply_configuration_values(parsed.values)
 
     if console.is_interactive:
-        configured_targets = {target.lower() for target, _ in cli_values}
+        configured_targets = {target.lower() for target, _ in parsed.values}
         requirements = _group_by_target(plan.missing_configuration(plan.all_branches()))
         answers = _prompt_root_settings(operation, configured_targets, requirements)
         answers.update(_prompt_dependency_settings(plan, requirements))

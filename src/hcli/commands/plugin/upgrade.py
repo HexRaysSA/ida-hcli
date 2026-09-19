@@ -17,8 +17,15 @@ from hcli.lib.ida import (
     find_current_ida_platform,
     find_current_ida_version,
 )
+from hcli.lib.ida.plugin import IDAMetadataDescriptor
+from hcli.lib.ida.plugin.dependents import expand_installed_record
 from hcli.lib.ida.plugin.exceptions import InstallExecutionError, PluginNotInstalledError
-from hcli.lib.ida.plugin.install import find_installed_plugin, plan_plugin_operation, sweep_trash
+from hcli.lib.ida.plugin.install import (
+    InstalledPluginRecord,
+    find_installed_plugin,
+    plan_plugin_operation,
+    sweep_trash,
+)
 from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo
 from hcli.lib.ida.plugin.resolve import RepositoryRoot
@@ -33,6 +40,15 @@ from ._install_flow import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _expanded_installed_metadata(installed: InstalledPluginRecord) -> IDAMetadataDescriptor:
+    """Installed metadata with component declarations, or the root manifest when the tree cannot be read."""
+    try:
+        return expand_installed_record(installed)
+    except ValueError as e:
+        logger.debug("could not inspect components of %s: %s", installed.name, e)
+        return installed.metadata
 
 
 @click.command()
@@ -91,19 +107,17 @@ def upgrade_plugin(ctx, plugin: str, dependency_config: tuple[str, ...], no_buil
             )
             raise click.Abort()
 
-        if ref.repo:
-            from hcli.commands.plugin import repo_for_reference
+        from hcli.commands.plugin import repo_for_reference
 
-            plugin_repo: BasePluginRepo = repo_for_reference(ctx, ref)
-        else:
-            plugin_repo = ctx.obj["plugin_repo"]
+        root_repo: BasePluginRepo = repo_for_reference(ctx, ref)
+        dependency_repo: BasePluginRepo = ctx.obj["plugin_repo"]
 
         logger.info("finding plugin in repository")
         try:
             with rich.status.Status("resolving dependencies", console=stderr_console):
                 operation = plan_plugin_operation(
-                    [RepositoryRoot(ref, plugin_repo, repo_name=ref.repo, upgrade=True)],
-                    plugin_repo=plugin_repo,
+                    [RepositoryRoot(ref, root_repo, repo_name=ref.repo, upgrade=True)],
+                    plugin_repo=dependency_repo,
                     current_platform=current_ida_platform,
                     current_version=current_ida_version,
                 )
@@ -113,6 +127,7 @@ def upgrade_plugin(ctx, plugin: str, dependency_config: tuple[str, ...], no_buil
             raise click.Abort()
 
         collect_configuration(operation, dependency_config=dependency_config)
+        installed_metadata = _expanded_installed_metadata(installed)
 
         try:
             with rich.status.Status("upgrading plugin", console=stderr_console):
@@ -126,7 +141,7 @@ def upgrade_plugin(ctx, plugin: str, dependency_config: tuple[str, ...], no_buil
             raise click.Abort()
 
         report_install_result(result, present_label="Already up to date")
-        report_dropped_dependencies(installed.metadata, operation.root.metadata)
+        report_dropped_dependencies(installed_metadata, operation.root.metadata)
 
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
@@ -134,15 +149,6 @@ def upgrade_plugin(ctx, plugin: str, dependency_config: tuple[str, ...], no_buil
 
     except FailedToDetectIDAVersion:
         explain_failed_to_detect_ida_version(console)
-        raise click.Abort()
-
-    except KeyError as e:
-        logger.debug("error: %s", e, exc_info=True)
-        console.print(f"[red]Error[/red]: {e}")
-        aggregate = ctx.obj.get("plugin_repos")
-        if aggregate is not None:
-            for note in aggregate.notes():
-                console.print(f"[yellow]Warning:[/yellow] repository {note}")
         raise click.Abort()
 
     except click.Abort:

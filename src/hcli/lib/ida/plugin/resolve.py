@@ -49,6 +49,7 @@ from hcli.lib.ida.plugin.exceptions import (
     PlatformIncompatibleError,
     PluginAccessDeniedError,
     PluginAlreadyInstalledError,
+    PluginNotFoundError,
     PluginNotInstalledError,
     PluginVersionDowngradeError,
 )
@@ -622,6 +623,8 @@ class _Planner:
                 extra = notes()
                 if extra:
                     reason += "; " + "; ".join(extra)
+            if edge.parent is None:
+                raise PluginNotFoundError(spec, reason) from None
             raise DependencyUnavailableError(edge.spec.plugin, reason, edge.chain) from None
         except AmbiguousPluginReferenceError as e:
             if edge.parent is None:

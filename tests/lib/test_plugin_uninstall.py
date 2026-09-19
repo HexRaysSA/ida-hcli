@@ -205,3 +205,20 @@ def test_uninstall_warns_about_uninspectable_components(virtual_ida_environment,
     assert result.exit_code == 0, result.output
     assert result.output.count("could not inspect components of suite") == 1
     assert not is_plugin_installed("lib")
+
+
+def test_uninstall_keeps_companion_when_a_declarer_tree_cannot_be_inspected(virtual_ida_environment, tmp_path):
+    _install(
+        tmp_path,
+        _zip("lib"),
+        _zip("pack", deps=["lib"]),
+        _suite_zip("suite", "1.0.0", [("comp", "1.0.0", {"deps": ["lib"]})]),
+    )
+    _corrupt_component_manifest("suite", "comp")
+
+    result = _uninstall("--yes", "pack")
+
+    assert result.exit_code == 0, result.output
+    assert not is_plugin_installed("pack")
+    assert is_plugin_installed("lib")
+    assert "kept: could not inspect components of suite" in " ".join(result.output.split())

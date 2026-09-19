@@ -21,6 +21,7 @@ from hcli.lib.ida.plugin.exceptions import (
     InstalledPluginNameConflictError,
     PlatformIncompatibleError,
     PluginAlreadyInstalledError,
+    PluginNotFoundError,
     PluginVersionDowngradeError,
 )
 from hcli.lib.ida.plugin.install import install_plugin_archive, uninstall_plugin
@@ -771,3 +772,15 @@ def test_unambiguous_component_settings_target_accepts_bare_name(virtual_ida_env
     plan.apply_configuration_values({("comp", "mode"): "fast"})
     plan.apply_configuration_values({("pack/comp", "mode"): "fast"})
     assert plan.missing_configuration() == []
+
+
+def test_root_not_in_repository_is_reported_as_plugin_not_found(virtual_ida_environment):
+    repo = _repo(_zip("a", deps=["missing"]))
+
+    with pytest.raises(PluginNotFoundError, match="plugin 'ghost' was not found") as excinfo:
+        _plan(repo, "ghost")
+    assert isinstance(excinfo.value, DependencyUnavailableError)
+    assert "required by" not in str(excinfo.value)
+
+    with pytest.raises(DependencyUnavailableError, match="dependency 'missing' is unavailable \\(required by a\\)"):
+        _plan(repo, "a")

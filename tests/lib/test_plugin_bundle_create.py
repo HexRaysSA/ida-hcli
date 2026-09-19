@@ -7,7 +7,7 @@ import sys
 import pytest
 from click.testing import CliRunner
 from fixtures import *
-from test_plugin_resolve import _fs_repo, _zip
+from test_plugin_resolve import _fs_repo, _incomplete_repo, _zip
 
 from hcli.commands.plugin.bundle import bundle
 from hcli.lib.ida import find_current_ida_platform
@@ -200,3 +200,13 @@ def test_bundle_create_prints_omitted_optional_dependencies(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "omitted optional dependency: b (used by a)" in result.output
+
+
+def test_plan_bundle_contents_expands_incomplete_index_entries_by_fetching(tmp_path):
+    repo = _incomplete_repo(tmp_path, "a")
+
+    contents = plan_bundle_contents(["a"], repo, PLATFORMS)
+
+    assert _names(contents) == {"a": "1.0.0"}
+    assert contents.python_requirements == ["requests"]
+    assert contents.archives[0].platforms == tuple(PLATFORMS)

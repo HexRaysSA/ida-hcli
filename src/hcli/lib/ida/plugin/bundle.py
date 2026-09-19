@@ -312,7 +312,6 @@ def plan_bundle_contents(
             installed=[],
             installed_config=IDAConfigJson(),
             dependency_repo=repo,
-            index_only=True,
         )
         plan = plan_install(context, roots)
         for requirement in plan.combined_python_requirements():
@@ -334,7 +333,10 @@ def plan_bundle_contents(
             elif isinstance(source, LocationSource):
                 sha256 = source.location.sha256
                 if sha256 not in fetched:
-                    fetched[sha256] = source.repo.fetch_location(source.location)
+                    if sha256 in context.artifacts:
+                        fetched[sha256] = context.artifacts.get(sha256)
+                    else:
+                        fetched[sha256] = source.repo.fetch_location(source.location)
                 data = fetched[sha256]
             else:
                 raise TypeError(f"cannot bundle {node.name} from {type(source).__name__}")

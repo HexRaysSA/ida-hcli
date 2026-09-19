@@ -33,7 +33,7 @@ from hcli.lib.ida.plugin.reference import (
 )
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
 from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
-from hcli.lib.ida.plugin.resolve import ArchiveRoot, EditableRoot, RepositoryRoot, RootRequest
+from hcli.lib.ida.plugin.resolve import ArchiveRoot, EditableRoot, InstalledRoot, RepositoryRoot, RootRequest
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 
 from ._install_flow import (
@@ -102,7 +102,11 @@ def _fetch_archive_bytes(plugin_spec: str) -> bytes | None:
 
 
 def _build_root(ctx, plugin_spec: str, editable: bool, upgrade: bool) -> tuple[RootRequest, BasePluginRepo | None]:
-    """The root request for ``plugin_spec`` and the repository its dependencies resolve in."""
+    """The root request for ``plugin_spec`` and the repository its dependencies resolve in.
+
+    A repository prefix on the reference scopes the root alone; dependencies
+    always resolve across every configured repository (or the one given with --repo).
+    """
     if editable:
         return _build_editable_root(plugin_spec), ctx.obj.get("plugin_repo")
 
@@ -118,8 +122,8 @@ def _build_root(ctx, plugin_spec: str, editable: bool, upgrade: bool) -> tuple[R
 
     from hcli.commands.plugin import repo_for_reference
 
-    plugin_repo = repo_for_reference(ctx, ref)
-    return RepositoryRoot(ref, plugin_repo, repo_name=ref.repo, upgrade=upgrade), plugin_repo
+    root_repo = repo_for_reference(ctx, ref)
+    return RepositoryRoot(ref, root_repo, repo_name=ref.repo, upgrade=upgrade), ctx.obj.get("plugin_repo")
 
 
 def _report_ambiguous(error: AmbiguousPluginReferenceError) -> None:
@@ -191,20 +195,28 @@ def install_plugin(
 
         try:
             with rich.status.Status("resolving dependencies", console=stderr_console):
-                operation = plan_plugin_operation(
-                    [root],
-                    plugin_repo=plugin_repo,
-                    current_platform=current_ida_platform,
-                    current_version=current_ida_version,
-                )
+                try:
+                    operation = plan_plugin_operation(
+                        [root],
+                        plugin_repo=plugin_repo,
+                        current_platform=current_ida_platform,
+                        current_version=current_ida_version,
+                    )
+                except PluginVersionDowngradeError as e:
+                    if not upgrade:
+                        raise
+                    logger.info(
+                        "%s is installed at %s, newer than %s; keeping it", e.name, e.current_version, e.new_version
+                    )
+                    operation = plan_plugin_operation(
+                        [InstalledRoot(e.name)],
+                        plugin_repo=plugin_repo,
+                        current_platform=current_ida_platform,
+                        current_version=current_ida_version,
+                    )
         except AmbiguousPluginReferenceError as e:
             _report_ambiguous(e)
             raise click.Abort()
-        except PluginVersionDowngradeError as e:
-            if not upgrade:
-                raise
-            console.print(f"[green]Already installed[/green] plugin: [blue]{e.name}[/blue]=={e.current_version}")
-            return
         except (httpx.ConnectError, httpx.TimeoutException):
             console.print("[red]Cannot connect to plugin repository - network unavailable.[/red]")
             console.print("Please check your internet connection.")
