@@ -33,6 +33,8 @@ if typing.TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+MAX_COMPONENT_DEPTH = 10
+
 
 class ChoiceValueError(ValueError):
     """Error raised when a setting value doesn't match available choices.
@@ -566,13 +568,14 @@ class PluginMetadata(BaseModel):
         json_schema_extra=_allow_string_items,
     )
 
-    components: list[str] = Field(
+    components: "list[str | IDAMetadataDescriptor]" = Field(
         default_factory=list,
         description=(
-            "Subdirectory names of plugins bundled inside this suite's archive. "
-            "Each entry must match a subdirectory containing its own ida-plugin.json "
-            "whose plugin.name matches the entry. Components share the suite's "
-            "lifecycle and are hidden from top-level plugin listings."
+            "Plugins bundled inside this suite's archive. Each entry is either the "
+            "name of a subdirectory containing its own ida-plugin.json whose "
+            "plugin.name matches the entry, or the full ida-plugin.json descriptor "
+            "of that component. Components share the suite's lifecycle and are "
+            "hidden from top-level plugin listings."
         ),
         examples=[["hexrays-taint-engine", "hexrays-type-propagation"]],
     )
@@ -606,21 +609,29 @@ class PluginMetadata(BaseModel):
 
     @field_validator("components", mode="after")
     @classmethod
-    def validate_component_names(cls, names: list[str]) -> list[str]:
-        for name in names:
-            if "==" in name:
-                raise ValueError(f"component entries must not contain version pins: '{name}'")
-            if "@" in name:
-                raise ValueError(f"component entries must not contain host qualifiers: '{name}'")
-            if not re.match(r"^[a-zA-Z0-9_-]+$", name):
-                raise ValueError(
-                    f"component name must consist of ASCII letters, digits, underscores, and hyphens: '{name}'"
-                )
-            if name.startswith(("_", "-")) or name.endswith(("_", "-")):
-                raise ValueError(f"component name must not start or end with underscore or hyphen: '{name}'")
+    def validate_component_entries(
+        cls, entries: "list[str | IDAMetadataDescriptor]"
+    ) -> "list[str | IDAMetadataDescriptor]":
+        names: list[str] = []
+        for entry in entries:
+            if isinstance(entry, str):
+                name = entry
+                if "==" in name:
+                    raise ValueError(f"component entries must not contain version pins: '{name}'")
+                if "@" in name:
+                    raise ValueError(f"component entries must not contain host qualifiers: '{name}'")
+                if not re.match(r"^[a-zA-Z0-9_-]+$", name):
+                    raise ValueError(
+                        f"component name must consist of ASCII letters, digits, underscores, and hyphens: '{name}'"
+                    )
+                if name.startswith(("_", "-")) or name.endswith(("_", "-")):
+                    raise ValueError(f"component name must not start or end with underscore or hyphen: '{name}'")
+            else:
+                name = entry.plugin.name
+            names.append(name)
         if len(set(names)) != len(names):
             raise ValueError("component names must be unique within a single manifest")
-        return names
+        return entries
 
     @field_validator("name", mode="after")
     @classmethod
@@ -747,6 +758,108 @@ class IDAMetadataDescriptor(BaseModel):
     plugin: PluginMetadata = Field(description="Plugin metadata.")
 
 
+PluginMetadata.model_rebuild()
+
+
+def get_ida_plugin_json_schema() -> dict[str, typing.Any]:
+    """Return the JSON Schema for ida-plugin.json with `$schema` and `title` at the root.
+
+    The descriptor is recursive through `plugin.components`, so pydantic emits the
+    root as a `$ref` into `$defs`. Editors expect the document metadata at the
+    top level, so it is hoisted out of the root definition.
+    """
+    schema = IDAMetadataDescriptor.model_json_schema(by_alias=True)
+    root_def = schema.get("$defs", {}).get(IDAMetadataDescriptor.__name__)
+    if root_def is not None:
+        for key in ("$schema", "title"):
+            if key in root_def:
+                schema[key] = root_def.pop(key)
+    return schema
+
+
+def get_component_name(entry: str | IDAMetadataDescriptor) -> str:
+    """Return the component name for a string or embedded-descriptor component entry."""
+    if isinstance(entry, str):
+        return entry
+    return entry.plugin.name
+
+
+def iter_component_names(metadata: PluginMetadata) -> Iterator[str]:
+    """Yield the component names declared by a manifest, in declaration order."""
+    for entry in metadata.components:
+        yield get_component_name(entry)
+
+
+def iter_expanded_components(
+    descriptor: IDAMetadataDescriptor,
+    *,
+    _path: tuple[str, ...] = (),
+) -> Iterator[tuple[tuple[str, ...], IDAMetadataDescriptor]]:
+    """Yield every embedded component descriptor beneath ``descriptor``, depth first.
+
+    Each item is the tuple of component names from the root down to the
+    component, paired with that component's descriptor. String component
+    entries are not expanded and are skipped.
+
+    Raises:
+        ValueError: when nesting exceeds ``MAX_COMPONENT_DEPTH``.
+    """
+    if len(_path) >= MAX_COMPONENT_DEPTH:
+        raise ValueError(f"component nesting exceeds maximum depth ({MAX_COMPONENT_DEPTH})")
+    for entry in descriptor.plugin.components:
+        if isinstance(entry, str):
+            continue
+        child_path = (*_path, entry.plugin.name)
+        yield child_path, entry
+        yield from iter_expanded_components(entry, _path=child_path)
+
+
+def iter_dependency_specs(
+    descriptor: IDAMetadataDescriptor,
+) -> Iterator[tuple[tuple[str, ...], DependencySpec]]:
+    """Yield every dependency declared by the root and by each embedded component.
+
+    Each item pairs the component path (empty for the root) with the spec.
+
+    Raises:
+        ValueError: when nesting exceeds ``MAX_COMPONENT_DEPTH``.
+    """
+    for spec in descriptor.plugin.dependencies:
+        yield (), spec
+    for path, component in iter_expanded_components(descriptor):
+        for spec in component.plugin.dependencies:
+            yield path, spec
+
+
+def validate_expanded_for_planning(descriptor: IDAMetadataDescriptor) -> None:
+    """Check that a descriptor tree carries everything the planner needs.
+
+    Every component at every depth must be embedded as a descriptor and every
+    node must declare ``pythonDependencies`` as a concrete list.
+
+    Raises:
+        ValueError: naming the first node that is not fully expanded.
+    """
+    nodes: list[tuple[tuple[str, ...], IDAMetadataDescriptor]] = [((), descriptor)]
+    nodes.extend(iter_expanded_components(descriptor))
+    for path, node in nodes:
+        label = "/".join((descriptor.plugin.name, *path))
+        if node.plugin.python_dependencies == "inline":
+            raise ValueError(f"{label}: pythonDependencies is 'inline', expected a list")
+        unexpanded = [entry for entry in node.plugin.components if isinstance(entry, str)]
+        if unexpanded:
+            raise ValueError(f"{label}: component '{unexpanded[0]}' is not embedded")
+
+
+def is_expanded_for_planning(descriptor: IDAMetadataDescriptor) -> bool:
+    """Return whether ``validate_expanded_for_planning`` accepts the descriptor."""
+    try:
+        validate_expanded_for_planning(descriptor)
+    except ValueError:
+        return False
+    return True
+
+
 class MinimalIDAPluginMetadata(BaseModel):
     """Minimal set of IDA Plugin metadata from ida-plugin.json
 
@@ -826,6 +939,17 @@ def get_file_content_from_plugin_archive(zip_data: bytes, plugin_name: str, rela
         zip_path = file_path.as_posix()
         with zip_file.open(zip_path) as f:
             return f.read()
+
+
+def get_file_content_from_plugin_archive_at(zip_data: bytes, manifest_path: Path, relative_path: str) -> bytes:
+    """Get file content from a plugin archive relative to a specific manifest path.
+
+    Raises:
+        KeyError: when the file does not exist in the archive.
+    """
+    file_path = manifest_path.parent / relative_path
+    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file, zip_file.open(file_path.as_posix()) as f:
+        return f.read()
 
 
 def get_python_dependencies_from_plugin_archive(zip_data: bytes, metadata: IDAMetadataDescriptor) -> list[str]:

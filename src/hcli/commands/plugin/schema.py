@@ -8,7 +8,7 @@ from pathlib import Path
 import rich_click as click
 
 from hcli.lib.console import console
-from hcli.lib.ida.plugin import IDAMetadataDescriptor
+from hcli.lib.ida.plugin import get_ida_plugin_json_schema
 
 
 @click.command(hidden=True)
@@ -27,7 +27,7 @@ from hcli.lib.ida.plugin import IDAMetadataDescriptor
 )
 def schema(output: Path | None, indent: int) -> None:
     """Print the JSON Schema for ida-plugin.json."""
-    schema_obj = IDAMetadataDescriptor.model_json_schema(by_alias=True)
+    schema_obj = get_ida_plugin_json_schema()
     payload = json.dumps(schema_obj, indent=indent)
 
     if output is not None:

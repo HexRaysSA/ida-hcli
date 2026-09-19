@@ -7,10 +7,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from hcli.lib.ida.plugin import (
+    MAX_COMPONENT_DEPTH,
     IDAMetadataDescriptor,
     get_metadatas_with_paths_from_plugin_archive,
     get_python_dependencies_from_plugin_archive,
     get_python_dependencies_from_plugin_directory,
+    iter_component_names,
 )
 
 if TYPE_CHECKING:
@@ -18,7 +20,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MAX_COMPONENT_DEPTH = 10
+__all__ = ["MAX_COMPONENT_DEPTH"]
 
 
 def walk_component_tree_from_directory(
@@ -40,7 +42,7 @@ def walk_component_tree_from_directory(
     metadata = _read_metadata_from_directory(plugin_dir)
     result: list[tuple[Path, IDAMetadataDescriptor]] = []
 
-    for component_name in metadata.plugin.components:
+    for component_name in iter_component_names(metadata.plugin):
         component_dir = plugin_dir / component_name
         if not component_dir.is_dir():
             raise ValueError(
@@ -67,10 +69,11 @@ def walk_component_tree_from_archive(
     root_metadata: IDAMetadataDescriptor,
     *,
     _depth: int = 0,
-    _all_metadatas: dict[str, tuple[Path, IDAMetadataDescriptor]] | None = None,
+    _all_metadatas: dict[Path, IDAMetadataDescriptor] | None = None,
 ) -> list[tuple[Path, IDAMetadataDescriptor]]:
     """Walk a suite's component tree inside a zip archive, validating as we go.
 
+    Each component must live at ``<parent dir>/<name>/ida-plugin.json``.
     Returns a flat list of (archive_path, descriptor) for every component
     found at any nesting depth. The root manifest is NOT included.
 
@@ -81,22 +84,20 @@ def walk_component_tree_from_archive(
         raise ValueError(f"component nesting exceeds maximum depth ({MAX_COMPONENT_DEPTH})")
 
     if _all_metadatas is None:
-        _all_metadatas = {}
-        for path, meta in get_metadatas_with_paths_from_plugin_archive(zip_data):
-            _all_metadatas[meta.plugin.name] = (path, meta)
+        _all_metadatas = dict(get_metadatas_with_paths_from_plugin_archive(zip_data))
 
     root_dir = root_path.parent
     result: list[tuple[Path, IDAMetadataDescriptor]] = []
 
-    for component_name in root_metadata.plugin.components:
-        if component_name not in _all_metadatas:
-            expected_dir = root_dir / component_name
+    for component_name in iter_component_names(root_metadata.plugin):
+        comp_path = root_dir / component_name / "ida-plugin.json"
+        if comp_path not in _all_metadatas:
             raise ValueError(
                 f"component '{component_name}' declared by '{root_metadata.plugin.name}' "
-                f"but no ida-plugin.json found under {expected_dir}"
+                f"but no valid ida-plugin.json found at {comp_path}"
             )
 
-        comp_path, comp_meta = _all_metadatas[component_name]
+        comp_meta = _all_metadatas[comp_path]
         if comp_meta.plugin.name != component_name:
             raise ValueError(
                 f"component '{component_name}' manifest has plugin.name '{comp_meta.plugin.name}' (name mismatch)"
@@ -170,7 +171,7 @@ def find_root_manifest_in_archive(
 
     referenced_as_component: set[str] = set()
     for _, meta in all_items:
-        referenced_as_component.update(meta.plugin.components)
+        referenced_as_component.update(iter_component_names(meta.plugin))
 
     roots = [(path, meta) for path, meta in all_items if meta.plugin.name not in referenced_as_component]
 
@@ -299,12 +300,12 @@ def find_undeclared_plugins_in_archive(
         tree = walk_component_tree_from_archive(zip_data, root_path, root_metadata)
     except ValueError:
         tree = []
-    declared_names = {root_metadata.plugin.name}
-    declared_names.update(meta.plugin.name for _, meta in tree)
+    declared_paths = {root_path}
+    declared_paths.update(path for path, _ in tree)
 
     undeclared = []
     for path, meta in all_items:
-        if meta.plugin.name not in declared_names:
+        if path not in declared_paths:
             undeclared.append((path, meta))
     return undeclared
 
