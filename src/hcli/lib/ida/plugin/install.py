@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import errno
 import io
 import logging
@@ -7,41 +9,29 @@ import shutil
 import subprocess
 import uuid
 import zipfile
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import rich.status
-
-from hcli.lib.console import stderr_console
 from hcli.lib.ida import (
-    find_current_ida_platform,
-    find_current_ida_version,
     get_ida_user_dir,
 )
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
     MinimalIDAPluginMetadata,
     get_metadata_from_plugin_archive,
-    get_metadata_path_from_plugin_archive,
     is_binary_plugin_archive,
-    is_ida_version_compatible,
     is_source_plugin_archive,
-    parse_plugin_version,
     validate_metadata_in_plugin_archive,
     validate_path,
 )
 from hcli.lib.ida.plugin.components import (
-    collect_python_dependencies_from_archive,
     collect_python_dependencies_from_directory,
 )
 from hcli.lib.ida.plugin.exceptions import (
-    BrokenPluginInstallationError,
     DependencyInstallationError,
-    IDAVersionIncompatibleError,
-    InvalidPluginNameError,
     PipNotAvailableError,
-    PlatformIncompatibleError,
-    PluginAlreadyInstalledError,
     PluginInUseError,
     PluginNotInstalledError,
     PluginVersionDowngradeError,
@@ -55,10 +45,14 @@ from hcli.lib.ida.python import (
     has_pip,
     pip_install_packages,
     resolve_current_python,
-    verify_pip_can_install_packages,
 )
 from hcli.lib.ida.python.environment import PythonEnvironmentError, validate_python_environment
 from hcli.lib.util.io import NoSpaceError
+
+if TYPE_CHECKING:
+    from hcli.lib.ida.plugin.execute import InstallResult
+    from hcli.lib.ida.plugin.repo import BasePluginRepo
+    from hcli.lib.ida.plugin.resolve import InstallPlan, ResolutionContext, RootRequest
 
 logger = logging.getLogger(__name__)
 
@@ -531,115 +525,6 @@ def resolve_python_for_dependencies(python_dependencies: list[str], *, check_env
     return resolved.exe
 
 
-def validate_can_install_python_dependencies(
-    zip_data: bytes,
-    metadata: IDAMetadataDescriptor,
-    metadata_path: Path,
-    excluded_plugins: list[str] | None = None,
-    python_exe: Path | None = None,
-    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
-    check_environment: bool = True,
-) -> Path | None:
-    """Verify Python dependencies can be installed.
-
-    Returns:
-        The Python executable path if dependencies were validated, None if no dependencies needed.
-
-    Raises:
-        PipNotAvailableError: If pip is not available in IDA's Python
-        DependencyInstallationError: If dependencies cannot be installed, including when
-            IDA's Python environment fails the health check (see `validate_python_environment`).
-    """
-    python_dependencies = collect_python_dependencies_from_archive(zip_data, metadata_path, metadata)
-    if python_dependencies:
-        all_python_dependencies: list[str] = []
-        for existing_plugin_path in get_installed_plugin_paths():
-            existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
-            if excluded_plugins and existing_metadata.plugin.name in excluded_plugins:
-                continue
-
-            existing_deps = collect_python_dependencies_from_directory(existing_plugin_path, existing_metadata)
-            all_python_dependencies.extend(existing_deps)
-
-        all_python_dependencies.extend(python_dependencies)
-
-        if python_exe is None:
-            python_exe = resolve_python_for_dependencies(python_dependencies, check_environment=check_environment)
-        elif not has_pip(python_exe):
-            logger.debug("pip not available")
-            raise PipNotAvailableError(python_exe)
-        logger.debug(f"python: {python_exe}")
-
-        try:
-            verify_pip_can_install_packages(python_exe, all_python_dependencies, pip_options=pip_options)
-        except CantInstallPackagesError as e:
-            logger.debug("can't install dependencies: %s", e)
-            raise DependencyInstallationError(python_dependencies, str(e)) from e
-
-        return python_exe
-
-    return None
-
-
-def validate_can_install_plugin(
-    zip_data: bytes,
-    metadata: IDAMetadataDescriptor,
-    metadata_path: Path,
-    current_platform: str,
-    current_version: str,
-    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
-    check_environment: bool = True,
-) -> Path | None:
-    """Verify plugin can be installed.
-
-    Returns:
-        The Python executable path if pip dependencies were validated, None otherwise.
-
-    Raises:
-        InvalidPluginNameError: If plugin name is invalid
-        PluginAlreadyInstalledError: If plugin is already installed
-        BrokenPluginInstallationError: If remnants of a broken installation are in the way
-        PlatformIncompatibleError: If current platform is not supported
-        IDAVersionIncompatibleError: If current IDA version is not supported
-        PipNotAvailableError: If pip is not available (when dependencies are needed)
-        DependencyInstallationError: If dependencies cannot be installed
-    """
-    name = metadata.plugin.name
-    try:
-        destination_path = get_plugin_directory(name)
-    except ValueError as e:
-        logger.error(f"Can't install plugin: {e!s}")
-        raise InvalidPluginNameError(name, str(e)) from e
-
-    # is_symlink() is checked in addition to exists() so a broken symlink
-    # (dangling editable install) is reported rather than tripping up
-    # extraction later.
-    if destination_path.exists() or destination_path.is_symlink():
-        if is_valid_plugin_directory(destination_path):
-            logger.warning(f"Plugin directory already exists: {destination_path}")
-            raise PluginAlreadyInstalledError(name, destination_path)
-
-        # The directory exists but doesn't hold a working plugin: remnants of
-        # an interrupted install/uninstall (issue #228). Point the user at
-        # uninstall, which knows how to remove broken directories, rather than
-        # silently deleting data on the install path.
-        logger.warning(f"Broken plugin directory: {destination_path}")
-        raise BrokenPluginInstallationError(name, destination_path)
-
-    platforms = metadata.plugin.platforms
-    if current_platform not in platforms:
-        logger.warning(f"Current platform not supported: {current_platform}")
-        raise PlatformIncompatibleError(current_platform, platforms)
-
-    if metadata.plugin.ida_versions and not is_ida_version_compatible(current_version, metadata.plugin.ida_versions):
-        logger.warning(f"Current IDA version not supported: {current_version}")
-        raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
-
-    return validate_can_install_python_dependencies(
-        zip_data, metadata, metadata_path, pip_options=pip_options, check_environment=check_environment
-    )
-
-
 def validate_archive_entry(file_info: zipfile.ZipInfo, relative_path: pathlib.PurePosixPath) -> None:
     """Validate a ZIP archive entry before extraction.
 
@@ -769,75 +654,137 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
         raise
 
 
-def _install_plugin_archive(
-    zip_data: bytes,
-    name: str,
-    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
-    check_environment: bool = True,
-):
-    path, metadata = get_metadata_from_plugin_archive(zip_data, name)
-    validate_metadata_in_plugin_archive(zip_data, path, metadata)
+def _build_resolution_context(
+    plugin_repo: BasePluginRepo | None, current_platform: str | None, current_version: str | None
+) -> ResolutionContext:
+    from hcli.lib.ida import get_ida_config
+    from hcli.lib.ida.plugin.resolve import ResolutionContext
 
-    logger.info("installing plugin: %s (%s)", metadata.plugin.name, metadata.plugin.version)
-
-    with rich.status.Status("finding IDA installation", console=stderr_console):
-        current_platform = find_current_ida_platform()
-        current_version = find_current_ida_version()
-
-    metadata_path = get_metadata_path_from_plugin_archive(zip_data, name)
-
-    python_exe = validate_can_install_plugin(
-        zip_data,
-        metadata,
-        metadata_path,
-        current_platform,
-        current_version,
-        pip_options=pip_options,
-        check_environment=check_environment,
+    if current_platform is None or current_version is None:
+        return ResolutionContext.from_environment(plugin_repo)
+    return ResolutionContext(
+        current_platform=current_platform,
+        current_version=current_version,
+        installed=get_installed_plugin_records(),
+        installed_config=get_ida_config(),
+        dependency_repo=plugin_repo,
     )
 
-    destination_path = get_plugin_directory(metadata.plugin.name)
-    plugin_subdirectory = metadata_path.parent
 
-    # TODO: install idaPluginDependencies
+def _execute_plan(
+    plan: InstallPlan,
+    context: ResolutionContext,
+    *,
+    pip_options: PipOptions,
+    check_environment: bool,
+    config_values: Mapping[tuple[str, str], str | bool] | None,
+    require_configuration: bool,
+) -> InstallResult:
+    from hcli.lib.ida.plugin.execute import execute_install, prepare_install
 
-    python_dependencies = collect_python_dependencies_from_archive(zip_data, metadata_path, metadata)
-    if python_dependencies:
-        with rich.status.Status("collecting existing Python dependencies", console=stderr_console):
-            all_python_dependencies: list[str] = []
-            for existing_plugin_path in get_installed_plugin_paths():
-                existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
-                existing_deps = collect_python_dependencies_from_directory(existing_plugin_path, existing_metadata)
-                all_python_dependencies.extend(existing_deps)
+    with prepare_install(plan, context, pip_options=pip_options, check_environment=check_environment) as prepared:
+        return execute_install(prepared, config_values=config_values, require_configuration=require_configuration)
 
-            logger.debug("installing new python dependencies: %s", python_dependencies)
-            all_python_dependencies.extend(python_dependencies)
 
-        with rich.status.Status(
-            f"installing Python dependencies: {', '.join(python_dependencies)}", console=stderr_console
-        ):
-            assert python_exe is not None
-            try:
-                pip_install_packages(python_exe, all_python_dependencies, pip_options=pip_options)
-            except CantInstallPackagesError:
-                logger.debug("can't install dependencies")
-                raise
+def _plan_and_execute(
+    roots: Sequence[RootRequest],
+    *,
+    plugin_repo: BasePluginRepo | None,
+    current_platform: str | None,
+    current_version: str | None,
+    pip_options: PipOptions,
+    check_environment: bool,
+    config_values: Mapping[tuple[str, str], str | bool] | None,
+    require_configuration: bool,
+) -> InstallResult:
+    from hcli.lib.ida.plugin.resolve import plan_install
 
-    # A previous editable install of the same plugin may have left a .pth
-    # behind in IDA's site-packages. Drop it so the non-editable install isn't
-    # shadowed by stale paths on sys.path.
-    _remove_editable_pth_file(metadata.plugin.name)
-
-    extract_zip_subdirectory_to(zip_data, plugin_subdirectory, destination_path)
+    context = _build_resolution_context(plugin_repo, current_platform, current_version)
+    plan = plan_install(context, roots)
+    return _execute_plan(
+        plan,
+        context,
+        pip_options=pip_options,
+        check_environment=check_environment,
+        config_values=config_values,
+        require_configuration=require_configuration,
+    )
 
 
 def install_plugin_archive(
-    zip_data: bytes, name: str, pip_options: PipOptions = PIP_OPTIONS_DEFAULT, check_environment: bool = True
-):
+    zip_data: bytes,
+    name: str,
+    *,
+    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    check_environment: bool = True,
+    current_platform: str | None = None,
+    current_version: str | None = None,
+    plugin_repo: BasePluginRepo | None = None,
+    config_values: Mapping[tuple[str, str], str | bool] | None = None,
+    require_configuration: bool = True,
+) -> InstallResult:
+    """Install the plugin ``name`` from ``zip_data`` together with its required dependencies.
+
+    Dependencies are selected from ``plugin_repo``; without one, any missing
+    required dependency makes the install fail before anything is written.
+    Platform and IDA version are detected when not supplied.
+
+    Raises:
+        ValueError: when the archive is not a plugin archive for ``name``.
+        PluginAlreadyInstalledError, PlatformIncompatibleError, IDAVersionIncompatibleError,
+            InstalledPluginNameConflictError: planning rejected the root.
+        DependencyResolutionError: a required dependency cannot be planned or verified,
+            including MissingConfigurationError for required settings without values.
+        PipNotAvailableError, DependencyInstallationError: Python requirements cannot be installed.
+        InstallExecutionError: a step failed after mutations began; they were rolled back.
+    """
+    from hcli.lib.ida.plugin.resolve import ArchiveRoot
+
     if not is_source_plugin_archive(zip_data, name) and not is_binary_plugin_archive(zip_data, name):
         raise ValueError("Invalid plugin archive")
+    logger.info("installing plugin: %s", name)
+    return _plan_and_execute(
+        [ArchiveRoot(zip_data, name)],
+        plugin_repo=plugin_repo,
+        current_platform=current_platform,
+        current_version=current_version,
+        pip_options=pip_options,
+        check_environment=check_environment,
+        config_values=config_values,
+        require_configuration=require_configuration,
+    )
 
-    _install_plugin_archive(zip_data, name, pip_options=pip_options, check_environment=check_environment)
+
+def repair_installed_plugin(
+    name: str,
+    *,
+    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    check_environment: bool = True,
+    current_platform: str | None = None,
+    current_version: str | None = None,
+    plugin_repo: BasePluginRepo | None = None,
+    config_values: Mapping[tuple[str, str], str | bool] | None = None,
+    require_configuration: bool = True,
+) -> InstallResult:
+    """Keep the installed plugin ``name`` and install whatever its dependency closure is missing.
+
+    Raises:
+        PluginNotInstalledError: when ``name`` is not installed.
+        DependencyResolutionError, InstallExecutionError: as for ``install_plugin_archive``.
+    """
+    from hcli.lib.ida.plugin.resolve import InstalledRoot
+
+    logger.info("repairing plugin: %s", name)
+    return _plan_and_execute(
+        [InstalledRoot(name)],
+        plugin_repo=plugin_repo,
+        current_platform=current_platform,
+        current_version=current_version,
+        pip_options=pip_options,
+        check_environment=check_environment,
+        config_values=config_values,
+        require_configuration=require_configuration,
+    )
 
 
 # Files/directories under a plugin source tree we never want to ship into a
@@ -867,115 +814,47 @@ def pack_plugin_directory_to_zip(source_dir: Path) -> bytes:
 
 
 def install_plugin_directory_editable(
-    source_dir: Path, name: str, pip_options: PipOptions = PIP_OPTIONS_DEFAULT, check_environment: bool = True
-):
-    """Install a plugin from a local source directory by symlinking it into
-    $IDAUSR/plugins/<name>.
+    source_dir: Path,
+    name: str,
+    *,
+    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    check_environment: bool = True,
+    current_platform: str | None = None,
+    current_version: str | None = None,
+    plugin_repo: BasePluginRepo | None = None,
+    config_values: Mapping[tuple[str, str], str | bool] | None = None,
+    require_configuration: bool = True,
+) -> InstallResult:
+    """Link ``source_dir`` into the plugins directory as ``name`` and install its dependencies.
 
-    Edits to files in `source_dir` take effect on the next plugin reload, with
-    no re-install needed -- the standard development workflow for plugin
-    authors.
+    Edits to files in ``source_dir`` take effect on the next plugin reload. Any
+    installed copy of the plugin is replaced; the source directory is never
+    touched. A ``src/`` layout is registered through a ``.pth`` file in IDA's
+    site-packages, the way ``pip install -e`` does.
 
-    Python dependencies declared in `ida-plugin.json` are installed the same
-    way as a regular install. The destination path is replaced if it already
-    exists (file, directory, or stale symlink), but the source directory is
-    never touched.
+    Raises:
+        ValueError: when the manifest in ``source_dir`` names a different plugin.
+        DependencyResolutionError, InstallExecutionError: as for ``install_plugin_archive``.
     """
+    from hcli.lib.ida.plugin.resolve import EditableRoot
+
     source_dir = source_dir.resolve()
     metadata = get_metadata_from_plugin_directory(source_dir)
-    validate_metadata_in_plugin_directory(source_dir)
-
     if metadata.plugin.name != name:
         raise ValueError(
             f"plugin name mismatch: caller passed '{name}', ida-plugin.json declares '{metadata.plugin.name}'"
         )
-
     logger.info("installing plugin (editable): %s (%s)", metadata.plugin.name, metadata.plugin.version)
-
-    with rich.status.Status("finding IDA installation", console=stderr_console):
-        current_platform = find_current_ida_platform()
-        current_version = find_current_ida_version()
-
-    platforms = metadata.plugin.platforms
-    if current_platform not in platforms:
-        logger.warning(f"Current platform not supported: {current_platform}")
-        raise PlatformIncompatibleError(current_platform, platforms)
-
-    if metadata.plugin.ida_versions and not is_ida_version_compatible(current_version, metadata.plugin.ida_versions):
-        logger.warning(f"Current IDA version not supported: {current_version}")
-        raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
-
-    try:
-        destination_path = get_plugin_directory(metadata.plugin.name)
-    except ValueError as e:
-        logger.error(f"Can't install plugin: {e!s}")
-        raise InvalidPluginNameError(metadata.plugin.name, str(e)) from e
-
-    # Validate + install Python dependencies. Excludes the current plugin from
-    # the existing-installed set so a re-install of the same plugin doesn't
-    # double-count its own deps when verifying the resolver.
-    python_dependencies = collect_python_dependencies_from_directory(source_dir, metadata)
-    if python_dependencies:
-        with rich.status.Status("collecting existing Python dependencies", console=stderr_console):
-            all_python_dependencies: list[str] = []
-            for existing_plugin_path in get_installed_plugin_paths():
-                try:
-                    existing_metadata = get_metadata_from_plugin_directory(existing_plugin_path)
-                except Exception as e:
-                    logger.debug("skipping unreadable plugin metadata at %s: %s", existing_plugin_path, e)
-                    continue
-                if existing_metadata.plugin.name == metadata.plugin.name:
-                    continue
-                existing_deps = collect_python_dependencies_from_directory(existing_plugin_path, existing_metadata)
-                all_python_dependencies.extend(existing_deps)
-            all_python_dependencies.extend(python_dependencies)
-
-        python_exe = resolve_python_for_dependencies(python_dependencies, check_environment=check_environment)
-
-        try:
-            verify_pip_can_install_packages(python_exe, all_python_dependencies, pip_options=pip_options)
-        except CantInstallPackagesError as e:
-            raise DependencyInstallationError(python_dependencies, str(e)) from e
-
-        with rich.status.Status(
-            f"installing Python dependencies: {', '.join(python_dependencies)}", console=stderr_console
-        ):
-            try:
-                pip_install_packages(python_exe, all_python_dependencies, pip_options=pip_options)
-            except CantInstallPackagesError:
-                logger.debug("can't install dependencies")
-                raise
-
-    # Remove any existing install at the target. is_symlink() is checked
-    # before exists() because a broken symlink fails exists() but should
-    # still be replaced.
-    if destination_path.is_symlink() or destination_path.is_file():
-        destination_path.unlink()
-    elif destination_path.exists():
-        remove_plugin_directory(destination_path)
-
-    try:
-        destination_path.symlink_to(source_dir, target_is_directory=True)
-    except OSError as e:
-        raise ValueError(
-            f"Failed to create symlink {destination_path} -> {source_dir}: {e}. "
-            "On Windows, symlink creation requires Developer Mode or "
-            "administrator privileges."
-        ) from e
-
-    logger.info("symlinked %s -> %s", destination_path, source_dir)
-
-    # If the project uses the standard src-layout, drop a .pth file into IDA's
-    # site-packages so the package is importable. This mirrors what
-    # `pip install -e .` does (PEP 660). For flat-layout projects, IDA already
-    # exposes the plugin directory on sys.path (because plugin.py is exec'd
-    # from there), so no .pth is needed -- but we still clear any stale one
-    # left over from a prior src-layout install.
-    src_dir = source_dir / "src"
-    if src_dir.is_dir():
-        _write_editable_pth_file(metadata.plugin.name, src_dir)
-    else:
-        _remove_editable_pth_file(metadata.plugin.name)
+    return _plan_and_execute(
+        [EditableRoot(source_dir)],
+        plugin_repo=plugin_repo,
+        current_platform=current_platform,
+        current_version=current_version,
+        pip_options=pip_options,
+        check_environment=check_environment,
+        config_values=config_values,
+        require_configuration=require_configuration,
+    )
 
 
 def _editable_pth_filename(plugin_name: str) -> str:
@@ -1097,116 +976,48 @@ def is_plugin_installed(name: str) -> bool:
     return True
 
 
-def validate_can_upgrade_plugin(
+def upgrade_plugin_archive(
     zip_data: bytes,
-    metadata: IDAMetadataDescriptor,
-    metadata_path: Path,
-    current_platform: str,
-    current_version: str,
+    name: str,
+    *,
     pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
     check_environment: bool = True,
-) -> None:
-    """Verify plugin can be upgraded.
+    current_platform: str | None = None,
+    current_version: str | None = None,
+    plugin_repo: BasePluginRepo | None = None,
+    config_values: Mapping[tuple[str, str], str | bool] | None = None,
+    require_configuration: bool = True,
+) -> InstallResult:
+    """Replace the installed plugin ``name`` with the newer version in ``zip_data``.
+
+    The previous directory is checkpointed and restored if any later step
+    fails. Python packages that pip installed are not rolled back.
 
     Raises:
-        InvalidPluginNameError: If plugin name is invalid
-        PluginNotInstalledError: If plugin is not currently installed
-        PlatformIncompatibleError: If current platform is not supported
-        IDAVersionIncompatibleError: If current IDA version is not supported
-        PipNotAvailableError: If pip is not available (when dependencies are needed)
-        DependencyInstallationError: If dependencies cannot be installed
+        PluginNotInstalledError: when ``name`` is not installed.
+        PluginVersionDowngradeError: when the archive version is not newer than the installed one.
+        DependencyResolutionError, InstallExecutionError: as for ``install_plugin_archive``.
     """
-    name = metadata.plugin.name
-    try:
-        destination_path = get_plugin_directory(name)
-    except ValueError as e:
-        logger.error(f"Can't upgrade plugin: {e!s}")
-        raise InvalidPluginNameError(name, str(e)) from e
+    from hcli.lib.ida.plugin.resolve import ArchiveRoot, plan_install
 
-    if not destination_path.exists():
-        logger.warning(f"Plugin directory doesn't exist: {destination_path}")
-        raise PluginNotInstalledError(name)
-
-    platforms = metadata.plugin.platforms
-    if current_platform not in platforms:
-        logger.warning(f"Current platform not supported: {current_platform}")
-        raise PlatformIncompatibleError(current_platform, platforms)
-
-    if metadata.plugin.ida_versions and not is_ida_version_compatible(current_version, metadata.plugin.ida_versions):
-        logger.warning(f"Current IDA version not supported: {current_version}")
-        raise IDAVersionIncompatibleError(current_version, metadata.plugin.ida_versions)
-
-    validate_can_install_python_dependencies(
-        zip_data,
-        metadata,
-        metadata_path,
-        excluded_plugins=[name],
-        pip_options=pip_options,
-        check_environment=check_environment,
-    )
-
-
-def upgrade_plugin_archive(
-    zip_data: bytes, name: str, pip_options: PipOptions = PIP_OPTIONS_DEFAULT, check_environment: bool = True
-):
     path, metadata = get_metadata_from_plugin_archive(zip_data, name)
     validate_metadata_in_plugin_archive(zip_data, path, metadata)
-
     if not is_plugin_installed(metadata.plugin.name):
         raise PluginNotInstalledError(metadata.plugin.name)
 
-    current_platform = find_current_ida_platform()
-    current_version = find_current_ida_version()
-
-    validate_can_upgrade_plugin(
-        zip_data,
-        metadata,
-        path,
-        current_platform,
-        current_version,
+    context = _build_resolution_context(plugin_repo, current_platform, current_version)
+    plan = plan_install(context, [ArchiveRoot(zip_data, name, upgrade=True)])
+    root = plan.nodes[plan.roots[0]]
+    installed = root.installed
+    assert installed is not None
+    if root.operation != "upgrade":
+        raise PluginVersionDowngradeError(root.name, installed.version, root.version)
+    logger.info("upgrading plugin: %s %s -> %s", root.name, installed.version, root.version)
+    return _execute_plan(
+        plan,
+        context,
         pip_options=pip_options,
         check_environment=check_environment,
+        config_values=config_values,
+        require_configuration=require_configuration,
     )
-
-    plugin_path = get_plugin_directory(metadata.plugin.name)
-    existing_metadata = get_metadata_from_plugin_directory(plugin_path)
-
-    new_version = parse_plugin_version(metadata.plugin.version)
-    existing_version = parse_plugin_version(existing_metadata.plugin.version)
-
-    if new_version <= existing_version:
-        logger.warning(
-            f"New version {metadata.plugin.version} is not greater than existing version {existing_metadata.plugin.version}"
-        )
-        raise PluginVersionDowngradeError(
-            metadata.plugin.name, existing_metadata.plugin.version, metadata.plugin.version
-        )
-
-    # Checkpoint: atomically move the current install into the trash area
-    # before writing anything. When plugin files are locked (e.g. loaded by a
-    # running IDA on Windows), this fails without modifying the installation.
-    # The unique trash name means a stale rollback from an interrupted upgrade
-    # never blocks this one; the sweep removes such leftovers later.
-    rollback_path = move_plugin_directory_to_trash(plugin_path, label=".rollback")
-
-    try:
-        install_plugin_archive(zip_data, name, pip_options=pip_options, check_environment=check_environment)
-    except Exception as e:
-        # note that Python dependencies installed before the failure aren't
-        # rolled back; they're upgraded in place and left as-is.
-        logger.debug("error during upgrade: install: %s", e)
-        logger.debug("rolling back to prior version")
-        shutil.rmtree(plugin_path, ignore_errors=True)
-        if plugin_path.exists():
-            logger.error(
-                "could not restore previous version: partial upgrade remains at %s; uninstall and reinstall",
-                plugin_path,
-            )
-        else:
-            os.rename(rollback_path, plugin_path)
-        raise
-    else:
-        try:
-            shutil.rmtree(rollback_path)
-        except OSError as e:
-            logger.debug("could not delete rollback copy %s: %s (leaving for later sweep)", rollback_path, e)

@@ -23,7 +23,7 @@ from hcli.lib.ida.plugin.exceptions import (
     PluginAlreadyInstalledError,
     PluginVersionDowngradeError,
 )
-from hcli.lib.ida.plugin.install import install_plugin_archive
+from hcli.lib.ida.plugin.install import install_plugin_archive, uninstall_plugin
 from hcli.lib.ida.plugin.reference import parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveIndex, PluginArchiveLocation
 from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
@@ -324,8 +324,14 @@ def test_node_limit_is_enforced(virtual_ida_environment):
 # ---------------------------------------------------------------------------
 
 
-def test_installed_dependency_with_missing_required_child_is_repaired(virtual_ida_environment):
-    install_plugin_archive(_zip("b", deps=["c"]), "b", check_environment=False)
+def _install_then_remove_child(tmp_path: Path, parent: bytes, parent_name: str, child_name: str) -> None:
+    seed = _fs_repo(tmp_path / "seed", _zip(child_name))
+    install_plugin_archive(parent, parent_name, plugin_repo=seed, check_environment=False)
+    uninstall_plugin(child_name)
+
+
+def test_installed_dependency_with_missing_required_child_is_repaired(virtual_ida_environment, tmp_path):
+    _install_then_remove_child(tmp_path, _zip("b", deps=["c"]), "b", "c")
     repo = _repo(_zip("a", deps=["b"]), _zip("c"))
     plan = _plan(repo, "a")
     assert _names(plan) == ["c", "b", "a"]
@@ -333,8 +339,8 @@ def test_installed_dependency_with_missing_required_child_is_repaired(virtual_id
     assert _node(plan, "c").operation == "install"
 
 
-def test_installed_dependency_with_missing_child_and_no_repo_fails(virtual_ida_environment):
-    install_plugin_archive(_zip("b", deps=["c"]), "b", check_environment=False)
+def test_installed_dependency_with_missing_child_and_no_repo_fails(virtual_ida_environment, tmp_path):
+    _install_then_remove_child(tmp_path, _zip("b", deps=["c"]), "b", "c")
     with pytest.raises(DependencyUnavailableError, match="no plugin repository"):
         plan_install(_context(None), [ArchiveRoot(_zip("a", deps=["b"]))])
 
@@ -548,8 +554,8 @@ def test_root_upgrade_selects_newer_version(virtual_ida_environment):
     assert _names(plan) == ["b", "a"]
 
 
-def test_root_upgrade_at_same_version_retains_and_repairs_dependencies(virtual_ida_environment):
-    install_plugin_archive(_zip("a", deps=["b"]), "a", check_environment=False)
+def test_root_upgrade_at_same_version_retains_and_repairs_dependencies(virtual_ida_environment, tmp_path):
+    _install_then_remove_child(tmp_path, _zip("a", deps=["b"]), "a", "b")
     plan = _plan(_repo(_zip("a", deps=["b"]), _zip("b")), "a", upgrade=True)
     assert _node(plan, "a").operation == "retain"
     assert _node(plan, "b").operation == "install"
@@ -696,7 +702,7 @@ def test_stored_settings_satisfy_requirements_unless_invalid(virtual_ida_environ
 
 
 def test_retained_nodes_have_no_configuration_requirements(virtual_ida_environment):
-    install_plugin_archive(_zip("dep", settings=[API_KEY]), "dep")
+    install_plugin_archive(_zip("dep", settings=[API_KEY]), "dep", config_values={("dep", "api_key"): "k"})
     plan = _plan(_repo(_zip("pack", deps=["dep"])), "pack")
     assert plan.missing_configuration() == []
 

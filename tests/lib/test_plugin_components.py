@@ -729,7 +729,7 @@ def test_config_list_for_component(virtual_ida_environment):
         "1.0.0",
         [("comp-a", "1.0.0", {"settings": [SETTING_API_KEY]})],
     )
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", require_configuration=False)
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["config", "comp-a", "list"])
@@ -743,7 +743,7 @@ def test_config_set_for_component(virtual_ida_environment):
         "1.0.0",
         [("comp-a", "1.0.0", {"settings": [SETTING_API_KEY]})],
     )
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", require_configuration=False)
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["config", "comp-a", "set", "api_key", "my-value"])
@@ -761,7 +761,7 @@ def test_config_get_for_component(virtual_ida_environment):
         "1.0.0",
         [("comp-a", "1.0.0", {"settings": [SETTING_API_KEY]})],
     )
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", require_configuration=False)
 
     from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
     from hcli.lib.ida.plugin.settings import set_setting_for_metadata

@@ -330,7 +330,12 @@ def install_plugin(
 
         if editable:
             install_plugin_directory_editable(
-                source_dir, plugin_name, pip_options=pip_options, check_environment=check_environment
+                source_dir,
+                plugin_name,
+                pip_options=pip_options,
+                check_environment=check_environment,
+                plugin_repo=plugin_repo_obj,
+                require_configuration=False,
             )
         else:
             assert buf is not None
@@ -356,11 +361,23 @@ def install_plugin(
                     effective_pip_options = merge_bundle_pip_options(pip_options, bundle_opts)
                     with rich.status.Status(status_text, console=stderr_console):
                         write_archive(
-                            buf, plugin_name, pip_options=effective_pip_options, check_environment=check_environment
+                            buf,
+                            plugin_name,
+                            pip_options=effective_pip_options,
+                            check_environment=check_environment,
+                            plugin_repo=plugin_repo_obj,
+                            require_configuration=False,
                         )
             else:
                 with rich.status.Status(status_text, console=stderr_console):
-                    write_archive(buf, plugin_name, pip_options=pip_options, check_environment=check_environment)
+                    write_archive(
+                        buf,
+                        plugin_name,
+                        pip_options=pip_options,
+                        check_environment=check_environment,
+                        plugin_repo=plugin_repo_obj,
+                        require_configuration=False,
+                    )
 
         try:
             _apply_plugin_settings(

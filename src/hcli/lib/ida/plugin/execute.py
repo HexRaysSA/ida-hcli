@@ -417,10 +417,11 @@ def prepare_install(
 
 
 class _Executor:
-    def __init__(self, prepared: PreparedInstall, txn: InstallTransaction):
+    def __init__(self, prepared: PreparedInstall, txn: InstallTransaction, *, require_configuration: bool = True):
         self.prepared = prepared
         self.plan = prepared.plan
         self.txn = txn
+        self.require_configuration = require_configuration
         self.result = InstallResult(self.plan)
         self.present: set[PluginIdentity] = set()
         self.accepted_branches: list[int] = []
@@ -554,7 +555,7 @@ class _Executor:
 
     def _run_required(self) -> None:
         missing = self.plan.missing_configuration()
-        if missing:
+        if missing and self.require_configuration:
             raise MissingConfigurationError([r.argument() for r in missing])
         self._pip(self.plan.combined_python_requirements())
         for node in self.plan.ordered_nodes():
@@ -589,7 +590,7 @@ class _Executor:
             self._skip_branch(branch, failure)
             return
         missing = [r for r in self.plan.missing_configuration([branch.index]) if r.branch == branch.index]
-        if missing:
+        if missing and self.require_configuration:
             self._skip_branch(branch, str(MissingConfigurationError([r.argument() for r in missing])))
             return
 
@@ -639,8 +640,16 @@ def execute_install(
     *,
     transaction: InstallTransaction | None = None,
     config_values: Mapping[tuple[str, str], str | bool] | None = None,
+    require_configuration: bool = True,
 ) -> InstallResult:
     """Apply a prepared plan. Without ``transaction`` one is created and committed here.
+
+    Boundary failures that happen before anything was changed propagate as
+    themselves. Once a step has mutated state, a required failure is reported as
+    ``InstallExecutionError`` after rollback.
+
+    With ``require_configuration`` false, required settings without a value do
+    not block; only supplied values are written and the caller collects the rest.
 
     Raises:
         MissingConfigurationError: a required setting has no value; nothing was mutated.
@@ -652,13 +661,13 @@ def execute_install(
     if config_values:
         plan.apply_configuration_values(config_values)
     missing = plan.missing_configuration()
-    if missing:
+    if missing and require_configuration:
         raise MissingConfigurationError([r.argument() for r in missing])
 
     own = transaction is None
     txn = transaction or InstallTransaction(get_plugins_directory())
     savepoint = txn.savepoint()
-    executor = _Executor(prepared, txn)
+    executor = _Executor(prepared, txn, require_configuration=require_configuration)
     try:
         result = executor.run()
         if own:
@@ -666,6 +675,7 @@ def execute_install(
         return result
     except BaseException as e:
         result = executor.result
+        mutated = len(txn.journal) > savepoint.position or result.pip_attempted
         recovery: RollbackError | None = None
         try:
             if own:
@@ -676,7 +686,7 @@ def execute_install(
             recovery = rollback_error
         result.mark_rolled_back()
         result.recovery = recovery
-        if isinstance(e, BOUNDARY_ERRORS) and not isinstance(e, (KeyboardInterrupt, SystemExit)):
+        if isinstance(e, BOUNDARY_ERRORS) and mutated:
             message = f"installation failed: {e}"
             if result.pip_attempted:
                 message += ". Python packages that pip installed were not rolled back"

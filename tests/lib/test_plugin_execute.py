@@ -23,7 +23,13 @@ from hcli.lib.ida.plugin.exceptions import (
     PlanMetadataMismatchError,
 )
 from hcli.lib.ida.plugin.execute import InstallResult, execute_install, prepare_install
-from hcli.lib.ida.plugin.install import get_plugins_directory, get_trash_directory
+from hcli.lib.ida.plugin.install import (
+    get_plugins_directory,
+    get_trash_directory,
+    install_plugin_archive,
+    repair_installed_plugin,
+    uninstall_plugin,
+)
 from hcli.lib.ida.plugin.reference import parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveIndex, PluginArchiveLocation
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
@@ -218,21 +224,57 @@ def _write_editable_source(directory: Path, name: str, version: str, *, deps: li
 
 def test_editable_replacement_failure_restores_previous_link(virtual_ida_environment, tmp_path):
     first = _write_editable_source(tmp_path / "first", "a", "1.0.0")
-    second = _write_editable_source(tmp_path / "second", "a", "1.1.0", deps=["c"])
-    repo = _fs_repo(tmp_path / "repo", _zip("c"))
+    second = _write_editable_source(tmp_path / "second", "a", "1.1.0")
     context = _context(None)
     _run(context, plan_install(context, [EditableRoot(first)]))
     assert (get_plugins_directory() / "a").resolve() == first.resolve()
 
-    context = _context(repo)
-    plan = plan_install(context, [EditableRoot(second)])
-    _break_destination("c")
+    plan = plan_install(context, [EditableRoot(second), ArchiveRoot(_zip("b"))])
+    assert [n.name for n in plan.ordered_nodes()] == ["a", "b"]
+    _break_destination("b")
 
     with pytest.raises(InstallExecutionError):
         _run(context, plan)
 
     link = get_plugins_directory() / "a"
     assert link.is_symlink() and link.resolve() == first.resolve()
+
+
+def _install_b_then_remove_c(tmp_path: Path) -> BasePluginRepo:
+    repo = _fs_repo(tmp_path / "repo", _zip("a", deps=["b"]), _zip("b", deps=["c"]), _zip("c"))
+    install_plugin_archive(_zip("b", deps=["c"]), "b", plugin_repo=repo, check_environment=False)
+    uninstall_plugin("c")
+    assert _installed_names() == {"b"}
+    return repo
+
+
+def test_install_repairs_installed_dependency_missing_its_child(virtual_ida_environment, tmp_path):
+    repo = _install_b_then_remove_c(tmp_path)
+
+    result = install_plugin_archive(_zip("a", deps=["b"]), "a", plugin_repo=repo, check_environment=False)
+
+    assert _committed(result) == ["c", "a"]
+    assert [r.name for r in result.present] == ["b"]
+    assert _installed_names() == {"a", "b", "c"}
+
+
+def test_repair_installed_plugin_reinstalls_missing_dependency(virtual_ida_environment, tmp_path):
+    repo = _install_b_then_remove_c(tmp_path)
+
+    result = repair_installed_plugin("b", plugin_repo=repo, check_environment=False)
+
+    assert _committed(result) == ["c"]
+    assert [r.name for r in result.present] == ["b"]
+    assert _installed_names() == {"b", "c"}
+
+
+def test_repair_installed_plugin_without_repo_fails_when_child_missing(virtual_ida_environment, tmp_path):
+    _install_b_then_remove_c(tmp_path)
+
+    with pytest.raises(DependencyUnavailableError, match="no plugin repository"):
+        repair_installed_plugin("b", check_environment=False)
+
+    assert _installed_names() == {"b"}
 
 
 def test_hash_mismatch_fails_before_mutation(virtual_ida_environment, tmp_path):

@@ -179,8 +179,8 @@ def test_plugin_python_dependencies_rejects_externally_managed_python_without_ru
 
     monkeypatch.setattr("hcli.lib.ida.plugin.install.resolve_current_python", lambda: resolved)
     monkeypatch.setattr("hcli.lib.ida.plugin.install.has_pip", _must_not_run_pip)
-    monkeypatch.setattr("hcli.lib.ida.plugin.install.verify_pip_can_install_packages", _must_not_run_pip)
-    monkeypatch.setattr("hcli.lib.ida.plugin.install.pip_install_packages", _must_not_run_pip)
+    monkeypatch.setattr("hcli.lib.ida.plugin.execute.verify_pip_can_install_packages", _must_not_run_pip)
+    monkeypatch.setattr("hcli.lib.ida.plugin.execute.pip_install_packages", _must_not_run_pip)
 
     plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v3.0.0.zip"
     buf = plugin_path.read_bytes()

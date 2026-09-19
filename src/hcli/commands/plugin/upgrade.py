@@ -140,10 +140,22 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
                     raise click.Abort()
                 effective_pip_options = merge_bundle_pip_options(pip_options, bundle_opts)
                 upgrade_plugin_archive(
-                    buf, plugin_name, pip_options=effective_pip_options, check_environment=check_environment
+                    buf,
+                    plugin_name,
+                    pip_options=effective_pip_options,
+                    check_environment=check_environment,
+                    plugin_repo=plugin_repo,
+                    require_configuration=False,
                 )
         else:
-            upgrade_plugin_archive(buf, plugin_name, pip_options=pip_options, check_environment=check_environment)
+            upgrade_plugin_archive(
+                buf,
+                plugin_name,
+                pip_options=pip_options,
+                check_environment=check_environment,
+                plugin_repo=plugin_repo,
+                require_configuration=False,
+            )
 
         _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 

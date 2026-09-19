@@ -19,7 +19,7 @@ from pydantic import ValidationError
 from hcli.commands.plugin import plugin as plugin_group
 from hcli.commands.plugin.lint import _check_dependency_specs
 from hcli.lib.ida.plugin import DependencySpec, IDAMetadataDescriptor
-from hcli.lib.ida.plugin.dependencies import install_dependencies
+from hcli.lib.ida.plugin.exceptions import DependencyUnavailableError
 from hcli.lib.ida.plugin.install import (
     get_installed_plugin_records,
     install_plugin_archive,
@@ -192,7 +192,7 @@ def test_metadata_serialization_empty_dependencies():
 
 
 # ---------------------------------------------------------------------------
-# install_dependencies (library-level integration tests)
+# Installing a pack resolves its dependencies through the planner
 # ---------------------------------------------------------------------------
 
 
@@ -202,104 +202,88 @@ def test_install_pack_installs_dependencies(virtual_ida_environment):
     dep_b_zip = _make_plugin_zip("dep-b", "2.0.0")
 
     with _make_fs_repo({"dep-a.zip": dep_a_zip, "dep-b.zip": dep_b_zip}) as repo:
-        install_plugin_archive(pack_zip, "my-pack")
+        result = install_plugin_archive(pack_zip, "my-pack", plugin_repo=repo, check_environment=False)
 
-        _, metadata = _parse_metadata(pack_zip, "my-pack")
-        result = install_dependencies(
-            metadata=metadata,
-            plugin_repo=repo,
-            current_platform="macos-aarch64",
-            current_version="9.1",
-        )
-
-    assert set(result.installed) == {"dep-a", "dep-b"}
-    assert not result.failed
+    assert {r.name for r in result.committed_operations} == {"dep-a", "dep-b", "my-pack"}
     assert is_plugin_installed("dep-a")
     assert is_plugin_installed("dep-b")
+    assert is_plugin_installed("my-pack")
 
 
 def test_install_pack_skips_already_installed_dep(virtual_ida_environment):
     dep_a_zip = _make_plugin_zip("dep-a", "1.0.0")
-    install_plugin_archive(dep_a_zip, "dep-a")
+    install_plugin_archive(dep_a_zip, "dep-a", check_environment=False)
 
     pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"])
     with _make_fs_repo({"dep-a.zip": dep_a_zip}) as repo:
-        install_plugin_archive(pack_zip, "my-pack")
+        result = install_plugin_archive(pack_zip, "my-pack", plugin_repo=repo, check_environment=False)
 
-        _, metadata = _parse_metadata(pack_zip, "my-pack")
-        result = install_dependencies(
-            metadata=metadata,
-            plugin_repo=repo,
-            current_platform="macos-aarch64",
-            current_version="9.1",
-        )
-
-    assert result.skipped == ["dep-a"]
-    assert not result.installed
+    assert [r.name for r in result.committed_operations] == ["my-pack"]
+    assert [r.name for r in result.present] == ["dep-a"]
 
 
 def test_install_pack_upgrades_outdated_pinned_dep(virtual_ida_environment):
     dep_a_v1 = _make_plugin_zip("dep-a", "1.0.0")
     dep_a_v2 = _make_plugin_zip("dep-a", "2.0.0")
-    install_plugin_archive(dep_a_v1, "dep-a")
+    install_plugin_archive(dep_a_v1, "dep-a", check_environment=False)
     assert _get_installed_version("dep-a") == "1.0.0"
 
     pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a==2.0.0"])
     with _make_fs_repo({"dep-a-v2.zip": dep_a_v2}) as repo:
-        install_plugin_archive(pack_zip, "my-pack")
+        result = install_plugin_archive(pack_zip, "my-pack", plugin_repo=repo, check_environment=False)
 
-        _, metadata = _parse_metadata(pack_zip, "my-pack")
-        result = install_dependencies(
-            metadata=metadata,
-            plugin_repo=repo,
-            current_platform="macos-aarch64",
-            current_version="9.1",
-        )
-
-    assert result.upgraded == ["dep-a"]
+    dep = result.node_for_name("dep-a")
+    assert dep is not None
+    assert dep.outcome == "upgraded"
+    assert dep.previous_version == "1.0.0"
     assert _get_installed_version("dep-a") == "2.0.0"
 
 
-def test_install_pack_no_downgrade_pinned_dep(virtual_ida_environment):
+def test_install_pack_keeps_newer_installed_dep_over_pin(virtual_ida_environment):
     dep_a_v2 = _make_plugin_zip("dep-a", "2.0.0")
-    install_plugin_archive(dep_a_v2, "dep-a")
+    install_plugin_archive(dep_a_v2, "dep-a", check_environment=False)
 
     pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a==1.0.0"])
     dep_a_v1 = _make_plugin_zip("dep-a", "1.0.0")
     with _make_fs_repo({"dep-a-v1.zip": dep_a_v1}) as repo:
-        install_plugin_archive(pack_zip, "my-pack")
+        result = install_plugin_archive(pack_zip, "my-pack", plugin_repo=repo, check_environment=False)
 
-        _, metadata = _parse_metadata(pack_zip, "my-pack")
-        result = install_dependencies(
-            metadata=metadata,
-            plugin_repo=repo,
-            current_platform="macos-aarch64",
-            current_version="9.1",
-        )
-
-    assert result.skipped == ["dep-a"]
+    assert [r.name for r in result.committed_operations] == ["my-pack"]
+    assert [r.name for r in result.present] == ["dep-a"]
+    assert any("not downgrading" in w for w in result.plan.warnings)
     assert _get_installed_version("dep-a") == "2.0.0"
 
 
-def test_install_pack_partial_dep_failure(virtual_ida_environment):
+def test_install_pack_missing_dep_blocks_whole_install(virtual_ida_environment):
     dep_a_zip = _make_plugin_zip("dep-a", "1.0.0")
 
     pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a", "dep-missing"])
-    with _make_fs_repo({"dep-a.zip": dep_a_zip}) as repo:
-        install_plugin_archive(pack_zip, "my-pack")
+    with (
+        _make_fs_repo({"dep-a.zip": dep_a_zip}) as repo,
+        pytest.raises(DependencyUnavailableError, match="dep-missing"),
+    ):
+        install_plugin_archive(pack_zip, "my-pack", plugin_repo=repo, check_environment=False)
 
-        _, metadata = _parse_metadata(pack_zip, "my-pack")
-        result = install_dependencies(
-            metadata=metadata,
-            plugin_repo=repo,
-            current_platform="macos-aarch64",
-            current_version="9.1",
-        )
+    assert not is_plugin_installed("dep-a")
+    assert not is_plugin_installed("my-pack")
 
-    assert result.installed == ["dep-a"]
-    assert len(result.failed) == 1
-    assert result.failed[0][0] == "dep-missing"
-    assert is_plugin_installed("dep-a")
+
+def test_install_pack_without_repo_fails_when_deps_missing(virtual_ida_environment):
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"])
+
+    with pytest.raises(DependencyUnavailableError, match="no plugin repository"):
+        install_plugin_archive(pack_zip, "my-pack", check_environment=False)
+
+    assert not is_plugin_installed("my-pack")
+
+
+def test_install_pack_without_repo_succeeds_when_deps_present(virtual_ida_environment):
+    install_plugin_archive(_make_plugin_zip("dep-a", "1.0.0"), "dep-a", check_environment=False)
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"])
+
+    result = install_plugin_archive(pack_zip, "my-pack", check_environment=False)
+
+    assert [r.name for r in result.committed_operations] == ["my-pack"]
     assert is_plugin_installed("my-pack")
 
 
@@ -308,7 +292,6 @@ def test_install_pack_local_directory_warns_about_deps(virtual_ida_environment, 
     from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT
 
     pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a", "dep-b"])
-    install_plugin_archive(pack_zip, "my-pack")
     _, metadata = _parse_metadata(pack_zip, "my-pack")
 
     _handle_install_dependencies(
@@ -328,7 +311,7 @@ def test_install_pack_local_directory_warns_about_deps(virtual_ida_environment, 
 
 def test_install_pack_without_dependencies(virtual_ida_environment):
     pack_zip = _make_plugin_zip("my-pack", "1.0.0")
-    install_plugin_archive(pack_zip, "my-pack")
+    install_plugin_archive(pack_zip, "my-pack", check_environment=False)
 
     _, metadata = _parse_metadata(pack_zip, "my-pack")
     assert metadata.plugin.dependencies == []
@@ -346,27 +329,13 @@ def test_upgrade_pack_installs_new_deps(virtual_ida_environment):
     dep_b_zip = _make_plugin_zip("dep-b", "1.0.0")
 
     with _make_fs_repo({"dep-a.zip": dep_a_zip, "dep-b.zip": dep_b_zip}) as repo:
-        install_plugin_archive(pack_v1, "my-pack")
-        _, meta_v1 = _parse_metadata(pack_v1, "my-pack")
-        install_dependencies(
-            metadata=meta_v1,
-            plugin_repo=repo,
-            current_platform="macos-aarch64",
-            current_version="9.1",
-        )
+        install_plugin_archive(pack_v1, "my-pack", plugin_repo=repo, check_environment=False)
+        result = upgrade_plugin_archive(pack_v2, "my-pack", plugin_repo=repo, check_environment=False)
 
-        upgrade_plugin_archive(pack_v2, "my-pack")
-        _, meta_v2 = _parse_metadata(pack_v2, "my-pack")
-        result = install_dependencies(
-            metadata=meta_v2,
-            plugin_repo=repo,
-            current_platform="macos-aarch64",
-            current_version="9.1",
-        )
-
-    assert "dep-b" in result.installed
-    assert "dep-a" in result.skipped
+    assert {r.name: r.outcome for r in result.committed_operations} == {"dep-b": "installed", "my-pack": "upgraded"}
+    assert [r.name for r in result.present] == ["dep-a"]
     assert is_plugin_installed("dep-b")
+    assert _get_installed_version("my-pack") == "2.0.0"
 
 
 def test_upgrade_pack_reports_dropped_deps(virtual_ida_environment):
@@ -379,16 +348,10 @@ def test_upgrade_pack_reports_dropped_deps(virtual_ida_environment):
     dep_b_zip = _make_plugin_zip("dep-b", "1.0.0")
 
     with _make_fs_repo({"dep-a.zip": dep_a_zip, "dep-b.zip": dep_b_zip}) as repo:
-        install_plugin_archive(pack_v1, "my-pack")
+        install_plugin_archive(pack_v1, "my-pack", plugin_repo=repo, check_environment=False)
         _, meta_v1 = _parse_metadata(pack_v1, "my-pack")
-        install_dependencies(
-            metadata=meta_v1,
-            plugin_repo=repo,
-            current_platform="macos-aarch64",
-            current_version="9.1",
-        )
 
-        upgrade_plugin_archive(pack_v2, "my-pack")
+        upgrade_plugin_archive(pack_v2, "my-pack", plugin_repo=repo, check_environment=False)
         _, meta_v2 = _parse_metadata(pack_v2, "my-pack")
 
         buf = io.StringIO()
@@ -413,31 +376,25 @@ def test_upgrade_pack_upgrades_unsatisfied_deps(virtual_ida_environment):
     dep_a_v1 = _make_plugin_zip("dep-a", "1.0.0")
     dep_a_v2 = _make_plugin_zip("dep-a", "2.0.0")
 
-    install_plugin_archive(dep_a_v1, "dep-a")
+    install_plugin_archive(dep_a_v1, "dep-a", check_environment=False)
     assert _get_installed_version("dep-a") == "1.0.0"
 
     pack_v1 = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"])
     pack_v2 = _make_plugin_zip("my-pack", "2.0.0", deps=["dep-a==2.0.0"])
 
     with _make_fs_repo({"dep-a.zip": dep_a_v2}) as repo:
-        install_plugin_archive(pack_v1, "my-pack")
+        install_plugin_archive(pack_v1, "my-pack", plugin_repo=repo, check_environment=False)
+        result = upgrade_plugin_archive(pack_v2, "my-pack", plugin_repo=repo, check_environment=False)
 
-        upgrade_plugin_archive(pack_v2, "my-pack")
-        _, meta_v2 = _parse_metadata(pack_v2, "my-pack")
-        result = install_dependencies(
-            metadata=meta_v2,
-            plugin_repo=repo,
-            current_platform="macos-aarch64",
-            current_version="9.1",
-        )
-
-    assert result.upgraded == ["dep-a"]
+    dep = result.node_for_name("dep-a")
+    assert dep is not None
+    assert dep.outcome == "upgraded"
     assert _get_installed_version("dep-a") == "2.0.0"
 
 
 def test_uninstall_standalone_dep_works_normally(virtual_ida_environment):
     dep_zip = _make_plugin_zip("dep-a", "1.0.0")
-    install_plugin_archive(dep_zip, "dep-a")
+    install_plugin_archive(dep_zip, "dep-a", check_environment=False)
     assert is_plugin_installed("dep-a")
 
     uninstall_plugin("dep-a")
@@ -449,14 +406,15 @@ def test_uninstall_standalone_dep_works_normally(virtual_ida_environment):
 # ---------------------------------------------------------------------------
 
 
-def test_uninstall_pack_lists_deps(virtual_ida_environment):
-    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a", "dep-b"])
-    dep_a_zip = _make_plugin_zip("dep-a", "1.0.0")
-    dep_b_zip = _make_plugin_zip("dep-b", "1.0.0")
+def _install_pack_with_deps(*deps: str) -> None:
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=list(deps))
+    archives = {f"{dep}.zip": _make_plugin_zip(dep, "1.0.0") for dep in deps}
+    with _make_fs_repo(archives) as repo:
+        install_plugin_archive(pack_zip, "my-pack", plugin_repo=repo, check_environment=False)
 
-    install_plugin_archive(pack_zip, "my-pack")
-    install_plugin_archive(dep_a_zip, "dep-a")
-    install_plugin_archive(dep_b_zip, "dep-b")
+
+def test_uninstall_pack_lists_deps(virtual_ida_environment):
+    _install_pack_with_deps("dep-a", "dep-b")
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["uninstall", "my-pack"])
@@ -470,13 +428,7 @@ def test_uninstall_pack_lists_deps(virtual_ida_environment):
 
 
 def test_uninstall_pack_removes_deps_with_yes_flag(virtual_ida_environment):
-    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a", "dep-b"])
-    dep_a_zip = _make_plugin_zip("dep-a", "1.0.0")
-    dep_b_zip = _make_plugin_zip("dep-b", "1.0.0")
-
-    install_plugin_archive(pack_zip, "my-pack")
-    install_plugin_archive(dep_a_zip, "dep-a")
-    install_plugin_archive(dep_b_zip, "dep-b")
+    _install_pack_with_deps("dep-a", "dep-b")
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["uninstall", "--yes", "my-pack"])
@@ -488,11 +440,7 @@ def test_uninstall_pack_removes_deps_with_yes_flag(virtual_ida_environment):
 
 
 def test_uninstall_pack_noninteractive_keeps_deps(virtual_ida_environment):
-    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"])
-    dep_a_zip = _make_plugin_zip("dep-a", "1.0.0")
-
-    install_plugin_archive(pack_zip, "my-pack")
-    install_plugin_archive(dep_a_zip, "dep-a")
+    _install_pack_with_deps("dep-a")
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["uninstall", "my-pack"])

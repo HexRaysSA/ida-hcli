@@ -425,7 +425,7 @@ def test_config_case_insensitive_cli(virtual_ida_environment):
     from hcli.lib.ida.plugin.settings import set_plugin_setting
 
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v5.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", require_configuration=False)
     set_plugin_setting("plugin1", "key1", "value")
 
     runner = CliRunner(mix_stderr=False)
@@ -447,7 +447,7 @@ def test_config_export_requires_installed_plugin(virtual_ida_environment):
     from hcli.lib.ida.plugin.settings import set_plugin_setting
 
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v5.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", require_configuration=False)
     set_plugin_setting("plugin1", "key1", "value")
     uninstall_plugin("plugin1")
 

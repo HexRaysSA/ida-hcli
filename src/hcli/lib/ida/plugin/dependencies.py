@@ -92,8 +92,8 @@ def _install_one_dependency(
     check_environment: bool,
     result: DependencyResult,
     find_installed: Callable[[str], Any],
-    do_install: Callable[..., None],
-    do_upgrade: Callable[..., None],
+    do_install: Callable[..., object],
+    do_upgrade: Callable[..., object],
 ) -> None:
     try:
         installed = find_installed(dep_name)
