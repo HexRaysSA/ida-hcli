@@ -270,6 +270,7 @@ def _install_ida_plugin(ctx: click.Context) -> None:
         plugin=IDA_MCP_PLUGIN,
         editable=False,
         config=(),
+        dependency_config=(),
         no_build_isolation=False,
         upgrade=True,
     )
