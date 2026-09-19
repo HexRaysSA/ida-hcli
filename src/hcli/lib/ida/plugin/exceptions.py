@@ -209,3 +209,78 @@ class PluginAccessDeniedError(Exception):
         else:
             msg += "Your account is not entitled to it."
         super().__init__(msg)
+
+
+class DependencyResolutionError(Exception):
+    """A plugin dependency graph cannot be planned.
+
+    Subclasses describe the expected boundary failures: unavailable targets,
+    unsupported conflicts, component targets, incomplete index metadata, and
+    missing configuration. Only these are eligible to make an optional branch
+    unavailable; anything else propagates as a programming or environment error.
+    """
+
+    def __init__(self, message: str, chain: Sequence[str] = ()):
+        self.chain = tuple(chain)
+        super().__init__(message)
+
+    def describe_chain(self) -> str:
+        return " -> ".join(self.chain)
+
+
+class DependencyUnavailableError(DependencyResolutionError):
+    """A dependency target cannot be selected from the allowed sources."""
+
+    def __init__(self, spec: str, reason: str, chain: Sequence[str] = ()):
+        self.spec = spec
+        self.reason = reason
+        via = f" (required by {' -> '.join(chain)})" if chain else ""
+        super().__init__(f"dependency '{spec}' is unavailable{via}: {reason}", chain)
+
+
+class DependencyConflictError(DependencyResolutionError):
+    """Two declarations need different selections for one plugin identity."""
+
+    def __init__(self, name: str, first: str, second: str, reason: str):
+        self.name = name
+        self.first = first
+        self.second = second
+        self.reason = reason
+        super().__init__(
+            f"conflicting requirements for plugin '{name}': {reason}\n  first: {first}\n  second: {second}"
+        )
+
+
+class DependencyTargetsComponentError(DependencyResolutionError):
+    """A loose dependency names a suite component instead of a plugin."""
+
+    def __init__(self, spec: str, component: str, suite: str, chain: Sequence[str] = ()):
+        self.spec = spec
+        self.component = component
+        self.suite = suite
+        via = f" (declared by {' -> '.join(chain)})" if chain else ""
+        super().__init__(
+            f"dependency '{spec}' targets '{component}', a component of suite '{suite}'{via}; "
+            f"depend on the suite instead",
+            chain,
+        )
+
+
+class IncompleteMetadataError(DependencyResolutionError):
+    """Published metadata lacks embedded components or concrete Python requirements."""
+
+    def __init__(self, name: str, version: str, url: str, reason: str):
+        self.name = name
+        self.version = version
+        self.url = url
+        self.reason = reason
+        super().__init__(f"metadata for {name}=={version} at {url} is not fully expanded: {reason}")
+
+
+class MissingConfigurationError(DependencyResolutionError):
+    """Required settings have no value and cannot be prompted for."""
+
+    def __init__(self, arguments: Sequence[str]):
+        self.arguments = list(arguments)
+        listing = "\n".join(f"  {argument}" for argument in self.arguments)
+        super().__init__(f"missing required settings; supply them with:\n{listing}")

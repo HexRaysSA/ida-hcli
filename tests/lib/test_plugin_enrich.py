@@ -54,10 +54,26 @@ def _descriptor(data: dict) -> IDAMetadataDescriptor:
     return IDAMetadataDescriptor.model_validate(data)
 
 
+def _with_entry_points(files: dict[str, str | bytes]) -> dict[str, str | bytes]:
+    """Add a stub entry point next to each parseable manifest that lacks one."""
+    out: dict[str, str | bytes] = dict(files)
+    for path, content in files.items():
+        if not path.endswith("ida-plugin.json"):
+            continue
+        try:
+            manifest = json.loads(content)
+            entry_point = manifest["plugin"]["entryPoint"]
+        except (ValueError, KeyError, TypeError):
+            continue
+        entry_path = str(Path(path).parent / entry_point)
+        out.setdefault(entry_path, "# plugin")
+    return out
+
+
 def _make_archive(files: dict[str, str | bytes]) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        for path, content in files.items():
+        for path, content in _with_entry_points(files).items():
             zf.writestr(path, content)
     return buf.getvalue()
 
@@ -382,9 +398,11 @@ def test_expand_archive_fails_when_inline_entry_point_missing():
     from hcli.lib.ida.plugin.enrich import expand_metadata_from_archive
 
     root = _make_manifest("suite", python_dependencies="inline")
-    archive = _make_archive({"suite/ida-plugin.json": json.dumps(root)})
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("suite/ida-plugin.json", json.dumps(root))
     with pytest.raises(ValueError, match=r"suite\.py"):
-        expand_metadata_from_archive(archive, Path("suite/ida-plugin.json"))
+        expand_metadata_from_archive(buf.getvalue(), Path("suite/ida-plugin.json"))
 
 
 def test_expand_archive_validates_embedded_source_entries_against_physical_child():
@@ -434,9 +452,10 @@ def test_expand_archive_is_depth_bounded():
 
 
 def _write_tree(base: Path, files: dict[str, str]) -> None:
-    for rel, content in files.items():
+    for rel, content in _with_entry_points(dict(files)).items():
         target = base / rel
         target.parent.mkdir(parents=True, exist_ok=True)
+        assert isinstance(content, str)
         target.write_text(content, encoding="utf-8")
 
 

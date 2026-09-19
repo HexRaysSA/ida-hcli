@@ -14,7 +14,8 @@ import httpx
 
 from hcli.lib.ida import HEXRAYS_REPO_NAME, PluginRepository
 from hcli.lib.ida.plugin.exceptions import PluginAccessDeniedError
-from hcli.lib.ida.plugin.repo import PLUGIN_REPO_HOST, BasePluginRepo, Plugin, repo_from_url
+from hcli.lib.ida.plugin.reference import normalize_plugin_host
+from hcli.lib.ida.plugin.repo import PLUGIN_REPO_HOST, BasePluginRepo, Plugin, PluginArchiveLocation, repo_from_url
 
 logger = logging.getLogger(__name__)
 
@@ -143,3 +144,29 @@ class AggregatePluginRepo(BasePluginRepo):
     def repo_of(self, plugin: Plugin) -> str | None:
         """Which loaded repository served this plugin."""
         return self._owner.get(id(plugin))
+
+    def _owner_of_location(self, location: PluginArchiveLocation) -> str | None:
+        wanted_name = location.metadata.plugin.name.lower()
+        wanted_host = normalize_plugin_host(location.metadata.plugin.host)
+        for name, plugins in self._plugins.items():
+            for plugin in plugins:
+                if plugin.name.lower() != wanted_name or normalize_plugin_host(plugin.host) != wanted_host:
+                    continue
+                for candidate in plugin.versions.get(location.metadata.plugin.version, []):
+                    if candidate.url == location.url and candidate.sha256 == location.sha256:
+                        return name
+        return None
+
+    def describe_location_source(self, location: PluginArchiveLocation) -> str | None:
+        return self._owner_of_location(location)
+
+    def fetch_location(self, location: PluginArchiveLocation) -> bytes:
+        """Fetch through the child repository that served ``location``.
+
+        The child may override transport (a bundle reads from its own zip), so
+        the aggregate never fetches a location itself when an owner is known.
+        """
+        owner = self._owner_of_location(location)
+        if owner is None:
+            return super().fetch_location(location)
+        return self._children[owner].fetch_location(location)

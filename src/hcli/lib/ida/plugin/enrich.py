@@ -16,6 +16,7 @@ from hcli.lib.ida.plugin import (
     get_file_content_from_plugin_archive_at,
     get_python_dependencies_from_plugin_directory,
     parse_pep723_metadata,
+    validate_metadata_in_plugin_archive,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,8 +33,9 @@ def expand_metadata_from_archive(zip_data: bytes, root_manifest_path: Path) -> I
     Raises:
         ValueError: when a manifest is missing or malformed, a component name does
             not match its directory, an embedded source entry disagrees with the
-            physical manifest, an inline entry point cannot be read, or nesting
-            exceeds ``MAX_COMPONENT_DEPTH``.
+            physical manifest, an entry point or logo is missing at any node, an
+            inline entry point cannot be read, or nesting exceeds
+            ``MAX_COMPONENT_DEPTH``.
     """
     with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
         members = set(zip_file.namelist())
@@ -99,6 +101,10 @@ def _expand_archive_node(
     with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
         raw = zip_file.read(manifest_key)
     descriptor = _parse_manifest(raw, manifest_key)
+    try:
+        validate_metadata_in_plugin_archive(zip_data, manifest_path, descriptor)
+    except ValueError as e:
+        raise ValueError(f"{manifest_key}: {e}") from e
 
     python_dependencies = descriptor.plugin.python_dependencies
     if python_dependencies == "inline":
@@ -140,6 +146,12 @@ def _expand_directory_node(
     if not manifest_file.is_file():
         raise ValueError(f"ida-plugin.json not found at {manifest_file}")
     descriptor = _parse_manifest(manifest_file.read_bytes(), str(manifest_file))
+    from hcli.lib.ida.plugin.install import validate_metadata_in_plugin_directory
+
+    try:
+        validate_metadata_in_plugin_directory(plugin_dir)
+    except ValueError as e:
+        raise ValueError(f"{manifest_file}: {e}") from e
 
     try:
         python_dependencies = get_python_dependencies_from_plugin_directory(plugin_dir, descriptor)

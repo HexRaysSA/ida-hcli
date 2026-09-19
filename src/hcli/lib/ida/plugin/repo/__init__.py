@@ -340,6 +340,22 @@ class BasePluginRepo(ABC):
         location = self.find_compatible_plugin_from_spec(plugin_spec, current_platform, current_version, host=host)
         return self._fetch_and_verify(location)
 
+    def fetch_location(self, location: PluginArchiveLocation) -> bytes:
+        """Download the exact archive at ``location`` and verify its digest.
+
+        Planning selects a location without fetching it; execution fetches
+        that same location so a different artifact is never substituted.
+
+        Raises:
+            ValueError: when the downloaded bytes do not match ``location.sha256``.
+        """
+        _, buf = self._fetch_and_verify(location)
+        return buf
+
+    def describe_location_source(self, location: PluginArchiveLocation) -> str | None:
+        """Return the configured repository name that serves ``location``, when known."""
+        return None
+
     def _fetch_and_verify(self, location: PluginArchiveLocation) -> tuple[str, bytes]:
         plugin_name = location.metadata.plugin.name
         logger.debug("plugin name: %s", plugin_name)
