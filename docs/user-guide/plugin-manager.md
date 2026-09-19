@@ -125,7 +125,7 @@ A plugin can declare other plugins as dependencies in its `ida-plugin.json`. Eac
 
 When you install or upgrade a plugin, HCLI plans the whole dependency tree before it downloads anything. Dependencies of dependencies are included at any depth. Each dependency is installed as an independent top-level plugin from the same repository. A dependency must name a top-level plugin. It may not name a suite component.
 
-A required dependency that cannot be resolved blocks the install. An optional dependency that cannot be resolved is skipped and reported.
+A required dependency that cannot be resolved blocks the install. An optional dependency that cannot be resolved is skipped and reported. An optional dependency is also skipped when it needs a different version of a plugin that the same operation already installed for an earlier dependency. The output names the conflict.
 
 HCLI selects a version for each dependency as follows:
 
@@ -154,7 +154,7 @@ Plugin installation is transactional. If any step fails, HCLI removes the plugin
 
 If a plugin is installed but some of its dependencies are missing, run `hcli plugin install --upgrade <plugin-name>`. When the installed version is already the newest available, this installs the missing dependencies and leaves the plugin as it is.
 
-On upgrade, HCLI installs newly declared dependencies and tells you about dependencies removed from the manifest. They stay installed so you can remove them yourself if no longer needed.
+On upgrade, HCLI installs newly declared dependencies and tells you about dependencies removed from the manifest or declared with a different version or host. Removed dependencies stay installed so you can remove them yourself if no longer needed.
 
 On uninstall, HCLI reports installed plugins that depend on the plugin you are removing, including declarations made by suite components:
 
