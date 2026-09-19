@@ -125,7 +125,7 @@ A plugin can declare other plugins as dependencies in its `ida-plugin.json`. Eac
 
 When you install or upgrade a plugin, HCLI plans the whole dependency tree before it downloads anything. Dependencies of dependencies are included at any depth. Each dependency is installed as an independent top-level plugin. Dependencies are looked up across every configured repository, or in the one given with `--repo`; a `repo/` prefix on the command line scopes only the plugin you named. A plugin named on the command line that no repository carries fails with `plugin '<name>' was not found`. A dependency must name a top-level plugin. It may not name a suite component.
 
-A required dependency that cannot be resolved blocks the install. An optional dependency that cannot be resolved is skipped and reported. An optional dependency is also skipped when it needs a different version of a plugin that the same operation already installed for an earlier dependency, or when it claims a plugin name, its own or a component's, that an earlier optional dependency already owns. The output names the conflict.
+A dependency graph with more than 1000 plugins is rejected before any download. A required dependency that cannot be resolved blocks the install. An optional dependency that cannot be resolved is skipped and reported. An optional dependency is also skipped when it needs a different version of a plugin that the same operation already installed for an earlier dependency, or when it claims a plugin name, its own or a component's, that an earlier optional dependency already owns. The output names the conflict.
 
 HCLI selects a version for each dependency as follows:
 
@@ -136,7 +136,7 @@ HCLI selects a version for each dependency as follows:
 | Installed, no pin or pin equal to the installed version | Installed version is kept |
 | Installed at a lower version than the pin | Upgraded to the pinned version |
 | Installed at a higher version than the pin | Installed version is kept, with a warning |
-| Installed from a different repository host than the reference | Install fails |
+| Installed from a different host than a host-qualified dependency reference | Install fails with a conflict error |
 
 Dependencies that declare required settings can be configured on the command line with `--dependency-config plugin.key=value`. A value for an optional dependency that turned out to be unavailable is ignored with a warning. In an interactive terminal, HCLI prompts for missing required settings before it changes anything.
 

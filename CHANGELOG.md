@@ -3,6 +3,7 @@
 ## unreleased
 
 ### Added
+- Resolve `dependencies` declared in `ida-plugin.json` recursively during plugin `install` and `upgrade`, with optional dependencies, `--dependency-config plugin.key=value`, `install --upgrade` to add missing dependencies, dependency-aware `uninstall`, and bundles that include required dependencies
 - Add `--allowed-editions` to `hcli asset put` to gate an asset by licence edition, addon code, or `any_edition`
 - Warn when IDA's Python version (registered by idapyswitch) doesn't match the active virtualenv, in `explain-environment` and before installing plugin dependencies
 - Honor `$IDAPYTHON_VENV_EXECUTABLE` for plugin dependency management
@@ -20,6 +21,7 @@
 - Validate all plugin paths before extracting any
 
 ### Changed
+- Plugin `install` and `upgrade` are transactional: on failure, added plugins are removed, upgraded plugins are restored, and configuration changes are reverted
 - Log the Python-relevant environment variables (`VIRTUAL_ENV`, `PYTHONHOME`, `PATH`, ...) passed to `idat` at debug level
 
 ## [0.15.13] - 2026-01-27
