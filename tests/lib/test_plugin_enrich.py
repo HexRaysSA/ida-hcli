@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 from pydantic import ValidationError
@@ -65,7 +66,7 @@ def _with_entry_points(files: dict[str, str | bytes]) -> dict[str, str | bytes]:
             entry_point = manifest["plugin"]["entryPoint"]
         except (ValueError, KeyError, TypeError):
             continue
-        entry_path = str(Path(path).parent / entry_point)
+        entry_path = (PurePosixPath(path).parent / entry_point).as_posix()
         out.setdefault(entry_path, "# plugin")
     return out
 
@@ -236,7 +237,7 @@ def test_archive_walker_requires_component_at_exact_child_path():
             "elsewhere/comp-a/comp-a.py": "# component",
         }
     )
-    with pytest.raises(ValueError, match=r"suite/comp-a/ida-plugin\.json"):
+    with pytest.raises(ValueError, match=re.escape(str(Path("suite/comp-a/ida-plugin.json")))):
         walk_component_tree_from_archive(misplaced, Path("suite/ida-plugin.json"), _descriptor(suite))
 
     placed = _make_archive(
@@ -248,7 +249,7 @@ def test_archive_walker_requires_component_at_exact_child_path():
         }
     )
     tree = walk_component_tree_from_archive(placed, Path("suite/ida-plugin.json"), _descriptor(suite))
-    assert [(str(p), m.plugin.name) for p, m in tree] == [("suite/comp-a/ida-plugin.json", "comp-a")]
+    assert [(p.as_posix(), m.plugin.name) for p, m in tree] == [("suite/comp-a/ida-plugin.json", "comp-a")]
 
 
 def test_undeclared_detection_uses_paths_not_names():
@@ -264,7 +265,7 @@ def test_undeclared_detection_uses_paths_not_names():
         }
     )
     undeclared = find_undeclared_plugins_in_archive(archive, Path("suite/ida-plugin.json"), _descriptor(suite))
-    assert [str(p) for p, _ in undeclared] == ["suite/stray/ida-plugin.json"]
+    assert [p.as_posix() for p, _ in undeclared] == ["suite/stray/ida-plugin.json"]
 
 
 # ---------------------------------------------------------------------------

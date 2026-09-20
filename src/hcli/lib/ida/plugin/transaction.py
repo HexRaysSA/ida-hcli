@@ -185,7 +185,7 @@ class InstallTransaction:
         self._check_open()
         previous = path.read_bytes() if path.exists() else None
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        path.write_bytes(content.encode("utf-8"))
         self.journal.append(PthFileChange(path, previous))
 
     def remove_pth(self, path: Path) -> None:
