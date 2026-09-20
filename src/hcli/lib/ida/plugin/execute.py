@@ -11,11 +11,17 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import sys
 from collections.abc import Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Self
+from typing import Literal
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 import httpx
 
