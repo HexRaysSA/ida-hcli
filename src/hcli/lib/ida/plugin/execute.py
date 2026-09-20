@@ -198,8 +198,8 @@ def _canonical(descriptor: IDAMetadataDescriptor) -> dict[str, object]:
         "entry point": plugin.entry_point,
         "platforms": sorted(plugin.platforms),
         "IDA versions": sorted(plugin.ida_versions),
-        "components": sorted((("/".join(p)), d.plugin.version) for p, d in iter_expanded_components(descriptor)),
-        "dependencies": sorted((("/".join(p)), d.plugin, d.required) for p, d in iter_dependency_specs(descriptor)),
+        "components": sorted(("/".join(p), d.plugin.version) for p, d in iter_expanded_components(descriptor)),
+        "dependencies": sorted(("/".join(p), d.plugin, d.required) for p, d in iter_dependency_specs(descriptor)),
         "Python dependencies": sorted(python_deps) if python_deps is not None else None,
         "settings": _canonical_settings(descriptor),
     }

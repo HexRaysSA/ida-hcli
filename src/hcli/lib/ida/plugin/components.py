@@ -19,8 +19,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["MAX_COMPONENT_DEPTH"]
-
 
 def walk_component_tree_from_directory(
     plugin_dir: Path,

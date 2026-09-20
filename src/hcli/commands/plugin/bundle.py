@@ -207,7 +207,7 @@ def create(
         with rich.status.Status("planning bundle contents", console=stderr_console):
             contents = plan_bundle_contents(plugin_specs, parent_repo, target_platforms)
     except (DependencyResolutionError, PlatformIncompatibleError, IDAVersionIncompatibleError, ValueError) as e:
-        console.print(f"[red]error[/red]: {e}")
+        console.print(f"[red]Error[/red]: {e}")
         raise click.Abort()
 
     with tempfile.TemporaryDirectory(prefix="hcli-bundle-staging-") as staging_dir:
