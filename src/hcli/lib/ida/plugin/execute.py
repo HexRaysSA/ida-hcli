@@ -678,8 +678,9 @@ class _Executor:
             node = branch.nodes[identity]
             if identity in self.present or any(r.identity == identity for r in self.result.nodes):
                 continue
+            outcome: NodeOutcome = "present" if not node.mutates else "unavailable"
             self.result.nodes.append(
-                NodeResult(identity, node.name, node.version, node.operation, "unavailable", branch.index)
+                NodeResult(identity, node.name, node.version, node.operation, outcome, branch.index)
             )
 
     def _run_branch(self, branch: OptionalBranch) -> None:
@@ -713,6 +714,8 @@ class _Executor:
             return
         requirements: list[str] = []
         for node in nodes:
+            if not node.mutates:
+                continue
             for requirement in node.python_requirements():
                 if requirement not in requirements:
                     requirements.append(requirement)
@@ -815,7 +818,7 @@ def execute_install(
         return result
     except BaseException as e:
         result = executor.result
-        mutated = len(txn.journal) > savepoint.position or result.pip_attempted
+        mutated = len(txn.journal) > savepoint.position or result.pip_attempted or isinstance(e, RollbackError)
         failure: BaseException = e
         recovery: RollbackError | None = None
         if isinstance(e, RollbackError) and e.original is not None:
@@ -827,6 +830,11 @@ def execute_install(
                 txn.rollback_to(savepoint)
         except RollbackError as rollback_error:
             recovery = _merge_rollback_errors(recovery, rollback_error)
+        except BaseException as interrupt:
+            result.mark_rolled_back()
+            result.recovery = recovery
+            setattr(interrupt, "install_result", result)  # noqa: B010
+            raise
         result.mark_rolled_back()
         result.recovery = recovery
         if not mutated:

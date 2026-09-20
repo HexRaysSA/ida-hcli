@@ -157,6 +157,23 @@ def virtual_ida_environment(temp_hcli_idausr_dir, hook_current_platform, hook_cu
     yield
 
 
+@pytest.fixture
+def virtual_ida_environment_without_python(virtual_ida_environment):
+    """Like `virtual_ida_environment`, but IDA's Python is pinned to a path that does not exist.
+
+    Also points the IDA install directory at an empty directory so that
+    Python resolution never falls back to probing a real IDA installation.
+    """
+    idausr_dir = Path(os.environ["HCLI_IDAUSR"])
+    install_dir = idausr_dir / "no-ida"
+    install_dir.mkdir()
+    with (
+        temp_env_var("HCLI_CURRENT_IDA_PYTHON_EXE", str(idausr_dir / "missing-python")),
+        temp_env_var("HCLI_CURRENT_IDA_INSTALL_DIR", str(install_dir)),
+    ):
+        yield
+
+
 def get_python_exe_for_venv(venv_path: Path) -> Path:
     return venv_path / "Scripts" / "python.exe" if os.name == "nt" else venv_path / "bin" / "python"
 

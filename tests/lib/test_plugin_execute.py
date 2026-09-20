@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 from fixtures import *
-from fixtures import temp_env_var
 from test_plugin_bundle import _build_bundle_zip, _make_manifest
 from test_plugin_resolve import HOST, _fs_repo, _manifest, _place_installed, _repo, _suite_zip, _zip
 
@@ -23,6 +22,7 @@ from hcli.lib.ida.plugin.exceptions import (
     DependencyInstallationError,
     DependencyUnavailableError,
     InstallExecutionError,
+    PipNotAvailableError,
     PlanMetadataMismatchError,
     PluginInstallationError,
 )
@@ -47,7 +47,6 @@ from hcli.lib.ida.plugin.resolve import (
     plan_install,
 )
 from hcli.lib.ida.plugin.transaction import InstallTransaction, PreconditionChangedError, PublishedDirectory
-from hcli.lib.ida.python import PythonNotFoundError
 
 
 def _context(repo: BasePluginRepo | None) -> ResolutionContext:
@@ -900,7 +899,7 @@ def test_shared_optional_dependency_with_setting_survives_both_branches(virtual_
     assert get_ida_config().plugins["d"].settings == {"token": "shared"}
 
 
-def test_optional_branch_without_python_is_skipped_and_root_kept(virtual_ida_environment, tmp_path):
+def test_optional_branch_without_python_is_skipped_and_root_kept(virtual_ida_environment_without_python, tmp_path):
     repo = _fs_repo(
         tmp_path / "repo",
         _zip("a", deps=[{"plugin": "b", "required": False}]),
@@ -909,14 +908,30 @@ def test_optional_branch_without_python_is_skipped_and_root_kept(virtual_ida_env
     context = _context(repo)
     plan = _plan(context, repo, "a")
 
-    with temp_env_var("IDAPYTHON_VENV_EXECUTABLE", str(tmp_path / "missing-python")):
-        result = _run(context, plan)
+    result = _run(context, plan)
 
     assert _committed(result) == ["a"]
     assert _installed_names() == {"a"}
     assert result.pip_attempted is False
     assert [b.edge.spec.plugin for b, _ in result.unavailable_optionals] == ["b"]
     assert "python" in result.unavailable_optionals[0][1].lower()
+
+
+def test_retained_optional_dependency_with_python_requirements_never_probes_python(
+    virtual_ida_environment_without_python, tmp_path
+):
+    _place_installed(_zip("b", python_deps=["packaging==25.0"]), "b")
+    repo = _fs_repo(tmp_path / "repo", _zip("a", deps=[{"plugin": "b", "required": False}]))
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+
+    result = _run(context, plan)
+
+    assert _committed(result) == ["a"]
+    assert result.unavailable_optionals == []
+    assert result.pip_attempted is False
+    assert [(n.name, n.outcome) for n in result.nodes if n.name == "b"] == [("b", "present")]
+    assert _installed_names() == {"a", "b"}
 
 
 def test_configuration_for_retained_dependency_is_written(virtual_ida_environment, tmp_path):
@@ -996,7 +1011,7 @@ def test_bundle_without_matching_target_proceeds_when_requirements_come_from_ano
     assert "packaging==25.0" in _pip_freeze()
 
 
-def test_plan_without_python_work_never_probes_python(virtual_ida_environment, tmp_path):
+def test_plan_without_python_work_never_probes_python(virtual_ida_environment_without_python, tmp_path):
     _place_installed(_zip("kept", python_deps=["packaging==24.0"]), "kept")
     _place_installed(_suite_zip("suite", "1.0.0", [("comp", "1.0.0", {"python_deps": ["pyyaml"]})]), "suite")
     (get_plugins_directory() / "suite" / "comp" / "ida-plugin.json").write_text("{not json")
@@ -1004,23 +1019,19 @@ def test_plan_without_python_work_never_probes_python(virtual_ida_environment, t
     context = _context(repo)
     plan = _plan(context, repo, "a")
 
-    with temp_env_var("IDAPYTHON_VENV_EXECUTABLE", str(tmp_path / "missing-python")):
-        result = _run(context, plan)
+    result = _run(context, plan)
 
     assert _committed(result) == ["a"]
     assert result.pip_attempted is False
     assert _installed_names() == {"a", "kept", "suite"}
 
 
-def test_plan_with_python_work_still_needs_python(virtual_ida_environment, tmp_path):
+def test_plan_with_python_work_still_needs_python(virtual_ida_environment_without_python, tmp_path):
     repo = _fs_repo(tmp_path / "repo", _zip("a", python_deps=["packaging==25.0"]))
     context = _context(repo)
     plan = _plan(context, repo, "a")
 
-    with (
-        temp_env_var("IDAPYTHON_VENV_EXECUTABLE", str(tmp_path / "missing-python")),
-        pytest.raises(PythonNotFoundError),
-    ):
+    with pytest.raises(PipNotAvailableError):
         _run(context, plan)
 
     assert _installed_names() == set()
@@ -1068,3 +1079,29 @@ def test_failed_optional_branch_rollback_keeps_branch_failure_as_cause(virtual_i
     assert isinstance(excinfo.value.cause, PluginInstallationError)
     assert [str(f) for f in recovery.failures] == ["cannot remove b"]
     assert _installed_names() == {"b"}
+
+
+def test_failed_optional_branch_under_retained_root_reports_rollback(virtual_ida_environment, tmp_path):
+    _place_installed(_zip("a", deps=[{"plugin": "c", "required": False}]), "a")
+    repo = _fs_repo(tmp_path / "repo", _zip("c", deps=["b"]), _zip("b"))
+    context = _context(repo)
+    plan = plan_install(context, [InstalledRoot("a")])
+    txn = _UnremovableTransaction(get_plugins_directory(), "c", PluginInstallationError("c is corrupt"), stuck="b")
+
+    try:
+        with (
+            pytest.raises(InstallExecutionError, match=r"c is corrupt.*rollback incomplete") as excinfo,
+            prepare_install(plan, context, check_environment=False) as prepared,
+        ):
+            execute_install(prepared, transaction=txn)
+    finally:
+        if not txn.finished:
+            txn.rollback()
+
+    assert isinstance(excinfo.value.cause, PluginInstallationError)
+    assert "c is corrupt" in str(excinfo.value.cause)
+    recovery = excinfo.value.recovery
+    assert recovery is not None
+    assert [str(f) for f in recovery.failures] == ["cannot remove b"]
+    assert [n.name for n in excinfo.value.result.present] == ["a"]
+    assert _installed_names() == {"a", "b"}
