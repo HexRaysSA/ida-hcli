@@ -306,7 +306,7 @@ def get_installed_plugin_records() -> list[InstalledPluginRecord]:
     """Enumerate installed plugins with their on-disk metadata.
 
     This is the canonical source of truth for "what is installed". Other
-    helpers (``get_installed_plugin_paths``, ``is_plugin_installed``, etc.)
+    helpers (``find_installed_plugin``, ``is_plugin_installed``, etc.)
     are implemented on top of this list so they agree on what counts as
     installed.
     """
@@ -393,10 +393,6 @@ def resolve_installed_plugin_directory(name: str) -> Path:
         PluginNotInstalledError: when no matching installed plugin exists.
     """
     return find_installed_plugin(name).path
-
-
-def get_installed_plugin_paths() -> list[Path]:
-    return [r.path for r in get_installed_plugin_records()]
 
 
 @dataclass

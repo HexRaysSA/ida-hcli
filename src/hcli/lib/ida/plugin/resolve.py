@@ -632,6 +632,20 @@ def _label(node_name: str, path: tuple[str, ...]) -> str:
 class _Planner:
     def __init__(self, context: ResolutionContext):
         self.context = context
+        self._archive_manifests: dict[ArchiveRoot, tuple[Path, IDAMetadataDescriptor]] = {}
+
+    def _archive_manifest(self, request: ArchiveRoot) -> tuple[Path, IDAMetadataDescriptor]:
+        """Locate the root manifest in a local archive once per request."""
+        from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
+
+        found = self._archive_manifests.get(request)
+        if found is None:
+            if request.plugin_name is not None:
+                found = get_metadata_from_plugin_archive(request.zip_data, request.plugin_name)
+            else:
+                found = find_root_manifest_in_archive(request.zip_data)
+            self._archive_manifests[request] = found
+        return found
 
     def _check_compatible(self, metadata: IDAMetadataDescriptor) -> None:
         platforms = metadata.plugin.platforms
@@ -996,13 +1010,9 @@ class _Planner:
                 return self._retained_root(installed, edge, [])
 
             if isinstance(request, ArchiveRoot):
-                from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
                 from hcli.lib.ida.plugin.enrich import expand_metadata_from_archive
 
-                if request.plugin_name is not None:
-                    manifest_path = get_metadata_path_from_plugin_archive(request.zip_data, request.plugin_name)
-                else:
-                    manifest_path, _ = find_root_manifest_in_archive(request.zip_data)
+                manifest_path, _ = self._archive_manifest(request)
                 metadata = expand_metadata_from_archive(request.zip_data, manifest_path)
                 self._check_compatible(metadata)
                 installed = self.context.find_installed(metadata.plugin.name)
@@ -1074,13 +1084,7 @@ class _Planner:
         if isinstance(request, LocationRoot):
             plugin = request.location.metadata.plugin
         elif isinstance(request, ArchiveRoot):
-            from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
-
-            if request.plugin_name is not None:
-                _, descriptor = get_metadata_from_plugin_archive(request.zip_data, request.plugin_name)
-            else:
-                _, descriptor = find_root_manifest_in_archive(request.zip_data)
-            plugin = descriptor.plugin
+            plugin = self._archive_manifest(request)[1].plugin
         elif isinstance(request, InstalledRoot):
             installed = self.context.find_installed(request.name)
             if installed is None:

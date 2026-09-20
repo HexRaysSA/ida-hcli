@@ -489,6 +489,14 @@ def prepare_install(
     )
 
 
+class _DestinationChangedError(PreconditionChangedError):
+    """A planned destination changed; ``identity`` names the node whose check failed."""
+
+    def __init__(self, identity: PluginIdentity, message: str) -> None:
+        super().__init__(message)
+        self.identity = identity
+
+
 class _Executor:
     def __init__(self, prepared: PreparedInstall, txn: InstallTransaction, *, require_configuration: bool = True):
         self.prepared = prepared
@@ -563,11 +571,18 @@ class _Executor:
             raise InvalidPluginNameError(node.name, str(e)) from e
 
     def _check_destinations(self, nodes: list[PlannedNode]) -> None:
-        """Recheck every destination before pip runs, since Python changes are never rolled back."""
+        """Recheck every destination before pip runs, since Python changes are never rolled back.
+
+        Raises:
+            _DestinationChangedError: naming the first node whose destination no longer matches the plan.
+        """
         for node in nodes:
             if node.operation == "editable" and node.installed is None:
                 continue
-            self._check_destination(node, self._destination(node))
+            try:
+                self._check_destination(node, self._destination(node))
+            except PreconditionChangedError as e:
+                raise _DestinationChangedError(node.identity, str(e)) from e
 
     def _apply_node(self, node: PlannedNode, branch: int | None) -> None:
         previous = node.installed.version if node.installed is not None else None
@@ -672,13 +687,19 @@ class _Executor:
             self._apply_node(node, None)
         self._apply_configuration(self.plan.ordered_nodes())
 
-    def _skip_branch(self, branch: OptionalBranch, reason: str) -> None:
+    def _drop_skipped_entries(self, nodes: list[PlannedNode]) -> None:
+        """Forget entries an earlier skipped branch recorded for nodes this branch is about to handle."""
+        identities = {node.identity for node in nodes}
+        self.result.nodes[:] = [entry for entry in self.result.nodes if entry.identity not in identities]
+
+    def _skip_branch(self, branch: OptionalBranch, reason: str, *, failed: PluginIdentity | None = None) -> None:
+        """Record the branch as unavailable; ``failed`` is the retained node whose destination check failed."""
         self.result.unavailable_optionals.append((branch, reason))
         for identity in branch.order:
             node = branch.nodes[identity]
             if identity in self.present or any(r.identity == identity for r in self.result.nodes):
                 continue
-            outcome: NodeOutcome = "present" if not node.mutates else "unavailable"
+            outcome: NodeOutcome = "present" if not node.mutates and identity != failed else "unavailable"
             self.result.nodes.append(
                 NodeResult(identity, node.name, node.version, node.operation, outcome, branch.index)
             )
@@ -729,10 +750,11 @@ class _Executor:
             except (PythonNotFoundError, PluginInstallationError) as e:
                 self._skip_branch(branch, str(e))
                 return
+        pending = [node for node in nodes if node.identity not in self.present]
+        self._drop_skipped_entries(pending)
         savepoint: Savepoint = self.txn.savepoint()
         before = len(self.result.nodes)
         try:
-            pending = [node for node in nodes if node.identity not in self.present]
             self._check_destinations(pending)
             if python_exe is not None:
                 combined = self.plan.combined_python_requirements([*self.accepted_branches, branch.index])
@@ -757,7 +779,8 @@ class _Executor:
             reason = str(e)
             if rolled_back:
                 reason += f"; rolled back {', '.join(rolled_back)}"
-            self._skip_branch(branch, reason)
+            failed = e.identity if isinstance(e, _DestinationChangedError) else None
+            self._skip_branch(branch, reason, failed=failed)
             return
         self.accepted_branches.append(branch.index)
 

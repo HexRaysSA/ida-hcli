@@ -202,7 +202,7 @@ A plugin can declare other plugins as loose dependencies via the `dependencies` 
 
 A string entry is a required dependency. The object form sets `required` to `false` to mark the dependency optional: HCLI installs it when it can and skips it otherwise. Objects accept only the `plugin` and `required` keys.
 
-When a user installs or upgrades a plugin that declares dependencies, HCLI resolves each one from the same repository, including dependencies of dependencies at any depth, and installs it as an independent top-level plugin. A dependency must name a top-level plugin, never a suite component. Dependencies that are already installed and satisfy the spec are skipped. If a pinned dependency is installed at a lower version, it is upgraded automatically; a higher installed version is not downgraded. A required dependency that cannot be resolved blocks the install, and any changes already made are rolled back.
+When a user installs or upgrades a plugin that declares dependencies, HCLI looks each one up across every configured repository, or only the repository given with `--repo`, including dependencies of dependencies at any depth, and installs it as an independent top-level plugin. A dependency must name a top-level plugin, never a suite component. Dependencies that are already installed and satisfy the spec are skipped. If a pinned dependency is installed at a lower version, it is upgraded automatically; a higher installed version is not downgraded. A required dependency that cannot be resolved blocks the install, and any changes already made are rolled back.
 
 Dependencies are not bundled inside the declaring plugin's archive. Each dependency is its own plugin with its own `ida-plugin.json` and its own archive in the repository.
 

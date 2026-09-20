@@ -1105,3 +1105,47 @@ def test_failed_optional_branch_under_retained_root_reports_rollback(virtual_ida
     assert [str(f) for f in recovery.failures] == ["cannot remove b"]
     assert [n.name for n in excinfo.value.result.present] == ["a"]
     assert _installed_names() == {"a", "b"}
+
+
+def test_retained_node_shared_by_skipped_and_installed_branches_is_reported_once(
+    virtual_ida_environment, tmp_path, capsys
+):
+    from hcli.commands.plugin._install_flow import report_install_result
+
+    _place_installed(_zip("d"), "d")
+    repo = _mixed_repo(
+        tmp_path,
+        reachable=[
+            _zip("a", deps=[{"plugin": "b", "required": False}, {"plugin": "c", "required": False}]),
+            _zip("c", deps=["d"]),
+        ],
+        unreachable=[_zip("b", deps=["d"])],
+    )
+    context = _context(repo)
+
+    result = _run(context, _plan(context, repo, "a"))
+
+    assert [(n.name, n.outcome) for n in result.nodes if n.name == "d"] == [("d", "present")]
+    assert _committed(result) == ["a", "c"]
+    assert [b.edge.spec.plugin for b, _ in result.unavailable_optionals] == ["b"]
+    report_install_result(result)
+    assert capsys.readouterr().out.count("Present dependency: d") == 1
+
+
+def test_retained_node_removed_after_planning_is_reported_unavailable(virtual_ida_environment, tmp_path):
+    _place_installed(_zip("d"), "d")
+    repo = _fs_repo(
+        tmp_path / "repo",
+        _zip("a", deps=[{"plugin": "b", "required": False}]),
+        _zip("b", deps=["d"]),
+    )
+    context = _context(repo)
+    plan = _plan(context, repo, "a")
+    shutil.rmtree(get_plugins_directory() / "d")
+
+    result = _run(context, plan)
+
+    assert _committed(result) == ["a"]
+    assert {n.name: n.outcome for n in result.nodes} == {"a": "installed", "b": "unavailable", "d": "unavailable"}
+    assert len(result.unavailable_optionals) == 1
+    assert "d was removed" in result.unavailable_optionals[0][1]

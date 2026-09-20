@@ -559,3 +559,36 @@ def test_install_upgrade_flag_with_older_local_archive_keeps_installed_version(v
     result = runner.invoke(plugin_group, ["--repo", str(PLUGINS_DIR), "install", str(older)])
     assert result.exit_code != 0
     assert ("plugin1", "2.0.0") in get_installed_plugins()
+
+
+def test_install_plugin_directory_editable_links_source_and_installs_dependency(
+    virtual_ida_environment_with_venv, tmp_path
+):
+    from test_plugin_resolve import _fs_repo, _manifest, _zip
+
+    from hcli.lib.ida.plugin.install import install_plugin_directory_editable
+
+    source = tmp_path / "a-src"
+    (source / "src").mkdir(parents=True)
+    (source / "ida-plugin.json").write_text(json.dumps(_manifest("a", "1.0.0", deps=["b"])))
+    (source / "a.py").write_text("# plugin")
+    repo = _fs_repo(tmp_path / "repo", _zip("b"))
+
+    result = install_plugin_directory_editable(source, "a", plugin_repo=repo, check_environment=False)
+
+    assert [(n.name, n.outcome) for n in result.nodes] == [("b", "installed"), ("a", "editable")]
+    link = get_plugin_directory("a")
+    assert link.is_symlink() and link.resolve() == source.resolve()
+    assert is_plugin_installed("b")
+    site_packages = Path(
+        subprocess.check_output(
+            [
+                os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"],
+                "-c",
+                "import sysconfig; print(sysconfig.get_paths()['purelib'])",
+            ],
+            text=True,
+        ).strip()
+    )
+    pth = site_packages / "_hcli_editable_a.pth"
+    assert pth.read_text().strip() == str((source / "src").resolve())
