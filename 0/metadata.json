@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "01M2ZT8WM1N3E3Y560AT6T84NG",
+  "session_id": "f8671e1a-5e41-46a2-93c0-c513b8e13d85",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-20T16:27:02.409905Z",
+  "branch": "recursive-dependency-resolution",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "src/hcli/commands/plugin/bundle.py",
+    "src/hcli/lib/ida/plugin/components.py",
+    "src/hcli/lib/ida/plugin/execute.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-6",
+  "turn_id": "515837308eed",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 36464,
+    "cache_read_tokens": 1064442,
+    "output_tokens": 7670,
+    "api_call_count": 26
+  },
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-20T16:27:02.38652Z",
+    "agent_lines": 3,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 3,
+    "total_lines_changed": 8,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 235,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".codex/hooks.json": 88,
+        ".pi/extensions/entire/index.ts": 147
+      }
+    }
+  ]
+}

@@ -1,0 +1,197 @@
+do a thorough review of the final diff of this PR.
+
+of course, highlight any bugs. but also pay close attention to keeping this consistent, concise, clear. fix inconsistencies throughout, maintaining style with the existing codebase.
+
+then ensure any relevant documentation is updated. make as minimal changes as possible.
+
+finally, update the PR description to reflect the final implementation.
+
+---
+
+<task-notification>
+<task-id>af763e05c5b946e78</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli--claude-worktree-recursive-deps/f8671e1a-5e41-46a2-93c0-c513b8e13d85/tasks/af763e05c5b946e78.output</output-file>
+<status>completed</status>
+<summary>Agent "Review resolve.py module" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here's my review of `resolve.py`:
+
+**Findings:**
+
+1. **resolve.py:201 — `assert` for runtime data validation.** `assert isinstance(deps, list)` is a runtime check on data from plugin metadata. Asserts are stripped with `-O`. However, this is consistent with how the rest of the file uses `assert` (e.g., line 1021 `assert installed is not None`). The line-1021 style asserts are narrowing asserts for the type checker, which is fine. The line-201 assert is a data validation concern that could fail at runtime — but it's inside an internal method on an already-validated dataclass, so the risk is minimal. **Not a bug, but noting it.**
+
+2. **resolve.py:1109 — `assert value is not None` after `present=True`.** `stored_setting` returns `(True, plugin_config.settings[key])`, and `settings` is a dict that can hold `None` values. If someone stores `None` in the config, this asserts false. Looking at `IDAConfigJson` — settings is `dict[str, str | bool]`, so `None` is not a valid stored value. The assert is safe type narrowing. **No bug.**
+
+3. **resolve.py:1-13 — Module docstring is quite long.** The codebase neighbors use single-line docstrings (`components.py:1`). This 13-line docstring is atypical. However, this is a complex new module and the docstring is genuinely useful for orientation. The user's style prefers no comments, but module-level docstrings for complex modules seem reasonable. **Style note, not a bug.**
+
+4. **resolve.py:913 — `frame.pending.pop(0)` is O(n).** For large dependency lists this is quadratic. A `collections.deque` would be O(1) popleft. In practice, `pending` per node is the dependency count of one plugin — typically single digits — so this is not a real performance issue. **No bug.**
+
+5. **No dead imports.** All imports are used. `Iterable`, `Iterator`, `Mapping`, `Sequence`, `Callable`, `partial`, `hashlib`, `httpx` — all exercised.
+
+6. **Exception patterns are consistent with the codebase.** Custom exceptions from `exceptions.py`, `ValueError` for malformed data, `KeyError` from repos — matches `install.py` and `components.py`.
+
+7. **The `register` closure at line 1146** shadows the `branch` loop variable from line 1161 with the parameter name — actually no, it captures `branch` from the parameter at call site. Wait — `register(node, None)` and `register(node, branch.index)` — the function takes `branch: int | None` as a parameter, and the loop variable is `branch: OptionalBranch`. The local parameter shadows fine. **No bug.**
+
+8. **`_plan_optional` line 1187 — `worklist.pop(0)` is O(n).** Same as finding 4 — deque would be better for BFS. But the worklist is bounded by `max_nodes` (1000) and in practice optional branches are few. **Not a real issue.**
+
+No bugs found. The module is well-structured, consistent with the codebase style, and the exception handling patterns match. The naming conventions (underscored private methods, `_Graph`/`_Frame`/`_Closure` internal classes) are clean and consistent.</result>
+<usage><subagent_tokens>52471</subagent_tokens><tool_uses>9</tool_uses><duration_ms>43425</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6544ad81413e9772</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli--claude-worktree-recursive-deps/f8671e1a-5e41-46a2-93c0-c513b8e13d85/tasks/a6544ad81413e9772.output</output-file>
+<status>completed</status>
+<summary>Agent "Review documentation changes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good — the old `hcli plugin dependencies install` command was removed, and the docs correctly no longer mention it.
+
+Here are my findings:
+
+1. **No `docs/plans/spec.md` or `docs/plans/design.md`** — the project has no plans directory. No action needed since the user instructions say to update them "if appropriate" and this project doesn't use them.
+
+2. **`docs/schemas/ida-plugin.json`**: The refactored schema moves `IDAMetadataDescriptor` into `$defs` and uses `$ref`. This is semantically equivalent but loses the root-level `"type": "object"` declaration. Some JSON Schema validators require `type` at the root even with `$ref`. This is technically valid in 2020-12 (which allows `$ref` alongside other keywords), but minor. Not a bug, just a note.
+
+3. **`docs/reference/plugin-packaging-and-format.md`**: The old text mentioned `hcli plugin dependencies install` covering component dependencies. The new text removes that sentence, which is correct since the command was deleted. Good.
+
+4. **`docs/reference/plugin-bundle-spec.md`**: The new text says "Plugin dependencies are resolved from the bundle like from any other repository." This is accurate — bundles act as file repos.
+
+5. **`docs/user-guide/plugin-manager.md`**: The new dependency table and examples are accurate and match the resolver logic in `resolve.py`. The 1000-node limit matches `MAX_PLAN_NODES = 1000`. The `--dependency-config` flag exists in both `install.py` and `upgrade.py`. The "was not found" error message matches `exceptions.py:242`.
+
+6. **`CHANGELOG.md` and `docs/changelog.md`**: Both correctly summarize the feature. The CHANGELOG entry is under `unreleased` / `Added` and `Changed`, matching the PR scope.
+
+7. **`docs/reference/plugins-AGENT.md`**: Updated to show the object dependency form. The comment says "resolved recursively" which matches. Clean.
+
+8. **All docs consistently use**: "required" for string entries, "optional" for `{required: false}` object entries, "transactional" for the install/upgrade behavior, "plugin dependencies" (not "companion plugins" except in uninstall context where "companion" refers to removal candidates). Terminology is consistent.
+
+No bugs or stale references found in the documentation. The docs accurately reflect the implementation.</result>
+<usage><subagent_tokens>42103</subagent_tokens><tool_uses>17</tool_uses><duration_ms>48525</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a0282faf268925fdc</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli--claude-worktree-recursive-deps/f8671e1a-5e41-46a2-93c0-c513b8e13d85/tasks/a0282faf268925fdc.output</output-file>
+<status>completed</status>
+<summary>Agent "Review execute.py and transaction.py" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here's a summary of my findings:
+
+**Findings for execute.py and transaction.py:**
+
+1. **transaction.py:229 — Redundant `plugin_config is not None` guard.** When `existed` is `True`, the definition on line 228 (`existed = plugin_config is not None and key in plugin_config.settings`) guarantees `plugin_config is not None`, making the second check tautological. Not a bug, but reads as though the author wasn't sure.
+
+2. **execute.py:201-202 — Extra parentheses in tuple construction.** `(("/".join(p)), d.plugin.version)` has a redundant pair of parens around `"/".join(p)`. Works fine, but reads oddly.
+
+3. **execute.py:22-24 — `Self` import for a single context manager.** This is the only file in the codebase using the `Self` / `typing_extensions` conditional import. `PreparedInstall.__enter__` could return `PreparedInstall` instead, avoiding the import and the version branch. Minor style inconsistency with the rest of the codebase.
+
+4. **execute.py — Four repeated `from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo` inline imports (lines ~331, 349, 356, 387).** These are intentional cycle-breakers, but `_is_bundle_sourced`, `_required_bundle_python_requirements`, `_bundle_owners`, `_all_remote_from_bundles`, and `_effective_pip_options` are all private module-level helpers, not methods on a class that the bundle module references. If the cycle is only at import time, a single `TYPE_CHECKING` guard or a top-level lazy import would reduce noise.
+
+5. **No bugs found in the core rollback logic.** The journal-pop + `BaseException` handler pattern in `_undo` correctly handles interrupted undo (lines 306-322). The `_retain` call for an already-popped entry whose undo failed checks `checkpoint_path.exists()` as expected. The interrupt handler moves both the current entry and all remaining journal entries to recovery, which is the right behavior.
+
+6. **No dead code or unused imports found.**</result>
+<usage><subagent_tokens>56110</subagent_tokens><tool_uses>20</tool_uses><duration_ms>69296</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ab5f9cb8f51756788</task-id>
+<tool-use-id>toolu_01BxeRdpfszFBBWiNwFq13xV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli--claude-worktree-recursive-deps/f8671e1a-5e41-46a2-93c0-c513b8e13d85/tasks/ab5f9cb8f51756788.output</output-file>
+<status>completed</status>
+<summary>Agent "Review command layer changes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>`RootRequest` is used in the return type annotation — it's needed.
+
+Here are my findings for the command layer:
+
+**Findings:**
+
+1. **bundle.py:210** — lowercase `[red]error[/red]` inconsistent with the rest of the codebase which uses `[red]Error[/red]` (line 50 of the same file). The pre-existing line 197 has the same issue but it's on main. The new line 210 should match the dominant pattern.
+
+2. No bugs or logic errors found. The install/upgrade/uninstall commands have been cleanly refactored to use the shared `_install_flow` module. The `PluginVersionDowngradeError` → `InstalledRoot` fallback in install.py (lines 205-216) is correct — it catches the case where `--upgrade` is set but the installed version is newer, and replans against the installed root to still repair dependencies.
+
+3. `_install_flow.py` has good structure: `report_install_result`, `report_install_failure`, and `report_interrupted_install` all follow the same pattern. `collect_configuration` properly gates interactive prompting on `console.is_interactive`. No dead code.
+
+4. `uninstall.py` correctly now checks for **dependents** (who depends on the target) and **companions** (what the target depends on). The `find_remaining_declarers` check in `_remove_companions` correctly skips removing a dependency that another installed plugin still declares.
+
+5. upgrade.py: The `--config` option is absent (only `--dependency-config` is present), which is correct since upgrade targets an already-installed plugin whose own settings are already stored.
+
+6. No unused imports found (all imports verified against usages).</result>
+<usage><subagent_tokens>70306</subagent_tokens><tool_uses>18</tool_uses><duration_ms>65869</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a0655652aea7cb65c</task-id>
+<tool-use-id>toolu_0181eTsPzsRLePrsNdAHhN4D</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli--claude-worktree-recursive-deps/f8671e1a-5e41-46a2-93c0-c513b8e13d85/tasks/a0655652aea7cb65c.output</output-file>
+<status>completed</status>
+<summary>Agent "Review lib support modules" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good. I've reviewed the support/library modules thoroughly. Let me compile the findings.
+
+**Review of support/library files against main:**
+
+1. **`components.py:22` — dead `__all__`**: `__all__ = ["MAX_COMPONENT_DEPTH"]` re-exports a symbol imported from `__init__.py`, but no module in the codebase imports `MAX_COMPONENT_DEPTH` from `components`. This is leftover from when `MAX_COMPONENT_DEPTH` was defined here. Should be removed.
+
+2. **`exceptions.py:238-244` — `PluginNotFoundError` bypasses parent `__init__`**: `PluginNotFoundError(DependencyUnavailableError)` calls `DependencyResolutionError.__init__` directly, skipping `DependencyUnavailableError.__init__`. This means the `.spec` and `.reason` attributes are set manually but the `.chain` attribute from the grandparent gets `()` from the default. That's intentional (user-facing errors have no chain), but the class also inherits `isinstance` checks for `DependencyUnavailableError` while not initializing it. No bug in practice since nothing accesses `.chain` on `PluginNotFoundError` specifically, but the skip is fragile.
+
+3. **No dangling imports**: `dependencies.py` was fully replaced by `dependents.py`. Zero references remain to the deleted module, `set_setting_for_metadata`, `check_component_name_collisions`, `collect_python_dependencies_from_archive`, or `get_version_from_plugin_archive`. Clean.
+
+4. **Exception hierarchy is clean**: `DependencyResolutionError` (planning) and its subclasses form a tree distinct from `PluginInstallationError` (execution). `BundleTargetUnavailableError` and `InstallExecutionError` both under `PluginInstallationError` — correct. `PluginNotFoundError` under `DependencyUnavailableError` under `DependencyResolutionError` — hierarchy matches semantics.
+
+5. **`__init__.py` public surface**: New exports (`DependencySpec`, `MAX_COMPONENT_DEPTH`, `get_component_name`, `iter_component_names`, `iter_expanded_components`, `iter_dependency_specs`, `validate_expanded_for_planning`, `is_expanded_for_planning`, `get_ida_plugin_json_schema`, `get_file_content_from_plugin_archive_at`) are all used by other modules in this PR. The `model_rebuild()` call after `IDAMetadataDescriptor` is necessary for the recursive `components` field. Clean.
+
+6. **`repo/__init__.py` indexing change**: `index_plugin_archive` now publishes only roots (not suite components), expands their metadata, and continues on validation failure instead of returning early. The sha256 digest was correctly hoisted before the per-manifest loop. Correct.
+
+7. **`dependents.py` — `get_owned_names` calls `_owned_hosts` but discards the values**: Correct — it only needs the key set. The naming asymmetry (`get_owned_names` vs `_owned_hosts`) is minor but the public API (`get_owned_names`) is clear.
+
+8. **`enrich.py` — `_expand_directory_node` defers import**: `from hcli.lib.ida.plugin.install import validate_metadata_in_plugin_directory` is imported inside the function body. This avoids a circular import (`install.py` imports from `__init__.py` which would import from `enrich.py`). Correct pattern.
+
+**Summary**: One concrete cleanup (dead `__all__` in `components.py`). No bugs found in the library layer. Exception hierarchy, re-exports, and the `dependencies.py` → `dependents.py` migration are clean.</result>
+<usage><subagent_tokens>63219</subagent_tokens><tool_uses>19</tool_uses><duration_ms>64752</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a95648afdd9e43cb8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli--claude-worktree-recursive-deps/f8671e1a-5e41-46a2-93c0-c513b8e13d85/tasks/a95648afdd9e43cb8.output</output-file>
+<status>completed</status>
+<summary>Agent "Review test files for quality" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have a thorough picture. Let me compile the findings.
+
+**Task: Review test files for quality and consistency.**
+
+## Findings
+
+1. **`tests/lib/test_plugin_install.py:162-183` — monkeypatch.setattr used to stub production functions.** The `test_plugin_python_dependencies_rejects_externally_managed_python_without_running_pip` test uses `monkeypatch.setattr` on four different module-level functions. This is mocking by another name (patching callables at the module level to intercept behavior). However, this test predates the PR — it was only minimally touched (lines 182-183 changed the module path from `install` to `execute`). Not a new violation, but worth noting as a pre-existing departure from the no-mocks rule.
+
+2. **`tests/lib/fixtures.py:23,34` — `set_env_var`/`unset_env_var` use `monkeypatch.setattr`.** These helpers use `monkeypatch` to set/unset environment variables and `ENV` attributes. This is a legitimate pytest pattern for env var manipulation (not stubbing behavior), so it's consistent with the spirit of the no-mocks rule. No issue.
+
+3. **No session-scoped fixtures in any new test file.** Every test creates its own temp directories and repos. `virtual_ida_environment` is function-scoped (sets up/tears down env vars per test). This is correct — these tests mutate shared state (the plugins directory), so session scoping would cause interference. No issue.
+
+4. **No class-based test classes.** The only classes in the new files (`_FailingAfterConfigTransaction`, `_FailingTransaction`, `_UnremovableTransaction`, `_InterruptedUndoTransaction`) are test helper subclasses of `InstallTransaction` used to inject faults, not `unittest.TestCase` subclasses. Consistent with functional style.
+
+5. **No always-passing or vacuous tests found.** Every test function I reviewed has at least one meaningful assertion tied to the operation being tested.
+
+6. **Test naming is consistent.** All names follow `test_&lt;scenario_description&gt;` pattern. The new files use longer descriptive names (`test_optional_branch_rollback_names_the_nodes_it_undid`) which is consistent with the existing codebase style.
+
+7. **No ordering dependencies.** Each test uses `virtual_ida_environment` which gives a fresh temp IDAUSR, so tests are isolated. The `_place_installed` and `_install` helpers operate within that per-test directory.
+
+8. **Helper reuse across files (`test_plugin_execute.py:15-16`).** `test_plugin_execute` imports `_fs_repo`, `_manifest`, `_place_installed`, `_repo`, `_suite_zip`, `_zip` from `test_plugin_resolve`. This is a practical approach and is consistent with the other test files (e.g. `test_plugin_install_flow.py:8`, `test_plugin_uninstall.py:8`, `test_named_repos.py:14`). If these grow further, extracting to a shared module would be cleaner, but it's fine for now.
+
+**Summary:** No bugs or test-quality issues found. The one monkeypatch usage in `test_plugin_install.py:180-183` is pre-existing (only the module path was updated). All new test code is clean, functional-style, well-isolated, and consistently named.</result>
+<usage><subagent_tokens>55526</subagent_tokens><tool_uses>21</tool_uses><duration_ms>62416</duration_ms></usage>
+</task-notification>

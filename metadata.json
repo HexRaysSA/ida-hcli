@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "01M2ZT8WM1N3E3Y560AT6T84NG",
+  "strategy": "manual-commit",
+  "branch": "recursive-dependency-resolution",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "src/hcli/commands/plugin/bundle.py",
+    "src/hcli/lib/ida/plugin/components.py",
+    "src/hcli/lib/ida/plugin/execute.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 36464,
+    "cache_read_tokens": 1064442,
+    "output_tokens": 7670,
+    "api_call_count": 26
+  }
+}
