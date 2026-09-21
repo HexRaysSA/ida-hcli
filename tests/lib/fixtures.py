@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import logging
 import os
@@ -8,10 +10,14 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from hcli.env import ENV
+
+if TYPE_CHECKING:
+    from hcli.lib.ida.plugin.context import InstallContext
 
 logger = logging.getLogger(__name__)
 _THIS_FILE = Path(__file__)
@@ -209,6 +215,32 @@ def install_this_package_in_venv(venv_path: Path):
     # using uv is a few seconds faster, which is nicer for interactive dev
     _ = subprocess.run(
         ["uv", "pip", "install", "--python=" + str(python_exe.absolute()), str(PROJECT_DIR.absolute())], check=True
+    )
+
+
+def make_test_install_context(**overrides) -> InstallContext:
+    """Build an InstallContext with deterministic test values."""
+    from hcli.lib.ida.plugin.context import IDAEnvironment, InstallContext, InstallOptions
+    from hcli.lib.ida.python import PipOptions
+
+    env_kwargs: dict = {
+        "platform": os.environ.get("HCLI_CURRENT_IDA_PLATFORM", "linux-x86_64"),
+        "ida_version": os.environ.get("HCLI_CURRENT_IDA_VERSION", "9.1"),
+    }
+    opts_kwargs: dict = {
+        "pip_options": PipOptions(),
+        "check_environment": True,
+    }
+    for k, v in overrides.items():
+        if k in env_kwargs:
+            env_kwargs[k] = v
+        elif k in opts_kwargs:
+            opts_kwargs[k] = v
+        else:
+            raise TypeError(f"unexpected keyword argument: {k}")
+    return InstallContext(
+        env=IDAEnvironment(**env_kwargs),
+        options=InstallOptions(**opts_kwargs),
     )
 
 

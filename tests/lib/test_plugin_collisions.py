@@ -407,10 +407,13 @@ def test_upgrade_not_installed_fails(tmp_path, virtual_ida_environment):
 
 def test_uninstall_case_insensitive_cli(virtual_ida_environment):
     """`plugin uninstall PLUGIN1` finds $IDAUSR/plugins/plugin1."""
+    from fixtures import make_test_install_context
+
     from hcli.lib.ida.plugin.install import install_plugin_archive, is_plugin_installed
 
+    ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
     assert is_plugin_installed("plugin1")
 
     runner = CliRunner(mix_stderr=False)
@@ -421,11 +424,14 @@ def test_uninstall_case_insensitive_cli(virtual_ida_environment):
 
 def test_config_case_insensitive_cli(virtual_ida_environment):
     """`plugin config PLUGIN1 ...` resolves to the installed plugin's directory and record."""
+    from fixtures import make_test_install_context
+
     from hcli.lib.ida.plugin.install import install_plugin_archive
     from hcli.lib.ida.plugin.settings import set_plugin_setting
 
+    ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v5.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
     set_plugin_setting("plugin1", "key1", "value")
 
     runner = CliRunner(mix_stderr=False)
@@ -443,11 +449,14 @@ def test_config_case_insensitive_cli(virtual_ida_environment):
 
 
 def test_config_export_requires_installed_plugin(virtual_ida_environment):
+    from fixtures import make_test_install_context
+
     from hcli.lib.ida.plugin.install import install_plugin_archive, uninstall_plugin
     from hcli.lib.ida.plugin.settings import set_plugin_setting
 
+    ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v5.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
     set_plugin_setting("plugin1", "key1", "value")
     uninstall_plugin("plugin1")
 

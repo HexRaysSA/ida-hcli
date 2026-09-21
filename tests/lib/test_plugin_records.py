@@ -2,7 +2,7 @@
 
 import pytest
 from fixtures import *
-from fixtures import PLUGINS_DIR
+from fixtures import PLUGINS_DIR, make_test_install_context
 
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
 from hcli.lib.ida.plugin.install import (
@@ -16,8 +16,9 @@ from hcli.lib.ida.plugin.install import (
 
 
 def test_installed_plugin_records(virtual_ida_environment):
+    ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
 
     records = get_installed_plugin_records()
     assert len(records) == 1
@@ -30,8 +31,9 @@ def test_installed_plugin_records(virtual_ida_environment):
 
 def test_installed_plugin_lookup_is_case_insensitive(virtual_ida_environment):
     """the user may type a different case than the on-disk directory."""
+    ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
 
     expected_path = find_installed_plugin("plugin1").path
     for name in ("plugin1", "PLUGIN1", "Plugin1"):
@@ -44,8 +46,9 @@ def test_installed_plugin_lookup_is_case_insensitive(virtual_ida_environment):
 
 
 def test_find_installed_plugin_host_filter(virtual_ida_environment):
+    ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
 
     # the host in the fixture metadata is https://github.com/HexRaysSA/ida-hcli
     assert find_installed_plugin("plugin1", host="https://github.com/HexRaysSA/ida-hcli").name == "plugin1"
