@@ -376,16 +376,18 @@ def _expand_components(
     *,
     _depth: int = 0,
 ) -> IDAMetadataDescriptor:
-    if _depth > 10:
-        raise ValueError("component nesting exceeds maximum depth")
+    from hcli.lib.ida.plugin.components import MAX_COMPONENT_DEPTH
+
+    if _depth >= MAX_COMPONENT_DEPTH:
+        raise ValueError(f"component nesting exceeds maximum depth ({MAX_COMPONENT_DEPTH})")
 
     expanded: list[str | IDAMetadataDescriptor] = []
     for entry in metadata.plugin.components:
-        component_name = get_component_name(entry)
         if isinstance(entry, IDAMetadataDescriptor):
             expanded.append(entry)
             continue
 
+        component_name = get_component_name(entry)
         if component_name not in metadatas_by_name:
             raise ValueError(f"component '{component_name}' not found in archive")
 

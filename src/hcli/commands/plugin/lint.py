@@ -349,7 +349,6 @@ def _lint_plugin_directory(plugin_path: Path) -> int:
 
 
 def _check_root_manifest_at_top_level(
-    zip_data: bytes,
     plugins_found: list[tuple[Path, IDAMetadataDescriptor]],
     source_name: str,
 ) -> int:
@@ -419,7 +418,7 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
         recommendation_count += 1
         return recommendation_count
 
-    recommendation_count += _check_root_manifest_at_top_level(zip_data, plugins_found, source_name)
+    recommendation_count += _check_root_manifest_at_top_level(plugins_found, source_name)
 
     for metadata_path, metadata in plugins_found:
         plugin_source_name = f"{source_name}:{metadata_path}"
