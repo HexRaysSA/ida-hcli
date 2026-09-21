@@ -1224,6 +1224,8 @@ def apply_upgrade(
                 )
             )
 
+    # Required dependency failures are not fatal for upgrades: the plugin
+    # files are already at the new version and cannot be cheaply reversed.
     install_results, _required_failure = _install_loose_dependencies(metadata, plugin_repo, ctx, named or None)
     dep_results.extend(install_results)
 
@@ -1255,6 +1257,7 @@ def _install_loose_dependencies(
         A tuple of (results, required_failure). When required_failure is True,
         the caller should roll back the parent plugin.
     """
+    # Deferred: dependencies.py imports from install.py at module level.
     from hcli.lib.ida.plugin.dependencies import install_dependencies
     from hcli.lib.ida.plugin.reference import DependencyEntry
 
