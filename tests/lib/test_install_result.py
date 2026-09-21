@@ -7,8 +7,6 @@ def test_install_status_values():
     assert InstallStatus.SUCCESS.value == "success"
     assert InstallStatus.ALREADY_INSTALLED.value == "already_installed"
     assert InstallStatus.FAILED.value == "failed"
-    assert InstallStatus.ROLLED_BACK.value == "rolled_back"
-    assert InstallStatus.SKIPPED_OPTIONAL.value == "skipped_optional"
 
 
 def test_install_result_construction():
@@ -35,16 +33,15 @@ def test_install_result_with_reason():
 
 
 def test_install_result_frozen():
+    import pytest
+
     result = InstallResult(
         plugin="my-plugin",
         version="1.0.0",
         status=InstallStatus.SUCCESS,
     )
-    try:
+    with pytest.raises(AttributeError):
         result.plugin = "other"  # type: ignore[misc]
-        assert False, "should have raised"
-    except AttributeError:
-        pass
 
 
 def test_install_result_nested_dependencies():

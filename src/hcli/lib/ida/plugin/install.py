@@ -1185,6 +1185,9 @@ def apply_upgrade(
             reason=str(e),
         )
 
+    # The upgrade itself already succeeded; the plugin is at the new version.
+    # Rolling back on a settings failure would be worse than leaving settings
+    # unconfigured, so just warn.
     if root_settings and not apply_resolved_settings(plugin_name, metadata, root_settings):
         logger.warning("failed to configure settings during upgrade")
 
