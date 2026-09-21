@@ -9,6 +9,7 @@ import uuid
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import rich.status
 
@@ -748,6 +749,110 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
             raise
 
 
+def apply_plugin_archive_files(
+    zip_data: bytes,
+    plugin_subdirectory: Path,
+    destination: Path,
+    plugin_name: str,
+) -> None:
+    """Write plugin files from a zip archive to disk.
+
+    Cleans up any stale editable .pth file first, then extracts the archive
+    into a staging area and atomically renames it to the destination.
+
+    This function performs only disk operations and no validation.
+    """
+    _remove_editable_pth_file(plugin_name)
+    extract_zip_subdirectory_to(zip_data, plugin_subdirectory, destination)
+
+
+def apply_plugin_editable_files(
+    source_dir: Path,
+    destination: Path,
+    plugin_name: str,
+) -> None:
+    """Create a symlink for an editable plugin install.
+
+    Removes any existing install at the destination (file, directory, or stale
+    symlink), creates a symlink to ``source_dir``, and writes a .pth file for
+    src-layout projects.
+
+    This function performs only disk operations and no validation.
+    """
+    if destination.is_symlink() or destination.is_file():
+        destination.unlink()
+    elif destination.exists():
+        remove_plugin_directory(destination)
+
+    try:
+        destination.symlink_to(source_dir, target_is_directory=True)
+    except OSError as e:
+        raise ValueError(
+            f"Failed to create symlink {destination} -> {source_dir}: {e}. "
+            "On Windows, symlink creation requires Developer Mode or "
+            "administrator privileges."
+        ) from e
+
+    logger.info("symlinked %s -> %s", destination, source_dir)
+
+    src_dir = source_dir / "src"
+    if src_dir.is_dir():
+        _write_editable_pth_file(plugin_name, src_dir)
+    else:
+        _remove_editable_pth_file(plugin_name)
+
+
+def apply_plugin_files(
+    *,
+    mode: Literal["archive", "editable", "upgrade"],
+    destination: Path,
+    plugin_name: str,
+    zip_data: bytes | None = None,
+    plugin_subdirectory: Path | None = None,
+    source_dir: Path | None = None,
+) -> None:
+    """Write plugin files to disk after validation and pip dependencies are installed.
+
+    Delegates to ``apply_plugin_archive_files`` or ``apply_plugin_editable_files``
+    for the actual I/O, adding rollback logic for upgrades.
+
+    Raises:
+        ValueError: for editable symlink failures.
+        PluginInUseError: when the upgrade target is locked.
+        NoSpaceError: when disk is full during extraction.
+    """
+    if mode == "archive":
+        assert zip_data is not None and plugin_subdirectory is not None
+        apply_plugin_archive_files(zip_data, plugin_subdirectory, destination, plugin_name)
+
+    elif mode == "editable":
+        assert source_dir is not None
+        apply_plugin_editable_files(source_dir, destination, plugin_name)
+
+    elif mode == "upgrade":
+        assert zip_data is not None and plugin_subdirectory is not None
+        rollback_path = move_plugin_directory_to_trash(destination, label=".rollback")
+        try:
+            apply_plugin_archive_files(zip_data, plugin_subdirectory, destination, plugin_name)
+        except Exception as e:
+            logger.debug("error during upgrade: install: %s", e)
+            logger.debug("rolling back to prior version")
+            shutil.rmtree(destination, ignore_errors=True)
+            if destination.exists():
+                logger.error(
+                    "could not restore previous version: partial upgrade remains at %s; uninstall and reinstall",
+                    destination,
+                )
+            else:
+                os.rename(rollback_path, destination)
+            raise
+        else:
+            try:
+                shutil.rmtree(rollback_path)
+            except OSError as e:
+                logger.debug("could not delete rollback copy %s: %s (leaving for later sweep)", rollback_path, e)
+
+
 def _install_plugin_archive(
     zip_data: bytes,
     name: str,
@@ -782,9 +887,7 @@ def _install_plugin_archive(
                 logger.debug("can't install dependencies")
                 raise
 
-    _remove_editable_pth_file(metadata.plugin.name)
-
-    extract_zip_subdirectory_to(zip_data, plugin_subdirectory, destination_path)
+    apply_plugin_archive_files(zip_data, plugin_subdirectory, destination_path, metadata.plugin.name)
 
 
 def install_plugin_archive(
@@ -892,36 +995,7 @@ def install_plugin_directory_editable(source_dir: Path, name: str, ctx: InstallC
                 logger.debug("can't install dependencies")
                 raise
 
-    # Remove any existing install at the target. is_symlink() is checked
-    # before exists() because a broken symlink fails exists() but should
-    # still be replaced.
-    if destination_path.is_symlink() or destination_path.is_file():
-        destination_path.unlink()
-    elif destination_path.exists():
-        remove_plugin_directory(destination_path)
-
-    try:
-        destination_path.symlink_to(source_dir, target_is_directory=True)
-    except OSError as e:
-        raise ValueError(
-            f"Failed to create symlink {destination_path} -> {source_dir}: {e}. "
-            "On Windows, symlink creation requires Developer Mode or "
-            "administrator privileges."
-        ) from e
-
-    logger.info("symlinked %s -> %s", destination_path, source_dir)
-
-    # If the project uses the standard src-layout, drop a .pth file into IDA's
-    # site-packages so the package is importable. This mirrors what
-    # `pip install -e .` does (PEP 660). For flat-layout projects, IDA already
-    # exposes the plugin directory on sys.path (because plugin.py is exec'd
-    # from there), so no .pth is needed -- but we still clear any stale one
-    # left over from a prior src-layout install.
-    src_dir = source_dir / "src"
-    if src_dir.is_dir():
-        _write_editable_pth_file(metadata.plugin.name, src_dir)
-    else:
-        _remove_editable_pth_file(metadata.plugin.name)
+    apply_plugin_editable_files(source_dir, destination_path, metadata.plugin.name)
 
 
 def _editable_pth_filename(plugin_name: str) -> str:
@@ -1048,8 +1122,11 @@ def validate_can_upgrade_plugin(
     metadata: IDAMetadataDescriptor,
     metadata_path: Path,
     ctx: InstallContext,
-) -> None:
+) -> Path | None:
     """Verify plugin can be upgraded.
+
+    Returns:
+        The Python executable path if pip dependencies were validated, None otherwise.
 
     Raises:
         InvalidPluginNameError: If plugin name is invalid
@@ -1081,7 +1158,7 @@ def validate_can_upgrade_plugin(
         logger.warning(f"Current IDA version not supported: {ctx.env.ida_version}")
         raise IDAVersionIncompatibleError(ctx.env.ida_version, metadata.plugin.ida_versions)
 
-    validate_can_install_python_dependencies(zip_data, metadata, metadata_path, ctx, excluded_plugins={name})
+    return validate_can_install_python_dependencies(zip_data, metadata, metadata_path, ctx, excluded_plugins={name})
 
 
 def upgrade_plugin_archive(
@@ -1089,13 +1166,16 @@ def upgrade_plugin_archive(
     name: str,
     ctx: InstallContext,
 ):
+    if not is_source_plugin_archive(zip_data, name) and not is_binary_plugin_archive(zip_data, name):
+        raise ValueError("Invalid plugin archive")
+
     path, metadata = get_metadata_from_plugin_archive(zip_data, name)
     validate_metadata_in_plugin_archive(zip_data, path, metadata)
 
     if not is_plugin_installed(metadata.plugin.name):
         raise PluginNotInstalledError(metadata.plugin.name)
 
-    validate_can_upgrade_plugin(zip_data, metadata, path, ctx)
+    python_exe = validate_can_upgrade_plugin(zip_data, metadata, path, ctx)
 
     plugin_path = get_plugin_directory(metadata.plugin.name)
     existing_metadata = get_metadata_from_plugin_directory(plugin_path)
@@ -1111,24 +1191,24 @@ def upgrade_plugin_archive(
             metadata.plugin.name, existing_metadata.plugin.version, metadata.plugin.version
         )
 
-    rollback_path = move_plugin_directory_to_trash(plugin_path, label=".rollback")
-
-    try:
-        install_plugin_archive(zip_data, name, ctx)
-    except Exception as e:
-        logger.debug("error during upgrade: install: %s", e)
-        logger.debug("rolling back to prior version")
-        shutil.rmtree(plugin_path, ignore_errors=True)
-        if plugin_path.exists():
-            logger.error(
-                "could not restore previous version: partial upgrade remains at %s; uninstall and reinstall",
-                plugin_path,
-            )
-        else:
-            os.rename(rollback_path, plugin_path)
-        raise
-    else:
+    python_dependencies = collect_python_dependencies_from_archive(zip_data, path, metadata)
+    if python_dependencies:
+        all_python_dependencies = collect_all_python_dependencies(
+            python_dependencies,
+            get_installed_plugin_records(),
+            exclude_names={metadata.plugin.name},
+        )
+        assert python_exe is not None
         try:
-            shutil.rmtree(rollback_path)
-        except OSError as e:
-            logger.debug("could not delete rollback copy %s: %s (leaving for later sweep)", rollback_path, e)
+            pip_install_packages(python_exe, all_python_dependencies, pip_options=ctx.options.pip_options)
+        except CantInstallPackagesError:
+            logger.debug("can't install dependencies")
+            raise
+
+    apply_plugin_files(
+        mode="upgrade",
+        destination=plugin_path,
+        plugin_name=metadata.plugin.name,
+        zip_data=zip_data,
+        plugin_subdirectory=path.parent,
+    )
