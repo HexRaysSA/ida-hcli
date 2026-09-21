@@ -15,7 +15,7 @@ from hcli.lib.ida.plugin.install import (
     sweep_trash,
 )
 from hcli.lib.ida.plugin.install import uninstall_plugin as uninstall_plugin_impl
-from hcli.lib.ida.plugin.reference import parse_dependency_spec
+from hcli.lib.ida.plugin.reference import DependencyEntry
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +36,9 @@ def uninstall_plugin(plugin: str, yes: bool) -> None:
 
         try:
             record = find_installed_plugin(plugin)
-            for spec in record.metadata.plugin.dependencies:
-                try:
-                    dep_names.append(parse_dependency_spec(spec).name)
-                except ValueError:
-                    pass
+            for entry in record.metadata.plugin.dependencies:
+                if isinstance(entry, DependencyEntry):
+                    dep_names.append(entry.reference.name)
         except PluginNotInstalledError:
             pass
         else:

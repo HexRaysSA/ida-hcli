@@ -39,10 +39,10 @@ from hcli.lib.ida.plugin.install import (
     sweep_trash,
 )
 from hcli.lib.ida.plugin.reference import (
+    DependencyEntry,
     format_qualified_plugin_reference,
     is_github_direct_install_url,
     normalize_plugin_host,
-    parse_dependency_spec,
     parse_plugin_reference,
 )
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
@@ -157,6 +157,12 @@ def render_install_result(result: InstallResult, *, editable: bool = False, is_u
         console.print(f"[green]{verb}[/green] plugin: [blue]{result.plugin}[/blue]=={result.version}{suffix}")
     elif result.status == InstallStatus.ALREADY_INSTALLED:
         console.print(f"[green]Already installed[/green] plugin: [blue]{result.plugin}[/blue]=={result.version}")
+    elif result.status == InstallStatus.ROLLED_BACK:
+        console.print(f"[red]Error[/red]: {result.plugin} was removed: {result.reason}")
+        for dep in result.dependencies:
+            _render_dependency_result(dep)
+        _render_cleanup_hint(result)
+        raise click.Abort()
     elif result.status == InstallStatus.FAILED:
         console.print(f"[red]Error[/red]: {result.reason}")
         raise click.Abort()
@@ -176,11 +182,23 @@ def _render_dependency_result(dep: InstallResult) -> None:
             console.print(f"  [yellow]Note[/yellow]: {dep.plugin}: {dep.reason}")
         else:
             console.print(f"  [dim]Skipped[/dim] dependency: {dep.plugin} (already installed)")
+    elif dep.status == InstallStatus.ROLLED_BACK:
+        console.print(f"  [red]Removed[/red] dependency: {dep.plugin}: {dep.reason}")
+    elif dep.status == InstallStatus.SKIPPED_OPTIONAL:
+        console.print(f"  [dim]Skipped[/dim] optional dependency: {dep.plugin}: {dep.reason}")
     elif dep.status == InstallStatus.FAILED:
         if dep.reason and "cannot auto-install" in dep.reason:
             console.print(f"  [yellow]Warning[/yellow]: {dep.plugin}: {dep.reason}")
         else:
             console.print(f"  [red]Failed[/red] dependency: {dep.plugin}: {dep.reason}")
+
+
+def _render_cleanup_hint(result: InstallResult) -> None:
+    """Print a cleanup command for successfully-installed siblings left on disk."""
+    leftovers = [d.plugin for d in result.dependencies if d.status == InstallStatus.SUCCESS]
+    if leftovers:
+        names = " ".join(leftovers)
+        console.print(f"  Run `hcli plugin uninstall {names}` to remove leftover dependencies.")
 
 
 @click.command()
@@ -377,7 +395,7 @@ def install_plugin(
         assert source is not None
         component_metadatas = validate_components_for_install(metadata, source, plugin_name, is_upgrade=is_upgrade)
 
-        dep_names = {parse_dependency_spec(s).name for s in metadata.plugin.dependencies}
+        dep_names = {e.reference.name for e in metadata.plugin.dependencies if isinstance(e, DependencyEntry)}
         cli_settings = _partition_config_items(config, component_metadatas, dep_names)
 
         resolved_settings: dict[str | None, dict[str, str]] = {}

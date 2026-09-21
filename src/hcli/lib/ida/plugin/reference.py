@@ -242,6 +242,55 @@ def parse_dependency_spec(spec: str) -> PluginReference:
     return ref
 
 
+@dataclass(frozen=True)
+class DependencyEntry:
+    """A normalized dependency with its required/optional flag."""
+
+    reference: PluginReference
+    required: bool = True
+
+    def format_spec(self) -> str:
+        """Render the dependency spec as a string (name, name==ver, or name@host)."""
+        return format_dependency_spec(self.reference)
+
+
+def format_dependency_spec(ref: PluginReference) -> str:
+    """Render a PluginReference in the string form used in dependency arrays."""
+    if ref.host:
+        return f"{ref.name}{ref.version_spec}@{ref.host}"
+    return f"{ref.name}{ref.version_spec}"
+
+
+def parse_dependency_entry(raw: str | dict) -> DependencyEntry:
+    """Parse a single element from a ``dependencies`` array.
+
+    Accepts either a plain string (treated as required) or a dict with
+    ``plugin`` (str, required) and ``required`` (bool, default true).
+
+    Raises:
+        ValueError: when the element is malformed.
+        TypeError: when the element has the wrong type.
+    """
+    if isinstance(raw, str):
+        return DependencyEntry(reference=parse_dependency_spec(raw), required=True)
+
+    if not isinstance(raw, dict):
+        raise TypeError(f"dependency entry must be a string or object, got {type(raw).__name__}")
+
+    if "plugin" not in raw:
+        raise ValueError("dependency object must have a 'plugin' field")
+
+    plugin_str = raw["plugin"]
+    if not isinstance(plugin_str, str):
+        raise TypeError(f"dependency 'plugin' field must be a string, got {type(plugin_str).__name__}")
+
+    required = raw.get("required", True)
+    if not isinstance(required, bool):
+        raise TypeError(f"dependency 'required' field must be a boolean, got {type(required).__name__}")
+
+    return DependencyEntry(reference=parse_dependency_spec(plugin_str), required=required)
+
+
 def format_qualified_plugin_reference(ref: PluginReference) -> str:
     """Render a plugin reference in its canonical user-facing string form.
 

@@ -190,17 +190,18 @@ def _is_github_host(url: str) -> bool:
 
 
 def _check_dependency_specs(metadata: IDAMetadataDescriptor, source_name: str) -> int:
-    from hcli.lib.ida.plugin.reference import parse_dependency_spec
+    from hcli.lib.ida.plugin.reference import DependencyEntry
 
     recommendation_count = 0
     warn_bare = not _is_github_host(metadata.plugin.host)
-    for i, spec in enumerate(metadata.plugin.dependencies):
-        try:
-            ref = parse_dependency_spec(spec)
-        except ValueError as e:
-            console.print(f"[red]Error[/red] ({source_name}): plugin.dependencies[{i}]: invalid spec '{spec}': {e}")
+    for i, entry in enumerate(metadata.plugin.dependencies):
+        if not isinstance(entry, DependencyEntry):
+            console.print(
+                f"[red]Error[/red] ({source_name}): plugin.dependencies[{i}]: unexpected type {type(entry).__name__}"
+            )
             recommendation_count += 1
             continue
+        ref = entry.reference
         if warn_bare and ref.host is None:
             console.print(
                 f"[yellow]Recommendation[/yellow] ({source_name}): plugin.dependencies[{i}]: "

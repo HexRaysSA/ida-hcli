@@ -10,6 +10,8 @@ class InstallStatus(enum.Enum):
     SUCCESS = "success"
     ALREADY_INSTALLED = "already_installed"
     FAILED = "failed"
+    ROLLED_BACK = "rolled_back"
+    SKIPPED_OPTIONAL = "skipped_optional"
 
 
 @dataclass(frozen=True)

@@ -277,15 +277,40 @@
           "type": "array"
         },
         "dependencies": {
-          "description": "Plugins to install alongside this one. Each entry is a plugin reference: a bare name, name==version, or name@host with optional version pin. Dependencies are resolved across all configured repositories. Use name@host to pin a dependency to a specific repository and avoid ambiguity.",
+          "description": "Plugins to install alongside this one. Each entry is either a string (plugin reference: bare name, name==version, or name@host) or an object with 'plugin' (string) and optional 'required' (bool, default true). String entries are required by default. Dependencies are resolved across all configured repositories. Use name@host to pin a dependency to a specific repository and avoid ambiguity.",
           "examples": [
             [
               "go-runtime-detector",
               "go-string-extractor==1.2.0"
+            ],
+            [
+              "always-needed",
+              {"plugin": "nice-to-have", "required": false},
+              {"plugin": "also-needed==2.0.0", "required": true}
             ]
           ],
           "items": {
-            "type": "string"
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "plugin": {
+                    "type": "string",
+                    "description": "Plugin reference in the same format accepted for string entries."
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether the parent needs this dependency to function."
+                  }
+                },
+                "required": ["plugin"],
+                "additionalProperties": false
+              }
+            ]
           },
           "title": "Dependencies",
           "type": "array"
