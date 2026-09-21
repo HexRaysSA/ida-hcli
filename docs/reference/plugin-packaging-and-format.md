@@ -199,7 +199,9 @@ A plugin can declare other plugins as loose dependencies via the `dependencies` 
 }
 ```
 
-When a user installs or upgrades a plugin that declares dependencies, HCLI fetches each one from the same repository and installs it as an independent top-level plugin. Dependencies are resolved recursively: if a dependency itself declares further dependencies, those are installed too, up to a depth of 10. Dependencies that are already installed and satisfy the spec are skipped. If a pinned dependency is installed at a lower version, it is upgraded automatically; a higher installed version is not downgraded.
+When a user installs or upgrades a plugin that declares dependencies, HCLI resolves each one across all configured repositories and installs it as an independent top-level plugin. Dependencies are resolved recursively: if a dependency itself declares further dependencies, those are installed too, up to a depth of 10. Dependencies that are already installed and satisfy the spec are skipped. If a pinned dependency is installed at a lower version, it is upgraded automatically; a higher installed version is not downgraded.
+
+If a bare dependency name matches plugins from different repository hosts, installation fails with an ambiguity error. Use the `name@host` format (e.g. `helper@https://github.com/org/repo`) to pin a dependency to its source repository. For non-community plugins, `hcli plugin lint` recommends using `name@host` for all dependency entries to guard against name collisions.
 
 Dependencies are not bundled inside the declaring plugin's archive. Each dependency is its own plugin with its own `ida-plugin.json` and its own archive in the repository.
 

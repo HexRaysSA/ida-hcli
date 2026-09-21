@@ -183,15 +183,29 @@ def _lint_metadata(metadata: IDAMetadataDescriptor, source_name: str) -> int:
     return recommendation_count
 
 
+def _is_github_host(url: str) -> bool:
+    from urllib.parse import urlparse
+
+    return (urlparse(url).hostname or "").lower() in ("github.com", "www.github.com")
+
+
 def _check_dependency_specs(metadata: IDAMetadataDescriptor, source_name: str) -> int:
     from hcli.lib.ida.plugin.reference import parse_dependency_spec
 
     recommendation_count = 0
+    warn_bare = not _is_github_host(metadata.plugin.host)
     for i, spec in enumerate(metadata.plugin.dependencies):
         try:
-            parse_dependency_spec(spec)
+            ref = parse_dependency_spec(spec)
         except ValueError as e:
             console.print(f"[red]Error[/red] ({source_name}): plugin.dependencies[{i}]: invalid spec '{spec}': {e}")
+            recommendation_count += 1
+            continue
+        if warn_bare and ref.host is None:
+            console.print(
+                f"[yellow]Recommendation[/yellow] ({source_name}): plugin.dependencies[{i}]: "
+                f"use name@host format ('{ref.name}@<host>') to avoid ambiguity across repositories"
+            )
             recommendation_count += 1
     return recommendation_count
 

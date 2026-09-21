@@ -357,9 +357,10 @@ def install_plugin(
 
         if metadata.plugin.dependencies:
             try:
+                dep_repo = ctx.obj.get("plugin_repos") or plugin_repo_obj
                 _handle_install_dependencies(
                     metadata=metadata,
-                    plugin_repo=plugin_repo_obj,
+                    plugin_repo=dep_repo,
                     install_ctx=install_ctx,
                 )
             except Exception as dep_err:

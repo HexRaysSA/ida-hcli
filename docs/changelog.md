@@ -31,7 +31,7 @@ For complete details including contributors and full diffs, see the [GitHub Rele
 - Named plugin repositories with two defaults: `community` (public, anonymous) and `hexrays` (private, requires login with an active IDA license). Custom repositories can be added with `hcli plugin repo add`.
 - `hcli plugin repo list | add | remove | set-default` commands for managing repositories.
 - `repo/name` syntax for installing plugins from a specific repository, e.g. `hcli plugin install hexrays/some-plugin`.
-- `dependencies` field in `ida-plugin.json` for declaring companion plugins. Declared dependencies are fetched from the same repository and installed as independent top-level plugins during `install` and `upgrade`. On uninstall, HCLI lists dependency plugins and offers to remove them (`--yes` to confirm automatically).
+- `dependencies` field in `ida-plugin.json` for declaring companion plugins. Declared dependencies are resolved across all configured repositories and installed as independent top-level plugins during `install` and `upgrade`. Use `name@host` to pin a dependency to a specific repository. On uninstall, HCLI lists dependency plugins and offers to remove them (`--yes` to confirm automatically).
 
 ### Changed
 - Community plugins are fetched from the Hex-Rays portal (`community.plugins.hex-rays.com`).
