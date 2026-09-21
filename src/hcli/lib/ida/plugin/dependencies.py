@@ -32,7 +32,7 @@ class DependencyResult:
     upgraded: list[str] = field(default_factory=list)
     failed: list[tuple[str, str]] = field(default_factory=list)
     skipped_optional: list[tuple[str, str]] = field(default_factory=list)
-    required_failure: tuple[str, str] | None = None
+    failed_required: tuple[str, str] | None = None
 
 
 def install_dependencies(
@@ -82,7 +82,7 @@ def install_dependencies(
         except Exception as e:
             logger.debug("failed to install dependency %s: %s", dep_name, e, exc_info=True)
             if entry.required:
-                result.required_failure = (dep_name, str(e))
+                result.failed_required = (dep_name, str(e))
                 result.failed.append((dep_name, str(e)))
                 return result
             else:
@@ -112,7 +112,7 @@ def install_dependencies(
                 result.failed.extend(sub_result.failed)
                 result.skipped_optional.extend(sub_result.skipped_optional)
 
-                if sub_result.required_failure is not None:
+                if sub_result.failed_required is not None:
                     from hcli.lib.ida.plugin.install import uninstall_plugin
 
                     try:
@@ -123,15 +123,15 @@ def install_dependencies(
                     if entry.required:
                         reason = (
                             f"{dep_name} was removed because its required dependency "
-                            f"{sub_result.required_failure[0]} failed: "
-                            f"{sub_result.required_failure[1]}"
+                            f"{sub_result.failed_required[0]} failed: "
+                            f"{sub_result.failed_required[1]}"
                         )
-                        result.required_failure = (dep_name, reason)
+                        result.failed_required = (dep_name, reason)
                         return result
                     else:
                         reason = (
                             f"{dep_name} was removed because its required dependency "
-                            f"{sub_result.required_failure[0]} failed"
+                            f"{sub_result.failed_required[0]} failed"
                         )
                         logger.info("Skipping optional dependency %s: %s", dep_name, reason)
                         result.skipped_optional.append((dep_name, reason))

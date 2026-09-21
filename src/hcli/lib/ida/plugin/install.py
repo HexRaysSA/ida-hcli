@@ -1132,9 +1132,9 @@ def apply_install(
             reason=str(e),
         )
 
-    dep_results, required_failure = _install_loose_dependencies(metadata, plugin_repo, ctx, named or None)
+    dep_results, failed_required = _install_loose_dependencies(metadata, plugin_repo, ctx, named or None)
 
-    if required_failure:
+    if failed_required:
         _rollback_fresh_install(plugin_name)
         return InstallResult(
             plugin=plugin_name,
@@ -1224,7 +1224,7 @@ def apply_upgrade(
 
     # Required dependency failures are not fatal for upgrades: the plugin
     # files are already at the new version and cannot be cheaply reversed.
-    install_results, _required_failure = _install_loose_dependencies(metadata, plugin_repo, ctx, named or None)
+    install_results, _failed_required = _install_loose_dependencies(metadata, plugin_repo, ctx, named or None)
     dep_results.extend(install_results)
 
     return InstallResult(
@@ -1252,7 +1252,7 @@ def _install_loose_dependencies(
     """Install loose dependencies and return InstallResult entries.
 
     Returns:
-        A tuple of (results, required_failure). When required_failure is True,
+        A tuple of (results, failed_required). When failed_required is True,
         the caller should roll back the parent plugin.
     """
     # Deferred: dependencies.py imports from install.py at module level.
@@ -1338,5 +1338,5 @@ def _install_loose_dependencies(
             )
         )
 
-    has_required_failure = dep_result.required_failure is not None
-    return results, has_required_failure
+    has_failed_required = dep_result.failed_required is not None
+    return results, has_failed_required

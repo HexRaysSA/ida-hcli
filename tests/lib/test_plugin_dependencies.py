@@ -408,8 +408,8 @@ def test_required_dep_failure_stops_siblings(virtual_ida_environment):
             ctx=ctx,
         )
 
-    assert result.required_failure is not None
-    assert result.required_failure[0] == "dep-missing"
+    assert result.failed_required is not None
+    assert result.failed_required[0] == "dep-missing"
     assert not result.installed
     assert not is_plugin_installed("dep-b")
     assert is_plugin_installed("my-pack")
@@ -434,7 +434,7 @@ def test_optional_dep_failure_continues_siblings(virtual_ida_environment):
             ctx=ctx,
         )
 
-    assert result.required_failure is None
+    assert result.failed_required is None
     assert result.installed == ["dep-b"]
     assert len(result.skipped_optional) == 1
     assert result.skipped_optional[0][0] == "dep-missing"
@@ -473,7 +473,7 @@ def test_install_pack_local_directory_warns_about_deps(virtual_ida_environment):
     install_plugin_archive(pack_zip, "my-pack", ctx)
     _, metadata = _parse_metadata(pack_zip, "my-pack")
 
-    results, _required_failure = _install_loose_dependencies(metadata, None, ctx)
+    results, _failed_required = _install_loose_dependencies(metadata, None, ctx)
 
     assert len(results) == 2
     assert all(r.status == InstallStatus.FAILED for r in results)
@@ -509,11 +509,11 @@ def test_required_dep_cascading_rollback(virtual_ida_environment):
             ctx=ctx,
         )
 
-    assert result.required_failure is not None
+    assert result.failed_required is not None
     assert not is_plugin_installed("pack-b")
 
 
-def test_transitive_optional_absorbs_required_failure(virtual_ida_environment):
+def test_transitive_optional_absorbs_failed_required(virtual_ida_environment):
     ctx = make_test_install_context()
     pack_zip = _make_plugin_zip(
         "pack-a",
@@ -532,7 +532,7 @@ def test_transitive_optional_absorbs_required_failure(virtual_ida_environment):
             ctx=ctx,
         )
 
-    assert result.required_failure is None
+    assert result.failed_required is None
     assert len(result.skipped_optional) == 1
     assert result.skipped_optional[0][0] == "pack-b"
     assert is_plugin_installed("pack-a")
@@ -558,7 +558,7 @@ def test_transitive_required_with_optional_child(virtual_ida_environment):
             ctx=ctx,
         )
 
-    assert result.required_failure is None
+    assert result.failed_required is None
     assert "pack-b" in result.installed
     assert is_plugin_installed("pack-b")
     assert is_plugin_installed("pack-a")
