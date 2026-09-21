@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import errno
 import io
 import logging
@@ -9,8 +11,13 @@ import uuid
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import rich.status
+
+if TYPE_CHECKING:
+    from hcli.lib.ida.plugin.repo import BasePluginRepo
+    from hcli.lib.ida.plugin.result import InstallResult
 
 from hcli.lib.console import stderr_console
 from hcli.lib.ida import get_ida_user_dir
@@ -1209,3 +1216,240 @@ def upgrade_plugin_archive(
                 raise
 
     apply_upgrade_with_rollback(zip_data, path.parent, plugin_path, metadata.plugin.name)
+
+
+def orchestrate_install(
+    *,
+    source: bytes | Path,
+    plugin_name: str,
+    metadata: IDAMetadataDescriptor,
+    ctx: InstallContext,
+    settings: dict[str, str] | None = None,
+    component_settings: dict[str, dict[str, str]] | None = None,
+    plugin_repo: BasePluginRepo | None = None,
+    editable: bool = False,
+) -> InstallResult:
+    """Library-level install orchestrator.
+
+    Receives structured input (already-resolved source, settings, context) and
+    returns a structured InstallResult. Never raises on expected failures.
+    """
+    from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
+    from hcli.lib.ida.plugin.settings import apply_resolved_settings
+
+    version = metadata.plugin.version
+    files_written = False
+
+    try:
+        component_metadatas = validate_components_for_install(metadata, source, plugin_name, is_upgrade=False)
+
+        if editable:
+            assert isinstance(source, Path)
+            install_plugin_directory_editable(source, plugin_name, ctx)
+        else:
+            assert isinstance(source, bytes)
+            install_plugin_archive(source, plugin_name, ctx)
+        files_written = True
+
+        if settings and not apply_resolved_settings(plugin_name, metadata, settings):
+            _rollback_fresh_install(plugin_name)
+            return InstallResult(
+                plugin=plugin_name,
+                version=version,
+                status=InstallStatus.FAILED,
+                reason="settings validation failed",
+            )
+
+        for comp_name, comp_meta in component_metadatas.items():
+            comp_config = (component_settings or {}).get(comp_name, {})
+            if not comp_config:
+                continue
+            if not apply_resolved_settings(comp_name, comp_meta, comp_config):
+                _rollback_fresh_install(plugin_name)
+                return InstallResult(
+                    plugin=plugin_name,
+                    version=version,
+                    status=InstallStatus.FAILED,
+                    reason=f"settings validation failed for component '{comp_name}'",
+                )
+
+    except Exception as e:
+        logger.debug("orchestrate_install failed: %s", e, exc_info=True)
+        if files_written:
+            try:
+                _rollback_fresh_install(plugin_name)
+            except Exception:
+                logger.debug("rollback also failed", exc_info=True)
+        return InstallResult(
+            plugin=plugin_name,
+            version=version,
+            status=InstallStatus.FAILED,
+            reason=str(e),
+        )
+
+    dep_results = _install_loose_dependencies(metadata, plugin_repo, ctx)
+
+    return InstallResult(
+        plugin=plugin_name,
+        version=version,
+        status=InstallStatus.SUCCESS,
+        dependencies=dep_results,
+    )
+
+
+def orchestrate_upgrade(
+    *,
+    zip_data: bytes,
+    plugin_name: str,
+    metadata: IDAMetadataDescriptor,
+    ctx: InstallContext,
+    settings: dict[str, str] | None = None,
+    component_settings: dict[str, dict[str, str]] | None = None,
+    plugin_repo: BasePluginRepo | None = None,
+    old_deps: list[str] | None = None,
+) -> InstallResult:
+    """Library-level upgrade orchestrator.
+
+    Same structured-input/structured-output contract as orchestrate_install.
+    Upgrade has different rollback semantics: restore the previous version
+    rather than removing what was just installed.
+    """
+    from hcli.lib.ida.plugin.reference import parse_dependency_spec
+    from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
+    from hcli.lib.ida.plugin.settings import apply_resolved_settings
+
+    version = metadata.plugin.version
+
+    try:
+        upgrade_plugin_archive(zip_data, plugin_name, ctx)
+    except Exception as e:
+        logger.debug("orchestrate_upgrade file write failed: %s", e, exc_info=True)
+        return InstallResult(
+            plugin=plugin_name,
+            version=version,
+            status=InstallStatus.FAILED,
+            reason=str(e),
+        )
+
+    if settings and not apply_resolved_settings(plugin_name, metadata, settings):
+        logger.warning("failed to configure settings during upgrade")
+
+    component_metadatas = validate_components_for_install(metadata, zip_data, plugin_name, is_upgrade=True)
+    for comp_name, comp_meta in component_metadatas.items():
+        comp_config = (component_settings or {}).get(comp_name, {})
+        if not comp_config:
+            continue
+        if not apply_resolved_settings(comp_name, comp_meta, comp_config):
+            logger.warning("failed to configure settings for component '%s' during upgrade", comp_name)
+
+    dep_results: list[InstallResult] = []
+    if old_deps is not None and plugin_repo is not None:
+        old_names = {parse_dependency_spec(s).name for s in old_deps}
+        new_names = {parse_dependency_spec(s).name for s in metadata.plugin.dependencies}
+        dropped = old_names - new_names
+        for name in sorted(dropped):
+            dep_results.append(
+                InstallResult(
+                    plugin=name,
+                    version="",
+                    status=InstallStatus.ALREADY_INSTALLED,
+                    reason="dependency dropped; remains installed",
+                )
+            )
+
+    dep_results.extend(_install_loose_dependencies(metadata, plugin_repo, ctx))
+
+    return InstallResult(
+        plugin=plugin_name,
+        version=version,
+        status=InstallStatus.SUCCESS,
+        dependencies=dep_results,
+    )
+
+
+def _rollback_fresh_install(plugin_name: str) -> None:
+    """Remove a freshly installed plugin on failure."""
+    try:
+        uninstall_plugin(plugin_name)
+    except Exception:
+        logger.debug("rollback failed for %s", plugin_name, exc_info=True)
+
+
+def _install_loose_dependencies(
+    metadata: IDAMetadataDescriptor,
+    plugin_repo: BasePluginRepo | None,
+    ctx: InstallContext,
+) -> list[InstallResult]:
+    """Install loose dependencies and return InstallResult entries."""
+    from hcli.lib.ida.plugin.dependencies import install_dependencies
+    from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
+
+    if not metadata.plugin.dependencies:
+        return []
+
+    if plugin_repo is None:
+        results: list[InstallResult] = []
+        for dep_spec in metadata.plugin.dependencies:
+            results.append(
+                InstallResult(
+                    plugin=dep_spec,
+                    version="",
+                    status=InstallStatus.FAILED,
+                    reason="cannot auto-install from a local source",
+                )
+            )
+        return results
+
+    try:
+        dep_result = install_dependencies(
+            metadata=metadata,
+            plugin_repo=plugin_repo,
+            ctx=ctx,
+        )
+    except Exception as e:
+        logger.debug("dependency installation failed: %s", e, exc_info=True)
+        return [
+            InstallResult(
+                plugin=metadata.plugin.name,
+                version="",
+                status=InstallStatus.FAILED,
+                reason=f"dependency installation failed: {e}",
+            )
+        ]
+
+    results = []
+    for name in dep_result.installed:
+        results.append(
+            InstallResult(
+                plugin=name,
+                version="",
+                status=InstallStatus.SUCCESS,
+            )
+        )
+    for name in dep_result.upgraded:
+        results.append(
+            InstallResult(
+                plugin=name,
+                version="",
+                status=InstallStatus.SUCCESS,
+                reason="upgraded",
+            )
+        )
+    for name in dep_result.skipped:
+        results.append(
+            InstallResult(
+                plugin=name,
+                version="",
+                status=InstallStatus.ALREADY_INSTALLED,
+            )
+        )
+    for name, error in dep_result.failed:
+        results.append(
+            InstallResult(
+                plugin=name,
+                version="",
+                status=InstallStatus.FAILED,
+                reason=error,
+            )
+        )
+    return results

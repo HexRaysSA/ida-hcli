@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from pathlib import Path
 
 import httpx
 import rich.status
@@ -15,14 +14,15 @@ from hcli.lib.ida import (
     explain_failed_to_detect_ida_version,
     explain_missing_current_installation_directory,
 )
-from hcli.lib.ida.plugin import IDAMetadataDescriptor, get_metadata_from_plugin_archive
+from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
 from hcli.lib.ida.plugin.context import IDAEnvironment, InstallContext, InstallOptions
-from hcli.lib.ida.plugin.dependencies import install_dependencies
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
-from hcli.lib.ida.plugin.install import find_installed_plugin, sweep_trash, upgrade_plugin_archive
-from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_dependency_spec, parse_plugin_reference
+from hcli.lib.ida.plugin.install import find_installed_plugin, orchestrate_upgrade, sweep_trash
+from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
+
+from .install import render_install_result
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +50,11 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         install_opts = InstallOptions(pip_options=pip_options, check_environment=check_environment)
         install_ctx = InstallContext(env=ida_env, options=install_opts)
 
-        if Path(plugin_spec).exists() and plugin_spec.endswith(".zip"):
-            raise ValueError("cannot upgrade using local file; uninstall/reinstall instead")
+        if plugin_spec.endswith(".zip"):
+            from pathlib import Path
+
+            if Path(plugin_spec).exists():
+                raise ValueError("cannot upgrade using local file; uninstall/reinstall instead")
 
         if plugin_spec.startswith("file://"):
             raise ValueError("cannot upgrade using local file; uninstall/reinstall instead")
@@ -64,10 +67,6 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         except ValueError as e:
             raise click.BadParameter(f"invalid plugin reference: {plugin_spec!r}: {e}")
 
-        # Resolve the installed plugin first so we can anchor the upgrade to
-        # the repository the user currently has installed. This avoids
-        # switching repositories implicitly and also resolves the host for
-        # bare-name upgrades even when the repository has a colliding name.
         try:
             installed = find_installed_plugin(ref.name)
         except PluginNotInstalledError:
@@ -85,15 +84,8 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             )
             raise click.Abort()
 
-        # Anchor the lookup to the installed host regardless of whether the
-        # user supplied it. This is what makes bare-name upgrades work even
-        # when the repository has a colliding name.
         bare_spec = ref.name + ref.version_spec
         logger.info("finding plugin in repository")
-        # An upgrade is anchored to the installed name@host, so it may resolve
-        # across every configured repository -- the plugin's identity, not the
-        # default scope, decides which one answers. An explicit prefix narrows
-        # that to one repository, mirroring the @host check above.
         if ref.repo:
             from hcli.commands.plugin import repo_for_reference
 
@@ -109,29 +101,27 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             console.print("Please check your internet connection.")
             raise click.Abort()
 
-        from hcli.commands.plugin import resolve_bundle_install_context
-
-        with resolve_bundle_install_context(
-            plugin_repo, install_ctx, plugin_name, host=installed.host
-        ) as effective_ctx:
-            upgrade_plugin_archive(buf, plugin_name, effective_ctx)
-
         _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 
-        console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}")
+        from hcli.commands.plugin import resolve_bundle_install_context
 
-        try:
-            # Resolve deps across all configured repos, not just the source repo.
-            dep_repo = ctx.obj.get("plugin_repos") or plugin_repo
-            _handle_upgrade_dependencies(
-                old_deps=old_deps,
-                new_metadata=metadata,
+        dep_repo = ctx.obj.get("plugin_repos") or plugin_repo
+
+        with (
+            resolve_bundle_install_context(plugin_repo, install_ctx, plugin_name, host=installed.host) as effective_ctx,
+            rich.status.Status("upgrading plugin", console=stderr_console),
+        ):
+            result = orchestrate_upgrade(
+                zip_data=buf,
+                plugin_name=plugin_name,
+                metadata=metadata,
+                ctx=effective_ctx,
                 plugin_repo=dep_repo,
-                install_ctx=install_ctx,
+                old_deps=old_deps,
             )
-        except Exception as dep_err:
-            logger.debug("dependency handling failed: %s", dep_err, exc_info=True)
-            console.print(f"[yellow]Warning[/yellow]: failed to process dependencies: {dep_err}")
+
+        render_install_result(result, is_upgrade=True)
+
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
         raise click.Abort()
@@ -141,8 +131,6 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         raise click.Abort()
 
     except KeyError as e:
-        # get_plugins() drops repositories it could not consult, so a miss
-        # here may mean "your session expired", not "no such plugin".
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
         aggregate = ctx.obj.get("plugin_repos")
@@ -158,45 +146,3 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
         raise click.Abort()
-
-
-def _handle_upgrade_dependencies(
-    *,
-    old_deps: list[str],
-    new_metadata: IDAMetadataDescriptor,
-    plugin_repo: BasePluginRepo,
-    install_ctx: InstallContext,
-) -> None:
-    new_deps = list(new_metadata.plugin.dependencies)
-    if not old_deps and not new_deps:
-        return
-
-    old_names = {parse_dependency_spec(s).name for s in old_deps}
-    new_names = {parse_dependency_spec(s).name for s in new_deps}
-
-    dropped = old_names - new_names
-    if dropped:
-        console.print(
-            f"[yellow]Note[/yellow]: these dependencies were removed from [blue]{new_metadata.plugin.name}[/blue]:"
-        )
-        for name in sorted(dropped):
-            console.print(f"  {name}")
-        console.print("They remain installed; remove them manually if no longer needed.")
-
-    if new_deps:
-        console.print(f"Checking dependencies for [blue]{new_metadata.plugin.name}[/blue]...")
-        with rich.status.Status("checking dependencies", console=stderr_console):
-            result = install_dependencies(
-                metadata=new_metadata,
-                plugin_repo=plugin_repo,
-                ctx=install_ctx,
-            )
-
-        for name in result.installed:
-            console.print(f"  [green]Installed[/green] dependency: [blue]{name}[/blue]")
-        for name in result.upgraded:
-            console.print(f"  [green]Upgraded[/green] dependency: [blue]{name}[/blue]")
-        for name in result.skipped:
-            console.print(f"  [dim]Skipped[/dim] dependency: {name} (already installed)")
-        for name, error in result.failed:
-            console.print(f"  [red]Failed[/red] dependency: {name}: {error}")
