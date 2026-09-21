@@ -1262,6 +1262,9 @@ def _install_loose_dependencies(
         return [], False
 
     if plugin_repo is None:
+        # Local-source installs can never resolve dependencies automatically.
+        # Report each as FAILED but don't treat any as a required failure so
+        # the parent install still succeeds (the user can install deps manually).
         results: list[InstallResult] = []
         for entry in metadata.plugin.dependencies:
             assert isinstance(entry, DependencyEntry)
