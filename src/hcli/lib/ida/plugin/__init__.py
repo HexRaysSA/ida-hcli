@@ -530,15 +530,34 @@ class PluginMetadata(BaseModel):
         },
     )
 
-    components: list[str] = Field(
+    components: "list[str | IDAMetadataDescriptor]" = Field(
         default_factory=list,
         description=(
             "Subdirectory names of plugins bundled inside this suite's archive. "
-            "Each entry must match a subdirectory containing its own ida-plugin.json "
-            "whose plugin.name matches the entry. Components share the suite's "
-            "lifecycle and are hidden from top-level plugin listings."
+            "Each entry is either a string (subdirectory name) or a full "
+            "IDAMetadataDescriptor object (expanded component metadata). "
+            "String entries must match a subdirectory containing its own "
+            "ida-plugin.json whose plugin.name matches the entry. Components "
+            "share the suite's lifecycle and are hidden from top-level plugin "
+            "listings."
         ),
         examples=[["hexrays-taint-engine", "hexrays-type-propagation"]],
+        json_schema_extra={
+            "items": {
+                "oneOf": [
+                    {"type": "string"},
+                    {
+                        "type": "object",
+                        "description": "Full IDAMetadataDescriptor for a pre-expanded component.",
+                        "properties": {
+                            "IDAMetadataDescriptorVersion": {"type": "integer", "const": 1},
+                            "plugin": {"type": "object"},
+                        },
+                        "required": ["IDAMetadataDescriptorVersion", "plugin"],
+                    },
+                ]
+            }
+        },
     )
 
     @field_validator("dependencies", mode="before")
@@ -574,23 +593,59 @@ class PluginMetadata(BaseModel):
                 result.append({"plugin": spec, "required": False})
         return result
 
+    @field_validator("components", mode="before")
+    @classmethod
+    def parse_component_entries(cls, raw: list[typing.Any]) -> "list[str | IDAMetadataDescriptor]":
+        entries: list[str | IDAMetadataDescriptor] = []
+        for item in raw:
+            if isinstance(item, str):
+                entries.append(item)
+            elif isinstance(item, dict):
+                entries.append(IDAMetadataDescriptor.model_validate(item))
+            elif isinstance(item, IDAMetadataDescriptor):
+                entries.append(item)
+            else:
+                raise TypeError(f"component entry must be a string or object, got {type(item).__name__}")
+        return entries
+
     @field_validator("components", mode="after")
     @classmethod
-    def validate_component_names(cls, names: list[str]) -> list[str]:
-        for name in names:
-            if "==" in name:
-                raise ValueError(f"component entries must not contain version pins: '{name}'")
-            if "@" in name:
-                raise ValueError(f"component entries must not contain host qualifiers: '{name}'")
-            if not re.match(r"^[a-zA-Z0-9_-]+$", name):
-                raise ValueError(
-                    f"component name must consist of ASCII letters, digits, underscores, and hyphens: '{name}'"
-                )
-            if name.startswith(("_", "-")) or name.endswith(("_", "-")):
-                raise ValueError(f"component name must not start or end with underscore or hyphen: '{name}'")
-        if len(set(names)) != len(names):
-            raise ValueError("component names must be unique within a single manifest")
-        return names
+    def validate_component_names(
+        cls, entries: "list[str | IDAMetadataDescriptor]"
+    ) -> "list[str | IDAMetadataDescriptor]":
+        seen_names: set[str] = set()
+        for entry in entries:
+            if isinstance(entry, str):
+                name = entry
+                if "==" in name:
+                    raise ValueError(f"component entries must not contain version pins: '{name}'")
+                if "@" in name:
+                    raise ValueError(f"component entries must not contain host qualifiers: '{name}'")
+                if not re.match(r"^[a-zA-Z0-9_-]+$", name):
+                    raise ValueError(
+                        f"component name must consist of ASCII letters, digits, underscores, and hyphens: '{name}'"
+                    )
+                if name.startswith(("_", "-")) or name.endswith(("_", "-")):
+                    raise ValueError(f"component name must not start or end with underscore or hyphen: '{name}'")
+            else:
+                name = entry.plugin.name
+            name_lower = name.lower()
+            if name_lower in seen_names:
+                raise ValueError("component names must be unique within a single manifest")
+            seen_names.add(name_lower)
+        return entries
+
+    @field_serializer("components")
+    def serialize_components(self, entries: "list[str | IDAMetadataDescriptor]") -> list[str | dict]:
+        result: list[str | dict] = []
+        for entry in entries:
+            if isinstance(entry, str):
+                result.append(entry)
+            elif isinstance(entry, IDAMetadataDescriptor):
+                result.append(entry.model_dump(mode="json", by_alias=True))
+            else:
+                result.append(entry)
+        return result
 
     @field_validator("name", mode="after")
     @classmethod
@@ -715,6 +770,13 @@ class IDAMetadataDescriptor(BaseModel):
         description="Version of the IDA metadata descriptor schema. Must be `1`.",
     )
     plugin: PluginMetadata = Field(description="Plugin metadata.")
+
+
+def get_component_name(entry: str | IDAMetadataDescriptor) -> str:
+    """Extract the plugin name from a component entry (string or descriptor)."""
+    if isinstance(entry, str):
+        return entry
+    return entry.plugin.name
 
 
 class MinimalIDAPluginMetadata(BaseModel):

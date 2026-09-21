@@ -15,7 +15,9 @@ from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
     IdaVersion,
     Platform,
+    get_component_name,
     get_metadatas_with_paths_from_plugin_archive,
+    get_python_dependencies_from_plugin_archive,
     is_ida_version_compatible,
     parse_plugin_version,
     split_plugin_version_spec,
@@ -354,6 +356,66 @@ class BasePluginRepo(ABC):
         return plugin_name, buf
 
 
+def _find_root_entries(
+    all_metadatas: list[tuple[Path, IDAMetadataDescriptor]],
+) -> list[tuple[Path, IDAMetadataDescriptor]]:
+    if len(all_metadatas) == 1:
+        return all_metadatas
+
+    referenced_as_component: set[str] = set()
+    for _, meta in all_metadatas:
+        referenced_as_component.update(get_component_name(e) for e in meta.plugin.components)
+
+    return [(path, meta) for path, meta in all_metadatas if meta.plugin.name not in referenced_as_component]
+
+
+def _expand_components(
+    buf: bytes,
+    metadata: IDAMetadataDescriptor,
+    metadatas_by_name: dict[str, tuple[Path, IDAMetadataDescriptor]],
+    *,
+    _depth: int = 0,
+) -> IDAMetadataDescriptor:
+    from hcli.lib.ida.plugin.components import MAX_COMPONENT_DEPTH
+
+    if _depth >= MAX_COMPONENT_DEPTH:
+        raise ValueError(f"component nesting exceeds maximum depth ({MAX_COMPONENT_DEPTH})")
+
+    expanded: list[str | IDAMetadataDescriptor] = []
+    for entry in metadata.plugin.components:
+        if isinstance(entry, IDAMetadataDescriptor):
+            expanded.append(entry)
+            continue
+
+        component_name = get_component_name(entry)
+        if component_name not in metadatas_by_name:
+            raise ValueError(f"component '{component_name}' not found in archive")
+
+        _, comp_meta = metadatas_by_name[component_name]
+
+        comp_meta = _resolve_inline_python_deps(buf, comp_meta)
+
+        if comp_meta.plugin.components:
+            comp_meta = _expand_components(buf, comp_meta, metadatas_by_name, _depth=_depth + 1)
+
+        expanded.append(comp_meta)
+
+    new_plugin = metadata.plugin.model_copy(update={"components": expanded})
+    return metadata.model_copy(update={"plugin": new_plugin})
+
+
+def _resolve_inline_python_deps(
+    buf: bytes,
+    metadata: IDAMetadataDescriptor,
+) -> IDAMetadataDescriptor:
+    if not (isinstance(metadata.plugin.python_dependencies, str) and metadata.plugin.python_dependencies == "inline"):
+        return metadata
+
+    resolved = get_python_dependencies_from_plugin_archive(buf, metadata)
+    new_plugin = metadata.plugin.model_copy(update={"python_dependencies": resolved})
+    return metadata.model_copy(update={"plugin": new_plugin})
+
+
 class PluginArchiveIndex:
     """index a collection of plugin archive URLs by name/version/idaVersion/platform.
 
@@ -379,12 +441,22 @@ class PluginArchiveIndex:
     ):
         """Parse the given plugin archive and index the encountered plugins.
 
+        For suite archives (those with components), only the root manifest is
+        indexed as a top-level entry. Component metadata is expanded inline
+        in the root's ``components`` array, and ``python_dependencies: "inline"``
+        markers are resolved to pip spec lists at every level.
+
         Optionally filter out plugins whose host does not match the expected host.
         """
         if context is None:
             context = {}
         logging.debug(m("indexing plugin archive: %s", url, **context))
-        for path, metadata in get_metadatas_with_paths_from_plugin_archive(buf, context=context):
+
+        all_metadatas = list(get_metadatas_with_paths_from_plugin_archive(buf, context=context))
+        if not all_metadatas:
+            return
+
+        for path, metadata in all_metadatas:
             try:
                 validate_metadata_in_plugin_archive(buf, path, metadata)
             except ValueError as e:
@@ -403,38 +475,64 @@ class PluginArchiveIndex:
                 )
                 return
 
-            h = hashlib.sha256()
-            h.update(buf)
-            sha256 = h.hexdigest()
+        metadatas_by_name: dict[str, tuple[Path, IDAMetadataDescriptor]] = {
+            meta.plugin.name: (path, meta) for path, meta in all_metadatas
+        }
 
-            name = metadata.plugin.name
-            host = metadata.plugin.host
-            normalized_host = normalize_plugin_host(host)
-            version = metadata.plugin.version
-            ida_versions = frozenset(metadata.plugin.ida_versions)
-            platforms = frozenset(metadata.plugin.platforms)
-            spec = (ida_versions, platforms)
+        root_entries = _find_root_entries(all_metadatas)
+        if not root_entries:
+            logger.debug(m("no root manifest found in archive", **context))
+            return
 
-            if expected_host and normalize_plugin_host(expected_host) != normalized_host:
-                logger.debug(m("host mismatch: %s: %s versus expected %s", name, host, expected_host, **context))
-                continue
+        for root_path, root_metadata in root_entries:
+            root_metadata = _resolve_inline_python_deps(buf, root_metadata)
 
-            logger.debug(
-                m(
-                    "found valid plugin: %s",
-                    path,
-                    **dict(
-                        context,
-                        path=str(path),
-                        plugin_name=metadata.plugin.name,
-                        plugin_version=metadata.plugin.version,
-                    ),
-                )
+            if root_metadata.plugin.components:
+                root_metadata = _expand_components(buf, root_metadata, metadatas_by_name)
+
+            self._index_single_plugin(buf, url, root_path, root_metadata, expected_host, context)
+
+    def _index_single_plugin(
+        self,
+        buf: bytes,
+        url: str,
+        path: Path,
+        metadata: IDAMetadataDescriptor,
+        expected_host: str | None,
+        context: dict[str, str],
+    ) -> None:
+        h = hashlib.sha256()
+        h.update(buf)
+        sha256 = h.hexdigest()
+
+        name = metadata.plugin.name
+        host = metadata.plugin.host
+        normalized_host = normalize_plugin_host(host)
+        version = metadata.plugin.version
+        ida_versions = frozenset(metadata.plugin.ida_versions)
+        platforms = frozenset(metadata.plugin.platforms)
+        spec = (ida_versions, platforms)
+
+        if expected_host and normalize_plugin_host(expected_host) != normalized_host:
+            logger.debug(m("host mismatch: %s: %s versus expected %s", name, host, expected_host, **context))
+            return
+
+        logger.debug(
+            m(
+                "found valid plugin: %s",
+                path,
+                **dict(
+                    context,
+                    path=str(path),
+                    plugin_name=metadata.plugin.name,
+                    plugin_version=metadata.plugin.version,
+                ),
             )
+        )
 
-            versions = self.index[(name.lower(), normalized_host)]
-            specs = versions[version]
-            specs[spec].append((url, sha256, metadata))
+        versions = self.index[(name.lower(), normalized_host)]
+        specs = versions[version]
+        specs[spec].append((url, sha256, metadata))
 
     def get_plugins(self) -> list[Plugin]:
         """

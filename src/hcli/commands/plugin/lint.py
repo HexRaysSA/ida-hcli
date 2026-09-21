@@ -179,6 +179,7 @@ def _lint_metadata(metadata: IDAMetadataDescriptor, source_name: str) -> int:
                 recommendation_count += 1
 
     recommendation_count += _check_dependency_specs(metadata, source_name)
+    recommendation_count += _check_expanded_components(metadata, source_name)
 
     return recommendation_count
 
@@ -206,6 +207,19 @@ def _check_dependency_specs(metadata: IDAMetadataDescriptor, source_name: str) -
             console.print(
                 f"[yellow]Recommendation[/yellow] ({source_name}): plugin.dependencies[{i}]: "
                 f"use name@host format ('{ref.name}@<host>') to avoid ambiguity across repositories"
+            )
+            recommendation_count += 1
+    return recommendation_count
+
+
+def _check_expanded_components(metadata: IDAMetadataDescriptor, source_name: str) -> int:
+    recommendation_count = 0
+    for i, entry in enumerate(metadata.plugin.components):
+        if isinstance(entry, IDAMetadataDescriptor):
+            console.print(
+                f"[red]Error[/red] ({source_name}): plugin.components[{i}]: "
+                f"contains expanded metadata object for '{entry.plugin.name}'; "
+                f"use the string form in authored archives"
             )
             recommendation_count += 1
     return recommendation_count
@@ -334,6 +348,33 @@ def _lint_plugin_directory(plugin_path: Path) -> int:
     return recommendation_count
 
 
+def _check_root_manifest_at_top_level(
+    plugins_found: list[tuple[Path, IDAMetadataDescriptor]],
+    source_name: str,
+) -> int:
+    if len(plugins_found) <= 1:
+        return 0
+
+    from hcli.lib.ida.plugin import get_component_name
+
+    referenced_as_component: set[str] = set()
+    for _, meta in plugins_found:
+        referenced_as_component.update(get_component_name(e) for e in meta.plugin.components)
+
+    roots = [(path, meta) for path, meta in plugins_found if meta.plugin.name not in referenced_as_component]
+    recommendation_count = 0
+    for root_path, root_meta in roots:
+        parts = root_path.parts
+        if len(parts) != 2:
+            console.print(
+                f"[red]Error[/red] ({source_name}): root manifest for '{root_meta.plugin.name}' "
+                f"is at '{root_path}' but should be at the archive's top level "
+                f"(e.g., '{root_meta.plugin.name}/ida-plugin.json')"
+            )
+            recommendation_count += 1
+    return recommendation_count
+
+
 def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
     """Lint plugins in a .zip archive from bytes.
 
@@ -376,6 +417,8 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
         console.print(f"[red]Error[/red]: No valid plugins found in archive {source_name}")
         recommendation_count += 1
         return recommendation_count
+
+    recommendation_count += _check_root_manifest_at_top_level(plugins_found, source_name)
 
     for metadata_path, metadata in plugins_found:
         plugin_source_name = f"{source_name}:{metadata_path}"
