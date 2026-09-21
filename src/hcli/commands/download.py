@@ -23,13 +23,41 @@ class BackNavigationResult:
 BACK_NAVIGATION = BackNavigationResult()
 
 
+def _browse_sort_key(name: str) -> tuple[tuple[int, object], ...]:
+    """Order one level of the tree: versions newest first, plain names A-Z.
+
+    The assets API returns each level in plain lexicographic order, which puts
+    3.1.10 before 3.1.7 and wedges 3.2.10 between 3.2.1 and 3.2.2. Splitting a
+    name into digit and text runs fixes that: digit runs compare as *negated*
+    integers so versions descend, while text runs compare normally so category
+    folders (ida-pro, installers, ...) stay alphabetical. The leading 0/1/2 tag
+    keeps runs of different kinds comparable and sorts versions above names;
+    the trailing sentinel outranks every run, keeping a suffixed version above
+    its base (9.0sp1 above 9.0).
+    """
+    key: list[tuple[int, object]] = []
+    for part in re.split(r"(\d+)", name.lower()):
+        if part.isdigit():
+            key.append((0, -int(part)))
+        elif part:
+            key.append((1, part))
+    key.append((2, ""))
+    return tuple(key)
+
+
 async def select_asset(nodes: list[TreeNode], current_path: str = "") -> Asset | None:
     """Alternative traverse using questionary.select with hierarchical navigation."""
 
     async def _traverse_recursive(current_nodes: list[TreeNode], path_stack: list[str]) -> Asset | None:
-        # Get folders and files at current level
-        folders = [node for node in current_nodes if node.type == "folder" and node.children]
-        files = [node for node in current_nodes if node.type == "file"]
+        # Get folders and files at current level, newest version first
+        folders = sorted(
+            (node for node in current_nodes if node.type == "folder" and node.children),
+            key=lambda node: _browse_sort_key(node.name),
+        )
+        files = sorted(
+            (node for node in current_nodes if node.type == "file"),
+            key=lambda node: _browse_sort_key(node.name),
+        )
 
         # Build choices using questionary Choice objects
         choices = []
