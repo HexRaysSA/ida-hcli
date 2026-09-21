@@ -285,8 +285,14 @@
             ],
             [
               "always-needed",
-              {"plugin": "nice-to-have", "required": false},
-              {"plugin": "also-needed==2.0.0", "required": true}
+              {
+                "plugin": "nice-to-have",
+                "required": false
+              },
+              {
+                "plugin": "also-needed==2.0.0",
+                "required": true
+              }
             ]
           ],
           "items": {
@@ -295,20 +301,22 @@
                 "type": "string"
               },
               {
-                "type": "object",
+                "additionalProperties": false,
                 "properties": {
                   "plugin": {
-                    "type": "string",
-                    "description": "Plugin reference in the same format accepted for string entries."
+                    "description": "Plugin reference in the same format accepted for string entries.",
+                    "type": "string"
                   },
                   "required": {
-                    "type": "boolean",
                     "default": true,
-                    "description": "Whether the parent needs this dependency to function."
+                    "description": "Whether the parent needs this dependency to function.",
+                    "type": "boolean"
                   }
                 },
-                "required": ["plugin"],
-                "additionalProperties": false
+                "required": [
+                  "plugin"
+                ],
+                "type": "object"
               }
             ]
           },

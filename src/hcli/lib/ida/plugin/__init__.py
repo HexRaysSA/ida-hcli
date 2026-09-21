@@ -499,8 +499,35 @@ class PluginMetadata(BaseModel):
         ),
         examples=[
             ["go-runtime-detector", "go-string-extractor==1.2.0"],
-            [{"plugin": "nice-to-have", "required": False}],
+            [
+                "always-needed",
+                {"plugin": "nice-to-have", "required": False},
+                {"plugin": "also-needed==2.0.0", "required": True},
+            ],
         ],
+        json_schema_extra={
+            "items": {
+                "oneOf": [
+                    {"type": "string"},
+                    {
+                        "type": "object",
+                        "properties": {
+                            "plugin": {
+                                "type": "string",
+                                "description": "Plugin reference in the same format accepted for string entries.",
+                            },
+                            "required": {
+                                "type": "boolean",
+                                "default": True,
+                                "description": "Whether the parent needs this dependency to function.",
+                            },
+                        },
+                        "required": ["plugin"],
+                        "additionalProperties": False,
+                    },
+                ]
+            }
+        },
     )
 
     components: list[str] = Field(
