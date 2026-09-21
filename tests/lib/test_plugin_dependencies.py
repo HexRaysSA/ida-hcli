@@ -574,7 +574,6 @@ def test_cross_repo_dep_with_host_resolves_correctly(virtual_ida_environment):
 
 
 def test_cross_repo_bare_name_ambiguous_raises(virtual_ida_environment):
-
     ctx = make_test_install_context()
     pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"], host=HOST_B)
     dep_a_community = _make_plugin_zip("dep-a", "1.0.0", host=HOST)

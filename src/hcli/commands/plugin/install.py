@@ -357,6 +357,7 @@ def install_plugin(
 
         if metadata.plugin.dependencies:
             try:
+                # Resolve deps across all configured repos, not just the source repo.
                 dep_repo = ctx.obj.get("plugin_repos") or plugin_repo_obj
                 _handle_install_dependencies(
                     metadata=metadata,

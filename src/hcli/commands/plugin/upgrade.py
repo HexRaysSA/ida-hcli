@@ -121,10 +121,12 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         console.print(f"[green]Installed[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}")
 
         try:
+            # Resolve deps across all configured repos, not just the source repo.
+            dep_repo = ctx.obj.get("plugin_repos") or plugin_repo
             _handle_upgrade_dependencies(
                 old_deps=old_deps,
                 new_metadata=metadata,
-                plugin_repo=plugin_repo,
+                plugin_repo=dep_repo,
                 install_ctx=install_ctx,
             )
         except Exception as dep_err:
