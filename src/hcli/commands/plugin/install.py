@@ -47,7 +47,7 @@ from hcli.lib.ida.plugin.reference import (
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
 from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
 from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
-from hcli.lib.ida.plugin.settings import parse_setting_value
+from hcli.lib.ida.plugin.settings import has_setting_in_config, parse_setting_value
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 
 from ._prompt import prompt_plugin_settings
@@ -111,7 +111,7 @@ def _resolve_interactive_settings(
     needed_settings = [
         s
         for s in metadata.plugin.settings
-        if not _has_setting_in_config(plugin_name, s.key) and s.required and s.default is None
+        if not has_setting_in_config(plugin_name, s.key) and s.required and s.default is None
     ]
 
     if needed_settings and not console.is_interactive:
@@ -158,7 +158,7 @@ def _resolve_interactive_component_settings(
     needed_settings = [
         s
         for s in comp_metadata.plugin.settings
-        if not _has_setting_in_config(comp_name, s.key) and s.required and s.default is None
+        if not has_setting_in_config(comp_name, s.key) and s.required and s.default is None
     ]
 
     if needed_settings and not console.is_interactive:
@@ -185,12 +185,6 @@ def _resolve_interactive_component_settings(
         return result
 
     return {}
-
-
-def _has_setting_in_config(plugin_name: str, key: str) -> bool:
-    from hcli.lib.ida.plugin.settings import has_setting_in_config
-
-    return has_setting_in_config(plugin_name, key)
 
 
 def render_install_result(result: InstallResult, *, editable: bool = False, is_upgrade: bool = False) -> None:
@@ -278,8 +272,10 @@ def install_plugin(
         install_opts = InstallOptions(pip_options=pip_options, check_environment=check_environment)
         install_ctx = InstallContext(env=ida_env, options=install_opts)
 
-        # --- Source resolution (unchanged) ---
+        # --- Source resolution ---
 
+        # Editable install: skip the archive pipeline entirely. Read metadata
+        # straight from the source directory and symlink it into place.
         if editable:
             source_dir = Path(plugin_spec).expanduser()
             if not source_dir.exists():
@@ -294,9 +290,14 @@ def install_plugin(
             except ValueError as e:
                 raise click.BadParameter(str(e))
             plugin_name = metadata.plugin.name
-            buf = None
+            buf = None  # sentinel: editable; no archive bytes
 
         elif Path(plugin_spec).expanduser().is_dir() and (Path(plugin_spec).expanduser() / "ida-plugin.json").is_file():
+            # Local non-editable install: pack the directory into an in-memory
+            # zip and run it through the same archive pipeline used for zip /
+            # URL / repo installs. The dir must contain ida-plugin.json -- any
+            # bare directory name without metadata falls through so it can be
+            # resolved as a repository plugin reference instead.
             logger.info("installing from the local file system (directory)")
             source_dir = Path(plugin_spec).expanduser().resolve()
             buf = pack_plugin_directory_to_zip(source_dir)
@@ -347,6 +348,8 @@ def install_plugin(
 
             from hcli.commands.plugin import repo_for_reference
 
+            # Resolve in exactly one repository -- the one named by the
+            # prefix, else the default.
             plugin_repo: BasePluginRepo = repo_for_reference(ctx, ref)
             plugin_repo_obj = plugin_repo
 
@@ -366,11 +369,15 @@ def install_plugin(
                 raise click.Abort()
 
         if not editable:
-            assert buf is not None
+            assert buf is not None  # invariant: only the editable branch leaves buf as None
             _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
+        # else: metadata was already populated from the source directory.
 
         # --- Name conflict check ---
-
+        # The install layout is $IDAUSR/plugins/<name>, so only one same-name
+        # plugin can be installed at a time. Use the archive metadata host (not
+        # the download URL) as the long-term identity because GitHub redirects
+        # can cause the fetch URL and the metadata host to differ.
         try:
             installed = find_installed_plugin(plugin_name)
         except PluginNotInstalledError:
@@ -388,7 +395,11 @@ def install_plugin(
             )
 
         # --- Upgrade check ---
-
+        # --upgrade turns an already-installed plugin from an error into an
+        # in-place upgrade, so callers that just want the plugin present (e.g.
+        # `hcli mcp install`) can be run repeatedly. Editable installs already
+        # replace whatever is at the destination, so there's nothing to do
+        # there.
         is_upgrade = False
         if upgrade and installed is not None and not editable:
             if parse_plugin_version(metadata.plugin.version) <= parse_plugin_version(installed.version):
@@ -471,6 +482,8 @@ def install_plugin(
         raise click.Abort()
 
     except click.Abort:
+        # Already reported by whoever raised it; re-wrapping would print a
+        # second, empty "Error:" line.
         raise
 
     except Exception as e:
