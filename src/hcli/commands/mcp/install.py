@@ -16,13 +16,8 @@ from hcli.commands.plugin.install import install_plugin
 from hcli.lib.console import console
 from hcli.lib.constants import cli
 
-IDA_MCP_PLUGIN = "https://github.com/HexRaysSA/ida-mcp"
-CLAUDE_MARKETPLACE = "HexRaysSA/claude-marketplace"
-CODEX_MARKETPLACE = "HexRaysSA/codex-marketplace"
-COPILOT_MARKETPLACE = "HexRaysSA/copilot-marketplace"
 PLUGIN_ID = "ida-mcp@HexRaysSA"
-PI_SOURCE = "git:github.com/HexRaysSA/ida-mcp@latest"
-OMP_SOURCE = "github:HexRaysSA/ida-mcp#latest"
+
 
 Scope = Literal["local", "global"]
 
@@ -157,7 +152,7 @@ def _install_claude(agent: Agent, scope: Scope) -> None:
         _run_checked(agent, ["plugin", "update", PLUGIN_ID, "--scope", cli_scope, "--yes"])
         return
     if not _has_claude_marketplace(agent):
-        _run_checked(agent, ["plugin", "marketplace", "add", CLAUDE_MARKETPLACE, "--scope", cli_scope])
+        _run_checked(agent, ["plugin", "marketplace", "add", "HexRaysSA/claude-marketplace", "--scope", cli_scope])
     _run_checked(agent, ["plugin", "install", PLUGIN_ID, "--scope", cli_scope, "--yes"])
 
 
@@ -178,7 +173,7 @@ def _install_codex(agent: Agent) -> None:
     if _has_codex_marketplace(agent):
         _run_checked(agent, ["plugin", "marketplace", "upgrade", "HexRaysSA"])
     else:
-        _run_checked(agent, ["plugin", "marketplace", "add", CODEX_MARKETPLACE])
+        _run_checked(agent, ["plugin", "marketplace", "add", "HexRaysSA/codex-marketplace"])
     _run_checked(agent, ["plugin", "add", PLUGIN_ID])
 
 
@@ -201,7 +196,7 @@ def _install_copilot(agent: Agent) -> None:
     if _has_copilot_marketplace(agent):
         _run_checked(agent, ["plugin", "marketplace", "update", "HexRaysSA"])
     else:
-        _run_checked(agent, ["plugin", "marketplace", "add", COPILOT_MARKETPLACE])
+        _run_checked(agent, ["plugin", "marketplace", "add", "HexRaysSA/copilot-marketplace"])
     _run_checked(agent, ["plugin", "install", PLUGIN_ID])
 
 
@@ -223,10 +218,11 @@ def _is_pi_installed(agent: Agent, scope: Scope) -> bool:
 
 
 def _install_pi(agent: Agent, scope: Scope) -> None:
+    pi_source = "git:github.com/HexRaysSA/ida-mcp@latest"
     if _is_pi_installed(agent, scope):
-        _run_checked(agent, ["update", "--extension", PI_SOURCE])
+        _run_checked(agent, ["update", "--extension", pi_source])
         return
-    args = ["install", PI_SOURCE]
+    args = ["install", pi_source]
     if scope == "local":
         args.append("--local")
     _run_checked(agent, args)
@@ -243,7 +239,7 @@ def _install_omp(agent: Agent, scope: Scope) -> None:
     if _is_omp_installed(agent, scope):
         _run_checked(agent, ["plugin", "upgrade", "ida-mcp", "--scope", cli_scope])
         return
-    _run_checked(agent, ["plugin", "install", OMP_SOURCE, "--scope", cli_scope])
+    _run_checked(agent, ["plugin", "install", "github:HexRaysSA/ida-mcp#latest", "--scope", cli_scope])
 
 
 def _install_agent(agent: Agent, scope: Scope) -> None:
@@ -286,7 +282,7 @@ def _install_ida_plugin(ctx: click.Context) -> None:
     # than abort before the agent integration below ever runs.
     ctx.invoke(
         install_plugin,
-        plugin=IDA_MCP_PLUGIN,
+        plugin="https://github.com/HexRaysSA/ida-mcp",
         editable=False,
         config=(),
         no_build_isolation=False,
