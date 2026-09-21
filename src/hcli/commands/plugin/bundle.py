@@ -373,7 +373,7 @@ def _collect_all_python_deps(buf: bytes) -> list[str]:
 def _resolve_loose_deps(
     known_archives: dict[str, bytes],
     plugin_repo: BasePluginRepo | None,
-    target_platforms: list[str] | None,
+    target_platforms: list[str],
 ) -> dict[str, bytes]:
     """Resolve loose plugin dependencies recursively.
 
@@ -395,7 +395,8 @@ def _resolve_loose_deps(
         for buf in queue:
             for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
                 for entry in metadata.plugin.dependencies:
-                    assert isinstance(entry, DependencyEntry)
+                    if not isinstance(entry, DependencyEntry):
+                        continue
                     dep_name = entry.reference.name
                     if dep_name.lower() in seen_names:
                         continue
@@ -403,12 +404,9 @@ def _resolve_loose_deps(
 
                     spec = entry.format_spec()
                     try:
-                        if target_platforms:
-                            _, dep_buf = plugin_repo.fetch_plugin_from_spec(
-                                spec, target_platforms[0], host=entry.reference.host
-                            )
-                        else:
-                            _, dep_buf = plugin_repo.fetch_plugin_from_spec(spec, host=entry.reference.host)
+                        _, dep_buf = plugin_repo.fetch_plugin_from_spec(
+                            spec, target_platforms[0], host=entry.reference.host
+                        )
                     except Exception as e:
                         if entry.required:
                             raise RuntimeError(f"cannot resolve required dependency '{spec}': {e}") from e

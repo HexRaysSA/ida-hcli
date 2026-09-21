@@ -212,7 +212,9 @@ The supported Python versions for `--python all` are maintained as a hardcoded c
 
 A legacy `--target` flag (e.g. `--target linux-x86_64-cp312`) is accepted for scripting but hidden from help. It cannot be combined with `--platform` or `--python`.
 
-Bundle creation resolves all selected plugin archives, reads their `ida-plugin.json` metadata, collects all `pythonDependencies`, and materializes a flat wheelhouse per target tuple. A single online Linux builder can create wheelhouses for all target platforms when all dependencies publish compatible wheels.
+Bundle creation resolves all selected plugin archives, reads their `ida-plugin.json` metadata, collects all `pythonDependencies` (including PEP 723 inline dependencies and component dependencies), and materializes a flat wheelhouse per target tuple. A single online Linux builder can create wheelhouses for all target platforms when all dependencies publish compatible wheels.
+
+When a bundled plugin declares `dependencies` (plugin-to-plugin), those dependent plugins are fetched from the repository and included in the bundle recursively, along with their own Python dependencies. Required dependencies that cannot be resolved cause bundle creation to fail. Optional dependencies that cannot be resolved are skipped with a warning. Dependency resolution is bounded to 10 levels of transitive depth to guard against cycles or runaway chains.
 
 The preferred wheelhouse materialization path is one `pip download` invocation per target. For cross-target downloads HCLI must pass all compatibility options together:
 

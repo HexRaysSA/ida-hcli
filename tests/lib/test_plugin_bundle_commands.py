@@ -296,7 +296,7 @@ def test_resolve_loose_deps_fetches_direct_dependency():
     plugin_b = _make_plugin_zip("plugin-b", "2.0.0")
 
     with _make_fs_repo({"plugin-b.zip": plugin_b}) as repo:
-        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, target_platforms=None)
+        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, target_platforms=["linux-x86_64"])
 
     assert "plugin-b" in resolved
 
@@ -307,7 +307,7 @@ def test_resolve_loose_deps_fetches_transitive_dependencies():
     plugin_c = _make_plugin_zip("plugin-c", "1.0.0")
 
     with _make_fs_repo({"plugin-b.zip": plugin_b, "plugin-c.zip": plugin_c}) as repo:
-        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, target_platforms=None)
+        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, target_platforms=["linux-x86_64"])
 
     assert "plugin-b" in resolved
     assert "plugin-c" in resolved
@@ -321,7 +321,7 @@ def test_resolve_loose_deps_skips_already_included():
         resolved = _resolve_loose_deps(
             {"plugin-a": plugin_a, "plugin-b": plugin_b},
             repo,
-            target_platforms=None,
+            target_platforms=["linux-x86_64"],
         )
 
     assert resolved == {}
@@ -329,14 +329,14 @@ def test_resolve_loose_deps_skips_already_included():
 
 def test_resolve_loose_deps_handles_no_repo():
     plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=["plugin-b"])
-    resolved = _resolve_loose_deps({"plugin-a": plugin_a}, None, target_platforms=None)
+    resolved = _resolve_loose_deps({"plugin-a": plugin_a}, None, target_platforms=["linux-x86_64"])
     assert resolved == {}
 
 
 def test_resolve_loose_deps_handles_optional_missing_dep():
     plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=[{"plugin": "missing-dep", "required": False}])
     with _make_fs_repo({}) as repo:
-        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, target_platforms=None)
+        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, target_platforms=["linux-x86_64"])
     assert resolved == {}
 
 
@@ -345,7 +345,7 @@ def test_resolve_loose_deps_handles_cycle():
     plugin_b = _make_plugin_zip("plugin-b", "1.0.0", deps=["plugin-a"])
 
     with _make_fs_repo({"plugin-b.zip": plugin_b}) as repo:
-        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, target_platforms=None)
+        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, target_platforms=["linux-x86_64"])
 
     assert "plugin-b" in resolved
     assert len(resolved) == 1
