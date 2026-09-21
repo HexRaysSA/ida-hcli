@@ -245,7 +245,7 @@ Version pins (`==`) and host qualifiers (`@`) are not valid in `components` entr
 
 Components can declare their own `pythonDependencies`. When a suite is installed, HCLI collects dependencies from the root and every component at every nesting depth, then installs them together. The `hcli plugin dependencies install` command also covers component dependencies.
 
-Components can declare their own `settings`. During install, HCLI prompts for (or accepts via `--config`) settings declared by any component. To pass a component setting on the command line, prefix the key with the component name: `--config component-name.key=value`. Keys without a component prefix target the root plugin.
+Components can declare their own `settings`. During install, HCLI prompts for (or accepts via `--config`) settings declared by any component. To pass a setting on the command line, prefix the key with the component or dependency name: `--config component-name.key=value` or `--config dependency-name.key=value`. Keys without a prefix target the root plugin.
 
 Component settings are stored in `ida-config.json` keyed by the component's own name. At runtime inside IDA, `get_current_plugin()` returns the component name when called from component code, so `get_current_plugin_setting()` reads the correct section. After install, `hcli plugin config <component-name>` manages component settings.
 

@@ -306,24 +306,20 @@ def test_install_pack_partial_dep_failure(virtual_ida_environment):
     assert is_plugin_installed("my-pack")
 
 
-def test_install_pack_local_directory_warns_about_deps(virtual_ida_environment, capsys):
-    from hcli.commands.plugin.install import _handle_install_dependencies
+def test_install_pack_local_directory_warns_about_deps(virtual_ida_environment):
+    from hcli.lib.ida.plugin.install import _install_loose_dependencies
+    from hcli.lib.ida.plugin.result import InstallStatus
 
     ctx = make_test_install_context(check_environment=False)
     pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a", "dep-b"])
     install_plugin_archive(pack_zip, "my-pack", ctx)
     _, metadata = _parse_metadata(pack_zip, "my-pack")
 
-    _handle_install_dependencies(
-        metadata=metadata,
-        plugin_repo=None,
-        install_ctx=ctx,
-    )
+    results = _install_loose_dependencies(metadata, None, ctx)
 
-    captured = capsys.readouterr()
-    assert "cannot be auto-installed" in captured.out
-    assert "dep-a" in captured.out
-    assert "dep-b" in captured.out
+    assert len(results) == 2
+    assert all(r.status == InstallStatus.FAILED for r in results)
+    assert all("cannot auto-install" in (r.reason or "") for r in results)
 
 
 def test_install_pack_without_dependencies(virtual_ida_environment):
@@ -370,7 +366,8 @@ def test_upgrade_pack_installs_new_deps(virtual_ida_environment):
 
 
 def test_upgrade_pack_reports_dropped_deps(virtual_ida_environment):
-    from hcli.commands.plugin.upgrade import _handle_upgrade_dependencies
+    from hcli.lib.ida.plugin.install import apply_upgrade
+    from hcli.lib.ida.plugin.result import InstallStatus
 
     ctx = make_test_install_context(check_environment=False)
     pack_v1 = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a", "dep-b"])
@@ -387,21 +384,21 @@ def test_upgrade_pack_reports_dropped_deps(virtual_ida_environment):
             ctx=ctx,
         )
 
-        upgrade_plugin_archive(pack_v2, "my-pack", ctx)
         _, meta_v2 = _parse_metadata(pack_v2, "my-pack")
 
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            _handle_upgrade_dependencies(
-                old_deps=list(meta_v1.plugin.dependencies),
-                new_metadata=meta_v2,
-                plugin_repo=repo,
-                install_ctx=ctx,
-            )
-        output = buf.getvalue()
+        result = apply_upgrade(
+            zip_data=pack_v2,
+            plugin_name="my-pack",
+            metadata=meta_v2,
+            ctx=ctx,
+            plugin_repo=repo,
+            old_deps=list(meta_v1.plugin.dependencies),
+        )
 
-    assert "dep-b" in output
-    assert "removed" in output.lower() or "remain installed" in output
+    assert result.status == InstallStatus.SUCCESS
+    dropped = [d for d in result.dependencies if d.plugin == "dep-b"]
+    assert len(dropped) == 1
+    assert "dropped" in (dropped[0].reason or "")
     assert is_plugin_installed("dep-b")
 
 

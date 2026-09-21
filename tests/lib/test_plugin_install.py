@@ -159,6 +159,13 @@ def test_plugin_python_dependencies(virtual_ida_environment_with_venv):
     plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v3.0.0.zip"
     buf = plugin_path.read_bytes()
 
+    from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
+    from hcli.lib.ida.plugin.components import collect_python_dependencies_from_archive
+    from hcli.lib.ida.plugin.install import install_python_dependencies
+
+    metadata_path, metadata = get_metadata_from_plugin_archive(buf, "plugin1")
+    python_deps = collect_python_dependencies_from_archive(buf, metadata_path, metadata)
+    install_python_dependencies(python_deps, ctx)
     install_plugin_archive(buf, "plugin1", ctx)
 
     freeze = pip_freeze(Path(os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"]))
@@ -188,12 +195,19 @@ def test_plugin_python_dependencies_rejects_externally_managed_python_without_ru
     monkeypatch.setattr("hcli.lib.ida.plugin.install.verify_pip_can_install_packages", _must_not_run_pip)
     monkeypatch.setattr("hcli.lib.ida.plugin.install.pip_install_packages", _must_not_run_pip)
 
+    from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
+    from hcli.lib.ida.plugin.components import collect_python_dependencies_from_archive
+    from hcli.lib.ida.plugin.install import install_python_dependencies
+
     plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v3.0.0.zip"
     buf = plugin_path.read_bytes()
 
+    metadata_path, metadata = get_metadata_from_plugin_archive(buf, "plugin1")
+    python_deps = collect_python_dependencies_from_archive(buf, metadata_path, metadata)
+
     ctx = make_test_install_context()
     with pytest.raises(DependencyInstallationError) as exc_info:
-        install_plugin_archive(buf, "plugin1", ctx)
+        install_python_dependencies(python_deps, ctx)
 
     assert "PEP 668" in str(exc_info.value)
     assert not is_plugin_installed("plugin1")
@@ -262,7 +276,7 @@ def test_plugin_all(virtual_ida_environment_with_venv):
         assert row_contains("plugin1", "1.0.0", "upgradable to 6.0.0")(p.stdout)
 
         p = run_hcli(f"plugin --repo {repo_path.absolute()} upgrade plugin1==2.0.0")
-        assert "Installed plugin: plugin1==2.0.0\n" == p.stdout
+        assert "Upgraded plugin: plugin1==2.0.0\n" == p.stdout
 
         # downgrade not supported
         with pytest.raises(subprocess.CalledProcessError) as e:

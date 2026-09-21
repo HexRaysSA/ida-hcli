@@ -246,6 +246,29 @@ def set_setting_for_metadata(
     _write_setting(plugin_name, key, value, metadata)
 
 
+def apply_resolved_settings(
+    plugin_name: str,
+    metadata: IDAMetadataDescriptor,
+    settings: dict[str, str],
+) -> bool:
+    """Apply pre-resolved settings to IDA config without interactive prompts.
+
+    Each value is parsed according to the setting descriptor's type, validated,
+    and written when it differs from the default. Returns False on any
+    validation failure.
+    """
+    for key, value_str in settings.items():
+        try:
+            descr = metadata.plugin.get_setting(key)
+            parsed_value = parse_setting_value(descr, value_str)
+            descr.validate_value(parsed_value)
+            if descr.default != parsed_value:
+                _write_setting(plugin_name, key, parsed_value, metadata)
+        except (KeyError, ValueError):
+            return False
+    return True
+
+
 def has_setting_in_config(plugin_name: str, key: str) -> bool:
     """Check if a setting value exists in ida-config.json.
 

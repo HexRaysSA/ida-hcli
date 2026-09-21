@@ -25,35 +25,30 @@ from hcli.lib.ida.plugin import (
 )
 from hcli.lib.ida.plugin.components import find_root_manifest_in_archive, validate_components_for_install
 from hcli.lib.ida.plugin.context import IDAEnvironment, InstallContext, InstallOptions
-from hcli.lib.ida.plugin.dependencies import install_dependencies
 from hcli.lib.ida.plugin.exceptions import (
     AmbiguousPluginReferenceError,
     InstalledPluginNameConflictError,
     PluginNotInstalledError,
 )
 from hcli.lib.ida.plugin.install import (
+    apply_install,
+    apply_upgrade,
     find_installed_plugin,
     get_metadata_from_plugin_directory,
-    install_plugin_archive,
-    install_plugin_directory_editable,
     pack_plugin_directory_to_zip,
     sweep_trash,
-    uninstall_plugin,
-    upgrade_plugin_archive,
 )
 from hcli.lib.ida.plugin.reference import (
     format_qualified_plugin_reference,
     is_github_direct_install_url,
     normalize_plugin_host,
+    parse_dependency_spec,
     parse_plugin_reference,
 )
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
 from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
-from hcli.lib.ida.plugin.settings import (
-    has_setting_in_config,
-    parse_setting_value,
-    set_setting_for_metadata,
-)
+from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
+from hcli.lib.ida.plugin.settings import has_setting_in_config, parse_setting_value
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 
 from ._prompt import prompt_plugin_settings
@@ -64,15 +59,15 @@ logger = logging.getLogger(__name__)
 def _partition_config_items(
     config: tuple[str, ...],
     component_metadatas: dict[str, IDAMetadataDescriptor],
-) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
-    """Split --config items into root vs. component buckets.
+    dependency_names: set[str] | None = None,
+) -> dict[str | None, dict[str, str]]:
+    """Split --config items by target: None for root, named for components/deps.
 
-    Returns (root_config, component_configs) where:
-      root_config = {"key": "raw_value_str", ...}
-      component_configs = {"component-name": {"key": "raw_value_str", ...}, ...}
+    A prefixed key like ``comp.key=val`` routes to the component or dependency
+    whose name matches ``comp``. Unprefixed keys go to the root (``None``).
     """
-    root_config: dict[str, str] = {}
-    component_configs: dict[str, dict[str, str]] = {}
+    result: dict[str | None, dict[str, str]] = {}
+    dep_names = dependency_names or set()
 
     for item in config:
         if "=" not in item:
@@ -81,18 +76,111 @@ def _partition_config_items(
 
         if "." in raw_key:
             prefix, suffix = raw_key.split(".", 1)
-            if prefix in component_metadatas:
-                component_configs.setdefault(prefix, {})[suffix] = value_str
+            if prefix in component_metadatas or prefix in dep_names:
+                result.setdefault(prefix, {})[suffix] = value_str
                 continue
 
-        root_config[raw_key] = value_str
+        result.setdefault(None, {})[raw_key] = value_str
 
-    return root_config, component_configs
+    return result
 
 
 def _resolve_plugin_name_from_archive(buf: bytes) -> str:
     _, meta = find_root_manifest_in_archive(buf)
     return meta.plugin.name
+
+
+def _resolve_interactive_settings(
+    metadata: IDAMetadataDescriptor,
+    plugin_name: str,
+    cli_config: dict[str, str],
+    *,
+    config_prefix: str = "",
+) -> dict[str, str]:
+    """Resolve settings for a plugin or component, prompting interactively if needed.
+
+    When ``config_prefix`` is set (e.g. "component-name"), the non-interactive
+    error message tells the user to pass ``--config prefix.key=value``.
+
+    Returns a dict of key -> raw-string-value ready for apply_resolved_settings.
+    """
+    if cli_config:
+        for key, value_str in cli_config.items():
+            descr = metadata.plugin.get_setting(key)
+            parsed_value = parse_setting_value(descr, value_str)
+            descr.validate_value(parsed_value)
+        return cli_config
+
+    if not metadata.plugin.settings:
+        return {}
+
+    needed_settings = [
+        s
+        for s in metadata.plugin.settings
+        if not has_setting_in_config(plugin_name, s.key) and s.required and s.default is None
+    ]
+
+    if needed_settings and not console.is_interactive:
+        key_prefix = f"{config_prefix}." if config_prefix else ""
+        setting_names = ", ".join(f"--config {key_prefix}{s.key}=<value>" for s in needed_settings)
+        label = f"component '{plugin_name}'" if config_prefix else "plugin"
+        raise ValueError(
+            f"{label} requires configuration but console is not interactive. "
+            f"Please provide settings via command line: {setting_names}"
+        )
+
+    if console.is_interactive:
+        if config_prefix:
+            console.print(f"\nconfigure component [blue]{plugin_name}[/blue]:")
+        existing_config = get_ida_config()
+        existing_values: dict[str, str | bool] = {}
+        if plugin_name in existing_config.plugins:
+            existing_values = dict(existing_config.plugins[plugin_name].settings)
+
+        answers = prompt_plugin_settings(metadata.plugin.settings, existing_values)
+        if answers is None:
+            raise click.Abort()
+
+        result: dict[str, str] = {}
+        for key, answer in answers.items():
+            result[key] = str(answer).lower() if isinstance(answer, bool) else str(answer)
+        return result
+
+    return {}
+
+
+def render_install_result(result: InstallResult, *, editable: bool = False, is_upgrade: bool = False) -> None:
+    """Walk an InstallResult tree and print status lines to the console."""
+    if result.status == InstallStatus.SUCCESS:
+        suffix = " [yellow](editable)[/yellow]" if editable else ""
+        verb = "Upgraded" if is_upgrade else "Installed"
+        console.print(f"[green]{verb}[/green] plugin: [blue]{result.plugin}[/blue]=={result.version}{suffix}")
+    elif result.status == InstallStatus.ALREADY_INSTALLED:
+        console.print(f"[green]Already installed[/green] plugin: [blue]{result.plugin}[/blue]=={result.version}")
+    elif result.status == InstallStatus.FAILED:
+        console.print(f"[red]Error[/red]: {result.reason}")
+        raise click.Abort()
+
+    for dep in result.dependencies:
+        _render_dependency_result(dep)
+
+
+def _render_dependency_result(dep: InstallResult) -> None:
+    if dep.status == InstallStatus.SUCCESS:
+        if dep.reason == "upgraded":
+            console.print(f"  [green]Upgraded[/green] dependency: [blue]{dep.plugin}[/blue]")
+        else:
+            console.print(f"  [green]Installed[/green] dependency: [blue]{dep.plugin}[/blue]")
+    elif dep.status == InstallStatus.ALREADY_INSTALLED:
+        if dep.reason and "dropped" in dep.reason:
+            console.print(f"  [yellow]Note[/yellow]: {dep.plugin}: {dep.reason}")
+        else:
+            console.print(f"  [dim]Skipped[/dim] dependency: {dep.plugin} (already installed)")
+    elif dep.status == InstallStatus.FAILED:
+        if dep.reason and "cannot auto-install" in dep.reason:
+            console.print(f"  [yellow]Warning[/yellow]: {dep.plugin}: {dep.reason}")
+        else:
+            console.print(f"  [red]Failed[/red] dependency: {dep.plugin}: {dep.reason}")
 
 
 @click.command()
@@ -110,7 +198,7 @@ def _resolve_plugin_name_from_archive(buf: bytes) -> str:
     "--config",
     multiple=True,
     help="Configuration setting in key=value format. "
-    "For component settings, prefix with the component name: component.key=value. "
+    "Prefix with a component or dependency name to target it: name.key=value. "
     "Use true/false for booleans.",
 )
 @click.option(
@@ -145,6 +233,8 @@ def install_plugin(
 
         install_opts = InstallOptions(pip_options=pip_options, check_environment=check_environment)
         install_ctx = InstallContext(env=ida_env, options=install_opts)
+
+        # --- Source resolution ---
 
         # Editable install: skip the archive pipeline entirely. Read metadata
         # straight from the source directory and symlink it into place.
@@ -182,7 +272,6 @@ def install_plugin(
 
         elif plugin_spec.startswith("file://"):
             logger.info("installing from the local file system")
-            # fetch from file system
             buf = fetch_plugin_archive(plugin_spec)
             plugin_name = _resolve_plugin_name_from_archive(buf)
 
@@ -221,12 +310,11 @@ def install_plugin(
 
             from hcli.commands.plugin import repo_for_reference
 
-            # Installing is a choice, not a survey: resolve in exactly one
-            # repository -- the one named by the prefix, else the default.
+            # Resolve in exactly one repository -- the one named by the
+            # prefix, else the default.
             plugin_repo: BasePluginRepo = repo_for_reference(ctx, ref)
             plugin_repo_obj = plugin_repo
 
-            # reconstruct the plugin_spec for repo lookup without the @host suffix
             bare_spec = ref.name + ref.version_spec
             try:
                 with rich.status.Status("fetching plugin", console=stderr_console):
@@ -245,13 +333,13 @@ def install_plugin(
         if not editable:
             assert buf is not None  # invariant: only the editable branch leaves buf as None
             _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
-        # else: `metadata` was already populated from the source directory.
+        # else: metadata was already populated from the source directory.
 
-        # Same-name install conflict: another plugin with the same bare name is already
-        # installed from a different repository. The install layout is
-        # $IDAUSR/plugins/<name>, so only one same-name plugin can be installed at a time.
-        # Use the archive metadata host (not the download URL) as the long-term identity
-        # because GitHub redirects can cause the fetch URL and the metadata host to differ.
+        # --- Name conflict check ---
+        # The install layout is $IDAUSR/plugins/<name>, so only one same-name
+        # plugin can be installed at a time. Use the archive metadata host (not
+        # the download URL) as the long-term identity because GitHub redirects
+        # can cause the fetch URL and the metadata host to differ.
         try:
             installed = find_installed_plugin(plugin_name)
         except PluginNotInstalledError:
@@ -268,11 +356,12 @@ def install_plugin(
                 installed_path=installed.path,
             )
 
-        # `--upgrade` turns an already-installed plugin from an error into an
+        # --- Upgrade check ---
+        # --upgrade turns an already-installed plugin from an error into an
         # in-place upgrade, so callers that just want the plugin present (e.g.
         # `hcli mcp install`) can be run repeatedly. Editable installs already
         # replace whatever is at the destination, so there's nothing to do
-        # there. Nothing newer to install is success, not an error.
+        # there.
         is_upgrade = False
         if upgrade and installed is not None and not editable:
             if parse_plugin_version(metadata.plugin.version) <= parse_plugin_version(installed.version):
@@ -282,91 +371,63 @@ def install_plugin(
                 return
             is_upgrade = True
 
+        # --- Settings resolution (CLI responsibility) ---
+
         source = source_dir if editable else buf
         assert source is not None
         component_metadatas = validate_components_for_install(metadata, source, plugin_name, is_upgrade=is_upgrade)
 
-        root_cli_config, component_cli_configs = _partition_config_items(
-            config,
-            component_metadatas,
-        )
+        dep_names = {parse_dependency_spec(s).name for s in metadata.plugin.dependencies}
+        cli_settings = _partition_config_items(config, component_metadatas, dep_names)
 
-        if metadata.plugin.settings or root_cli_config:
-            for key, value_str in root_cli_config.items():
-                descr = metadata.plugin.get_setting(key)
-                parsed_value = parse_setting_value(descr, value_str)
-                descr.validate_value(parsed_value)
+        resolved_settings: dict[str | None, dict[str, str]] = {}
+        resolved_settings[None] = _resolve_interactive_settings(metadata, plugin_name, cli_settings.pop(None, {}))
 
-        for comp_name, comp_config in component_cli_configs.items():
-            comp_meta = component_metadatas[comp_name]
-            for key, value_str in comp_config.items():
-                descr = comp_meta.plugin.get_setting(key)
-                parsed_value = parse_setting_value(descr, value_str)
-                descr.validate_value(parsed_value)
-
-        if editable:
-            install_plugin_directory_editable(source_dir, plugin_name, install_ctx)
-        else:
-            assert buf is not None
-            if is_upgrade:
-                write_archive = upgrade_plugin_archive
-                status_text = "upgrading plugin"
-            else:
-                write_archive = install_plugin_archive
-                status_text = "installing plugin"
-
-            from hcli.commands.plugin import resolve_bundle_install_context
-
-            with (
-                resolve_bundle_install_context(plugin_repo_obj, install_ctx, plugin_name) as effective_ctx,
-                rich.status.Status(status_text, console=stderr_console),
-            ):
-                write_archive(buf, plugin_name, effective_ctx)
-
-        try:
-            _apply_plugin_settings(
-                metadata,
-                plugin_name,
-                root_cli_config,
+        for comp_name, comp_meta in component_metadatas.items():
+            comp_cli = cli_settings.pop(comp_name, {})
+            if not comp_meta.plugin.settings and not comp_cli:
+                continue
+            resolved_settings[comp_name] = _resolve_interactive_settings(
+                comp_meta, comp_name, comp_cli, config_prefix=comp_name
             )
 
-            for comp_name, comp_meta in component_metadatas.items():
-                if not comp_meta.plugin.settings and comp_name not in component_cli_configs:
-                    continue
-                _apply_component_settings(
-                    comp_meta,
-                    comp_name,
-                    component_cli_configs.get(comp_name, {}),
-                )
+        resolved_settings.update(cli_settings)
 
-        except Exception:
+        # --- Orchestrate ---
+
+        from hcli.commands.plugin import resolve_bundle_install_context
+
+        dep_repo = ctx.obj.get("plugin_repos") or plugin_repo_obj
+
+        with resolve_bundle_install_context(plugin_repo_obj, install_ctx, plugin_name) as effective_ctx:
             if is_upgrade:
-                # The upgrade itself succeeded; the plugin the user already had
-                # is now at the new version. Uninstalling it here would be a
-                # worse outcome than leaving the settings unconfigured.
-                logger.warning("failed to configure settings")
-                raise
-            logger.warning("failed to configure settings, removing installation...")
-            with rich.status.Status("rolling back installation", console=stderr_console):
-                uninstall_plugin(plugin_name)
-            raise
+                assert buf is not None
+                with rich.status.Status("upgrading plugin", console=stderr_console):
+                    result = apply_upgrade(
+                        zip_data=buf,
+                        plugin_name=plugin_name,
+                        metadata=metadata,
+                        ctx=effective_ctx,
+                        settings=resolved_settings or None,
+                        plugin_repo=dep_repo,
+                    )
+            else:
+                with rich.status.Status(
+                    "installing plugin" if not editable else "installing plugin (editable)",
+                    console=stderr_console,
+                ):
+                    result = apply_install(
+                        source=source,
+                        plugin_name=plugin_name,
+                        metadata=metadata,
+                        ctx=effective_ctx,
+                        settings=resolved_settings or None,
+                        plugin_repo=dep_repo,
+                        editable=editable,
+                    )
 
-        suffix = " [yellow](editable)[/yellow]" if editable else ""
-        verb = "Upgraded" if is_upgrade else "Installed"
-        console.print(f"[green]{verb}[/green] plugin: [blue]{plugin_name}[/blue]=={metadata.plugin.version}{suffix}")
+        render_install_result(result, editable=editable, is_upgrade=is_upgrade)
 
-        if metadata.plugin.dependencies:
-            try:
-                # Resolve deps across all configured repos, not just the source repo.
-                dep_repo = ctx.obj.get("plugin_repos") or plugin_repo_obj
-                _handle_install_dependencies(
-                    metadata=metadata,
-                    plugin_repo=dep_repo,
-                    install_ctx=install_ctx,
-                )
-            except Exception as dep_err:
-                logger.debug("dependency handling failed: %s", dep_err, exc_info=True)
-                console.print(f"[yellow]Warning[/yellow]: failed to process dependencies: {dep_err}")
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
         raise click.Abort()
@@ -394,136 +455,3 @@ def install_plugin(
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
         raise click.Abort()
-
-
-def _apply_plugin_settings(
-    metadata: IDAMetadataDescriptor,
-    plugin_name: str,
-    cli_config: dict[str, str],
-) -> None:
-    """Apply root plugin settings from --config or interactive prompt."""
-    if not metadata.plugin.settings and not cli_config:
-        return
-
-    if cli_config:
-        for key, value_str in cli_config.items():
-            descr = metadata.plugin.get_setting(key)
-            parsed_value = parse_setting_value(descr, value_str)
-            descr.validate_value(parsed_value)
-            if descr.default != parsed_value:
-                set_setting_for_metadata(plugin_name, key, parsed_value, metadata)
-    elif metadata.plugin.settings:
-        needed_settings = [
-            s
-            for s in metadata.plugin.settings
-            if not has_setting_in_config(plugin_name, s.key) and s.required and s.default is None
-        ]
-
-        if needed_settings and not console.is_interactive:
-            setting_names = ", ".join(f"--config {s.key}=<value>" for s in needed_settings)
-            raise ValueError(
-                f"plugin requires configuration but console is not interactive. "
-                f"Please provide settings via command line: {setting_names}"
-            )
-
-        if console.is_interactive:
-            existing_config = get_ida_config()
-            existing_values: dict[str, str | bool] = {}
-            if plugin_name in existing_config.plugins:
-                existing_values = dict(existing_config.plugins[plugin_name].settings)
-
-            answers = prompt_plugin_settings(metadata.plugin.settings, existing_values)
-            if answers is None:
-                raise click.Abort()
-        else:
-            answers = {}
-
-        for key, answer in answers.items():
-            descr = metadata.plugin.get_setting(key)
-            if descr.default == answer:
-                continue
-            set_setting_for_metadata(plugin_name, descr.key, answer, metadata)
-
-
-def _apply_component_settings(
-    comp_metadata: IDAMetadataDescriptor,
-    comp_name: str,
-    cli_config: dict[str, str],
-) -> None:
-    """Apply component settings from --config or interactive prompt."""
-    if not comp_metadata.plugin.settings and not cli_config:
-        return
-
-    if cli_config:
-        for key, value_str in cli_config.items():
-            descr = comp_metadata.plugin.get_setting(key)
-            parsed_value = parse_setting_value(descr, value_str)
-            descr.validate_value(parsed_value)
-            if descr.default != parsed_value:
-                set_setting_for_metadata(comp_name, key, parsed_value, comp_metadata)
-    elif comp_metadata.plugin.settings:
-        needed_settings = [
-            s
-            for s in comp_metadata.plugin.settings
-            if not has_setting_in_config(comp_name, s.key) and s.required and s.default is None
-        ]
-
-        if needed_settings and not console.is_interactive:
-            setting_names = ", ".join(f"--config {comp_name}.{s.key}=<value>" for s in needed_settings)
-            raise ValueError(
-                f"component '{comp_name}' requires configuration but console is not interactive. "
-                f"Please provide settings via command line: {setting_names}"
-            )
-
-        if console.is_interactive:
-            console.print(f"\nconfigure component [blue]{comp_name}[/blue]:")
-            existing_config = get_ida_config()
-            existing_values: dict[str, str | bool] = {}
-            if comp_name in existing_config.plugins:
-                existing_values = dict(existing_config.plugins[comp_name].settings)
-
-            answers = prompt_plugin_settings(comp_metadata.plugin.settings, existing_values)
-            if answers is None:
-                raise click.Abort()
-        else:
-            answers = {}
-
-        for key, answer in answers.items():
-            descr = comp_metadata.plugin.get_setting(key)
-            if descr.default == answer:
-                continue
-            set_setting_for_metadata(comp_name, key, answer, comp_metadata)
-
-
-def _handle_install_dependencies(
-    *,
-    metadata: IDAMetadataDescriptor,
-    plugin_repo: BasePluginRepo | None,
-    install_ctx: InstallContext,
-) -> None:
-    if plugin_repo is None:
-        console.print(
-            f"[yellow]Warning[/yellow]: {metadata.plugin.name} declares dependencies "
-            f"but they cannot be auto-installed from a local source."
-        )
-        for dep in metadata.plugin.dependencies:
-            console.print(f"  {dep}")
-        console.print("Install them manually from a plugin repository.")
-        return
-
-    console.print(f"Installing dependencies for [blue]{metadata.plugin.name}[/blue]...")
-    with rich.status.Status("installing dependencies", console=stderr_console):
-        result = install_dependencies(
-            metadata=metadata,
-            plugin_repo=plugin_repo,
-            ctx=install_ctx,
-        )
-
-    for name in result.installed:
-        console.print(f"  [green]Installed[/green] dependency: [blue]{name}[/blue]")
-    for name in result.upgraded:
-        console.print(f"  [green]Upgraded[/green] dependency: [blue]{name}[/blue]")
-    for name in result.skipped:
-        console.print(f"  [dim]Skipped[/dim] dependency: {name} (already installed)")
-    for name, error in result.failed:
-        console.print(f"  [red]Failed[/red] dependency: {name}: {error}")
