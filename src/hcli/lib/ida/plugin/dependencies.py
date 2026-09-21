@@ -34,7 +34,6 @@ def install_dependencies(
     plugin_repo: BasePluginRepo,
     ctx: InstallContext,
     *,
-    _seen: set[str] | None = None,
     _depth: int = 0,
 ) -> DependencyResult:
     """Install dependencies declared in a plugin's metadata, recursively.
@@ -45,8 +44,10 @@ def install_dependencies(
     lower version are upgraded; higher versions are left alone with a warning.
 
     After installing each dependency, its own declared dependencies are
-    installed recursively, bounded by ``MAX_DEPENDENCY_DEPTH`` and cycle
-    detection by name.
+    installed recursively, bounded by ``MAX_DEPENDENCY_DEPTH``. Cycles are
+    detected by checking on-disk state: since parents are always installed
+    before children, a dependency that already exists on disk is either
+    already satisfied or part of a cycle.
 
     Failures on individual dependencies do not abort the remaining installs.
 
@@ -55,13 +56,11 @@ def install_dependencies(
     """
     from hcli.lib.ida.plugin.install import (
         find_installed_plugin,
-        get_metadata_from_plugin_archive,
+        get_metadata_from_plugin_directory,
+        get_plugin_directory,
         install_plugin_archive,
         upgrade_plugin_archive,
     )
-
-    if _seen is None:
-        _seen = set()
 
     result = DependencyResult()
 
@@ -69,13 +68,8 @@ def install_dependencies(
         ref = parse_dependency_spec(spec)
         dep_name = ref.name
 
-        if dep_name in _seen:
-            logger.debug("skipping circular dependency: %s", dep_name)
-            continue
-        _seen.add(dep_name)
-
         try:
-            buf = _install_one_dependency(
+            changed = _install_one_dependency(
                 dep_name=dep_name,
                 version_spec=ref.version_spec,
                 host=ref.host,
@@ -91,15 +85,16 @@ def install_dependencies(
             result.failed.append((dep_name, str(e)))
             continue
 
-        if buf is not None and _depth < MAX_DEPENDENCY_DEPTH:
+        if changed and _depth < MAX_DEPENDENCY_DEPTH:
+            dep_dir = get_plugin_directory(dep_name)
             try:
-                _, dep_metadata = get_metadata_from_plugin_archive(buf, dep_name)
+                dep_metadata = get_metadata_from_plugin_directory(dep_dir)
             except Exception as e:
                 logger.debug("could not read metadata for dependency %s: %s", dep_name, e)
                 continue
             if dep_metadata.plugin.dependencies:
                 logger.debug("recursing into dependencies of %s (depth %d)", dep_name, _depth + 1)
-                sub_result = install_dependencies(dep_metadata, plugin_repo, ctx, _seen=_seen, _depth=_depth + 1)
+                sub_result = install_dependencies(dep_metadata, plugin_repo, ctx, _depth=_depth + 1)
                 result.installed.extend(sub_result.installed)
                 result.skipped.extend(sub_result.skipped)
                 result.upgraded.extend(sub_result.upgraded)
@@ -119,12 +114,11 @@ def _install_one_dependency(
     find_installed: Callable[[str], Any],
     do_install: Callable[..., None],
     do_upgrade: Callable[..., None],
-) -> bytes | None:
+) -> bool:
     """Install or upgrade a single dependency.
 
     Returns:
-        The fetched archive bytes when an install or upgrade occurred
-        (for recursive dependency resolution), None when skipped.
+        True when an install or upgrade occurred, False when skipped.
     """
     try:
         installed = find_installed(dep_name)
@@ -135,7 +129,7 @@ def _install_one_dependency(
         if not version_spec:
             logger.info("dependency %s already installed (%s), skipping", dep_name, installed.version)
             result.skipped.append(dep_name)
-            return None
+            return False
 
         pinned_version = version_spec.lstrip("=")
         installed_ver = parse_plugin_version(installed.version)
@@ -144,7 +138,7 @@ def _install_one_dependency(
         if installed_ver == pinned_ver:
             logger.info("dependency %s already at pinned version %s, skipping", dep_name, pinned_version)
             result.skipped.append(dep_name)
-            return None
+            return False
 
         if installed_ver > pinned_ver:
             logger.warning(
@@ -154,7 +148,7 @@ def _install_one_dependency(
                 pinned_version,
             )
             result.skipped.append(dep_name)
-            return None
+            return False
 
         logger.info("dependency %s at %s needs upgrade to %s", dep_name, installed.version, pinned_version)
         bare_spec = dep_name + version_spec
@@ -163,7 +157,7 @@ def _install_one_dependency(
         )
         do_upgrade(buf, _dep_name, ctx)
         result.upgraded.append(dep_name)
-        return buf
+        return True
 
     bare_spec = dep_name + version_spec
     _dep_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
@@ -171,4 +165,4 @@ def _install_one_dependency(
     )
     do_install(buf, _dep_name, ctx)
     result.installed.append(dep_name)
-    return buf
+    return True
