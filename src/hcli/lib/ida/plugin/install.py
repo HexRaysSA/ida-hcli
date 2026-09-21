@@ -905,7 +905,6 @@ def pack_plugin_directory_to_zip(source_dir: Path) -> bytes:
     return buf.getvalue()
 
 
-
 def _editable_pth_filename(plugin_name: str) -> str:
     safe = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in plugin_name)
     return f"_hcli_editable_{safe}.pth"
