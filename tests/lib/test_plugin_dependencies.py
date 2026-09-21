@@ -29,19 +29,21 @@ from hcli.lib.ida.plugin.install import (
     upgrade_plugin_archive,
 )
 from hcli.lib.ida.plugin.reference import parse_dependency_spec
+from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin
 from hcli.lib.ida.plugin.repo.fs import FileSystemPluginRepo
 
 logger = logging.getLogger(__name__)
 
 HOST = "https://github.com/test/test-pack"
+HOST_B = "https://plugins.hex-rays.com/test-org/test-repo/test-pack"
 
 
-def _make_plugin_metadata(name: str, version: str, deps: list[str] | None = None) -> dict:
+def _make_plugin_metadata(name: str, version: str, deps: list[str] | None = None, host: str = HOST) -> dict:
     plugin: dict = {
         "name": name,
         "version": version,
         "entryPoint": f"{name}.py",
-        "urls": {"repository": HOST},
+        "urls": {"repository": host},
         "authors": [{"name": "Test", "email": "test@example.com"}],
     }
     if deps is not None:
@@ -49,9 +51,9 @@ def _make_plugin_metadata(name: str, version: str, deps: list[str] | None = None
     return {"IDAMetadataDescriptorVersion": 1, "plugin": plugin}
 
 
-def _make_plugin_zip(name: str, version: str, deps: list[str] | None = None) -> bytes:
+def _make_plugin_zip(name: str, version: str, deps: list[str] | None = None, host: str = HOST) -> bytes:
     buf = io.BytesIO()
-    metadata = _make_plugin_metadata(name, version, deps)
+    metadata = _make_plugin_metadata(name, version, deps, host=host)
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr(f"{name}/ida-plugin.json", json.dumps(metadata))
         zf.writestr(f"{name}/{name}.py", "# plugin")
@@ -502,6 +504,139 @@ def test_uninstall_pack_noninteractive_keeps_deps(virtual_ida_environment):
 
 
 # ---------------------------------------------------------------------------
+# Cross-repo dependency resolution
+# ---------------------------------------------------------------------------
+
+
+class _CombinedRepo(BasePluginRepo):
+    """Merges plugins from multiple FileSystemPluginRepo instances for testing."""
+
+    def __init__(self, repos: list[FileSystemPluginRepo]):
+        super().__init__()
+        self._repos = repos
+
+    def get_plugins(self) -> list[Plugin]:
+        plugins: list[Plugin] = []
+        for repo in self._repos:
+            plugins.extend(repo.get_plugins())
+        return plugins
+
+
+@contextlib.contextmanager
+def _make_combined_repo(repo_specs: list[dict[str, bytes]]) -> Iterator[_CombinedRepo]:
+    with contextlib.ExitStack() as stack:
+        repos = []
+        for archives in repo_specs:
+            tmp = stack.enter_context(tempfile.TemporaryDirectory())
+            repo_dir = Path(tmp)
+            for filename, data in archives.items():
+                (repo_dir / filename).write_bytes(data)
+            repos.append(FileSystemPluginRepo(repo_dir))
+        yield _CombinedRepo(repos)
+
+
+def test_cross_repo_dep_resolves_from_aggregate(virtual_ida_environment):
+    ctx = make_test_install_context()
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"], host=HOST_B)
+    dep_a_zip = _make_plugin_zip("dep-a", "1.0.0", host=HOST)
+
+    with _make_combined_repo(
+        [
+            {"dep-a.zip": dep_a_zip},
+        ]
+    ) as combined:
+        install_plugin_archive(pack_zip, "my-pack", ctx)
+        _, metadata = _parse_metadata(pack_zip, "my-pack")
+        result = install_dependencies(metadata=metadata, plugin_repo=combined, ctx=ctx)
+
+    assert result.installed == ["dep-a"]
+    assert not result.failed
+
+
+def test_cross_repo_dep_with_host_resolves_correctly(virtual_ida_environment):
+    ctx = make_test_install_context()
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=[f"dep-a@{HOST}"], host=HOST_B)
+    dep_a_community = _make_plugin_zip("dep-a", "1.0.0", host=HOST)
+    dep_a_private = _make_plugin_zip("dep-a", "2.0.0", host=HOST_B)
+
+    with _make_combined_repo(
+        [
+            {"dep-a.zip": dep_a_community},
+            {"dep-a.zip": dep_a_private},
+        ]
+    ) as combined:
+        install_plugin_archive(pack_zip, "my-pack", ctx)
+        _, metadata = _parse_metadata(pack_zip, "my-pack")
+        result = install_dependencies(metadata=metadata, plugin_repo=combined, ctx=ctx)
+
+    assert result.installed == ["dep-a"]
+    assert _get_installed_version("dep-a") == "1.0.0"
+
+
+def test_cross_repo_bare_name_ambiguous_raises(virtual_ida_environment):
+    ctx = make_test_install_context()
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"], host=HOST_B)
+    dep_a_community = _make_plugin_zip("dep-a", "1.0.0", host=HOST)
+    dep_a_private = _make_plugin_zip("dep-a", "2.0.0", host=HOST_B)
+
+    with _make_combined_repo(
+        [
+            {"dep-a.zip": dep_a_community},
+            {"dep-a.zip": dep_a_private},
+        ]
+    ) as combined:
+        install_plugin_archive(pack_zip, "my-pack", ctx)
+        _, metadata = _parse_metadata(pack_zip, "my-pack")
+        result = install_dependencies(metadata=metadata, plugin_repo=combined, ctx=ctx)
+
+    assert len(result.failed) == 1
+    assert result.failed[0][0] == "dep-a"
+
+
+def test_cross_repo_unique_bare_name_resolves(virtual_ida_environment):
+    ctx = make_test_install_context()
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"], host=HOST_B)
+    dep_a_zip = _make_plugin_zip("dep-a", "1.0.0", host=HOST)
+    dep_b_zip = _make_plugin_zip("dep-b", "1.0.0", host=HOST_B)
+
+    with _make_combined_repo(
+        [
+            {"dep-a.zip": dep_a_zip},
+            {"dep-b.zip": dep_b_zip},
+        ]
+    ) as combined:
+        install_plugin_archive(pack_zip, "my-pack", ctx)
+        _, metadata = _parse_metadata(pack_zip, "my-pack")
+        result = install_dependencies(metadata=metadata, plugin_repo=combined, ctx=ctx)
+
+    assert result.installed == ["dep-a"]
+    assert not result.failed
+
+
+def test_cross_repo_transitive_dep_resolves(virtual_ida_environment):
+    ctx = make_test_install_context()
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["mid-dep"], host=HOST_B)
+    mid_dep_zip = _make_plugin_zip("mid-dep", "1.0.0", deps=["leaf-dep"], host=HOST)
+    leaf_dep_zip = _make_plugin_zip("leaf-dep", "1.0.0", host=HOST_B)
+
+    with _make_combined_repo(
+        [
+            {"mid-dep.zip": mid_dep_zip},
+            {"leaf-dep.zip": leaf_dep_zip},
+        ]
+    ) as combined:
+        install_plugin_archive(pack_zip, "my-pack", ctx)
+        _, metadata = _parse_metadata(pack_zip, "my-pack")
+        result = install_dependencies(metadata=metadata, plugin_repo=combined, ctx=ctx)
+
+    assert "mid-dep" in result.installed
+    assert "leaf-dep" in result.installed
+    assert not result.failed
+    assert is_plugin_installed("mid-dep")
+    assert is_plugin_installed("leaf-dep")
+
+
+# ---------------------------------------------------------------------------
 # Lint validation
 # ---------------------------------------------------------------------------
 
@@ -529,6 +664,29 @@ def test_lint_invalid_dependency_spec():
     descriptor.plugin.dependencies = ["dep-a", "!!!invalid"]
     count = _check_dependency_specs(descriptor, "test")
     assert count == 1
+
+
+def test_lint_bare_dep_warns_for_non_community_plugin(capsys):
+    data = _make_plugin_metadata("my-pack", "1.0.0", deps=["dep-a"], host=HOST_B)
+    descriptor = IDAMetadataDescriptor.model_validate(data)
+    count = _check_dependency_specs(descriptor, "test")
+    assert count == 1
+    captured = capsys.readouterr()
+    assert "name@host" in captured.out
+
+
+def test_lint_qualified_dep_no_warning_for_non_community_plugin(capsys):
+    data = _make_plugin_metadata("my-pack", "1.0.0", deps=[f"dep-a@{HOST}"], host=HOST_B)
+    descriptor = IDAMetadataDescriptor.model_validate(data)
+    count = _check_dependency_specs(descriptor, "test")
+    assert count == 0
+
+
+def test_lint_bare_dep_no_warning_for_community_plugin(capsys):
+    data = _make_plugin_metadata("my-pack", "1.0.0", deps=["dep-a"], host=HOST)
+    descriptor = IDAMetadataDescriptor.model_validate(data)
+    count = _check_dependency_specs(descriptor, "test")
+    assert count == 0
 
 
 # ---------------------------------------------------------------------------

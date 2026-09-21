@@ -491,8 +491,9 @@ class PluginMetadata(BaseModel):
         description=(
             "Plugins to install alongside this one. Each entry is a plugin "
             "reference: a bare name, name==version, or name@host with optional "
-            "version pin. Dependencies are fetched from the declaring plugin's "
-            "source and installed as independent top-level plugins."
+            "version pin. Dependencies are resolved across all configured "
+            "repositories. Use name@host to pin a dependency to a specific "
+            "repository and avoid ambiguity."
         ),
         examples=[["go-runtime-detector", "go-string-extractor==1.2.0"]],
     )

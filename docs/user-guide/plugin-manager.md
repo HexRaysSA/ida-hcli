@@ -121,7 +121,7 @@ Plugins are written to `$IDAUSR/plugins`, which is typically `~/.idapro/plugins`
 
 ### Plugin dependencies
 
-A plugin can declare other plugins as dependencies in its `ida-plugin.json`. When you install or upgrade such a plugin, HCLI fetches the declared dependencies from the same repository and installs them as independent top-level plugins. Dependencies that themselves declare further dependencies are resolved recursively, up to a depth of 10. If a dependency is already installed and satisfies the version requirement, it is skipped.
+A plugin can declare other plugins as dependencies in its `ida-plugin.json`. When you install or upgrade such a plugin, HCLI resolves the declared dependencies across all configured repositories and installs them as independent top-level plugins. Dependencies that themselves declare further dependencies are resolved recursively, up to a depth of 10. If a dependency is already installed and satisfies the version requirement, it is skipped. When a bare dependency name matches plugins from different repositories, the install stops with an error; the declaring plugin must use the `name@host` format to disambiguate.
 
 On upgrade, HCLI installs any newly-added dependencies and tells you about any that were removed from the manifest (they stay installed so you can remove them yourself if no longer needed).
 
