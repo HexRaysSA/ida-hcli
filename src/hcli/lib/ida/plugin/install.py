@@ -610,6 +610,9 @@ def validate_can_install_plugin(
         logger.error(f"Can't install plugin: {e!s}")
         raise InvalidPluginNameError(name, str(e)) from e
 
+    # is_symlink() is checked in addition to exists() so a broken symlink
+    # (dangling editable install) is reported rather than tripping up
+    # extraction later.
     if destination_path.exists() or destination_path.is_symlink():
         if is_valid_plugin_directory(destination_path):
             logger.warning(f"Plugin directory already exists: {destination_path}")
@@ -750,7 +753,12 @@ def apply_plugin_archive_files(
     destination: Path,
     plugin_name: str,
 ) -> None:
-    """Extract plugin archive to disk, cleaning up any stale editable .pth file first."""
+    """Extract plugin archive to disk, cleaning up any stale editable .pth file first.
+
+    A previous editable install of the same plugin may have left a .pth
+    in IDA's site-packages. Drop it so the non-editable install isn't
+    shadowed by stale paths on sys.path.
+    """
     _remove_editable_pth_file(plugin_name)
     extract_zip_subdirectory_to(zip_data, plugin_subdirectory, destination)
 
@@ -765,6 +773,8 @@ def apply_plugin_editable_files(
     Replaces any existing install at the destination and writes a .pth file
     for src-layout projects.
     """
+    # is_symlink() is checked before exists() because a broken symlink
+    # fails exists() but should still be replaced.
     if destination.is_symlink() or destination.is_file():
         destination.unlink()
     elif destination.exists():
@@ -781,6 +791,12 @@ def apply_plugin_editable_files(
 
     logger.info("symlinked %s -> %s", destination, source_dir)
 
+    # If the project uses the standard src-layout, drop a .pth file into
+    # IDA's site-packages so the package is importable. This mirrors what
+    # `pip install -e .` does (PEP 660). For flat-layout projects, IDA
+    # already exposes the plugin directory on sys.path (because plugin.py
+    # is exec'd from there), so no .pth is needed -- but we still clear
+    # any stale one left over from a prior src-layout install.
     src_dir = source_dir / "src"
     if src_dir.is_dir():
         _write_editable_pth_file(plugin_name, src_dir)
@@ -796,10 +812,18 @@ def apply_upgrade_with_rollback(
 ) -> None:
     """Extract a plugin archive over an existing install, rolling back on failure.
 
+    Note that Python dependencies installed before the failure aren't
+    rolled back; they're upgraded in place and left as-is.
+
     Raises:
         PluginInUseError: when the upgrade target is locked.
         NoSpaceError: when disk is full during extraction.
     """
+    # Atomically move the current install into the trash area before writing
+    # anything. When plugin files are locked (e.g. loaded by a running IDA
+    # on Windows), this fails without modifying the installation. The unique
+    # trash name means a stale rollback from an interrupted upgrade never
+    # blocks this one; the sweep removes such leftovers later.
     rollback_path = move_plugin_directory_to_trash(destination, label=".rollback")
     try:
         apply_plugin_archive_files(zip_data, plugin_subdirectory, destination, plugin_name)

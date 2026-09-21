@@ -64,6 +64,10 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         except ValueError as e:
             raise click.BadParameter(f"invalid plugin reference: {plugin_spec!r}: {e}")
 
+        # Resolve the installed plugin first so we can anchor the upgrade to
+        # the repository the user currently has installed. This avoids
+        # switching repositories implicitly and also resolves the host for
+        # bare-name upgrades even when the repository has a colliding name.
         try:
             installed = find_installed_plugin(ref.name)
         except PluginNotInstalledError:
@@ -81,8 +85,15 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             )
             raise click.Abort()
 
+        # Anchor the lookup to the installed host regardless of whether the
+        # user supplied it. This is what makes bare-name upgrades work even
+        # when the repository has a colliding name.
         bare_spec = ref.name + ref.version_spec
         logger.info("finding plugin in repository")
+        # An upgrade is anchored to the installed name@host, so it may resolve
+        # across every configured repository -- the plugin's identity, not the
+        # default scope, decides which one answers. An explicit prefix narrows
+        # that to one repository, mirroring the @host check above.
         if ref.repo:
             from hcli.commands.plugin import repo_for_reference
 
