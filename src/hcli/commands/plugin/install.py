@@ -284,32 +284,11 @@ def install_plugin(
                 return
             is_upgrade = True
 
-        from hcli.lib.ida.plugin.components import (
-            check_component_name_collisions,
-            find_suite_for_component,
-            walk_component_tree_from_archive,
-            walk_component_tree_from_directory,
-        )
+        from hcli.lib.ida.plugin.components import validate_components_for_install
 
-        suite_record = find_suite_for_component(plugin_name)
-        if suite_record is not None:
-            raise ValueError(f"'{plugin_name}' is a component of '{suite_record.name}'; uninstall the suite first")
-
-        component_metadatas: dict[str, IDAMetadataDescriptor] = {}
-        if editable and metadata.plugin.components:
-            for comp_path, comp_meta in walk_component_tree_from_directory(source_dir):
-                component_metadatas[comp_meta.plugin.name] = comp_meta
-        elif not editable and buf is not None and metadata.plugin.components:
-            root_path, root_meta = get_metadata_from_plugin_archive(buf, plugin_name)
-            component_tree = walk_component_tree_from_archive(buf, root_path, root_meta)
-            component_names = {meta.plugin.name for _, meta in component_tree}
-            exclude = plugin_name if is_upgrade else None
-            collisions = check_component_name_collisions(component_names, exclude_suite=exclude)
-            if collisions:
-                msg = "component name collisions:\n" + "\n".join(f"  {c}" for c in collisions)
-                raise ValueError(msg)
-            for _comp_path, comp_meta in component_tree:
-                component_metadatas[comp_meta.plugin.name] = comp_meta
+        source = source_dir if editable else buf
+        assert source is not None
+        component_metadatas = validate_components_for_install(metadata, source, plugin_name, is_upgrade=is_upgrade)
 
         root_cli_config, component_cli_configs = _partition_config_items(
             config,

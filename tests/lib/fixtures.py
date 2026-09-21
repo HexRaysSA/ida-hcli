@@ -226,8 +226,6 @@ def make_test_install_context(**overrides) -> InstallContext:
     env_kwargs: dict = {
         "platform": os.environ.get("HCLI_CURRENT_IDA_PLATFORM", "linux-x86_64"),
         "ida_version": os.environ.get("HCLI_CURRENT_IDA_VERSION", "9.1"),
-        "python_exe": None,
-        "python_version": None,
     }
     opts_kwargs: dict = {
         "pip_options": PipOptions(),

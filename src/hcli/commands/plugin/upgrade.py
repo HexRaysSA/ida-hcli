@@ -159,6 +159,8 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         raise click.Abort()
 
     except KeyError as e:
+        # get_plugins() drops repositories it could not consult, so a miss
+        # here may mean "your session expired", not "no such plugin".
         logger.debug("error: %s", e, exc_info=True)
         console.print(f"[red]Error[/red]: {e}")
         aggregate = ctx.obj.get("plugin_repos")

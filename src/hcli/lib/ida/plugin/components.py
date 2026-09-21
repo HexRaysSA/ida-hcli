@@ -241,6 +241,54 @@ def check_component_name_collisions(
     return collisions
 
 
+def validate_components_for_install(
+    metadata: IDAMetadataDescriptor,
+    source: bytes | Path,
+    plugin_name: str,
+    *,
+    is_upgrade: bool = False,
+) -> dict[str, IDAMetadataDescriptor]:
+    """Walk the component tree and check for name collisions.
+
+    For archive installs (``source`` is bytes), walks the zip and checks
+    component names against all installed plugins. For editable/directory
+    installs (``source`` is a Path), walks the directory.
+
+    Returns:
+        Mapping of component name to metadata for all components found.
+
+    Raises:
+        ValueError: when the plugin name is a component of an existing suite,
+            or when component names collide with installed plugins.
+    """
+    suite_record = find_suite_for_component(plugin_name)
+    if suite_record is not None:
+        raise ValueError(f"'{plugin_name}' is a component of '{suite_record.name}'; uninstall the suite first")
+
+    component_metadatas: dict[str, IDAMetadataDescriptor] = {}
+    if not metadata.plugin.components:
+        return component_metadatas
+
+    if isinstance(source, Path):
+        for _comp_path, comp_meta in walk_component_tree_from_directory(source):
+            component_metadatas[comp_meta.plugin.name] = comp_meta
+    else:
+        from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
+
+        root_path, root_meta = get_metadata_from_plugin_archive(source, plugin_name)
+        component_tree = walk_component_tree_from_archive(source, root_path, root_meta)
+        component_names = {meta.plugin.name for _, meta in component_tree}
+        exclude = plugin_name if is_upgrade else None
+        collisions = check_component_name_collisions(component_names, exclude_suite=exclude)
+        if collisions:
+            msg = "component name collisions:\n" + "\n".join(f"  {c}" for c in collisions)
+            raise ValueError(msg)
+        for _comp_path, comp_meta in component_tree:
+            component_metadatas[comp_meta.plugin.name] = comp_meta
+
+    return component_metadatas
+
+
 def find_undeclared_plugins_in_directory(
     plugin_dir: Path,
 ) -> list[tuple[Path, IDAMetadataDescriptor]]:

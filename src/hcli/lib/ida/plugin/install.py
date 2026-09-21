@@ -398,12 +398,7 @@ def collect_all_python_dependencies(
     installed_records: list[InstalledPluginRecord],
     exclude_names: set[str] | None = None,
 ) -> list[str]:
-    """Collect Python dependencies from all installed plugins plus a new plugin's deps.
-
-    Iterates ``installed_records``, reads each plugin's declared Python
-    dependencies (with try/except for unreadable metadata), skips names in
-    ``exclude_names``, and appends ``new_plugin_deps``.
-    """
+    """Collect Python dependencies from all installed plugins plus a new plugin's deps."""
     all_deps: list[str] = []
     for record in installed_records:
         if exclude_names and record.name in exclude_names:
@@ -755,13 +750,7 @@ def apply_plugin_archive_files(
     destination: Path,
     plugin_name: str,
 ) -> None:
-    """Write plugin files from a zip archive to disk.
-
-    Cleans up any stale editable .pth file first, then extracts the archive
-    into a staging area and atomically renames it to the destination.
-
-    This function performs only disk operations and no validation.
-    """
+    """Extract plugin archive to disk, cleaning up any stale editable .pth file first."""
     _remove_editable_pth_file(plugin_name)
     extract_zip_subdirectory_to(zip_data, plugin_subdirectory, destination)
 
@@ -771,13 +760,10 @@ def apply_plugin_editable_files(
     destination: Path,
     plugin_name: str,
 ) -> None:
-    """Create a symlink for an editable plugin install.
+    """Symlink ``source_dir`` into the plugins directory for an editable install.
 
-    Removes any existing install at the destination (file, directory, or stale
-    symlink), creates a symlink to ``source_dir``, and writes a .pth file for
-    src-layout projects.
-
-    This function performs only disk operations and no validation.
+    Replaces any existing install at the destination and writes a .pth file
+    for src-layout projects.
     """
     if destination.is_symlink() or destination.is_file():
         destination.unlink()
@@ -811,10 +797,7 @@ def apply_plugin_files(
     plugin_subdirectory: Path | None = None,
     source_dir: Path | None = None,
 ) -> None:
-    """Write plugin files to disk after validation and pip dependencies are installed.
-
-    Delegates to ``apply_plugin_archive_files`` or ``apply_plugin_editable_files``
-    for the actual I/O, adding rollback logic for upgrades.
+    """Write plugin files to disk, with rollback logic for upgrades.
 
     Raises:
         ValueError: for editable symlink failures.
@@ -1193,17 +1176,21 @@ def upgrade_plugin_archive(
 
     python_dependencies = collect_python_dependencies_from_archive(zip_data, path, metadata)
     if python_dependencies:
-        all_python_dependencies = collect_all_python_dependencies(
-            python_dependencies,
-            get_installed_plugin_records(),
-            exclude_names={metadata.plugin.name},
-        )
+        with rich.status.Status("collecting existing Python dependencies", console=stderr_console):
+            all_python_dependencies = collect_all_python_dependencies(
+                python_dependencies,
+                get_installed_plugin_records(),
+                exclude_names={metadata.plugin.name},
+            )
         assert python_exe is not None
-        try:
-            pip_install_packages(python_exe, all_python_dependencies, pip_options=ctx.options.pip_options)
-        except CantInstallPackagesError:
-            logger.debug("can't install dependencies")
-            raise
+        with rich.status.Status(
+            f"installing Python dependencies: {', '.join(python_dependencies)}", console=stderr_console
+        ):
+            try:
+                pip_install_packages(python_exe, all_python_dependencies, pip_options=ctx.options.pip_options)
+            except CantInstallPackagesError:
+                logger.debug("can't install dependencies")
+                raise
 
     apply_plugin_files(
         mode="upgrade",
