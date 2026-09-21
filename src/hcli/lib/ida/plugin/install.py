@@ -1224,21 +1224,22 @@ def apply_install(
     plugin_name: str,
     metadata: IDAMetadataDescriptor,
     ctx: InstallContext,
-    settings: dict[str, str] | None = None,
-    component_settings: dict[str, dict[str, str]] | None = None,
+    settings: dict[str | None, dict[str, str]] | None = None,
     plugin_repo: BasePluginRepo | None = None,
     editable: bool = False,
 ) -> InstallResult:
     """Library-level install entry point.
 
-    Receives structured input (already-resolved source, settings, context) and
-    returns a structured InstallResult. Never raises on expected failures.
+    ``settings`` maps target name to key-value pairs: ``None`` for the root
+    plugin, component names for components, dependency names for dependencies.
     """
-    # Deferred: settings.py imports from install.py at module level.
     from hcli.lib.ida.plugin.settings import apply_resolved_settings
 
     version = metadata.plugin.version
     files_written = False
+    all_s = settings or {}
+    root_settings = all_s.get(None, {})
+    named: dict[str, dict[str, str]] = {k: v for k, v in all_s.items() if k is not None}
 
     try:
         component_metadatas = validate_components_for_install(metadata, source, plugin_name, is_upgrade=False)
@@ -1251,7 +1252,7 @@ def apply_install(
             install_plugin_archive(source, plugin_name, ctx)
         files_written = True
 
-        if settings and not apply_resolved_settings(plugin_name, metadata, settings):
+        if root_settings and not apply_resolved_settings(plugin_name, metadata, root_settings):
             _rollback_fresh_install(plugin_name)
             return InstallResult(
                 plugin=plugin_name,
@@ -1261,7 +1262,7 @@ def apply_install(
             )
 
         for comp_name, comp_meta in component_metadatas.items():
-            comp_config = (component_settings or {}).get(comp_name, {})
+            comp_config = named.pop(comp_name, {})
             if not comp_config:
                 continue
             if not apply_resolved_settings(comp_name, comp_meta, comp_config):
@@ -1287,7 +1288,7 @@ def apply_install(
             reason=str(e),
         )
 
-    dep_results = _install_loose_dependencies(metadata, plugin_repo, ctx)
+    dep_results = _install_loose_dependencies(metadata, plugin_repo, ctx, named or None)
 
     return InstallResult(
         plugin=plugin_name,
@@ -1303,21 +1304,20 @@ def apply_upgrade(
     plugin_name: str,
     metadata: IDAMetadataDescriptor,
     ctx: InstallContext,
-    settings: dict[str, str] | None = None,
-    component_settings: dict[str, dict[str, str]] | None = None,
+    settings: dict[str | None, dict[str, str]] | None = None,
     plugin_repo: BasePluginRepo | None = None,
     old_deps: list[str] | None = None,
 ) -> InstallResult:
     """Library-level upgrade entry point.
 
     Same structured-input/structured-output contract as apply_install.
-    Upgrade has different rollback semantics: restore the previous version
-    rather than removing what was just installed.
     """
-    # Deferred: settings.py imports from install.py at module level.
     from hcli.lib.ida.plugin.settings import apply_resolved_settings
 
     version = metadata.plugin.version
+    all_s = settings or {}
+    root_settings = all_s.get(None, {})
+    named: dict[str, dict[str, str]] = {k: v for k, v in all_s.items() if k is not None}
 
     try:
         upgrade_plugin_archive(zip_data, plugin_name, ctx)
@@ -1330,12 +1330,12 @@ def apply_upgrade(
             reason=str(e),
         )
 
-    if settings and not apply_resolved_settings(plugin_name, metadata, settings):
+    if root_settings and not apply_resolved_settings(plugin_name, metadata, root_settings):
         logger.warning("failed to configure settings during upgrade")
 
     component_metadatas = validate_components_for_install(metadata, zip_data, plugin_name, is_upgrade=True)
     for comp_name, comp_meta in component_metadatas.items():
-        comp_config = (component_settings or {}).get(comp_name, {})
+        comp_config = named.pop(comp_name, {})
         if not comp_config:
             continue
         if not apply_resolved_settings(comp_name, comp_meta, comp_config):
@@ -1356,7 +1356,7 @@ def apply_upgrade(
                 )
             )
 
-    dep_results.extend(_install_loose_dependencies(metadata, plugin_repo, ctx))
+    dep_results.extend(_install_loose_dependencies(metadata, plugin_repo, ctx, named or None))
 
     return InstallResult(
         plugin=plugin_name,
@@ -1378,6 +1378,7 @@ def _install_loose_dependencies(
     metadata: IDAMetadataDescriptor,
     plugin_repo: BasePluginRepo | None,
     ctx: InstallContext,
+    dependency_settings: dict[str, dict[str, str]] | None = None,
 ) -> list[InstallResult]:
     """Install loose dependencies and return InstallResult entries."""
     # Deferred: dependencies.py imports from install.py at module level.
@@ -1404,6 +1405,7 @@ def _install_loose_dependencies(
             metadata=metadata,
             plugin_repo=plugin_repo,
             ctx=ctx,
+            dependency_settings=dependency_settings,
         )
     except Exception as e:
         logger.debug("dependency installation failed: %s", e, exc_info=True)

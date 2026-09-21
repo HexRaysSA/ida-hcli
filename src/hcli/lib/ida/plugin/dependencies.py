@@ -41,6 +41,7 @@ def install_dependencies(
     plugin_repo: BasePluginRepo,
     ctx: InstallContext,
     *,
+    dependency_settings: dict[str, dict[str, str]] | None = None,
     _depth: int = 0,
 ) -> DependencyResult:
     """Install dependencies declared in a plugin's metadata, recursively.
@@ -78,6 +79,7 @@ def install_dependencies(
                 find_installed=find_installed_plugin,
                 do_install=install_plugin_archive,
                 do_upgrade=upgrade_plugin_archive,
+                settings=(dependency_settings or {}).get(dep_name),
             )
         except Exception as e:
             logger.debug("failed to install dependency %s: %s", dep_name, e, exc_info=True)
@@ -93,13 +95,36 @@ def install_dependencies(
                 continue
             if dep_metadata.plugin.dependencies:
                 logger.debug("recursing into dependencies of %s (depth %d)", dep_name, _depth + 1)
-                sub_result = install_dependencies(dep_metadata, plugin_repo, ctx, _depth=_depth + 1)
+                sub_result = install_dependencies(
+                    dep_metadata,
+                    plugin_repo,
+                    ctx,
+                    dependency_settings=dependency_settings,
+                    _depth=_depth + 1,
+                )
                 result.installed.extend(sub_result.installed)
                 result.skipped.extend(sub_result.skipped)
                 result.upgraded.extend(sub_result.upgraded)
                 result.failed.extend(sub_result.failed)
 
     return result
+
+
+def _apply_dependency_settings(dep_name: str, settings: dict[str, str] | None) -> None:
+    if not settings:
+        return
+
+    from hcli.lib.ida.plugin.settings import apply_resolved_settings
+
+    dep_dir = get_plugin_directory(dep_name)
+    try:
+        dep_metadata = get_metadata_from_plugin_directory(dep_dir)
+    except Exception as e:
+        logger.warning("cannot read metadata for dependency %s to apply settings: %s", dep_name, e)
+        return
+
+    if not apply_resolved_settings(dep_name, dep_metadata, settings):
+        logger.warning("failed to apply settings to dependency %s", dep_name)
 
 
 def _install_one_dependency(
@@ -113,6 +138,7 @@ def _install_one_dependency(
     find_installed: Callable[[str], Any],
     do_install: Callable[..., None],
     do_upgrade: Callable[..., None],
+    settings: dict[str, str] | None = None,
 ) -> bool:
     """Install or upgrade a single dependency.
 
@@ -155,6 +181,7 @@ def _install_one_dependency(
             bare_spec, ctx.env.platform, ctx.env.ida_version, host=host
         )
         do_upgrade(buf, _dep_name, ctx)
+        _apply_dependency_settings(dep_name, settings)
         result.upgraded.append(dep_name)
         return True
 
@@ -163,5 +190,6 @@ def _install_one_dependency(
         bare_spec, ctx.env.platform, ctx.env.ida_version, host=host
     )
     do_install(buf, _dep_name, ctx)
+    _apply_dependency_settings(dep_name, settings)
     result.installed.append(dep_name)
     return True

@@ -5,10 +5,10 @@ from fixtures import PLUGINS_DIR, make_test_install_context
 
 from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
 from hcli.lib.ida.plugin.install import (
-    get_installed_plugin_records,
-    is_plugin_installed,
     apply_install,
     apply_upgrade,
+    get_installed_plugin_records,
+    is_plugin_installed,
 )
 from hcli.lib.ida.plugin.result import InstallStatus
 
@@ -64,7 +64,7 @@ def test_apply_install_with_settings(virtual_ida_environment):
         plugin_name="plugin1",
         metadata=metadata,
         ctx=ctx,
-        settings={"key1": "myvalue"},
+        settings={None: {"key1": "myvalue"}},
     )
     assert result.status == InstallStatus.SUCCESS
 
@@ -83,7 +83,7 @@ def test_apply_install_bad_settings_rolls_back(virtual_ida_environment):
         plugin_name="plugin1",
         metadata=metadata,
         ctx=ctx,
-        settings={"nonexistent_key": "value"},
+        settings={None: {"nonexistent_key": "value"}},
     )
     assert result.status == InstallStatus.FAILED
     assert not is_plugin_installed("plugin1")

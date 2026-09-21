@@ -42,6 +42,7 @@ from hcli.lib.ida.plugin.reference import (
     format_qualified_plugin_reference,
     is_github_direct_install_url,
     normalize_plugin_host,
+    parse_dependency_spec,
     parse_plugin_reference,
 )
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
@@ -58,15 +59,15 @@ logger = logging.getLogger(__name__)
 def _partition_config_items(
     config: tuple[str, ...],
     component_metadatas: dict[str, IDAMetadataDescriptor],
-) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
-    """Split --config items into root vs. component buckets.
+    dependency_names: set[str] | None = None,
+) -> dict[str | None, dict[str, str]]:
+    """Split --config items by target: None for root, named for components/deps.
 
-    Returns (root_config, component_configs) where:
-      root_config = {"key": "raw_value_str", ...}
-      component_configs = {"component-name": {"key": "raw_value_str", ...}, ...}
+    A prefixed key like ``comp.key=val`` routes to the component or dependency
+    whose name matches ``comp``. Unprefixed keys go to the root (``None``).
     """
-    root_config: dict[str, str] = {}
-    component_configs: dict[str, dict[str, str]] = {}
+    result: dict[str | None, dict[str, str]] = {}
+    dep_names = dependency_names or set()
 
     for item in config:
         if "=" not in item:
@@ -75,13 +76,13 @@ def _partition_config_items(
 
         if "." in raw_key:
             prefix, suffix = raw_key.split(".", 1)
-            if prefix in component_metadatas:
-                component_configs.setdefault(prefix, {})[suffix] = value_str
+            if prefix in component_metadatas or prefix in dep_names:
+                result.setdefault(prefix, {})[suffix] = value_str
                 continue
 
-        root_config[raw_key] = value_str
+        result.setdefault(None, {})[raw_key] = value_str
 
-    return root_config, component_configs
+    return result
 
 
 def _resolve_plugin_name_from_archive(buf: bytes) -> str:
@@ -197,7 +198,7 @@ def _render_dependency_result(dep: InstallResult) -> None:
     "--config",
     multiple=True,
     help="Configuration setting in key=value format. "
-    "For component settings, prefix with the component name: component.key=value. "
+    "Prefix with a component or dependency name to target it: name.key=value. "
     "Use true/false for booleans.",
 )
 @click.option(
@@ -376,18 +377,21 @@ def install_plugin(
         assert source is not None
         component_metadatas = validate_components_for_install(metadata, source, plugin_name, is_upgrade=is_upgrade)
 
-        root_cli_config, component_cli_configs = _partition_config_items(config, component_metadatas)
+        dep_names = {parse_dependency_spec(s).name for s in metadata.plugin.dependencies}
+        cli_settings = _partition_config_items(config, component_metadatas, dep_names)
 
-        root_settings = _resolve_interactive_settings(metadata, plugin_name, root_cli_config)
+        resolved_settings: dict[str | None, dict[str, str]] = {}
+        resolved_settings[None] = _resolve_interactive_settings(metadata, plugin_name, cli_settings.pop(None, {}))
 
-        component_settings: dict[str, dict[str, str]] = {}
         for comp_name, comp_meta in component_metadatas.items():
-            comp_cli = component_cli_configs.get(comp_name, {})
+            comp_cli = cli_settings.pop(comp_name, {})
             if not comp_meta.plugin.settings and not comp_cli:
                 continue
-            component_settings[comp_name] = _resolve_interactive_settings(
+            resolved_settings[comp_name] = _resolve_interactive_settings(
                 comp_meta, comp_name, comp_cli, config_prefix=comp_name
             )
+
+        resolved_settings.update(cli_settings)
 
         # --- Orchestrate ---
 
@@ -404,8 +408,7 @@ def install_plugin(
                         plugin_name=plugin_name,
                         metadata=metadata,
                         ctx=effective_ctx,
-                        settings=root_settings or None,
-                        component_settings=component_settings or None,
+                        settings=resolved_settings or None,
                         plugin_repo=dep_repo,
                     )
             else:
@@ -418,8 +421,7 @@ def install_plugin(
                         plugin_name=plugin_name,
                         metadata=metadata,
                         ctx=effective_ctx,
-                        settings=root_settings or None,
-                        component_settings=component_settings or None,
+                        settings=resolved_settings or None,
                         plugin_repo=dep_repo,
                         editable=editable,
                     )
