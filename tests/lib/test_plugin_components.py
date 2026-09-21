@@ -282,6 +282,16 @@ def test_components_name_validation_on_embedded_descriptor():
         IDAMetadataDescriptor.model_validate(data)
 
 
+def test_components_descriptor_skips_string_format_constraints():
+    """String-format checks (version pins, host qualifiers) don't apply to descriptor entries."""
+    comp_desc = _make_component_descriptor("comp-a")
+    data = _make_plugin_metadata("my-suite", "1.0.0")
+    data["plugin"]["components"] = [comp_desc]
+    meta = IDAMetadataDescriptor.model_validate(data)
+    assert len(meta.plugin.components) == 1
+    assert meta.plugin.components[0].plugin.name == "comp-a"
+
+
 # ---------------------------------------------------------------------------
 # find_root_manifest_in_archive
 # ---------------------------------------------------------------------------
@@ -1208,7 +1218,7 @@ def test_snapshot_expands_components():
     components = location.metadata.plugin.components
     assert len(components) == 2
     assert all(isinstance(c, IDAMetadataDescriptor) for c in components)
-    comp_names = {c.plugin.name for c in components}
+    comp_names = {c.plugin.name for c in components if isinstance(c, IDAMetadataDescriptor)}
     assert comp_names == {"comp-a", "comp-b"}
 
 
@@ -1273,12 +1283,30 @@ def test_snapshot_nested_components_expanded():
     plugins = index.get_plugins()
     assert len(plugins) == 1
     location = next(iter(plugins[0].versions.values()))[0]
-    comp_a = next(c for c in location.metadata.plugin.components if c.plugin.name == "comp-a")
+    comp_a = next(
+        c
+        for c in location.metadata.plugin.components
+        if isinstance(c, IDAMetadataDescriptor) and c.plugin.name == "comp-a"
+    )
     assert isinstance(comp_a, IDAMetadataDescriptor)
     assert len(comp_a.plugin.components) == 1
     sub_x = comp_a.plugin.components[0]
     assert isinstance(sub_x, IDAMetadataDescriptor)
     assert sub_x.plugin.name == "sub-x"
+
+
+def test_snapshot_fails_on_missing_component_manifest():
+    from hcli.lib.ida.plugin.repo import PluginArchiveIndex
+
+    buf = io.BytesIO()
+    suite_meta = _make_plugin_metadata("my-suite", "1.0.0", components=["comp-a"])
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("my-suite/ida-plugin.json", json.dumps(suite_meta))
+        zf.writestr("my-suite/my-suite.py", "# suite")
+
+    index = PluginArchiveIndex()
+    with pytest.raises(ValueError, match="comp-a"):
+        index.index_plugin_archive(buf.getvalue(), "https://example.com/suite.zip")
 
 
 # ---------------------------------------------------------------------------

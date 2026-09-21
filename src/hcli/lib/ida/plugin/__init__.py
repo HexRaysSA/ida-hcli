@@ -530,7 +530,7 @@ class PluginMetadata(BaseModel):
         },
     )
 
-    components: list = Field(
+    components: "list[str | IDAMetadataDescriptor]" = Field(
         default_factory=list,
         description=(
             "Subdirectory names of plugins bundled inside this suite's archive. "
@@ -587,7 +587,7 @@ class PluginMetadata(BaseModel):
 
     @field_validator("components", mode="before")
     @classmethod
-    def parse_component_entries(cls, raw: list) -> list:
+    def parse_component_entries(cls, raw: list[typing.Any]) -> "list[str | IDAMetadataDescriptor]":
         entries: list[str | IDAMetadataDescriptor] = []
         for item in raw:
             if isinstance(item, str):
@@ -602,7 +602,9 @@ class PluginMetadata(BaseModel):
 
     @field_validator("components", mode="after")
     @classmethod
-    def validate_component_names(cls, entries: list) -> list:
+    def validate_component_names(
+        cls, entries: "list[str | IDAMetadataDescriptor]"
+    ) -> "list[str | IDAMetadataDescriptor]":
         seen_names: set[str] = set()
         for entry in entries:
             if isinstance(entry, str):
@@ -626,7 +628,7 @@ class PluginMetadata(BaseModel):
         return entries
 
     @field_serializer("components")
-    def serialize_components(self, entries: list) -> list:
+    def serialize_components(self, entries: "list[str | IDAMetadataDescriptor]") -> list[str | dict]:
         result: list[str | dict] = []
         for entry in entries:
             if isinstance(entry, str):
@@ -763,6 +765,7 @@ class IDAMetadataDescriptor(BaseModel):
 
 
 def get_component_name(entry: str | IDAMetadataDescriptor) -> str:
+    """Extract the plugin name from a component entry (string or descriptor)."""
     if isinstance(entry, str):
         return entry
     return entry.plugin.name
