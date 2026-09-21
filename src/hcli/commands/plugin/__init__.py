@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -237,17 +239,18 @@ def repo_for_reference(ctx: click.Context, ref: PluginReference) -> hcli.lib.ida
     return child
 
 
+@contextlib.contextmanager
 def resolve_bundle_install_context(
-    plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo,
+    plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo | None,
     install_ctx: InstallContext,
     plugin_name: str,
     host: str | None = None,
-) -> InstallContext:
-    """Build an InstallContext with bundle pip sources merged in, if applicable.
+) -> Iterator[InstallContext]:
+    """Yield an InstallContext with bundle pip sources merged in, if applicable.
 
-    When the effective repository is a PluginBundleRepo and the user hasn't
-    set custom pip sources, this merges the bundle's dependency source into
-    the pip options. Otherwise returns ``install_ctx`` unchanged.
+    Must be used as a context manager because the bundle's wheelhouse is
+    extracted into a temporary directory that lives only as long as the
+    ``with`` block.
 
     Raises:
         click.Abort: when the bundle has no matching dependency target.
@@ -257,20 +260,27 @@ def resolve_bundle_install_context(
     from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
     from hcli.lib.ida.python import detect_current_python_version, merge_bundle_pip_options
 
+    if plugin_repo is None:
+        yield install_ctx
+        return
+
     effective_repo = plugin_repo
     if isinstance(plugin_repo, AggregatePluginRepo):
         try:
             plugin_obj = plugin_repo.get_plugin_by_name(plugin_name, host=host)
         except KeyError:
-            return install_ctx
+            yield install_ctx
+            return
         owner_name = plugin_repo.repo_of(plugin_obj)
         if owner_name is not None:
             effective_repo = plugin_repo.get_child_repo(owner_name)
 
     if not isinstance(effective_repo, PluginBundleRepo):
-        return install_ctx
+        yield install_ctx
+        return
     if install_ctx.options.pip_options.has_custom_sources:
-        return install_ctx
+        yield install_ctx
+        return
 
     current_python_version = detect_current_python_version()
     with bundle_dependency_source(effective_repo, install_ctx.env.platform, current_python_version) as bundle_opts:
@@ -283,7 +293,7 @@ def resolve_bundle_install_context(
             console.print(f"Available targets in this bundle: {available}")
             raise click.Abort()
         effective_pip_options = merge_bundle_pip_options(install_ctx.options.pip_options, bundle_opts)
-        return InstallContext(
+        yield InstallContext(
             env=install_ctx.env,
             options=InstallOptions(
                 pip_options=effective_pip_options,

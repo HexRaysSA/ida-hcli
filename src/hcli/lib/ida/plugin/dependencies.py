@@ -123,8 +123,8 @@ def _install_one_dependency(
     """Install or upgrade a single dependency.
 
     Returns:
-        The fetched archive bytes when a fresh install occurred (for
-        recursive dependency resolution), None when skipped or upgraded.
+        The fetched archive bytes when an install or upgrade occurred
+        (for recursive dependency resolution), None when skipped.
     """
     try:
         installed = find_installed(dep_name)

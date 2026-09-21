@@ -99,8 +99,10 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
 
         from hcli.commands.plugin import resolve_bundle_install_context
 
-        effective_ctx = resolve_bundle_install_context(plugin_repo, install_ctx, plugin_name, host=installed.host)
-        upgrade_plugin_archive(buf, plugin_name, effective_ctx)
+        with resolve_bundle_install_context(
+            plugin_repo, install_ctx, plugin_name, host=installed.host
+        ) as effective_ctx:
+            upgrade_plugin_archive(buf, plugin_name, effective_ctx)
 
         _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 

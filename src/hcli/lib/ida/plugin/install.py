@@ -9,7 +9,6 @@ import uuid
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 import rich.status
 
@@ -788,52 +787,38 @@ def apply_plugin_editable_files(
         _remove_editable_pth_file(plugin_name)
 
 
-def apply_plugin_files(
-    *,
-    mode: Literal["archive", "editable", "upgrade"],
+def apply_upgrade_with_rollback(
+    zip_data: bytes,
+    plugin_subdirectory: Path,
     destination: Path,
     plugin_name: str,
-    zip_data: bytes | None = None,
-    plugin_subdirectory: Path | None = None,
-    source_dir: Path | None = None,
 ) -> None:
-    """Write plugin files to disk, with rollback logic for upgrades.
+    """Extract a plugin archive over an existing install, rolling back on failure.
 
     Raises:
-        ValueError: for editable symlink failures.
         PluginInUseError: when the upgrade target is locked.
         NoSpaceError: when disk is full during extraction.
     """
-    if mode == "archive":
-        assert zip_data is not None and plugin_subdirectory is not None
+    rollback_path = move_plugin_directory_to_trash(destination, label=".rollback")
+    try:
         apply_plugin_archive_files(zip_data, plugin_subdirectory, destination, plugin_name)
-
-    elif mode == "editable":
-        assert source_dir is not None
-        apply_plugin_editable_files(source_dir, destination, plugin_name)
-
-    elif mode == "upgrade":
-        assert zip_data is not None and plugin_subdirectory is not None
-        rollback_path = move_plugin_directory_to_trash(destination, label=".rollback")
-        try:
-            apply_plugin_archive_files(zip_data, plugin_subdirectory, destination, plugin_name)
-        except Exception as e:
-            logger.debug("error during upgrade: install: %s", e)
-            logger.debug("rolling back to prior version")
-            shutil.rmtree(destination, ignore_errors=True)
-            if destination.exists():
-                logger.error(
-                    "could not restore previous version: partial upgrade remains at %s; uninstall and reinstall",
-                    destination,
-                )
-            else:
-                os.rename(rollback_path, destination)
-            raise
+    except Exception as e:
+        logger.debug("error during upgrade: install: %s", e)
+        logger.debug("rolling back to prior version")
+        shutil.rmtree(destination, ignore_errors=True)
+        if destination.exists():
+            logger.error(
+                "could not restore previous version: partial upgrade remains at %s; uninstall and reinstall",
+                destination,
+            )
         else:
-            try:
-                shutil.rmtree(rollback_path)
-            except OSError as e:
-                logger.debug("could not delete rollback copy %s: %s (leaving for later sweep)", rollback_path, e)
+            os.rename(rollback_path, destination)
+        raise
+    else:
+        try:
+            shutil.rmtree(rollback_path)
+        except OSError as e:
+            logger.debug("could not delete rollback copy %s: %s (leaving for later sweep)", rollback_path, e)
 
 
 def _install_plugin_archive(
@@ -1204,10 +1189,4 @@ def upgrade_plugin_archive(
                 logger.debug("can't install dependencies")
                 raise
 
-    apply_plugin_files(
-        mode="upgrade",
-        destination=plugin_path,
-        plugin_name=metadata.plugin.name,
-        zip_data=zip_data,
-        plugin_subdirectory=path.parent,
-    )
+    apply_upgrade_with_rollback(zip_data, path.parent, plugin_path, metadata.plugin.name)

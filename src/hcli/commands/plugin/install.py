@@ -319,12 +319,10 @@ def install_plugin(
 
             from hcli.commands.plugin import resolve_bundle_install_context
 
-            effective_ctx = (
-                resolve_bundle_install_context(plugin_repo_obj, install_ctx, plugin_name)
-                if plugin_repo_obj is not None
-                else install_ctx
-            )
-            with rich.status.Status(status_text, console=stderr_console):
+            with (
+                resolve_bundle_install_context(plugin_repo_obj, install_ctx, plugin_name) as effective_ctx,
+                rich.status.Status(status_text, console=stderr_console),
+            ):
                 write_archive(buf, plugin_name, effective_ctx)
 
         try:
