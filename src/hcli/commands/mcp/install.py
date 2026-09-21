@@ -261,6 +261,25 @@ def _install_agent(agent: Agent, scope: Scope) -> None:
         raise click.ClickException(f"unsupported agent: {agent.name}")
 
 
+def _print_mcp_json() -> None:
+    """Print the configuration to stdout, keeping the guidance around it on stderr."""
+    stderr_console.print("Add the following to your agent's MCP configuration, then restart it:")
+    print_json(
+        {
+            "mcpServers": {
+                "ida": {
+                    "command": "uvx",
+                    "args": [
+                        "--exclude-newer=1s",
+                        "ida-mcp",
+                        "stdio",
+                    ],
+                }
+            }
+        }
+    )
+
+
 def _install_ida_plugin(ctx: click.Context) -> None:
     # `upgrade=True`: this command is the entry point users re-run to (re)wire
     # an agent, so an already-installed ida-mcp must upgrade in place rather
@@ -283,15 +302,27 @@ def install(ctx: click.Context) -> None:
 
     agents = _find_agents()
     if not agents:
-        raise click.ClickException("no supported agent command found on PATH (claude, codex, copilot, pi, or omp)")
+        # The IDA-side plugin is installed either way, so an agent we cannot
+        # drive is not a failure: hand over the configuration to apply by hand.
+        stderr_console.print(
+            "[yellow]No supported agent command found on PATH (claude, codex, copilot, pi, or omp).[/yellow]"
+        )
+        _print_mcp_json()
+        return
 
+    choices = [questionary.Choice(f"{agent.name} ({Path(agent.executable).name})", value=agent) for agent in agents]
+    choices.append(questionary.Choice("Other agent (mcp.json)", value="manual"))
     selected = questionary.select(
         "Select an agent:",
-        choices=[questionary.Choice(f"{agent.name} ({Path(agent.executable).name})", value=agent) for agent in agents],
+        choices=choices,
         style=cli.SELECT_STYLE,
     ).ask()
     if selected is None:
         raise click.Abort()
+
+    if selected == "manual":
+        _print_mcp_json()
+        return
 
     scope: Scope = "global"
     if selected.supports_local:
