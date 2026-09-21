@@ -17,6 +17,7 @@ from hcli import __version__ as hcli_version
 from hcli.lib.console import console, stderr_console
 from hcli.lib.ida.plugin import (
     get_metadatas_with_paths_from_plugin_archive,
+    get_python_dependencies_from_plugin_archive,
     get_version_from_plugin_archive,
 )
 from hcli.lib.ida.plugin.bundle import (
@@ -27,7 +28,7 @@ from hcli.lib.ida.plugin.bundle import (
     to_manifest_target,
 )
 from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
-from hcli.lib.ida.plugin.reference import parse_plugin_reference
+from hcli.lib.ida.plugin.reference import DependencyEntry, parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo, PluginArchiveIndex
 from hcli.lib.ida.plugin.repo.bundle import (
     PluginBundleRepo,
@@ -252,6 +253,7 @@ def create(
 
         all_python_deps: list[str] = []
         plugin_index = PluginArchiveIndex()
+        known_archives: dict[str, bytes] = {}
 
         for spec in plugin_specs:
             spec_path = Path(spec).expanduser()
@@ -294,10 +296,22 @@ def create(
                     dest.write_bytes(buf)
 
                 plugin_index.index_plugin_archive(buf, f"hcli-bundle:plugins/{archive_filename}")
+                known_archives[name] = buf
 
-                for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
-                    if isinstance(metadata.plugin.python_dependencies, list):
-                        all_python_deps.extend(metadata.plugin.python_dependencies)
+                all_python_deps.extend(_collect_all_python_deps(buf))
+
+        with rich.status.Status("resolving loose dependencies", console=stderr_console):
+            loose_deps = _resolve_loose_deps(known_archives, parent_repo, target_platforms)
+
+        for dep_name, dep_buf in loose_deps.items():
+            dep_version = get_version_from_plugin_archive(dep_buf, dep_name)
+            dep_filename = f"{dep_name}-{dep_version}.zip"
+            dep_dest = plugins_dir / dep_filename
+            if not dep_dest.exists():
+                dep_dest.write_bytes(dep_buf)
+            plugin_index.index_plugin_archive(dep_buf, f"hcli-bundle:plugins/{dep_filename}")
+            all_python_deps.extend(_collect_all_python_deps(dep_buf))
+            stderr_console.print(f"  included dependency: {dep_name} {dep_version}")
 
         target_manifests = []
         if all_python_deps:
@@ -335,11 +349,79 @@ def create(
         with rich.status.Status("writing bundle archive", console=stderr_console):
             _write_bundle_zip(out, manifest_bytes, staging)
 
+    total_plugins = len(plugin_specs) + len(loose_deps)
     console.print(f"[green]created[/green] plugin bundle: {out}")
-    console.print(f"  plugins: {len(plugin_specs)}")
+    console.print(f"  plugins: {total_plugins}")
+    if loose_deps:
+        console.print(f"    ({len(loose_deps)} resolved as dependencies)")
     console.print(f"  targets: {len(pip_targets)}")
     for t in pip_targets:
         console.print(f"    {t.ida_platform}  Python {t.python_version}")
+
+
+MAX_LOOSE_DEP_DEPTH = 10
+
+
+def _collect_all_python_deps(buf: bytes) -> list[str]:
+    """Collect python dependencies from a plugin archive, including components and inline PEP 723."""
+    deps: list[str] = []
+    for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
+        deps.extend(get_python_dependencies_from_plugin_archive(buf, metadata))
+    return deps
+
+
+def _resolve_loose_deps(
+    known_archives: dict[str, bytes],
+    plugin_repo: BasePluginRepo | None,
+    target_platforms: list[str] | None,
+) -> dict[str, bytes]:
+    """Resolve loose plugin dependencies recursively.
+
+    Returns new archives not already in known_archives.
+
+    Raises:
+        RuntimeError: when a required dependency cannot be resolved.
+    """
+    if plugin_repo is None:
+        return {}
+
+    resolved: dict[str, bytes] = {}
+    seen_names: set[str] = {name.lower() for name in known_archives}
+    queue: list[bytes] = list(known_archives.values())
+    depth = 0
+
+    while queue and depth < MAX_LOOSE_DEP_DEPTH:
+        next_queue: list[bytes] = []
+        for buf in queue:
+            for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
+                for entry in metadata.plugin.dependencies:
+                    assert isinstance(entry, DependencyEntry)
+                    dep_name = entry.reference.name
+                    if dep_name.lower() in seen_names:
+                        continue
+                    seen_names.add(dep_name.lower())
+
+                    spec = entry.format_spec()
+                    try:
+                        if target_platforms:
+                            _, dep_buf = plugin_repo.fetch_plugin_from_spec(
+                                spec, target_platforms[0], host=entry.reference.host
+                            )
+                        else:
+                            _, dep_buf = plugin_repo.fetch_plugin_from_spec(spec, host=entry.reference.host)
+                    except Exception as e:
+                        if entry.required:
+                            raise RuntimeError(f"cannot resolve required dependency '{spec}': {e}") from e
+                        logger.warning("skipping optional dependency '%s': %s", spec, e)
+                        continue
+
+                    resolved[dep_name] = dep_buf
+                    next_queue.append(dep_buf)
+
+        queue = next_queue
+        depth += 1
+
+    return resolved
 
 
 def _download_wheelhouse(
