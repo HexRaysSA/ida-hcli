@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hcli.lib.ida.plugin.context import InstallContext
 
 import httpx
 import rich_click as click
@@ -231,6 +235,61 @@ def repo_for_reference(ctx: click.Context, ref: PluginReference) -> hcli.lib.ida
         console.print(f"[yellow]Warning:[/yellow] repository {note}")
 
     return child
+
+
+def resolve_bundle_install_context(
+    plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo,
+    install_ctx: InstallContext,
+    plugin_name: str,
+    host: str | None = None,
+) -> InstallContext:
+    """Build an InstallContext with bundle pip sources merged in, if applicable.
+
+    When the effective repository is a PluginBundleRepo and the user hasn't
+    set custom pip sources, this merges the bundle's dependency source into
+    the pip options. Otherwise returns ``install_ctx`` unchanged.
+
+    Raises:
+        click.Abort: when the bundle has no matching dependency target.
+    """
+    from hcli.lib.ida.plugin.bundle import bundle_dependency_source
+    from hcli.lib.ida.plugin.context import InstallContext, InstallOptions
+    from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
+    from hcli.lib.ida.python import detect_current_python_version, merge_bundle_pip_options
+
+    effective_repo = plugin_repo
+    if isinstance(plugin_repo, AggregatePluginRepo):
+        try:
+            plugin_obj = plugin_repo.get_plugin_by_name(plugin_name, host=host)
+        except KeyError:
+            return install_ctx
+        owner_name = plugin_repo.repo_of(plugin_obj)
+        if owner_name is not None:
+            effective_repo = plugin_repo.get_child_repo(owner_name)
+
+    if not isinstance(effective_repo, PluginBundleRepo):
+        return install_ctx
+    if install_ctx.options.pip_options.has_custom_sources:
+        return install_ctx
+
+    current_python_version = detect_current_python_version()
+    with bundle_dependency_source(effective_repo, install_ctx.env.platform, current_python_version) as bundle_opts:
+        if bundle_opts is None:
+            available = ", ".join(effective_repo.target_ids) or "none"
+            console.print(
+                f"[red]Error[/red]: plugin bundle does not include dependencies"
+                f" for {install_ctx.env.platform}, Python {current_python_version}."
+            )
+            console.print(f"Available targets in this bundle: {available}")
+            raise click.Abort()
+        effective_pip_options = merge_bundle_pip_options(install_ctx.options.pip_options, bundle_opts)
+        return InstallContext(
+            env=install_ctx.env,
+            options=InstallOptions(
+                pip_options=effective_pip_options,
+                check_environment=install_ctx.options.check_environment,
+            ),
+        )
 
 
 plugin.add_command(get_plugin_status, name="status")

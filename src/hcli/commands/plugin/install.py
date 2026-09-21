@@ -23,7 +23,6 @@ from hcli.lib.ida.plugin import (
     get_metadata_from_plugin_archive,
     parse_plugin_version,
 )
-from hcli.lib.ida.plugin.bundle import bundle_dependency_source
 from hcli.lib.ida.plugin.context import IDAEnvironment, InstallContext, InstallOptions
 from hcli.lib.ida.plugin.exceptions import (
     AmbiguousPluginReferenceError,
@@ -47,14 +46,13 @@ from hcli.lib.ida.plugin.reference import (
     parse_plugin_reference,
 )
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
-from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
 from hcli.lib.ida.plugin.settings import (
     has_setting_in_config,
     parse_setting_value,
     set_setting_for_metadata,
 )
-from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, detect_current_python_version, merge_bundle_pip_options
+from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 
 from ._prompt import prompt_plugin_settings
 
@@ -318,27 +316,16 @@ def install_plugin(
             else:
                 write_archive = install_plugin_archive
                 status_text = "installing plugin"
-            if isinstance(plugin_repo_obj, PluginBundleRepo) and not pip_options.has_custom_sources:
-                current_python_version = detect_current_python_version()
-                with bundle_dependency_source(plugin_repo_obj, ida_env.platform, current_python_version) as bundle_opts:
-                    if bundle_opts is None:
-                        available = ", ".join(plugin_repo_obj.target_ids) or "none"
-                        console.print(
-                            f"[red]Error[/red]: plugin bundle does not include dependencies"
-                            f" for {ida_env.platform}, Python {current_python_version}."
-                        )
-                        console.print(f"Available targets in this bundle: {available}")
-                        raise click.Abort()
-                    effective_pip_options = merge_bundle_pip_options(pip_options, bundle_opts)
-                    effective_ctx = InstallContext(
-                        env=ida_env,
-                        options=InstallOptions(pip_options=effective_pip_options, check_environment=check_environment),
-                    )
-                    with rich.status.Status(status_text, console=stderr_console):
-                        write_archive(buf, plugin_name, effective_ctx)
-            else:
-                with rich.status.Status(status_text, console=stderr_console):
-                    write_archive(buf, plugin_name, install_ctx)
+
+            from hcli.commands.plugin import resolve_bundle_install_context
+
+            effective_ctx = (
+                resolve_bundle_install_context(plugin_repo_obj, install_ctx, plugin_name)
+                if plugin_repo_obj is not None
+                else install_ctx
+            )
+            with rich.status.Status(status_text, console=stderr_console):
+                write_archive(buf, plugin_name, effective_ctx)
 
         try:
             _apply_plugin_settings(

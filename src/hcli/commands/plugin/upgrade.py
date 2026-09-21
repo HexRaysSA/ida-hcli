@@ -16,30 +16,14 @@ from hcli.lib.ida import (
     explain_missing_current_installation_directory,
 )
 from hcli.lib.ida.plugin import IDAMetadataDescriptor, get_metadata_from_plugin_archive
-from hcli.lib.ida.plugin.bundle import bundle_dependency_source
 from hcli.lib.ida.plugin.context import IDAEnvironment, InstallContext, InstallOptions
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
 from hcli.lib.ida.plugin.install import find_installed_plugin, sweep_trash, upgrade_plugin_archive
 from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo
-from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 
 logger = logging.getLogger(__name__)
-
-
-def _resolve_effective_repo(plugin_repo: BasePluginRepo, plugin_name: str, host: str) -> BasePluginRepo:
-    """When the repo is an aggregate, return the child that owns the plugin."""
-    from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
-
-    if not isinstance(plugin_repo, AggregatePluginRepo):
-        return plugin_repo
-
-    plugin = plugin_repo.get_plugin_by_name(plugin_name, host=host)
-    owner_name = plugin_repo.repo_of(plugin)
-    if owner_name is not None:
-        return plugin_repo.get_child_repo(owner_name)
-    return plugin_repo
 
 
 @click.command()
@@ -113,28 +97,10 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             console.print("Please check your internet connection.")
             raise click.Abort()
 
-        effective_repo = _resolve_effective_repo(plugin_repo, plugin_name, installed.host)
-        if isinstance(effective_repo, PluginBundleRepo) and not pip_options.has_custom_sources:
-            from hcli.lib.ida.python import detect_current_python_version, merge_bundle_pip_options
+        from hcli.commands.plugin import resolve_bundle_install_context
 
-            current_python_version = detect_current_python_version()
-            with bundle_dependency_source(effective_repo, ida_env.platform, current_python_version) as bundle_opts:
-                if bundle_opts is None:
-                    available = ", ".join(effective_repo.target_ids) or "none"
-                    console.print(
-                        f"[red]Error[/red]: plugin bundle does not include dependencies"
-                        f" for {ida_env.platform}, Python {current_python_version}."
-                    )
-                    console.print(f"Available targets in this bundle: {available}")
-                    raise click.Abort()
-                effective_pip_options = merge_bundle_pip_options(pip_options, bundle_opts)
-                effective_ctx = InstallContext(
-                    env=ida_env,
-                    options=InstallOptions(pip_options=effective_pip_options, check_environment=check_environment),
-                )
-                upgrade_plugin_archive(buf, plugin_name, effective_ctx)
-        else:
-            upgrade_plugin_archive(buf, plugin_name, install_ctx)
+        effective_ctx = resolve_bundle_install_context(plugin_repo, install_ctx, plugin_name, host=installed.host)
+        upgrade_plugin_archive(buf, plugin_name, effective_ctx)
 
         _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 
