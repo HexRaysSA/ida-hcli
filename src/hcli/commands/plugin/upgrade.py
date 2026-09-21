@@ -17,7 +17,7 @@ from hcli.lib.ida import (
 from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
 from hcli.lib.ida.plugin.context import IDAEnvironment, InstallContext, InstallOptions
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
-from hcli.lib.ida.plugin.install import find_installed_plugin, orchestrate_upgrade, sweep_trash
+from hcli.lib.ida.plugin.install import apply_upgrade, find_installed_plugin, sweep_trash
 from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
@@ -120,7 +120,7 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             resolve_bundle_install_context(plugin_repo, install_ctx, plugin_name, host=installed.host) as effective_ctx,
             rich.status.Status("upgrading plugin", console=stderr_console),
         ):
-            result = orchestrate_upgrade(
+            result = apply_upgrade(
                 zip_data=buf,
                 plugin_name=plugin_name,
                 metadata=metadata,

@@ -31,10 +31,10 @@ from hcli.lib.ida.plugin.exceptions import (
     PluginNotInstalledError,
 )
 from hcli.lib.ida.plugin.install import (
+    apply_install,
+    apply_upgrade,
     find_installed_plugin,
     get_metadata_from_plugin_directory,
-    orchestrate_install,
-    orchestrate_upgrade,
     pack_plugin_directory_to_zip,
     sweep_trash,
 )
@@ -93,10 +93,15 @@ def _resolve_interactive_settings(
     metadata: IDAMetadataDescriptor,
     plugin_name: str,
     cli_config: dict[str, str],
+    *,
+    config_prefix: str = "",
 ) -> dict[str, str]:
-    """Resolve settings for a plugin, prompting interactively if needed.
+    """Resolve settings for a plugin or component, prompting interactively if needed.
 
-    Returns a dict of key -> raw-string-value ready for the orchestrator.
+    When ``config_prefix`` is set (e.g. "component-name"), the non-interactive
+    error message tells the user to pass ``--config prefix.key=value``.
+
+    Returns a dict of key -> raw-string-value ready for apply_resolved_settings.
     """
     if cli_config:
         for key, value_str in cli_config.items():
@@ -115,67 +120,23 @@ def _resolve_interactive_settings(
     ]
 
     if needed_settings and not console.is_interactive:
-        setting_names = ", ".join(f"--config {s.key}=<value>" for s in needed_settings)
+        key_prefix = f"{config_prefix}." if config_prefix else ""
+        setting_names = ", ".join(f"--config {key_prefix}{s.key}=<value>" for s in needed_settings)
+        label = f"component '{plugin_name}'" if config_prefix else "plugin"
         raise ValueError(
-            f"plugin requires configuration but console is not interactive. "
+            f"{label} requires configuration but console is not interactive. "
             f"Please provide settings via command line: {setting_names}"
         )
 
     if console.is_interactive:
+        if config_prefix:
+            console.print(f"\nconfigure component [blue]{plugin_name}[/blue]:")
         existing_config = get_ida_config()
         existing_values: dict[str, str | bool] = {}
         if plugin_name in existing_config.plugins:
             existing_values = dict(existing_config.plugins[plugin_name].settings)
 
         answers = prompt_plugin_settings(metadata.plugin.settings, existing_values)
-        if answers is None:
-            raise click.Abort()
-
-        result: dict[str, str] = {}
-        for key, answer in answers.items():
-            result[key] = str(answer).lower() if isinstance(answer, bool) else str(answer)
-        return result
-
-    return {}
-
-
-def _resolve_interactive_component_settings(
-    comp_metadata: IDAMetadataDescriptor,
-    comp_name: str,
-    cli_config: dict[str, str],
-) -> dict[str, str]:
-    """Resolve settings for a component, prompting interactively if needed."""
-    if cli_config:
-        for key, value_str in cli_config.items():
-            descr = comp_metadata.plugin.get_setting(key)
-            parsed_value = parse_setting_value(descr, value_str)
-            descr.validate_value(parsed_value)
-        return cli_config
-
-    if not comp_metadata.plugin.settings:
-        return {}
-
-    needed_settings = [
-        s
-        for s in comp_metadata.plugin.settings
-        if not has_setting_in_config(comp_name, s.key) and s.required and s.default is None
-    ]
-
-    if needed_settings and not console.is_interactive:
-        setting_names = ", ".join(f"--config {comp_name}.{s.key}=<value>" for s in needed_settings)
-        raise ValueError(
-            f"component '{comp_name}' requires configuration but console is not interactive. "
-            f"Please provide settings via command line: {setting_names}"
-        )
-
-    if console.is_interactive:
-        console.print(f"\nconfigure component [blue]{comp_name}[/blue]:")
-        existing_config = get_ida_config()
-        existing_values: dict[str, str | bool] = {}
-        if comp_name in existing_config.plugins:
-            existing_values = dict(existing_config.plugins[comp_name].settings)
-
-        answers = prompt_plugin_settings(comp_metadata.plugin.settings, existing_values)
         if answers is None:
             raise click.Abort()
 
@@ -424,7 +385,9 @@ def install_plugin(
             comp_cli = component_cli_configs.get(comp_name, {})
             if not comp_meta.plugin.settings and not comp_cli:
                 continue
-            component_settings[comp_name] = _resolve_interactive_component_settings(comp_meta, comp_name, comp_cli)
+            component_settings[comp_name] = _resolve_interactive_settings(
+                comp_meta, comp_name, comp_cli, config_prefix=comp_name
+            )
 
         # --- Orchestrate ---
 
@@ -436,7 +399,7 @@ def install_plugin(
             if is_upgrade:
                 assert buf is not None
                 with rich.status.Status("upgrading plugin", console=stderr_console):
-                    result = orchestrate_upgrade(
+                    result = apply_upgrade(
                         zip_data=buf,
                         plugin_name=plugin_name,
                         metadata=metadata,
@@ -450,7 +413,7 @@ def install_plugin(
                     "installing plugin" if not editable else "installing plugin (editable)",
                     console=stderr_console,
                 ):
-                    result = orchestrate_install(
+                    result = apply_install(
                         source=source,
                         plugin_name=plugin_name,
                         metadata=metadata,

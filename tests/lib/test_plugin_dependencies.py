@@ -366,7 +366,7 @@ def test_upgrade_pack_installs_new_deps(virtual_ida_environment):
 
 
 def test_upgrade_pack_reports_dropped_deps(virtual_ida_environment):
-    from hcli.lib.ida.plugin.install import orchestrate_upgrade
+    from hcli.lib.ida.plugin.install import apply_upgrade
     from hcli.lib.ida.plugin.result import InstallStatus
 
     ctx = make_test_install_context(check_environment=False)
@@ -386,7 +386,7 @@ def test_upgrade_pack_reports_dropped_deps(virtual_ida_environment):
 
         _, meta_v2 = _parse_metadata(pack_v2, "my-pack")
 
-        result = orchestrate_upgrade(
+        result = apply_upgrade(
             zip_data=pack_v2,
             plugin_name="my-pack",
             metadata=meta_v2,

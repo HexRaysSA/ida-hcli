@@ -17,7 +17,6 @@ import rich.status
 
 if TYPE_CHECKING:
     from hcli.lib.ida.plugin.repo import BasePluginRepo
-    from hcli.lib.ida.plugin.result import InstallResult
 
 from hcli.lib.console import stderr_console
 from hcli.lib.ida import get_ida_user_dir
@@ -51,7 +50,8 @@ from hcli.lib.ida.plugin.exceptions import (
     PluginNotInstalledError,
     PluginVersionDowngradeError,
 )
-from hcli.lib.ida.plugin.reference import normalize_plugin_host
+from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_dependency_spec
+from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
 from hcli.lib.ida.python import (
     PIP_OPTIONS_DEFAULT,
     CantInstallPackagesError,
@@ -1218,7 +1218,7 @@ def upgrade_plugin_archive(
     apply_upgrade_with_rollback(zip_data, path.parent, plugin_path, metadata.plugin.name)
 
 
-def orchestrate_install(
+def apply_install(
     *,
     source: bytes | Path,
     plugin_name: str,
@@ -1229,12 +1229,12 @@ def orchestrate_install(
     plugin_repo: BasePluginRepo | None = None,
     editable: bool = False,
 ) -> InstallResult:
-    """Library-level install orchestrator.
+    """Library-level install entry point.
 
     Receives structured input (already-resolved source, settings, context) and
     returns a structured InstallResult. Never raises on expected failures.
     """
-    from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
+    # Deferred: settings.py imports from install.py at module level.
     from hcli.lib.ida.plugin.settings import apply_resolved_settings
 
     version = metadata.plugin.version
@@ -1274,7 +1274,7 @@ def orchestrate_install(
                 )
 
     except Exception as e:
-        logger.debug("orchestrate_install failed: %s", e, exc_info=True)
+        logger.debug("apply_install failed: %s", e, exc_info=True)
         if files_written:
             try:
                 _rollback_fresh_install(plugin_name)
@@ -1297,7 +1297,7 @@ def orchestrate_install(
     )
 
 
-def orchestrate_upgrade(
+def apply_upgrade(
     *,
     zip_data: bytes,
     plugin_name: str,
@@ -1308,14 +1308,13 @@ def orchestrate_upgrade(
     plugin_repo: BasePluginRepo | None = None,
     old_deps: list[str] | None = None,
 ) -> InstallResult:
-    """Library-level upgrade orchestrator.
+    """Library-level upgrade entry point.
 
-    Same structured-input/structured-output contract as orchestrate_install.
+    Same structured-input/structured-output contract as apply_install.
     Upgrade has different rollback semantics: restore the previous version
     rather than removing what was just installed.
     """
-    from hcli.lib.ida.plugin.reference import parse_dependency_spec
-    from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
+    # Deferred: settings.py imports from install.py at module level.
     from hcli.lib.ida.plugin.settings import apply_resolved_settings
 
     version = metadata.plugin.version
@@ -1323,7 +1322,7 @@ def orchestrate_upgrade(
     try:
         upgrade_plugin_archive(zip_data, plugin_name, ctx)
     except Exception as e:
-        logger.debug("orchestrate_upgrade file write failed: %s", e, exc_info=True)
+        logger.debug("apply_upgrade file write failed: %s", e, exc_info=True)
         return InstallResult(
             plugin=plugin_name,
             version=version,
@@ -1381,8 +1380,8 @@ def _install_loose_dependencies(
     ctx: InstallContext,
 ) -> list[InstallResult]:
     """Install loose dependencies and return InstallResult entries."""
+    # Deferred: dependencies.py imports from install.py at module level.
     from hcli.lib.ida.plugin.dependencies import install_dependencies
-    from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
 
     if not metadata.plugin.dependencies:
         return []
