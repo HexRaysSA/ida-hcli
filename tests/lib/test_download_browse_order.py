@@ -142,3 +142,54 @@ class TestBrowseOrder:
         titles = _titles_shown([_folder(name) for name in ["archive", "9.1", "9.2"]], monkeypatch)
 
         assert titles == ["📁 9.2", "📁 9.1", "📁 archive"]
+
+
+# ---------------------------------------------------------------------------
+# Prereleases
+# ---------------------------------------------------------------------------
+
+
+class TestPrereleaseOrder:
+    def test_prerelease_listed_below_its_final_release(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # SemVer: 1.0.0-beta.10 *precedes* 1.0.0, so the final release is the
+        # newer of the two and belongs on top.
+        api_order = ["1.0.0", "1.0.0-beta.10", "1.0.1"]
+        titles = _titles_shown([_folder(name) for name in api_order], monkeypatch)
+
+        assert titles == ["📁 1.0.1", "📁 1.0.0", "📁 1.0.0-beta.10"]
+
+    def test_prerelease_tags_ordered_by_precedence(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # rc outranks beta outranks alpha, which is the reverse of alphabetical.
+        api_order = ["1.0.0-alpha.1", "1.0.0-beta.2", "1.0.0-rc.1"]
+        titles = _titles_shown([_folder(name) for name in api_order], monkeypatch)
+
+        assert titles == ["📁 1.0.0-rc.1", "📁 1.0.0-beta.2", "📁 1.0.0-alpha.1"]
+
+    def test_numeric_prerelease_fields_compare_as_numbers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        api_order = ["1.0.0-beta.10", "1.0.0-beta.2", "1.0.0-beta.9"]
+        titles = _titles_shown([_folder(name) for name in api_order], monkeypatch)
+
+        assert titles == ["📁 1.0.0-beta.10", "📁 1.0.0-beta.9", "📁 1.0.0-beta.2"]
+
+    def test_longer_prerelease_outranks_its_prefix(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # SemVer: a larger set of prerelease fields wins when the prefix ties.
+        api_order = ["1.0.0-beta", "1.0.0-beta.1"]
+        titles = _titles_shown([_folder(name) for name in api_order], monkeypatch)
+
+        assert titles == ["📁 1.0.0-beta.1", "📁 1.0.0-beta"]
+
+    def test_service_pack_suffix_is_not_treated_as_a_prerelease(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Only a hyphen marks a prerelease. 9.0sp1 is a *later* release than
+        # 9.0 and must keep sorting above it.
+        api_order = ["9.0", "9.0sp1", "9.0-beta.1"]
+        titles = _titles_shown([_folder(name) for name in api_order], monkeypatch)
+
+        assert titles == ["📁 9.0sp1", "📁 9.0", "📁 9.0-beta.1"]
+
+    def test_hyphen_outside_a_version_is_not_a_prerelease(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A hyphen only marks a prerelease when it follows a version number, so
+        # hyphenated category names keep plain A-Z order.
+        api_order = ["sdk-and-utilities", "ida-pro", "ida"]
+        titles = _titles_shown([_folder(name) for name in api_order], monkeypatch)
+
+        assert titles == ["📁 ida", "📁 ida-pro", "📁 sdk-and-utilities"]
