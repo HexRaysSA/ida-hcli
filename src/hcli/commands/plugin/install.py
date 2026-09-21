@@ -16,8 +16,6 @@ from hcli.lib.ida import (
     MissingCurrentInstallationDirectory,
     explain_failed_to_detect_ida_version,
     explain_missing_current_installation_directory,
-    find_current_ida_platform,
-    find_current_ida_version,
     get_ida_config,
 )
 from hcli.lib.ida.plugin import (
@@ -26,6 +24,7 @@ from hcli.lib.ida.plugin import (
     parse_plugin_version,
 )
 from hcli.lib.ida.plugin.bundle import bundle_dependency_source
+from hcli.lib.ida.plugin.context import IDAEnvironment, InstallContext, InstallOptions
 from hcli.lib.ida.plugin.exceptions import (
     AmbiguousPluginReferenceError,
     InstalledPluginNameConflictError,
@@ -144,8 +143,10 @@ def install_plugin(
         sweep_trash()
 
         with rich.status.Status("collecting environment", console=stderr_console):
-            current_ida_platform = find_current_ida_platform()
-            current_ida_version = find_current_ida_version()
+            ida_env = IDAEnvironment.from_current()
+
+        install_opts = InstallOptions(pip_options=pip_options, check_environment=check_environment)
+        install_ctx = InstallContext(env=ida_env, options=install_opts)
 
         # Editable install: skip the archive pipeline entirely. Read metadata
         # straight from the source directory and symlink it into place.
@@ -232,7 +233,7 @@ def install_plugin(
             try:
                 with rich.status.Status("fetching plugin", console=stderr_console):
                     plugin_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
-                        bare_spec, current_ida_platform, current_ida_version, host=ref.host
+                        bare_spec, ida_env.platform, ida_env.ida_version, host=ref.host
                     )
             except AmbiguousPluginReferenceError as e:
                 if ref.version_spec and not e.version_spec:
@@ -329,9 +330,7 @@ def install_plugin(
                 descr.validate_value(parsed_value)
 
         if editable:
-            install_plugin_directory_editable(
-                source_dir, plugin_name, pip_options=pip_options, check_environment=check_environment
-            )
+            install_plugin_directory_editable(source_dir, plugin_name, install_ctx)
         else:
             assert buf is not None
             if is_upgrade:
@@ -342,25 +341,25 @@ def install_plugin(
                 status_text = "installing plugin"
             if isinstance(plugin_repo_obj, PluginBundleRepo) and not pip_options.has_custom_sources:
                 current_python_version = detect_current_python_version()
-                with bundle_dependency_source(
-                    plugin_repo_obj, current_ida_platform, current_python_version
-                ) as bundle_opts:
+                with bundle_dependency_source(plugin_repo_obj, ida_env.platform, current_python_version) as bundle_opts:
                     if bundle_opts is None:
                         available = ", ".join(plugin_repo_obj.target_ids) or "none"
                         console.print(
                             f"[red]Error[/red]: plugin bundle does not include dependencies"
-                            f" for {current_ida_platform}, Python {current_python_version}."
+                            f" for {ida_env.platform}, Python {current_python_version}."
                         )
                         console.print(f"Available targets in this bundle: {available}")
                         raise click.Abort()
                     effective_pip_options = merge_bundle_pip_options(pip_options, bundle_opts)
+                    effective_ctx = InstallContext(
+                        env=ida_env,
+                        options=InstallOptions(pip_options=effective_pip_options, check_environment=check_environment),
+                    )
                     with rich.status.Status(status_text, console=stderr_console):
-                        write_archive(
-                            buf, plugin_name, pip_options=effective_pip_options, check_environment=check_environment
-                        )
+                        write_archive(buf, plugin_name, effective_ctx)
             else:
                 with rich.status.Status(status_text, console=stderr_console):
-                    write_archive(buf, plugin_name, pip_options=pip_options, check_environment=check_environment)
+                    write_archive(buf, plugin_name, install_ctx)
 
         try:
             _apply_plugin_settings(
@@ -399,10 +398,7 @@ def install_plugin(
                 _handle_install_dependencies(
                     metadata=metadata,
                     plugin_repo=plugin_repo_obj,
-                    current_ida_platform=current_ida_platform,
-                    current_ida_version=current_ida_version,
-                    pip_options=pip_options,
-                    check_environment=check_environment,
+                    install_ctx=install_ctx,
                 )
             except Exception as dep_err:
                 logger.debug("dependency handling failed: %s", dep_err, exc_info=True)
@@ -539,10 +535,7 @@ def _handle_install_dependencies(
     *,
     metadata: IDAMetadataDescriptor,
     plugin_repo: BasePluginRepo | None,
-    current_ida_platform: str,
-    current_ida_version: str,
-    pip_options: PipOptions,
-    check_environment: bool,
+    install_ctx: InstallContext,
 ) -> None:
     from hcli.lib.ida.plugin.dependencies import install_dependencies
 
@@ -561,10 +554,7 @@ def _handle_install_dependencies(
         result = install_dependencies(
             metadata=metadata,
             plugin_repo=plugin_repo,
-            current_platform=current_ida_platform,
-            current_version=current_ida_version,
-            pip_options=pip_options,
-            check_environment=check_environment,
+            ctx=install_ctx,
         )
 
     for name in result.installed:

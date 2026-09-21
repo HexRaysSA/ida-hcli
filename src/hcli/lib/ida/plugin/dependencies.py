@@ -11,10 +11,10 @@ if TYPE_CHECKING:
     from typing import Any
 
 from hcli.lib.ida.plugin import IDAMetadataDescriptor, parse_plugin_version
+from hcli.lib.ida.plugin.context import InstallContext
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
 from hcli.lib.ida.plugin.reference import parse_dependency_spec
 from hcli.lib.ida.plugin.repo import BasePluginRepo
-from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +30,7 @@ class DependencyResult:
 def install_dependencies(
     metadata: IDAMetadataDescriptor,
     plugin_repo: BasePluginRepo,
-    current_platform: str,
-    current_version: str,
-    pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
-    check_environment: bool = True,
+    ctx: InstallContext,
 ) -> DependencyResult:
     """Install dependencies declared in a plugin's metadata.
 
@@ -64,10 +61,7 @@ def install_dependencies(
                 version_spec=ref.version_spec,
                 host=ref.host,
                 plugin_repo=plugin_repo,
-                current_platform=current_platform,
-                current_version=current_version,
-                pip_options=pip_options,
-                check_environment=check_environment,
+                ctx=ctx,
                 result=result,
                 find_installed=find_installed_plugin,
                 do_install=install_plugin_archive,
@@ -86,10 +80,7 @@ def _install_one_dependency(
     version_spec: str,
     host: str | None,
     plugin_repo: BasePluginRepo,
-    current_platform: str,
-    current_version: str,
-    pip_options: PipOptions,
-    check_environment: bool,
+    ctx: InstallContext,
     result: DependencyResult,
     find_installed: Callable[[str], Any],
     do_install: Callable[..., None],
@@ -128,15 +119,15 @@ def _install_one_dependency(
         logger.info("dependency %s at %s needs upgrade to %s", dep_name, installed.version, pinned_version)
         bare_spec = dep_name + version_spec
         _dep_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
-            bare_spec, current_platform, current_version, host=host
+            bare_spec, ctx.env.platform, ctx.env.ida_version, host=host
         )
-        do_upgrade(buf, _dep_name, pip_options=pip_options, check_environment=check_environment)
+        do_upgrade(buf, _dep_name, ctx)
         result.upgraded.append(dep_name)
         return
 
     bare_spec = dep_name + version_spec
     _dep_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
-        bare_spec, current_platform, current_version, host=host
+        bare_spec, ctx.env.platform, ctx.env.ida_version, host=host
     )
-    do_install(buf, _dep_name, pip_options=pip_options, check_environment=check_environment)
+    do_install(buf, _dep_name, ctx)
     result.installed.append(dep_name)

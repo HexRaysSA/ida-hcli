@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 from fixtures import *
-from fixtures import PLUGINS_DIR
+from fixtures import PLUGINS_DIR, make_test_install_context
 
 from hcli.commands.ida.python.create_environment import run_create_environment
 from hcli.lib.ida.plugin.install import (
@@ -95,8 +95,9 @@ def test_collect_finds_plugins_with_deps(virtual_ida_environment):
 
 
 def test_collect_from_real_plugin_archive(virtual_ida_environment_with_venv):
+    ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v3.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
 
     result = collect_plugin_dependencies()
     assert len(result) == 1

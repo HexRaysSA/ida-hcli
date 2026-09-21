@@ -25,6 +25,9 @@ from pydantic import (
     model_validator,
 )
 
+from hcli.lib.ida.plugin.context import IDAEnvironment as IDAEnvironment
+from hcli.lib.ida.plugin.context import InstallContext as InstallContext
+from hcli.lib.ida.plugin.context import InstallOptions as InstallOptions
 from hcli.lib.util.logging import m
 
 logger = logging.getLogger(__name__)

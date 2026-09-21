@@ -15,6 +15,7 @@ from fixtures import *
 from fixtures import (
     PLUGINS_DIR,
     install_this_package_in_venv,
+    make_test_install_context,
     run_hcli,
     temp_env_var,
 )
@@ -72,10 +73,11 @@ def row_contains(*values: str):
 
 
 def test_install_source_plugin_archive(virtual_ida_environment):
+    ctx = make_test_install_context()
     plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip"
     buf = plugin_path.read_bytes()
 
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
 
     plugin_directory = get_plugin_directory("plugin1")
     assert plugin_directory.exists()
@@ -90,20 +92,22 @@ def test_install_source_plugin_archive_under_an_active_spinner(virtual_ida_envir
     starts more of its own. rich before 14.1 aborted the command there with
     `Only one live display may be active at once`.
     """
+    ctx = make_test_install_context()
     plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip"
     buf = plugin_path.read_bytes()
 
     with rich.status.Status("installing plugin", console=stderr_console):
-        install_plugin_archive(buf, "plugin1")
+        install_plugin_archive(buf, "plugin1", ctx)
 
     assert is_plugin_installed("plugin1")
 
 
 def test_install_binary_plugin_archive(virtual_ida_environment):
+    ctx = make_test_install_context()
     plugin_path = PLUGINS_DIR / "zydisinfo" / "zydisinfo-v1.0.0.zip"
     buf = plugin_path.read_bytes()
 
-    install_plugin_archive(buf, "zydisinfo")
+    install_plugin_archive(buf, "zydisinfo", ctx)
 
     plugin_directory = get_plugin_directory("zydisinfo")
     assert plugin_directory.exists()
@@ -117,10 +121,11 @@ def test_install_binary_plugin_archive(virtual_ida_environment):
 
 
 def test_uninstall(virtual_ida_environment):
+    ctx = make_test_install_context()
     plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip"
     buf = plugin_path.read_bytes()
 
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
     assert ("plugin1", "1.0.0") in get_installed_plugins()
 
     uninstall_plugin("plugin1")
@@ -130,30 +135,31 @@ def test_uninstall(virtual_ida_environment):
 
 
 def test_upgrade(virtual_ida_environment):
+    ctx = make_test_install_context()
     v1 = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
     v2 = (PLUGINS_DIR / "plugin1" / "plugin1-v2.0.0.zip").read_bytes()
 
-    install_plugin_archive(v1, "plugin1")
+    install_plugin_archive(v1, "plugin1", ctx)
     assert ("plugin1", "1.0.0") in get_installed_plugins()
     assert is_plugin_installed("plugin1")
 
-    upgrade_plugin_archive(v2, "plugin1")
+    upgrade_plugin_archive(v2, "plugin1", ctx)
     assert ("plugin1", "2.0.0") in get_installed_plugins()
     assert is_plugin_installed("plugin1")
 
     uninstall_plugin("plugin1")
 
-    install_plugin_archive(v2, "plugin1")
+    install_plugin_archive(v2, "plugin1", ctx)
     with pytest.raises(PluginVersionDowngradeError):
-        # this is a downgrade
-        upgrade_plugin_archive(v1, "plugin1")
+        upgrade_plugin_archive(v1, "plugin1", ctx)
 
 
 def test_plugin_python_dependencies(virtual_ida_environment_with_venv):
+    ctx = make_test_install_context()
     plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v3.0.0.zip"
     buf = plugin_path.read_bytes()
 
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
 
     freeze = pip_freeze(Path(os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"]))
     assert "packaging==25.0" in freeze
@@ -185,8 +191,9 @@ def test_plugin_python_dependencies_rejects_externally_managed_python_without_ru
     plugin_path = PLUGINS_DIR / "plugin1" / "plugin1-v3.0.0.zip"
     buf = plugin_path.read_bytes()
 
+    ctx = make_test_install_context()
     with pytest.raises(DependencyInstallationError) as exc_info:
-        install_plugin_archive(buf, "plugin1")
+        install_plugin_archive(buf, "plugin1", ctx)
 
     assert "PEP 668" in str(exc_info.value)
     assert not is_plugin_installed("plugin1")
@@ -347,11 +354,12 @@ def test_validate_archive_entry_rejects_unsafe_entries(
 
 
 def test_install_already_installed(virtual_ida_environment):
+    ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
 
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
     with pytest.raises(PluginAlreadyInstalledError):
-        install_plugin_archive(buf, "plugin1")
+        install_plugin_archive(buf, "plugin1", ctx)
 
 
 def test_install_upgrade_flag(virtual_ida_environment):
@@ -405,8 +413,9 @@ def break_installed_plugin(name: str) -> Path:
 
 
 def test_uninstall_broken_plugin_directory(virtual_ida_environment):
+    ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
 
     plugin_dir = break_installed_plugin("plugin1")
     assert not is_plugin_installed("plugin1")
@@ -417,40 +426,40 @@ def test_uninstall_broken_plugin_directory(virtual_ida_environment):
 
 
 def test_install_over_broken_plugin_directory(virtual_ida_environment):
+    ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
 
     break_installed_plugin("plugin1")
 
-    # install must distinguish remnants from a working installation,
-    # and the suggested recovery (uninstall, then install) must work
     with pytest.raises(BrokenPluginInstallationError):
-        install_plugin_archive(buf, "plugin1")
+        install_plugin_archive(buf, "plugin1", ctx)
 
     uninstall_plugin("plugin1")
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
     assert is_plugin_installed("plugin1")
 
 
 def test_uninstall_file_squatting_on_plugin_name(virtual_ida_environment):
+    ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
     squatter = get_plugin_directory("plugin1")
     squatter.write_text("not a plugin")
 
     with pytest.raises(BrokenPluginInstallationError):
-        install_plugin_archive(buf, "plugin1")
+        install_plugin_archive(buf, "plugin1", ctx)
 
-    # the suggested recovery (uninstall, then install) must work for files too
     uninstall_plugin("plugin1")
     assert not squatter.exists()
 
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
     assert is_plugin_installed("plugin1")
 
 
 def test_trash_directory_not_scanned(virtual_ida_environment):
+    ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
 
     # a trashed copy retains its manifest but must not count as installed
     trash_dir = get_trash_directory()
@@ -488,20 +497,19 @@ def append_path_traversal_entry(zip_data: bytes, prefix: str) -> bytes:
 
 
 def test_upgrade_failure_rolls_back(virtual_ida_environment):
+    ctx = make_test_install_context()
     v1 = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
     v2 = (PLUGINS_DIR / "plugin1" / "plugin1-v2.0.0.zip").read_bytes()
 
-    install_plugin_archive(v1, "plugin1")
+    install_plugin_archive(v1, "plugin1", ctx)
 
     corrupt_v2 = append_path_traversal_entry(v2, "src-v2")
     with pytest.raises(ValueError, match="Path traversal"):
-        upgrade_plugin_archive(corrupt_v2, "plugin1")
+        upgrade_plugin_archive(corrupt_v2, "plugin1", ctx)
 
-    # the failed upgrade must restore the previous version
     assert ("plugin1", "1.0.0") in get_installed_plugins()
 
-    # and must not leave state that blocks a later, good upgrade
-    upgrade_plugin_archive(v2, "plugin1")
+    upgrade_plugin_archive(v2, "plugin1", ctx)
     assert ("plugin1", "2.0.0") in get_installed_plugins()
 
 
@@ -525,8 +533,9 @@ def test_failed_extraction_leaves_no_partial_destination():
 
 @pytest.mark.skipif(sys.platform != "win32", reason="file locking semantics are Windows-specific")
 def test_uninstall_while_file_in_use_is_atomic(virtual_ida_environment):
+    ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
-    install_plugin_archive(buf, "plugin1")
+    install_plugin_archive(buf, "plugin1", ctx)
     plugin_dir = get_plugin_directory("plugin1")
 
     # Python opens files without FILE_SHARE_DELETE, so while this handle is

@@ -10,6 +10,7 @@ import zipfile
 import pytest
 from click.testing import CliRunner
 from fixtures import *
+from fixtures import make_test_install_context
 from pydantic import ValidationError
 
 from hcli.commands.plugin import plugin as plugin_group
@@ -274,7 +275,7 @@ def test_collect_all_component_names():
 
 def test_install_suite(virtual_ida_environment):
     zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0"), ("comp-b", "2.0.0")])
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     assert is_plugin_installed("my-suite")
     assert not is_plugin_installed("comp-a")
@@ -289,7 +290,7 @@ def test_install_suite(virtual_ida_environment):
 
 def test_install_suite_components_on_disk(virtual_ida_environment):
     zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0"), ("comp-b", "2.0.0")])
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     from hcli.lib.ida.plugin.install import get_plugin_directory
 
@@ -300,7 +301,7 @@ def test_install_suite_components_on_disk(virtual_ida_environment):
 
 def test_walk_installed_suite_components(virtual_ida_environment):
     zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0"), ("comp-b", "2.0.0")])
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     from hcli.lib.ida.plugin.install import get_plugin_directory
 
@@ -317,7 +318,7 @@ def test_walk_installed_suite_components(virtual_ida_environment):
 
 def test_uninstall_suite_removes_components(virtual_ida_environment):
     zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0")])
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
     assert is_plugin_installed("my-suite")
 
     uninstall_plugin("my-suite")
@@ -331,7 +332,7 @@ def test_uninstall_suite_removes_components(virtual_ida_environment):
 
 def test_uninstall_component_refused_via_cli(virtual_ida_environment):
     zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0")])
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["uninstall", "comp-a"])
@@ -343,7 +344,7 @@ def test_uninstall_component_refused_via_cli(virtual_ida_environment):
 
 def test_uninstall_suite_lists_components_via_cli(virtual_ida_environment):
     zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0"), ("comp-b", "2.0.0")])
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["uninstall", "--yes", "my-suite"])
@@ -361,8 +362,8 @@ def test_upgrade_suite_replaces_components(virtual_ida_environment):
     v1 = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0")])
     v2 = _make_suite_zip("my-suite", "2.0.0", [("comp-a", "1.1.0"), ("comp-b", "1.0.0")])
 
-    install_plugin_archive(v1, "my-suite")
-    upgrade_plugin_archive(v2, "my-suite")
+    install_plugin_archive(v1, "my-suite", make_test_install_context())
+    upgrade_plugin_archive(v2, "my-suite", make_test_install_context())
 
     from hcli.lib.ida.plugin.install import get_plugin_directory
 
@@ -376,14 +377,14 @@ def test_upgrade_suite_drops_removed_component(virtual_ida_environment):
     v1 = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0"), ("comp-b", "1.0.0")])
     v2 = _make_suite_zip("my-suite", "2.0.0", [("comp-a", "1.1.0")])
 
-    install_plugin_archive(v1, "my-suite")
+    install_plugin_archive(v1, "my-suite", make_test_install_context())
 
     from hcli.lib.ida.plugin.install import get_plugin_directory
 
     suite_dir = get_plugin_directory("my-suite")
     assert (suite_dir / "comp-b" / "ida-plugin.json").exists()
 
-    upgrade_plugin_archive(v2, "my-suite")
+    upgrade_plugin_archive(v2, "my-suite", make_test_install_context())
     assert not (suite_dir / "comp-b").exists()
     tree = walk_component_tree_from_directory(suite_dir)
     names = {m.plugin.name for _, m in tree}
@@ -397,7 +398,7 @@ def test_upgrade_suite_drops_removed_component(virtual_ida_environment):
 
 def test_status_shows_component_count(virtual_ida_environment):
     zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0"), ("comp-b", "2.0.0")])
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["status", "--skip-upgrade-check"])
@@ -411,7 +412,7 @@ def test_status_shows_component_count(virtual_ida_environment):
 
 def test_status_show_components_flag(virtual_ida_environment):
     zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0"), ("comp-b", "2.0.0")])
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["status", "--skip-upgrade-check", "--show-components"])
@@ -424,7 +425,7 @@ def test_status_show_components_flag(virtual_ida_environment):
 
 def test_status_json_includes_components(virtual_ida_environment):
     zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0"), ("comp-b", "2.0.0")])
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["status", "--skip-upgrade-check", "--json"])
@@ -444,7 +445,7 @@ def test_status_json_includes_components(virtual_ida_environment):
 
 def test_collision_component_vs_toplevel(virtual_ida_environment):
     standalone = _make_standalone_zip("comp-a", "1.0.0")
-    install_plugin_archive(standalone, "comp-a")
+    install_plugin_archive(standalone, "comp-a", make_test_install_context())
 
     suite_zip = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0")])
     path, meta = find_root_manifest_in_archive(suite_zip)
@@ -457,7 +458,7 @@ def test_collision_component_vs_toplevel(virtual_ida_environment):
 
 def test_collision_component_vs_other_suite(virtual_ida_environment):
     suite1 = _make_suite_zip("suite-1", "1.0.0", [("shared-comp", "1.0.0")])
-    install_plugin_archive(suite1, "suite-1")
+    install_plugin_archive(suite1, "suite-1", make_test_install_context())
 
     suite2_zip = _make_suite_zip("suite-2", "1.0.0", [("shared-comp", "2.0.0")])
     path, meta = find_root_manifest_in_archive(suite2_zip)
@@ -470,7 +471,7 @@ def test_collision_component_vs_other_suite(virtual_ida_environment):
 
 def test_no_collision_when_same_suite_excluded(virtual_ida_environment):
     suite = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0")])
-    install_plugin_archive(suite, "my-suite")
+    install_plugin_archive(suite, "my-suite", make_test_install_context())
 
     suite_v2 = _make_suite_zip("my-suite", "2.0.0", [("comp-a", "1.1.0")])
     path, meta = find_root_manifest_in_archive(suite_v2)
@@ -487,7 +488,7 @@ def test_no_collision_when_same_suite_excluded(virtual_ida_environment):
 
 def test_find_suite_for_component_found(virtual_ida_environment):
     suite = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0")])
-    install_plugin_archive(suite, "my-suite")
+    install_plugin_archive(suite, "my-suite", make_test_install_context())
 
     record = find_suite_for_component("comp-a")
     assert record is not None
@@ -496,7 +497,7 @@ def test_find_suite_for_component_found(virtual_ida_environment):
 
 def test_find_suite_for_component_not_found(virtual_ida_environment):
     standalone = _make_standalone_zip("my-plugin", "1.0.0")
-    install_plugin_archive(standalone, "my-plugin")
+    install_plugin_archive(standalone, "my-plugin", make_test_install_context())
 
     record = find_suite_for_component("my-plugin")
     assert record is None
@@ -610,7 +611,7 @@ def test_collect_plugin_dependencies_includes_component_deps(virtual_ida_environ
         "1.0.0",
         [("comp-a", "1.0.0")],
     )
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     suite_dir = get_plugin_directory("my-suite")
     suite_meta = _make_plugin_metadata(
@@ -729,7 +730,7 @@ def test_config_list_for_component(virtual_ida_environment):
         "1.0.0",
         [("comp-a", "1.0.0", {"settings": [SETTING_API_KEY]})],
     )
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["config", "comp-a", "list"])
@@ -743,7 +744,7 @@ def test_config_set_for_component(virtual_ida_environment):
         "1.0.0",
         [("comp-a", "1.0.0", {"settings": [SETTING_API_KEY]})],
     )
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["config", "comp-a", "set", "api_key", "my-value"])
@@ -761,7 +762,7 @@ def test_config_get_for_component(virtual_ida_environment):
         "1.0.0",
         [("comp-a", "1.0.0", {"settings": [SETTING_API_KEY]})],
     )
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
     from hcli.lib.ida.plugin.settings import set_setting_for_metadata
@@ -787,7 +788,7 @@ def test_suite_install_creates_component_metadata(virtual_ida_environment):
         "1.0.0",
         [("comp-a", "1.0.0")],
     )
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
 
@@ -809,7 +810,7 @@ def test_suite_install_creates_root_entry_point(virtual_ida_environment):
         "1.0.0",
         [("comp-a", "1.0.0")],
     )
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     from hcli.lib.ida.plugin.install import get_metadata_from_plugin_directory, get_plugin_directory
 
@@ -930,7 +931,7 @@ def test_nested_component_walk_depth2(virtual_ida_environment):
         "1.0.0",
         [("comp-a", "1.0.0", [("sub-x", "0.1.0")])],
     )
-    install_plugin_archive(zip_data, "my-suite")
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
 
     from hcli.lib.ida.plugin.install import get_plugin_directory
 
