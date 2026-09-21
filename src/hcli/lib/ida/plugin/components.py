@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
+    get_component_name,
     get_metadata_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
     get_python_dependencies_from_plugin_archive,
@@ -41,7 +42,8 @@ def walk_component_tree_from_directory(
     metadata = _read_metadata_from_directory(plugin_dir)
     result: list[tuple[Path, IDAMetadataDescriptor]] = []
 
-    for component_name in metadata.plugin.components:
+    for entry in metadata.plugin.components:
+        component_name = get_component_name(entry)
         component_dir = plugin_dir / component_name
         if not component_dir.is_dir():
             raise ValueError(
@@ -89,19 +91,28 @@ def walk_component_tree_from_archive(
     root_dir = root_path.parent
     result: list[tuple[Path, IDAMetadataDescriptor]] = []
 
-    for component_name in root_metadata.plugin.components:
-        if component_name not in _all_metadatas:
-            expected_dir = root_dir / component_name
-            raise ValueError(
-                f"component '{component_name}' declared by '{root_metadata.plugin.name}' "
-                f"but no ida-plugin.json found under {expected_dir}"
+    for entry in root_metadata.plugin.components:
+        if isinstance(entry, IDAMetadataDescriptor):
+            comp_meta = entry
+            component_name = comp_meta.plugin.name
+            comp_path = (
+                _all_metadatas[component_name][0]
+                if component_name in _all_metadatas
+                else root_dir / component_name / "ida-plugin.json"
             )
-
-        comp_path, comp_meta = _all_metadatas[component_name]
-        if comp_meta.plugin.name != component_name:
-            raise ValueError(
-                f"component '{component_name}' manifest has plugin.name '{comp_meta.plugin.name}' (name mismatch)"
-            )
+        else:
+            component_name = entry
+            if component_name not in _all_metadatas:
+                expected_dir = root_dir / component_name
+                raise ValueError(
+                    f"component '{component_name}' declared by '{root_metadata.plugin.name}' "
+                    f"but no ida-plugin.json found under {expected_dir}"
+                )
+            comp_path, comp_meta = _all_metadatas[component_name]
+            if comp_meta.plugin.name != component_name:
+                raise ValueError(
+                    f"component '{component_name}' manifest has plugin.name '{comp_meta.plugin.name}' (name mismatch)"
+                )
 
         result.append((comp_path, comp_meta))
         result.extend(
@@ -171,7 +182,7 @@ def find_root_manifest_in_archive(
 
     referenced_as_component: set[str] = set()
     for _, meta in all_items:
-        referenced_as_component.update(meta.plugin.components)
+        referenced_as_component.update(get_component_name(e) for e in meta.plugin.components)
 
     roots = [(path, meta) for path, meta in all_items if meta.plugin.name not in referenced_as_component]
 

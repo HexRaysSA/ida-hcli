@@ -207,6 +207,82 @@ def test_metadata_serialization_includes_components():
 
 
 # ---------------------------------------------------------------------------
+# PluginMetadata.components field: str | IDAMetadataDescriptor union
+# ---------------------------------------------------------------------------
+
+
+def _make_component_descriptor(name: str, version: str = "1.0.0") -> dict:
+    return _make_plugin_metadata(name, version)
+
+
+def test_components_accepts_descriptor_objects():
+    comp_desc = _make_component_descriptor("comp-a")
+    data = _make_plugin_metadata("my-suite", "1.0.0")
+    data["plugin"]["components"] = [comp_desc]
+    descriptor = IDAMetadataDescriptor.model_validate(data)
+    assert len(descriptor.plugin.components) == 1
+    assert isinstance(descriptor.plugin.components[0], IDAMetadataDescriptor)
+    assert descriptor.plugin.components[0].plugin.name == "comp-a"
+
+
+def test_components_accepts_mixed_string_and_descriptor():
+    comp_desc = _make_component_descriptor("comp-b")
+    data = _make_plugin_metadata("my-suite", "1.0.0")
+    data["plugin"]["components"] = ["comp-a", comp_desc]
+    descriptor = IDAMetadataDescriptor.model_validate(data)
+    assert len(descriptor.plugin.components) == 2
+    assert isinstance(descriptor.plugin.components[0], str)
+    assert descriptor.plugin.components[0] == "comp-a"
+    assert isinstance(descriptor.plugin.components[1], IDAMetadataDescriptor)
+    assert descriptor.plugin.components[1].plugin.name == "comp-b"
+
+
+def test_components_rejects_duplicate_names_mixed():
+    comp_desc = _make_component_descriptor("comp-a")
+    data = _make_plugin_metadata("my-suite", "1.0.0")
+    data["plugin"]["components"] = ["comp-a", comp_desc]
+    with pytest.raises(ValidationError, match="unique"):
+        IDAMetadataDescriptor.model_validate(data)
+
+
+def test_components_descriptor_serializes_as_object():
+    comp_desc = _make_component_descriptor("comp-a")
+    data = _make_plugin_metadata("my-suite", "1.0.0")
+    data["plugin"]["components"] = [comp_desc]
+    descriptor = IDAMetadataDescriptor.model_validate(data)
+    serialized = descriptor.model_dump(mode="json", by_alias=True)
+    components = serialized["plugin"]["components"]
+    assert len(components) == 1
+    assert isinstance(components[0], dict)
+    assert "IDAMetadataDescriptorVersion" in components[0]
+    assert components[0]["plugin"]["name"] == "comp-a"
+
+
+def test_components_mixed_roundtrip_serialization():
+    comp_desc = _make_component_descriptor("comp-b")
+    data = _make_plugin_metadata("my-suite", "1.0.0")
+    data["plugin"]["components"] = ["comp-a", comp_desc]
+    descriptor = IDAMetadataDescriptor.model_validate(data)
+    serialized = descriptor.model_dump(mode="json", by_alias=True)
+    components = serialized["plugin"]["components"]
+    assert components[0] == "comp-a"
+    assert isinstance(components[1], dict)
+    assert components[1]["plugin"]["name"] == "comp-b"
+
+    roundtripped = IDAMetadataDescriptor.model_validate(serialized)
+    assert isinstance(roundtripped.plugin.components[0], str)
+    assert isinstance(roundtripped.plugin.components[1], IDAMetadataDescriptor)
+
+
+def test_components_name_validation_on_embedded_descriptor():
+    comp_desc = _make_component_descriptor("-bad-name-")
+    data = _make_plugin_metadata("my-suite", "1.0.0")
+    data["plugin"]["components"] = [comp_desc]
+    with pytest.raises(ValidationError):
+        IDAMetadataDescriptor.model_validate(data)
+
+
+# ---------------------------------------------------------------------------
 # find_root_manifest_in_archive
 # ---------------------------------------------------------------------------
 
@@ -1073,3 +1149,297 @@ def test_undeclared_nested_grandchild(virtual_ida_environment, tmp_path):
     undeclared = find_undeclared_plugins_in_directory(suite_dir)
     assert len(undeclared) == 1
     assert undeclared[0][1].plugin.name == "hidden-plugin"
+
+
+# ---------------------------------------------------------------------------
+# Component walker with pre-expanded metadata
+# ---------------------------------------------------------------------------
+
+
+def test_walk_archive_with_preexpanded_components():
+    """Walker uses IDAMetadataDescriptor entries directly instead of archive lookup."""
+    comp_desc = IDAMetadataDescriptor.model_validate(_make_plugin_metadata("comp-a", "1.0.0"))
+    suite_meta = IDAMetadataDescriptor.model_validate(_make_plugin_metadata("my-suite", "1.0.0"))
+    suite_meta = suite_meta.model_copy(
+        update={"plugin": suite_meta.plugin.model_copy(update={"components": [comp_desc]})}
+    )
+
+    zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0")])
+    from pathlib import Path
+
+    tree = walk_component_tree_from_archive(zip_data, Path("my-suite/ida-plugin.json"), suite_meta)
+    names = {m.plugin.name for _, m in tree}
+    assert names == {"comp-a"}
+
+
+def test_walk_archive_mixed_string_and_preexpanded():
+    """Walker handles both string entries and IDAMetadataDescriptor entries."""
+    comp_b_desc = IDAMetadataDescriptor.model_validate(_make_plugin_metadata("comp-b", "2.0.0"))
+    suite_meta = IDAMetadataDescriptor.model_validate(_make_plugin_metadata("my-suite", "1.0.0"))
+    suite_meta = suite_meta.model_copy(
+        update={"plugin": suite_meta.plugin.model_copy(update={"components": ["comp-a", comp_b_desc]})}
+    )
+
+    zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0"), ("comp-b", "2.0.0")])
+    from pathlib import Path
+
+    tree = walk_component_tree_from_archive(zip_data, Path("my-suite/ida-plugin.json"), suite_meta)
+    names = {m.plugin.name for _, m in tree}
+    assert names == {"comp-a", "comp-b"}
+
+
+# ---------------------------------------------------------------------------
+# Snapshot indexer: component expansion
+# ---------------------------------------------------------------------------
+
+
+def test_snapshot_expands_components():
+    from hcli.lib.ida.plugin.repo import PluginArchiveIndex
+
+    zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0"), ("comp-b", "2.0.0")])
+    index = PluginArchiveIndex()
+    index.index_plugin_archive(zip_data, "https://example.com/suite.zip")
+
+    plugins = index.get_plugins()
+    assert len(plugins) == 1
+    assert plugins[0].name == "my-suite"
+
+    location = next(iter(plugins[0].versions.values()))[0]
+    components = location.metadata.plugin.components
+    assert len(components) == 2
+    assert all(isinstance(c, IDAMetadataDescriptor) for c in components)
+    comp_names = {c.plugin.name for c in components}
+    assert comp_names == {"comp-a", "comp-b"}
+
+
+def test_snapshot_excludes_components_from_toplevel():
+    from hcli.lib.ida.plugin.repo import PluginArchiveIndex
+
+    zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0")])
+    index = PluginArchiveIndex()
+    index.index_plugin_archive(zip_data, "https://example.com/suite.zip")
+
+    plugins = index.get_plugins()
+    plugin_names = {p.name for p in plugins}
+    assert "comp-a" not in plugin_names
+    assert "my-suite" in plugin_names
+
+
+def test_snapshot_preserves_component_dependencies():
+    from hcli.lib.ida.plugin.repo import PluginArchiveIndex
+
+    zip_data = _make_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", {"deps": ["some-dep"]})],
+    )
+    index = PluginArchiveIndex()
+    index.index_plugin_archive(zip_data, "https://example.com/suite.zip")
+
+    plugins = index.get_plugins()
+    location = next(iter(plugins[0].versions.values()))[0]
+    comp = location.metadata.plugin.components[0]
+    assert isinstance(comp, IDAMetadataDescriptor)
+    from hcli.lib.ida.plugin.reference import DependencyEntry
+
+    assert len(comp.plugin.dependencies) == 1
+    assert isinstance(comp.plugin.dependencies[0], DependencyEntry)
+    assert comp.plugin.dependencies[0].reference.name == "some-dep"
+
+
+def test_snapshot_standalone_plugin_unchanged():
+    from hcli.lib.ida.plugin.repo import PluginArchiveIndex
+
+    zip_data = _make_standalone_zip("my-plugin", "1.0.0")
+    index = PluginArchiveIndex()
+    index.index_plugin_archive(zip_data, "https://example.com/plugin.zip")
+
+    plugins = index.get_plugins()
+    assert len(plugins) == 1
+    assert plugins[0].name == "my-plugin"
+
+
+def test_snapshot_nested_components_expanded():
+    from hcli.lib.ida.plugin.repo import PluginArchiveIndex
+
+    zip_data = _make_nested_suite_zip(
+        "my-suite",
+        "1.0.0",
+        [("comp-a", "1.0.0", [("sub-x", "0.1.0")]), ("comp-b", "2.0.0", [])],
+    )
+    index = PluginArchiveIndex()
+    index.index_plugin_archive(zip_data, "https://example.com/suite.zip")
+
+    plugins = index.get_plugins()
+    assert len(plugins) == 1
+    location = next(iter(plugins[0].versions.values()))[0]
+    comp_a = next(c for c in location.metadata.plugin.components if c.plugin.name == "comp-a")
+    assert isinstance(comp_a, IDAMetadataDescriptor)
+    assert len(comp_a.plugin.components) == 1
+    sub_x = comp_a.plugin.components[0]
+    assert isinstance(sub_x, IDAMetadataDescriptor)
+    assert sub_x.plugin.name == "sub-x"
+
+
+# ---------------------------------------------------------------------------
+# Snapshot indexer: inline python dependencies resolution
+# ---------------------------------------------------------------------------
+
+
+def _make_pep723_content(deps: list[str]) -> str:
+    lines = ["# /// script", "# dependencies = ["]
+    for d in deps:
+        lines.append(f'#   "{d}",')
+    lines.extend(["# ]", "# ///", "", 'print("hello")'])
+    return "\n".join(lines)
+
+
+def _make_suite_zip_with_inline_deps(
+    suite_name: str,
+    suite_version: str,
+    components: list[tuple[str, str, list[str]]],
+    *,
+    suite_inline_deps: list[str] | None = None,
+) -> bytes:
+    buf = io.BytesIO()
+    comp_names = [c[0] for c in components]
+
+    suite_plugin: dict = {
+        "name": suite_name,
+        "version": suite_version,
+        "entryPoint": f"{suite_name}.py",
+        "urls": {"repository": HOST},
+        "authors": [{"name": "Test", "email": "test@example.com"}],
+        "components": comp_names,
+    }
+    if suite_inline_deps is not None:
+        suite_plugin["pythonDependencies"] = "inline"
+    suite_meta = {"IDAMetadataDescriptorVersion": 1, "plugin": suite_plugin}
+
+    with zipfile.ZipFile(buf, "w") as zf:
+        suite_entry = _make_pep723_content(suite_inline_deps or []) if suite_inline_deps is not None else "# suite"
+        zf.writestr(f"{suite_name}/ida-plugin.json", json.dumps(suite_meta))
+        zf.writestr(f"{suite_name}/{suite_name}.py", suite_entry)
+
+        for comp_name, comp_version, comp_deps in components:
+            comp_plugin: dict = {
+                "name": comp_name,
+                "version": comp_version,
+                "entryPoint": f"{comp_name}.py",
+                "urls": {"repository": HOST},
+                "authors": [{"name": "Test", "email": "test@example.com"}],
+                "pythonDependencies": "inline",
+            }
+            comp_meta_dict = {"IDAMetadataDescriptorVersion": 1, "plugin": comp_plugin}
+            zf.writestr(f"{suite_name}/{comp_name}/ida-plugin.json", json.dumps(comp_meta_dict))
+            zf.writestr(f"{suite_name}/{comp_name}/{comp_name}.py", _make_pep723_content(comp_deps))
+
+    return buf.getvalue()
+
+
+def test_snapshot_resolves_inline_python_deps_on_component():
+    from hcli.lib.ida.plugin.repo import PluginArchiveIndex
+
+    zip_data = _make_suite_zip_with_inline_deps("my-suite", "1.0.0", [("comp-a", "1.0.0", ["requests", "pyyaml"])])
+    index = PluginArchiveIndex()
+    index.index_plugin_archive(zip_data, "https://example.com/suite.zip")
+
+    plugins = index.get_plugins()
+    location = next(iter(plugins[0].versions.values()))[0]
+    comp = location.metadata.plugin.components[0]
+    assert isinstance(comp, IDAMetadataDescriptor)
+    assert isinstance(comp.plugin.python_dependencies, list)
+    assert "requests" in comp.plugin.python_dependencies
+    assert "pyyaml" in comp.plugin.python_dependencies
+
+
+# ---------------------------------------------------------------------------
+# Lint rules: expanded component objects and archive layout
+# ---------------------------------------------------------------------------
+
+
+def test_lint_errors_on_expanded_component_objects(virtual_ida_environment, tmp_path):
+    comp_desc = _make_component_descriptor("comp-a")
+    suite_meta = _make_plugin_metadata("my-suite", "1.0.0")
+    suite_meta["plugin"]["components"] = [comp_desc]
+
+    suite_dir = tmp_path / "my-suite"
+    suite_dir.mkdir()
+    (suite_dir / "ida-plugin.json").write_text(json.dumps(suite_meta))
+    (suite_dir / "my-suite.py").write_text("# suite")
+
+    comp_dir = suite_dir / "comp-a"
+    comp_dir.mkdir()
+    (comp_dir / "ida-plugin.json").write_text(json.dumps(comp_desc))
+    (comp_dir / "comp-a.py").write_text("# comp")
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["lint", str(suite_dir)])
+    output = result.output.replace("\n", " ").lower()
+    assert "expanded metadata" in output or "string form" in output
+
+
+def test_lint_passes_on_string_components(virtual_ida_environment, tmp_path):
+    suite_meta = _make_plugin_metadata("my-suite", "1.0.0", components=["comp-a"])
+    comp_meta = _make_plugin_metadata("comp-a", "1.0.0")
+
+    suite_dir = tmp_path / "my-suite"
+    suite_dir.mkdir()
+    (suite_dir / "ida-plugin.json").write_text(json.dumps(suite_meta))
+    (suite_dir / "my-suite.py").write_text("# suite")
+
+    comp_dir = suite_dir / "comp-a"
+    comp_dir.mkdir()
+    (comp_dir / "ida-plugin.json").write_text(json.dumps(comp_meta))
+    (comp_dir / "comp-a.py").write_text("# comp")
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["lint", str(suite_dir)])
+    assert result.exit_code == 0, result.output
+    output = result.output.replace("\n", " ").lower()
+    assert "expanded metadata" not in output
+
+
+def test_lint_errors_on_root_manifest_not_at_top_level(virtual_ida_environment, tmp_path):
+    buf = io.BytesIO()
+    suite_meta = _make_plugin_metadata("my-suite", "1.0.0", components=["comp-a"])
+    comp_meta = _make_plugin_metadata("comp-a", "1.0.0")
+
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("nested/dir/my-suite/ida-plugin.json", json.dumps(suite_meta))
+        zf.writestr("nested/dir/my-suite/my-suite.py", "# suite")
+        zf.writestr("nested/dir/my-suite/comp-a/ida-plugin.json", json.dumps(comp_meta))
+        zf.writestr("nested/dir/my-suite/comp-a/comp-a.py", "# comp")
+
+    zip_path = tmp_path / "suite.zip"
+    zip_path.write_bytes(buf.getvalue())
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["lint", str(zip_path)])
+    output = result.output.replace("\n", " ").lower()
+    assert "root manifest" in output
+
+
+def test_lint_passes_on_root_manifest_at_top_level(virtual_ida_environment, tmp_path):
+    zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0")])
+    zip_path = tmp_path / "suite.zip"
+    zip_path.write_bytes(zip_data)
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["lint", str(zip_path)])
+    assert result.exit_code == 0, result.output
+    output = result.output.replace("\n", " ").lower()
+    assert "root manifest" not in output
+
+
+def test_snapshot_resolves_inline_python_deps_on_root():
+    from hcli.lib.ida.plugin.repo import PluginArchiveIndex
+
+    zip_data = _make_suite_zip_with_inline_deps("my-suite", "1.0.0", [], suite_inline_deps=["httpx"])
+    index = PluginArchiveIndex()
+    index.index_plugin_archive(zip_data, "https://example.com/suite.zip")
+
+    plugins = index.get_plugins()
+    location = next(iter(plugins[0].versions.values()))[0]
+    assert isinstance(location.metadata.plugin.python_dependencies, list)
+    assert "httpx" in location.metadata.plugin.python_dependencies
