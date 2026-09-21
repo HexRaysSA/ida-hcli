@@ -13,6 +13,13 @@ if TYPE_CHECKING:
 from hcli.lib.ida.plugin import IDAMetadataDescriptor, parse_plugin_version
 from hcli.lib.ida.plugin.context import InstallContext
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
+from hcli.lib.ida.plugin.install import (
+    find_installed_plugin,
+    get_metadata_from_plugin_directory,
+    get_plugin_directory,
+    install_plugin_archive,
+    upgrade_plugin_archive,
+)
 from hcli.lib.ida.plugin.reference import parse_dependency_spec
 from hcli.lib.ida.plugin.repo import BasePluginRepo
 
@@ -54,14 +61,6 @@ def install_dependencies(
     Returns:
         A summary of what happened per dependency.
     """
-    from hcli.lib.ida.plugin.install import (
-        find_installed_plugin,
-        get_metadata_from_plugin_directory,
-        get_plugin_directory,
-        install_plugin_archive,
-        upgrade_plugin_archive,
-    )
-
     result = DependencyResult()
 
     for spec in metadata.plugin.dependencies:

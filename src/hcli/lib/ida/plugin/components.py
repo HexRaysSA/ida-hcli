@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
+    get_metadata_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
     get_python_dependencies_from_plugin_archive,
     get_python_dependencies_from_plugin_directory,
@@ -273,8 +274,6 @@ def validate_components_for_install(
         for _comp_path, comp_meta in walk_component_tree_from_directory(source):
             component_metadatas[comp_meta.plugin.name] = comp_meta
     else:
-        from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
-
         root_path, root_meta = get_metadata_from_plugin_archive(source, plugin_name)
         component_tree = walk_component_tree_from_archive(source, root_path, root_meta)
         component_names = {meta.plugin.name for _, meta in component_tree}

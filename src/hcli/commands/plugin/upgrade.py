@@ -17,9 +17,10 @@ from hcli.lib.ida import (
 )
 from hcli.lib.ida.plugin import IDAMetadataDescriptor, get_metadata_from_plugin_archive
 from hcli.lib.ida.plugin.context import IDAEnvironment, InstallContext, InstallOptions
+from hcli.lib.ida.plugin.dependencies import install_dependencies
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
 from hcli.lib.ida.plugin.install import find_installed_plugin, sweep_trash, upgrade_plugin_archive
-from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
+from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_dependency_spec, parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 
@@ -153,9 +154,6 @@ def _handle_upgrade_dependencies(
     plugin_repo: BasePluginRepo,
     install_ctx: InstallContext,
 ) -> None:
-    from hcli.lib.ida.plugin.dependencies import install_dependencies
-    from hcli.lib.ida.plugin.reference import parse_dependency_spec
-
     new_deps = list(new_metadata.plugin.dependencies)
     if not old_deps and not new_deps:
         return

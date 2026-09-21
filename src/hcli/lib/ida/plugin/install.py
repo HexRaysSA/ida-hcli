@@ -29,6 +29,7 @@ from hcli.lib.ida.plugin import (
 from hcli.lib.ida.plugin.components import (
     collect_python_dependencies_from_archive,
     collect_python_dependencies_from_directory,
+    validate_components_for_install,
 )
 from hcli.lib.ida.plugin.context import InstallContext
 from hcli.lib.ida.plugin.exceptions import (
@@ -826,8 +827,6 @@ def _install_plugin_archive(
     name: str,
     ctx: InstallContext,
 ):
-    from hcli.lib.ida.plugin.components import validate_components_for_install
-
     path, metadata = get_metadata_from_plugin_archive(zip_data, name)
     validate_metadata_in_plugin_archive(zip_data, path, metadata)
 
@@ -912,8 +911,6 @@ def install_plugin_directory_editable(source_dir: Path, name: str, ctx: InstallC
     exists (file, directory, or stale symlink), but the source directory is
     never touched.
     """
-    from hcli.lib.ida.plugin.components import validate_components_for_install
-
     source_dir = source_dir.resolve()
     metadata = get_metadata_from_plugin_directory(source_dir)
     validate_metadata_in_plugin_directory(source_dir)
@@ -1142,8 +1139,6 @@ def upgrade_plugin_archive(
     name: str,
     ctx: InstallContext,
 ):
-    from hcli.lib.ida.plugin.components import validate_components_for_install
-
     if not is_source_plugin_archive(zip_data, name) and not is_binary_plugin_archive(zip_data, name):
         raise ValueError("Invalid plugin archive")
 

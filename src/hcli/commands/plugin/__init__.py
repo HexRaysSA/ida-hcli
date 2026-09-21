@@ -4,10 +4,6 @@ import contextlib
 import os
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from hcli.lib.ida.plugin.context import InstallContext
 
 import httpx
 import rich_click as click
@@ -16,12 +12,15 @@ import hcli.lib.ida.plugin.repo
 import hcli.lib.ida.plugin.repo.file
 import hcli.lib.ida.plugin.repo.fs
 import hcli.lib.ida.plugin.repo.github
+from hcli.commands.ida.python.explain_environment import explain_environment
 from hcli.lib.console import console
 from hcli.lib.ida import get_default_plugin_repository_name, get_ida_config, get_plugin_repositories
+from hcli.lib.ida.plugin.bundle import bundle_dependency_source
+from hcli.lib.ida.plugin.context import InstallContext, InstallOptions
 from hcli.lib.ida.plugin.reference import PluginReference
 from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo, is_plugin_bundle_zip
-from hcli.lib.ida.python import PipOptions
+from hcli.lib.ida.python import PipOptions, detect_current_python_version, merge_bundle_pip_options
 
 from .bundle import bundle
 from .config import config
@@ -255,11 +254,6 @@ def resolve_bundle_install_context(
     Raises:
         click.Abort: when the bundle has no matching dependency target.
     """
-    from hcli.lib.ida.plugin.bundle import bundle_dependency_source
-    from hcli.lib.ida.plugin.context import InstallContext, InstallOptions
-    from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
-    from hcli.lib.ida.python import detect_current_python_version, merge_bundle_pip_options
-
     if plugin_repo is None:
         yield install_ctx
         return
@@ -336,8 +330,6 @@ def _explain_environment_alias(ctx, json_output: bool) -> None:
 
     Moved to `hcli ida python explain-environment`.
     """
-    from hcli.commands.ida.python.explain_environment import explain_environment
-
     ctx.forward(explain_environment)
 
 

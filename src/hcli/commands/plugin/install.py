@@ -23,7 +23,9 @@ from hcli.lib.ida.plugin import (
     get_metadata_from_plugin_archive,
     parse_plugin_version,
 )
+from hcli.lib.ida.plugin.components import find_root_manifest_in_archive, validate_components_for_install
 from hcli.lib.ida.plugin.context import IDAEnvironment, InstallContext, InstallOptions
+from hcli.lib.ida.plugin.dependencies import install_dependencies
 from hcli.lib.ida.plugin.exceptions import (
     AmbiguousPluginReferenceError,
     InstalledPluginNameConflictError,
@@ -89,8 +91,6 @@ def _partition_config_items(
 
 
 def _resolve_plugin_name_from_archive(buf: bytes) -> str:
-    from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
-
     _, meta = find_root_manifest_in_archive(buf)
     return meta.plugin.name
 
@@ -281,8 +281,6 @@ def install_plugin(
                 )
                 return
             is_upgrade = True
-
-        from hcli.lib.ida.plugin.components import validate_components_for_install
 
         source = source_dir if editable else buf
         assert source is not None
@@ -501,8 +499,6 @@ def _handle_install_dependencies(
     plugin_repo: BasePluginRepo | None,
     install_ctx: InstallContext,
 ) -> None:
-    from hcli.lib.ida.plugin.dependencies import install_dependencies
-
     if plugin_repo is None:
         console.print(
             f"[yellow]Warning[/yellow]: {metadata.plugin.name} declares dependencies "
