@@ -38,7 +38,7 @@ def install_dependencies(
     plugin_repo: BasePluginRepo,
     ctx: InstallContext,
     *,
-    dependency_settings: dict[str, dict[str, str]] | None = None,
+    settings: dict[str, dict[str, str]] | None = None,
     _depth: int = 0,
 ) -> DependencyResult:
     """Install dependencies declared in a plugin's metadata, recursively.
@@ -73,7 +73,7 @@ def install_dependencies(
                 plugin_repo=plugin_repo,
                 ctx=ctx,
                 result=result,
-                settings=(dependency_settings or {}).get(dep_name),
+                settings=(settings or {}).get(dep_name),
             )
         except Exception as e:
             logger.debug("failed to install dependency %s: %s", dep_name, e, exc_info=True)
@@ -93,7 +93,7 @@ def install_dependencies(
                     dep_metadata,
                     plugin_repo,
                     ctx,
-                    dependency_settings=dependency_settings,
+                    settings=settings,
                     _depth=_depth + 1,
                 )
                 result.installed.extend(sub_result.installed)
@@ -104,7 +104,7 @@ def install_dependencies(
     return result
 
 
-def _apply_dependency_settings(dep_name: str, settings: dict[str, str] | None) -> None:
+def _apply_settings(dep_name: str, settings: dict[str, str] | None) -> None:
     if not settings:
         return
 
@@ -186,7 +186,7 @@ def _install_one_dependency(
         )
         _install_dependency_python_deps(buf, _dep_name, ctx, excluded_plugins={dep_name})
         upgrade_plugin_archive(buf, _dep_name, ctx)
-        _apply_dependency_settings(dep_name, settings)
+        _apply_settings(dep_name, settings)
         result.upgraded.append(dep_name)
         return True
 
@@ -196,6 +196,6 @@ def _install_one_dependency(
     )
     _install_dependency_python_deps(buf, _dep_name, ctx)
     install_plugin_archive(buf, _dep_name, ctx)
-    _apply_dependency_settings(dep_name, settings)
+    _apply_settings(dep_name, settings)
     result.installed.append(dep_name)
     return True

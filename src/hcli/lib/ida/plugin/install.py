@@ -1232,7 +1232,7 @@ def _install_loose_dependencies(
     metadata: IDAMetadataDescriptor,
     plugin_repo: BasePluginRepo | None,
     ctx: InstallContext,
-    dependency_settings: dict[str, dict[str, str]] | None = None,
+    settings: dict[str, dict[str, str]] | None = None,
 ) -> list[InstallResult]:
     """Install loose dependencies and return InstallResult entries."""
     # Deferred: dependencies.py imports from install.py at module level.
@@ -1259,7 +1259,7 @@ def _install_loose_dependencies(
             metadata=metadata,
             plugin_repo=plugin_repo,
             ctx=ctx,
-            dependency_settings=dependency_settings,
+            settings=settings,
         )
     except Exception as e:
         logger.debug("dependency installation failed: %s", e, exc_info=True)
