@@ -563,6 +563,7 @@ class PluginMetadata(BaseModel):
 
         result: list[str | dict] = []
         for entry in entries:
+            # Guard for data constructed without going through model_validate.
             if not isinstance(entry, DependencyEntry):
                 result.append(entry)
                 continue

@@ -50,7 +50,7 @@ from hcli.lib.ida.plugin.exceptions import (
     PluginNotInstalledError,
     PluginVersionDowngradeError,
 )
-from hcli.lib.ida.plugin.reference import normalize_plugin_host
+from hcli.lib.ida.plugin.reference import DependencyEntry, normalize_plugin_host
 from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
 from hcli.lib.ida.python import (
     PIP_OPTIONS_DEFAULT,
@@ -1160,7 +1160,7 @@ def apply_upgrade(
     ctx: InstallContext,
     settings: dict[str | None, dict[str, str]] | None = None,
     plugin_repo: BasePluginRepo | None = None,
-    old_deps: list | None = None,
+    old_deps: list[DependencyEntry] | None = None,
 ) -> InstallResult:
     """Library-level upgrade entry point.
 
@@ -1209,8 +1209,6 @@ def apply_upgrade(
 
     dep_results: list[InstallResult] = []
     if old_deps is not None and plugin_repo is not None:
-        from hcli.lib.ida.plugin.reference import DependencyEntry
-
         old_names = {e.reference.name for e in old_deps if isinstance(e, DependencyEntry)}
         new_names = {e.reference.name for e in metadata.plugin.dependencies if isinstance(e, DependencyEntry)}
         dropped = old_names - new_names
@@ -1259,7 +1257,6 @@ def _install_loose_dependencies(
     """
     # Deferred: dependencies.py imports from install.py at module level.
     from hcli.lib.ida.plugin.dependencies import install_dependencies
-    from hcli.lib.ida.plugin.reference import DependencyEntry
 
     if not metadata.plugin.dependencies:
         return [], False
