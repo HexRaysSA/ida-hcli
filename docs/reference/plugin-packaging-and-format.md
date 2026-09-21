@@ -199,7 +199,7 @@ A plugin can declare other plugins as loose dependencies via the `dependencies` 
 }
 ```
 
-When a user installs or upgrades a plugin that declares dependencies, HCLI fetches each one from the same repository and installs it as an independent top-level plugin. Dependencies that are already installed and satisfy the spec are skipped. If a pinned dependency is installed at a lower version, it is upgraded automatically; a higher installed version is not downgraded.
+When a user installs or upgrades a plugin that declares dependencies, HCLI fetches each one from the same repository and installs it as an independent top-level plugin. Dependencies are resolved recursively: if a dependency itself declares further dependencies, those are installed too, up to a depth of 10. Dependencies that are already installed and satisfy the spec are skipped. If a pinned dependency is installed at a lower version, it is upgraded automatically; a higher installed version is not downgraded.
 
 Dependencies are not bundled inside the declaring plugin's archive. Each dependency is its own plugin with its own `ida-plugin.json` and its own archive in the repository.
 

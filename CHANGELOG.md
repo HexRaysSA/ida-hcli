@@ -3,6 +3,7 @@
 ## unreleased
 
 ### Added
+- Recursive plugin dependency installation: dependencies that declare their own dependencies are now resolved transitively, up to depth 10
 - Add `--allowed-editions` to `hcli asset put` to gate an asset by licence edition, addon code, or `any_edition`
 - Warn when IDA's Python version (registered by idapyswitch) doesn't match the active virtualenv, in `explain-environment` and before installing plugin dependencies
 - Honor `$IDAPYTHON_VENV_EXECUTABLE` for plugin dependency management
