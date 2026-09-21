@@ -4,13 +4,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-    from typing import Any
-
-from hcli.lib.ida.plugin import IDAMetadataDescriptor, parse_plugin_version
+from hcli.lib.ida.plugin import IDAMetadataDescriptor, get_metadata_from_plugin_archive, parse_plugin_version
+from hcli.lib.ida.plugin.components import collect_python_dependencies_from_archive
 from hcli.lib.ida.plugin.context import InstallContext
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
 from hcli.lib.ida.plugin.install import (
@@ -18,6 +14,7 @@ from hcli.lib.ida.plugin.install import (
     get_metadata_from_plugin_directory,
     get_plugin_directory,
     install_plugin_archive,
+    install_python_dependencies,
     upgrade_plugin_archive,
 )
 from hcli.lib.ida.plugin.reference import parse_dependency_spec
@@ -76,9 +73,6 @@ def install_dependencies(
                 plugin_repo=plugin_repo,
                 ctx=ctx,
                 result=result,
-                find_installed=find_installed_plugin,
-                do_install=install_plugin_archive,
-                do_upgrade=upgrade_plugin_archive,
                 settings=(dependency_settings or {}).get(dep_name),
             )
         except Exception as e:
@@ -127,6 +121,19 @@ def _apply_dependency_settings(dep_name: str, settings: dict[str, str] | None) -
         logger.warning("failed to apply settings to dependency %s", dep_name)
 
 
+def _install_dependency_python_deps(
+    zip_data: bytes,
+    plugin_name: str,
+    ctx: InstallContext,
+    *,
+    excluded_plugins: set[str] | None = None,
+) -> None:
+    """Collect and install Python dependencies for a dependency plugin archive."""
+    metadata_path, dep_meta = get_metadata_from_plugin_archive(zip_data, plugin_name)
+    python_deps = collect_python_dependencies_from_archive(zip_data, metadata_path, dep_meta)
+    install_python_dependencies(python_deps, ctx, excluded_plugins=excluded_plugins)
+
+
 def _install_one_dependency(
     *,
     dep_name: str,
@@ -135,9 +142,6 @@ def _install_one_dependency(
     plugin_repo: BasePluginRepo,
     ctx: InstallContext,
     result: DependencyResult,
-    find_installed: Callable[[str], Any],
-    do_install: Callable[..., None],
-    do_upgrade: Callable[..., None],
     settings: dict[str, str] | None = None,
 ) -> bool:
     """Install or upgrade a single dependency.
@@ -146,7 +150,7 @@ def _install_one_dependency(
         True when an install or upgrade occurred, False when skipped.
     """
     try:
-        installed = find_installed(dep_name)
+        installed = find_installed_plugin(dep_name)
     except PluginNotInstalledError:
         installed = None
 
@@ -180,7 +184,8 @@ def _install_one_dependency(
         _dep_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
             bare_spec, ctx.env.platform, ctx.env.ida_version, host=host
         )
-        do_upgrade(buf, _dep_name, ctx)
+        _install_dependency_python_deps(buf, _dep_name, ctx, excluded_plugins={dep_name})
+        upgrade_plugin_archive(buf, _dep_name, ctx)
         _apply_dependency_settings(dep_name, settings)
         result.upgraded.append(dep_name)
         return True
@@ -189,7 +194,8 @@ def _install_one_dependency(
     _dep_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
         bare_spec, ctx.env.platform, ctx.env.ida_version, host=host
     )
-    do_install(buf, _dep_name, ctx)
+    _install_dependency_python_deps(buf, _dep_name, ctx)
+    install_plugin_archive(buf, _dep_name, ctx)
     _apply_dependency_settings(dep_name, settings)
     result.installed.append(dep_name)
     return True
