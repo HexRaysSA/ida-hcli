@@ -93,7 +93,7 @@ And there are new optional fields:
   - `.plugin.platforms` is recommended, defaults to all platforms. The possible values are: `windows-x86_64`, `linux-x86_64`, `macos-x86_64`, and `macos-aarch64`.
   - `.plugin.license` for the code license of your project
   - `.plugin.settings` is a list of descriptors of settings
-  - `.plugin.dependencies` declares companion plugins to install alongside this one (e.g., `["dep-a", "dep-b==1.0.0"]`)
+  - `.plugin.dependencies` declares companion plugins to install alongside this one; entries can be strings (`"dep-a"`) or objects (`{"plugin": "dep-a", "required": false}`) to mark optional dependencies
   - `.plugin.components` declares tightly-coupled sub-plugins bundled inside the same archive (e.g., `["helper-a", "helper-b"]`)
 
 If there's a problem with the `ida-plugin.json` file, then the plugin is invalid and won't work with the repo.
@@ -185,7 +185,7 @@ Example settings configuration:
 
 ### Plugin Dependencies
 
-A plugin can declare other plugins as loose dependencies via the `dependencies` field. Each entry is a plugin reference: a bare name, a name with a version pin, or a name with a repository host URL and optional version pin.
+A plugin can declare other plugins as loose dependencies via the `dependencies` field. Each entry is either a string (a plugin reference: bare name, name with version pin, or name with host URL) or an object with a `plugin` field and an optional `required` flag. String entries are required by default.
 
 ```json
 {
@@ -193,13 +193,16 @@ A plugin can declare other plugins as loose dependencies via the `dependencies` 
     "dependencies": [
       "go-runtime-detector",
       "go-string-extractor==1.2.0",
-      "helper@https://github.com/org/repo"
+      "helper@https://github.com/org/repo",
+      {"plugin": "nice-to-have", "required": false}
     ]
   }
 }
 ```
 
 When a user installs or upgrades a plugin that declares dependencies, HCLI resolves each one across all configured repositories and installs it as an independent top-level plugin. Dependencies are resolved recursively: if a dependency itself declares further dependencies, those are installed too, up to a depth of 10. Dependencies that are already installed and satisfy the spec are skipped. If a pinned dependency is installed at a lower version, it is upgraded automatically; a higher installed version is not downgraded.
+
+When a required dependency fails during a fresh install, HCLI stops processing remaining siblings and rolls back the parent plugin. During an upgrade the plugin files are already at the new version and cannot be cheaply reversed, so dependency failures are reported but do not roll back the upgrade. When an optional dependency (`"required": false`) fails, HCLI logs the failure and continues with the remaining dependencies. If an optional dependency is installed but one of its own required sub-dependencies fails, HCLI removes it and continues.
 
 If a bare dependency name matches plugins from different repository hosts, installation fails with an ambiguity error. Use the `name@host` format (e.g. `helper@https://github.com/org/repo`) to pin a dependency to its source repository. For non-community plugins, `hcli plugin lint` recommends using `name@host` for all dependency entries to guard against name collisions.
 

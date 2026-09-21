@@ -486,16 +486,48 @@ class PluginMetadata(BaseModel):
         description="User-configurable settings exposed by the plugin.",
     )
 
-    dependencies: list[str] = Field(
+    dependencies: list = Field(
         default_factory=list,
         description=(
-            "Plugins to install alongside this one. Each entry is a plugin "
-            "reference: a bare name, name==version, or name@host with optional "
-            "version pin. Dependencies are resolved across all configured "
-            "repositories. Use name@host to pin a dependency to a specific "
-            "repository and avoid ambiguity."
+            "Plugins to install alongside this one. Each entry is either a "
+            "string (plugin reference: bare name, name==version, or name@host) "
+            "or an object with 'plugin' (string) and optional 'required' (bool, "
+            "default true). String entries are required by default. "
+            "Dependencies are resolved across all configured repositories. "
+            "Use name@host to pin a dependency to a specific repository and "
+            "avoid ambiguity."
         ),
-        examples=[["go-runtime-detector", "go-string-extractor==1.2.0"]],
+        examples=[
+            ["go-runtime-detector", "go-string-extractor==1.2.0"],
+            [
+                "always-needed",
+                {"plugin": "nice-to-have", "required": False},
+                {"plugin": "also-needed==2.0.0", "required": True},
+            ],
+        ],
+        json_schema_extra={
+            "items": {
+                "oneOf": [
+                    {"type": "string"},
+                    {
+                        "type": "object",
+                        "properties": {
+                            "plugin": {
+                                "type": "string",
+                                "description": "Plugin reference in the same format accepted for string entries.",
+                            },
+                            "required": {
+                                "type": "boolean",
+                                "default": True,
+                                "description": "Whether the parent needs this dependency to function.",
+                            },
+                        },
+                        "required": ["plugin"],
+                        "additionalProperties": False,
+                    },
+                ]
+            }
+        },
     )
 
     components: list[str] = Field(
@@ -509,14 +541,38 @@ class PluginMetadata(BaseModel):
         examples=[["hexrays-taint-engine", "hexrays-type-propagation"]],
     )
 
-    @field_validator("dependencies", mode="after")
+    @field_validator("dependencies", mode="before")
     @classmethod
-    def validate_dependency_specs(cls, specs: list[str]) -> list[str]:
-        from hcli.lib.ida.plugin.reference import parse_dependency_spec
+    def validate_dependency_specs(cls, raw: list) -> list:
+        from hcli.lib.ida.plugin.reference import DependencyEntry, parse_dependency_entry
 
-        for spec in specs:
-            parse_dependency_spec(spec)
-        return specs
+        entries: list[DependencyEntry] = []
+        seen_names: set[str] = set()
+        for item in raw:
+            entry = parse_dependency_entry(item)
+            name_lower = entry.reference.name.lower()
+            if name_lower in seen_names:
+                raise ValueError(f"duplicate dependency: '{entry.reference.name}'")
+            seen_names.add(name_lower)
+            entries.append(entry)
+        return entries
+
+    @field_serializer("dependencies")
+    def serialize_dependencies(self, entries: list) -> list:
+        from hcli.lib.ida.plugin.reference import DependencyEntry
+
+        result: list[str | dict] = []
+        for entry in entries:
+            # Guard for data constructed without going through model_validate.
+            if not isinstance(entry, DependencyEntry):
+                result.append(entry)
+                continue
+            spec = entry.format_spec()
+            if entry.required:
+                result.append(spec)
+            else:
+                result.append({"plugin": spec, "required": False})
+        return result
 
     @field_validator("components", mode="after")
     @classmethod

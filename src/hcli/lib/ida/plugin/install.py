@@ -50,7 +50,7 @@ from hcli.lib.ida.plugin.exceptions import (
     PluginNotInstalledError,
     PluginVersionDowngradeError,
 )
-from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_dependency_spec
+from hcli.lib.ida.plugin.reference import DependencyEntry, normalize_plugin_host
 from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
 from hcli.lib.ida.python import (
     PIP_OPTIONS_DEFAULT,
@@ -1132,7 +1132,17 @@ def apply_install(
             reason=str(e),
         )
 
-    dep_results = _install_loose_dependencies(metadata, plugin_repo, ctx, named or None)
+    dep_results, required_failure = _install_loose_dependencies(metadata, plugin_repo, ctx, named or None)
+
+    if required_failure:
+        _rollback_fresh_install(plugin_name)
+        return InstallResult(
+            plugin=plugin_name,
+            version=version,
+            status=InstallStatus.ROLLED_BACK,
+            reason="required dependency failed",
+            dependencies=dep_results,
+        )
 
     return InstallResult(
         plugin=plugin_name,
@@ -1150,7 +1160,7 @@ def apply_upgrade(
     ctx: InstallContext,
     settings: dict[str | None, dict[str, str]] | None = None,
     plugin_repo: BasePluginRepo | None = None,
-    old_deps: list[str] | None = None,
+    old_deps: list[DependencyEntry] | None = None,
 ) -> InstallResult:
     """Library-level upgrade entry point.
 
@@ -1199,8 +1209,8 @@ def apply_upgrade(
 
     dep_results: list[InstallResult] = []
     if old_deps is not None and plugin_repo is not None:
-        old_names = {parse_dependency_spec(s).name for s in old_deps}
-        new_names = {parse_dependency_spec(s).name for s in metadata.plugin.dependencies}
+        old_names = {e.reference.name for e in old_deps if isinstance(e, DependencyEntry)}
+        new_names = {e.reference.name for e in metadata.plugin.dependencies if isinstance(e, DependencyEntry)}
         dropped = old_names - new_names
         for name in sorted(dropped):
             dep_results.append(
@@ -1212,7 +1222,10 @@ def apply_upgrade(
                 )
             )
 
-    dep_results.extend(_install_loose_dependencies(metadata, plugin_repo, ctx, named or None))
+    # Required dependency failures are not fatal for upgrades: the plugin
+    # files are already at the new version and cannot be cheaply reversed.
+    install_results, _required_failure = _install_loose_dependencies(metadata, plugin_repo, ctx, named or None)
+    dep_results.extend(install_results)
 
     return InstallResult(
         plugin=plugin_name,
@@ -1235,26 +1248,35 @@ def _install_loose_dependencies(
     plugin_repo: BasePluginRepo | None,
     ctx: InstallContext,
     settings: dict[str, dict[str, str]] | None = None,
-) -> list[InstallResult]:
-    """Install loose dependencies and return InstallResult entries."""
+) -> tuple[list[InstallResult], bool]:
+    """Install loose dependencies and return InstallResult entries.
+
+    Returns:
+        A tuple of (results, required_failure). When required_failure is True,
+        the caller should roll back the parent plugin.
+    """
     # Deferred: dependencies.py imports from install.py at module level.
     from hcli.lib.ida.plugin.dependencies import install_dependencies
 
     if not metadata.plugin.dependencies:
-        return []
+        return [], False
 
     if plugin_repo is None:
+        # Local-source installs can never resolve dependencies automatically.
+        # Report each as FAILED but don't treat any as a required failure so
+        # the parent install still succeeds (the user can install deps manually).
         results: list[InstallResult] = []
-        for dep_spec in metadata.plugin.dependencies:
+        for entry in metadata.plugin.dependencies:
+            assert isinstance(entry, DependencyEntry)
             results.append(
                 InstallResult(
-                    plugin=dep_spec,
+                    plugin=entry.format_spec(),
                     version="",
                     status=InstallStatus.FAILED,
                     reason="cannot auto-install from a local source",
                 )
             )
-        return results
+        return results, False
 
     try:
         dep_result = install_dependencies(
@@ -1272,7 +1294,7 @@ def _install_loose_dependencies(
                 status=InstallStatus.FAILED,
                 reason=f"dependency installation failed: {e}",
             )
-        ]
+        ], False
 
     results = []
     for name in dep_result.installed:
@@ -1309,4 +1331,15 @@ def _install_loose_dependencies(
                 reason=error,
             )
         )
-    return results
+    for name, reason in dep_result.skipped_optional:
+        results.append(
+            InstallResult(
+                plugin=name,
+                version="",
+                status=InstallStatus.SKIPPED_OPTIONAL,
+                reason=reason,
+            )
+        )
+
+    has_required_failure = dep_result.required_failure is not None
+    return results, has_required_failure

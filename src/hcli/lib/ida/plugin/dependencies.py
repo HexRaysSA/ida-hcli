@@ -17,7 +17,7 @@ from hcli.lib.ida.plugin.install import (
     install_python_dependencies,
     upgrade_plugin_archive,
 )
-from hcli.lib.ida.plugin.reference import parse_dependency_spec
+from hcli.lib.ida.plugin.reference import DependencyEntry
 from hcli.lib.ida.plugin.repo import BasePluginRepo
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,8 @@ class DependencyResult:
     skipped: list[str] = field(default_factory=list)
     upgraded: list[str] = field(default_factory=list)
     failed: list[tuple[str, str]] = field(default_factory=list)
+    skipped_optional: list[tuple[str, str]] = field(default_factory=list)
+    required_failure: tuple[str, str] | None = None
 
 
 def install_dependencies(
@@ -54,15 +56,17 @@ def install_dependencies(
     before children, a dependency that already exists on disk is either
     already satisfied or part of a cycle.
 
-    Failures on individual dependencies do not abort the remaining installs.
+    Required dependency failures stop sibling iteration and propagate up.
+    Optional dependency failures are logged at info level and skipped.
 
     Returns:
         A summary of what happened per dependency.
     """
     result = DependencyResult()
 
-    for spec in metadata.plugin.dependencies:
-        ref = parse_dependency_spec(spec)
+    for entry in metadata.plugin.dependencies:
+        assert isinstance(entry, DependencyEntry)
+        ref = entry.reference
         dep_name = ref.name
 
         try:
@@ -77,8 +81,14 @@ def install_dependencies(
             )
         except Exception as e:
             logger.debug("failed to install dependency %s: %s", dep_name, e, exc_info=True)
-            result.failed.append((dep_name, str(e)))
-            continue
+            if entry.required:
+                result.required_failure = (dep_name, str(e))
+                result.failed.append((dep_name, str(e)))
+                return result
+            else:
+                logger.info("Skipping optional dependency %s: %s", dep_name, e)
+                result.skipped_optional.append((dep_name, str(e)))
+                continue
 
         if changed and _depth < MAX_DEPENDENCY_DEPTH:
             dep_dir = get_plugin_directory(dep_name)
@@ -100,6 +110,31 @@ def install_dependencies(
                 result.skipped.extend(sub_result.skipped)
                 result.upgraded.extend(sub_result.upgraded)
                 result.failed.extend(sub_result.failed)
+                result.skipped_optional.extend(sub_result.skipped_optional)
+
+                if sub_result.required_failure is not None:
+                    from hcli.lib.ida.plugin.install import uninstall_plugin
+
+                    try:
+                        uninstall_plugin(dep_name)
+                    except Exception:
+                        logger.debug("rollback of %s failed", dep_name, exc_info=True)
+
+                    if entry.required:
+                        reason = (
+                            f"{dep_name} was removed because its required dependency "
+                            f"{sub_result.required_failure[0]} failed: "
+                            f"{sub_result.required_failure[1]}"
+                        )
+                        result.required_failure = (dep_name, reason)
+                        return result
+                    else:
+                        reason = (
+                            f"{dep_name} was removed because its required dependency "
+                            f"{sub_result.required_failure[0]} failed"
+                        )
+                        logger.info("Skipping optional dependency %s: %s", dep_name, reason)
+                        result.skipped_optional.append((dep_name, reason))
 
     return result
 
