@@ -546,7 +546,15 @@ class PluginMetadata(BaseModel):
             "items": {
                 "oneOf": [
                     {"type": "string"},
-                    {"$ref": "#"},
+                    {
+                        "type": "object",
+                        "description": "Full IDAMetadataDescriptor for a pre-expanded component.",
+                        "properties": {
+                            "IDAMetadataDescriptorVersion": {"type": "integer", "const": 1},
+                            "plugin": {"type": "object"},
+                        },
+                        "required": ["IDAMetadataDescriptorVersion", "plugin"],
+                    },
                 ]
             }
         },

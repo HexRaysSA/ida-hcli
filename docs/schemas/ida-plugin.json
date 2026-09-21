@@ -324,7 +324,7 @@
           "type": "array"
         },
         "components": {
-          "description": "Subdirectory names of plugins bundled inside this suite's archive. Each entry must match a subdirectory containing its own ida-plugin.json whose plugin.name matches the entry. Components share the suite's lifecycle and are hidden from top-level plugin listings.",
+          "description": "Subdirectory names of plugins bundled inside this suite's archive. Each entry is either a string (subdirectory name) or a full IDAMetadataDescriptor object (expanded component metadata). String entries must match a subdirectory containing its own ida-plugin.json whose plugin.name matches the entry. Components share the suite's lifecycle and are hidden from top-level plugin listings.",
           "examples": [
             [
               "hexrays-taint-engine",
@@ -332,7 +332,28 @@
             ]
           ],
           "items": {
-            "type": "string"
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "description": "Full IDAMetadataDescriptor for a pre-expanded component.",
+                "properties": {
+                  "IDAMetadataDescriptorVersion": {
+                    "const": 1,
+                    "type": "integer"
+                  },
+                  "plugin": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "IDAMetadataDescriptorVersion",
+                  "plugin"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "title": "Components",
           "type": "array"
