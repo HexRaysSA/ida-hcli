@@ -17,7 +17,6 @@ from hcli.lib.console import console, print_json, stderr_console
 from hcli.lib.constants import cli
 from hcli.lib.ida.python.environment import get_system
 
-
 PLUGIN_ID = "ida-mcp@HexRaysSA"
 
 
