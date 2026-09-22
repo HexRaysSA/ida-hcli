@@ -1,0 +1,495 @@
+plugin component installation output looks like this:
+
+hexrays-malware-analysis-add-on manages these plugins:
+  one-click-debugging            0.2.20260915
+  ida-unpacker-framework         0.1.20260915
+  ida-sandbox-trace-viewer       0.1.20260915
+  ida-sandbox-speakeasy          0.1.20260915
+  ida-sandbox-vmray              0.1.20260915
+
+we should not refer to the children as "plugins". use "components". also, users don't need to be prompteda botu this. do not show the inner components by dfeault. audit for waht we show when and propose what we should change
+
+---
+
+<task-notification>
+<task-id>a542567dd4807d44f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/9c96721a-3f2d-4465-b60e-0f8903160b76/tasks/a542567dd4807d44f.output</output-file>
+<status>completed</status>
+<summary>Agent "Find component/plugin output code" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have a thorough understanding of the codebase. Here is my complete report.
+
+---
+
+## Findings
+
+### 1. Where "manages these plugins" output is generated
+
+The exact message from the user's example is produced in one place:
+
+**File: `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/uninstall.py`**, lines 45-54
+
+```python
+if record.metadata.plugin.components:
+    try:
+        tree = walk_component_tree_from_directory(record.path)
+    except ValueError:
+        tree = []
+
+    if tree:
+        console.print(f"[blue]{plugin}[/blue] manages these plugins:")
+        for _, comp_meta in tree:
+            console.print(f"  {comp_meta.plugin.name:30s} {comp_meta.plugin.version}")
+```
+
+This is the **only** place in the codebase that produces the "manages these plugins:" output. It is called during `hcli plugin uninstall` when the target plugin has components.
+
+---
+
+### 2. All places where child/managed plugins are called "plugins" in user-facing output
+
+Here is every user-facing location where components/children are referred to using the word "plugin" or "plugins":
+
+#### a) `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/uninstall.py`
+
+- **Line 52**: `manages these plugins:` -- Components listed as "plugins"
+- **Line 86**: `"These plugins were listed as dependencies:"` -- Dependencies listed as "plugins" (not components, but adjacent concern)
+
+#### b) `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/__init__.py`
+
+- **Lines 536-541**: The `components` field description in the data model says "Subdirectory names of plugins bundled inside this suite's archive." -- Uses "plugins" to describe components in the schema docstring.
+
+#### c) `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/lint.py`
+
+- **Line 241**: `f"(plugin '{ud_meta.plugin.name}') but is not declared as a component"` -- Refers to undeclared subdirectory as "plugin"
+- **Line 281**: `f"that is not declared as a component"` -- (archive variant, same pattern; the word "plugin" appears in the surrounding message)
+
+#### d) `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/components.py`
+
+- **Line 57**: `f"component directory '{component_name}' contains plugin '{component_metadata.plugin.name}' (name mismatch)"` -- Error message referring to the component's identity as "plugin" (because the data model key is `plugin.name`)
+
+Places that correctly use the word "component" in user-facing output (for contrast):
+
+- `status.py` line 170: `(n component(s))` label
+- `status.py` line 251: `[dim](component)[/dim]` table annotation
+- `status.py` line 291: `--show-components` help text says "expand plugin suites to show their bundled components"
+- `install.py` line 126: `component '{plugin_name}'` label for non-interactive settings errors
+- `install.py` line 134: `configure component [blue]{plugin_name}[/blue]:` prompt
+- `uninstall.py` line 34: `is a component of [blue]{suite_record.name}[/blue]` error message
+
+---
+
+### 3. Install, upgrade, uninstall, and info command handlers -- how they display component information
+
+#### Install (`/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/install.py`)
+
+- **`render_install_result()`** (lines 152-171): Renders the top-level install/upgrade result. Uses labels like `Installed plugin:`, `Upgraded plugin:`, `Already installed plugin:`. Does NOT list individual components -- components are installed silently as part of the archive extraction. Dependencies are rendered via `_render_dependency_result()` (lines 174-193).
+- **`_resolve_interactive_settings()`** (lines 93-149): When a component needs interactive configuration, prints `configure component [blue]{plugin_name}[/blue]:` (line 134). In non-interactive mode, raises an error with `component '{plugin_name}'` (line 126).
+
+Components are not individually listed in install output. Only the root plugin name is shown. Dependencies (separate plugins) are listed with their own status lines.
+
+#### Upgrade (`/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/upgrade.py`)
+
+- Delegates to `render_install_result()` from `install.py` (line 132): `render_install_result(result, is_upgrade=True)`. No separate component listing. Same rendering as install.
+
+#### Uninstall (`/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/uninstall.py`)
+
+- **Lines 32-35**: If the target is itself a component, blocks with `is a component of [blue]{suite_record.name}[/blue]`.
+- **Lines 45-54**: If the target has components, lists them with `manages these plugins:` followed by `name  version` lines. Prompts with `Uninstall all?`.
+- **Line 71**: Final message: `Uninstalled plugin: [blue]{plugin}[/blue]`.
+- **Lines 86-109**: Handles dependencies post-uninstall (separate flow from components).
+
+#### Status/Info (`/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/status.py`)
+
+- **`_collect_components()`** (lines 84-91): Builds `ComponentInfo` (name, version) from the component tree.
+- **`_render_status_row()`** (lines 139-173): Appends `(N component(s))` label to the status column (line 170-171).
+- **`render_status_report_text()`** (lines 228-271): When `--show-components` is passed, adds indented rows: `[dim]{comp.name}[/dim]`, `comp.version`, `[dim](component)[/dim]` (line 251).
+- The `--show-components` flag (line 288-291) has help text: "expand plugin suites to show their bundled components".
+
+#### Bundle Info (`/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/bundle.py`)
+
+- **`info` command** (lines 49-72): Shows bundle contents using `plugins: {len(plugins)}` label and lists each plugin name with versions. Does not distinguish components from top-level plugins.
+
+#### Search (`/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/search.py`)
+
+- Does not display component information. Lists plugins from the repository with name, version, and compatibility/install status.
+
+---
+
+### 4. Rich console formatting and table rendering related to plugin components
+
+#### Tables using `rich.table.Table`:
+
+1. **`/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/status.py`** lines 231-253:
+   - Three-column table (name, version, status) with `show_header=False, box=None`.
+   - Component rows added at line 251: `table.add_row(f"  [dim]{comp.name}[/dim]", comp.version, "[dim](component)[/dim]")` -- indented, dimmed styling.
+   - The component count label at line 170: `f"({n} component{'s' if n != 1 else ''})"` is appended to the status column of the parent row.
+
+#### Plain `console.print()` formatting:
+
+2. **`/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/uninstall.py`** lines 52-54:
+   - No table; simple `console.print()` lines with manual padding: `{comp_meta.plugin.name:30s}` (30-character field width).
+   - Uses Rich markup: `[blue]{plugin}[/blue]` for the parent name.
+
+3. **`/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/install.py`** line 134:
+   - `console.print(f"\nconfigure component [blue]{plugin_name}[/blue]:")` -- Rich blue markup for component name during interactive settings.
+
+#### `rich.status.Status` spinners:
+
+4. Various status spinners in `install.py` and `upgrade.py` (`installing plugin`, `upgrading plugin`, `fetching plugin`) do NOT mention components specifically -- the spinner just says "installing plugin" / "upgrading plugin" for the whole operation including components.
+
+#### The `console` object:
+
+5. Defined in **`/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/console.py`**: plain `Console()` instance from Rich. The `stderr_console` is used for status spinners; `console` (stdout) is used for final results.</result>
+<usage><subagent_tokens>99021</subagent_tokens><tool_uses>32</tool_uses><duration_ms>149399</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad7797d3ca32d6016</task-id>
+<tool-use-id>toolu_01N3BbRdtzrrxJ4rSVq9KVLN</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/9c96721a-3f2d-4465-b60e-0f8903160b76/tasks/ad7797d3ca32d6016.output</output-file>
+<status>completed</status>
+<summary>Agent "Find verbose/component display flags" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have a comprehensive picture. Here is my report.
+
+---
+
+## Findings
+
+### 1. CLI Flags: --verbose, --components, --details
+
+**No `--verbose` or `--details` flags exist** on any plugin CLI command (install, upgrade, uninstall, status, search). A grep across all command files in `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/` returned zero hits for `--verbose` or `--details`.
+
+**`--show-components` flag exists** on the `plugin status` command only:
+- `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/status.py`, lines 288-290:
+  ```python
+  @click.option(
+      "--show-components",
+      is_flag=True,
+      default=False,
+      help="expand plugin suites to show their bundled components",
+  )
+  ```
+- When `--show-components` is passed, the status table expands suite entries to list each component underneath (line 249-251).
+- The hidden `plugin list` alias (`_plugin_status_alias` at line 302 in `__init__.py`) does **not** expose `--show-components`; it only has `--skip-upgrade-check` and `--json`.
+
+### 2. Data Model for "Managed Plugins" / "Components"
+
+The concept is called **"components"** (or "suites" for the parent that manages them). Key locations:
+
+**`PluginMetadata.components` field** -- `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/__init__.py`, lines 533-561:
+- Type: `list[str | IDAMetadataDescriptor]`
+- Each entry is either a bare string (subdirectory name) or a full `IDAMetadataDescriptor` object (pre-expanded component metadata).
+- String entries must match a subdirectory containing its own `ida-plugin.json` whose `plugin.name` matches the entry.
+- Components "share the suite's lifecycle and are hidden from top-level plugin listings."
+
+**`IDAMetadataDescriptor`** -- `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/__init__.py`, lines 766-772:
+- Wraps `PluginMetadata` with a schema version integer.
+
+**`InstalledPluginRecord`** -- `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/install.py`, lines 287-304:
+- A dataclass with `path`, `metadata` (IDAMetadataDescriptor). Properties: `name`, `version`, `host`.
+- Components are NOT separate `InstalledPluginRecord` entries; they live as subdirectories under the suite's path.
+- `get_installed_plugin_records()` only enumerates top-level directories in the plugins folder, so components are invisible there.
+
+**`ComponentInfo`** -- `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/status.py`, lines 38-40:
+- A Pydantic model with just `name` and `version`, used for status display.
+
+**`get_component_name()`** -- `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/__init__.py`, lines 775-779:
+- Extracts the plugin name from a component entry (string or descriptor).
+
+### 3. Component Tree Walking and Validation
+
+All in `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/components.py`:
+
+- **`walk_component_tree_from_directory()`** -- Recursively walks on-disk suite subdirectories, validating name matches and depth (max 10 levels). Returns `list[tuple[Path, IDAMetadataDescriptor]]` for all components.
+- **`walk_component_tree_from_archive()`** -- Same but inside a zip archive.
+- **`find_suite_for_component(name)`** -- Given a plugin name, finds the installed suite that owns it (if any).
+- **`validate_components_for_install()`** -- Validates component tree and checks for name collisions against all installed plugins before install/upgrade.
+- **`check_component_name_collisions()`** -- Checks component names against all installed plugins and their components.
+- **`find_undeclared_plugins_in_directory()`** / `find_undeclared_plugins_in_archive()` -- Detects subdirectories with `ida-plugin.json` that are not declared as components (used by lint).
+- **`collect_python_dependencies_from_archive()`** / `collect_python_dependencies_from_directory()` -- Aggregates Python dependencies from root and all components.
+
+### 4. Jinja Templates
+
+**No Jinja templates are used.** The search for `.j2`, `.jinja`, `.jinja2` files found none. The search for `jinja` or `Template` in Python source returned zero results from import/usage. All rendering is done via `rich` (Rich library for terminal formatting) using `console.print()` and `rich.table.Table`.
+
+### 5. Terms "manages", "managed", "component", "children", "sub-plugin", "inner"
+
+- **"manages"** -- Used once in the uninstall command UI: `console.print(f"[blue]{plugin}[/blue] manages these plugins:")` at `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/uninstall.py`, line 52.
+- **"component"** -- Used extensively across the codebase (see items 2 and 3 above). It is the primary term for bundled sub-plugins.
+- **"suite"** -- The parent plugin that declares components. Used in variable names (`suite_record`, `suite_dir`), docstrings, and comments, but not in user-facing CLI output.
+- **"managed"** -- Used once in `auth/__init__.py` (line 380) for auth sources, unrelated to plugins.
+- **"children"** -- Not used in this context. The only `child` reference is `get_child_repo()` in `AggregatePluginRepo` (repository management, not plugin components).
+- **"sub-plugin"** -- Not used anywhere.
+- **"inner"** -- Used in comments about macOS app bundle paths (`Contents/MacOS`), not related to plugin components.
+
+### 6. How Install/Upgrade Results are Formatted and Displayed
+
+**`InstallResult` data model** -- `/Users/user/code/hex-rays/ida-hcli/src/hcli/lib/ida/plugin/result.py`:
+- `plugin: str` -- plugin name
+- `version: str` -- version string
+- `status: InstallStatus` -- enum: SUCCESS, ALREADY_INSTALLED, FAILED, ROLLED_BACK, SKIPPED_OPTIONAL
+- `reason: str | None` -- optional explanation
+- `dependencies: list[InstallResult]` -- nested results for dependencies (recursive tree structure)
+
+**`render_install_result()`** -- `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/install.py`, lines 152-171:
+- SUCCESS: prints `[green]Installed[/green] plugin: [blue]{name}[/blue]=={version}` (or "Upgraded" if `is_upgrade`)
+- ALREADY_INSTALLED: prints `[green]Already installed[/green] plugin: ...`
+- ROLLED_BACK: prints error, renders each dependency result, shows cleanup hint, aborts
+- FAILED: prints error and aborts
+- Then iterates `result.dependencies` calling `_render_dependency_result()` for each
+
+**`_render_dependency_result()`** -- lines 174-193:
+- SUCCESS: `  [green]Installed[/green] dependency: ...` (or "Upgraded" if reason is "upgraded")
+- ALREADY_INSTALLED: either "[yellow]Note[/yellow]" (for dropped deps) or "[dim]Skipped[/dim] dependency"
+- ROLLED_BACK: `  [red]Removed[/red] dependency: ...`
+- SKIPPED_OPTIONAL: `  [dim]Skipped[/dim] optional dependency: ...`
+- FAILED: either "[yellow]Warning[/yellow]" (for "cannot auto-install") or "[red]Failed[/red] dependency"
+
+**`_render_cleanup_hint()`** -- lines 196-201:
+- If the parent was rolled back but some dependencies succeeded, prints a hint to run `hcli plugin uninstall` for leftovers.
+
+**Status display (`plugin status`)** -- `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/status.py`:
+- `_collect_components()` (line 84-91): Reads component tree from disk for each installed record.
+- `_render_status_row()` (line 139-173): For installed entries with components, appends a label like "(2 components)" to the status column. With `--show-components`, each component is rendered as an indented sub-row with `(component)` label (line 249-251).
+- JSON output via `render_status_report_json()` includes a `components` array with `name` and `version` for each component.
+
+**Uninstall display** -- `/Users/user/code/hex-rays/ida-hcli/src/hcli/commands/plugin/uninstall.py`:
+- When uninstalling a suite with components, prints "{plugin} manages these plugins:" followed by each component name and version (line 52-54).
+- Prompts "Uninstall all?" before proceeding (line 57).
+- Refuses to uninstall a component directly, saying it "is a component of {suite_name}" (line 34).</result>
+<usage><subagent_tokens>94488</subagent_tokens><tool_uses>29</tool_uses><duration_ms>144258</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a764d119fad5b42f3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-user-code-hex-rays-ida-hcli/9c96721a-3f2d-4465-b60e-0f8903160b76/tasks/a764d119fad5b42f3.output</output-file>
+<status>completed</status>
+<summary>Agent "Read key files for audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here are all the requested file contents:
+
+---
+
+## 1. `uninstall.py` lines 30-109
+
+```python
+        sweep_trash()
+
+        suite_record = find_suite_for_component(plugin)
+        if suite_record is not None:
+            console.print(f"[red]{plugin}[/red] is a component of [blue]{suite_record.name}[/blue].")
+            raise click.Abort()
+
+        try:
+            record = find_installed_plugin(plugin)
+            for entry in record.metadata.plugin.dependencies:
+                if isinstance(entry, DependencyEntry):
+                    dep_names.append(entry.reference.name)
+        except PluginNotInstalledError:
+            pass
+        else:
+            if record.metadata.plugin.components:
+                try:
+                    tree = walk_component_tree_from_directory(record.path)
+                except ValueError:
+                    tree = []
+
+                if tree:
+                    console.print(f"[blue]{plugin}[/blue] manages these plugins:")
+                    for _, comp_meta in tree:
+                        console.print(f"  {comp_meta.plugin.name:30s} {comp_meta.plugin.version}")
+
+                    interactive = sys.stdin.isatty()
+                    if not yes and interactive and not click.confirm("Uninstall all?", default=True):
+                        raise click.Abort()
+
+        uninstall_plugin_impl(plugin)
+    except PluginNotInstalledError as e:
+        console.print(f"[red]{e}[/red]")
+        raise click.Abort()
+    except Exception as e:
+        if isinstance(e, click.Abort):
+            raise
+        logger.debug("failed to uninstall: %s", e, exc_info=True)
+        console.print(f"[red]uninstall failed: {e}[/red]")
+        raise click.Abort()
+
+    console.print(f"[green]Uninstalled[/green] plugin: [blue]{plugin}[/blue]")
+
+    if not dep_names:
+        return
+
+    installed_deps: list[tuple[str, str | None]] = []
+    for name in dep_names:
+        try:
+            dep_record = find_installed_plugin(name)
+            installed_deps.append((name, dep_record.version))
+        except PluginNotInstalledError:
+            pass
+    if not installed_deps:
+        return
+
+    console.print("These plugins were listed as dependencies:")
+    for name, version in installed_deps:
+        version_str = f"=={version}" if version else ""
+        console.print(f"  {name}{version_str}")
+
+    interactive = sys.stdin.isatty()
+    if yes:
+        should_remove = True
+    elif interactive:
+        should_remove = click.confirm("Remove them too?", default=False)
+    else:
+        console.print("Remove them manually if no longer needed.")
+        return
+
+    if not should_remove:
+        return
+
+    for name, _ in installed_deps:
+        try:
+            uninstall_plugin_impl(name)
+            console.print(f"  [green]Uninstalled[/green] dependency: [blue]{name}[/blue]")
+        except Exception as e:
+            logger.debug("failed to uninstall dependency %s: %s", name, e, exc_info=True)
+            console.print(f"  [red]Failed[/red] to uninstall dependency {name}: {e}")
+```
+
+## 2. `status.py` lines 80-299
+
+```python
+class StatusReport(BaseModel):
+    plugins: list[PluginStatusEntry]
+
+
+def _collect_components(record: InstalledPluginRecord) -&gt; list[ComponentInfo] | None:
+    if not record.metadata.plugin.components:
+        return None
+    try:
+        tree = walk_component_tree_from_directory(record.path)
+        return [ComponentInfo(name=m.plugin.name, version=m.plugin.version) for _, m in tree]
+    except ValueError:
+        return None
+
+
+def _collect_installed_entry(
+    plugin_repo: BasePluginRepo,
+    record: InstalledPluginRecord,
+    current_platform: str,
+    current_ida_version: str,
+    skip_upgrade_check: bool,
+) -&gt; InstalledPluginStatusEntry:
+    components = _collect_components(record)
+    # ... (upgrade check logic, returns InstalledPluginStatusEntry with components)
+
+
+def _render_status_row(table: rich.table.Table, entry: PluginStatusEntry) -&gt; None:
+    # ... (handles incompatible, legacy, not-found)
+
+    if entry.components:
+        n = len(entry.components)
+        comp_label = f"({n} component{'s' if n != 1 else ''})"
+        status = f"{status}  {comp_label}".strip() if status else comp_label
+
+    table.add_row(entry.name, entry.version, status)
+
+
+def render_status_report_text(
+    report: StatusReport, plugins_filter: tuple[str, ...], *, show_components: bool = False
+) -&gt; None:
+    table = rich.table.Table(show_header=False, box=None)
+    # ...
+    for entry in report.plugins:
+        # ...
+        _render_status_row(table, entry)
+        if show_components and isinstance(entry, InstalledPluginStatusEntry) and entry.components:
+            for comp in entry.components:
+                table.add_row(f"  [dim]{comp.name}[/dim]", comp.version, "[dim](component)[/dim]")
+    # ...
+
+# CLI command:
+@click.option(
+    "--show-components",
+    is_flag=True,
+    default=False,
+    help="expand plugin suites to show their bundled components",
+)
+```
+
+## 3. `install.py` lines 90-199
+
+```python
+def _resolve_interactive_settings(...) -&gt; dict[str, str]:
+    # ...
+    if needed_settings and not console.is_interactive:
+        label = f"component '{plugin_name}'" if config_prefix else "plugin"
+        raise ValueError(
+            f"{label} requires configuration but console is not interactive. "
+            f"Please provide settings via command line: {setting_names}"
+        )
+
+    if console.is_interactive:
+        if config_prefix:
+            console.print(f"\nconfigure component [blue]{plugin_name}[/blue]:")
+        # ...
+
+def render_install_result(result: InstallResult, *, editable: bool = False, is_upgrade: bool = False) -&gt; None:
+    if result.status == InstallStatus.SUCCESS:
+        verb = "Upgraded" if is_upgrade else "Installed"
+        console.print(f"[green]{verb}[/green] plugin: [blue]{result.plugin}[/blue]=={result.version}{suffix}")
+    elif result.status == InstallStatus.ALREADY_INSTALLED:
+        console.print(f"[green]Already installed[/green] plugin: [blue]{result.plugin}[/blue]=={result.version}")
+    # ...
+
+def _render_dependency_result(dep: InstallResult) -&gt; None:
+    # renders dependency lines (Installed/Upgraded/Skipped/etc.)
+```
+
+## 4. `bundle.py` lines 40-79
+
+```python
+@bundle.command()
+@click.argument("bundle_path", type=click.Path(exists=True))
+def info(bundle_path: str) -&gt; None:
+    """Show plugin bundle metadata."""
+    # ...
+    plugins = repo.get_plugins()
+    if plugins:
+        console.print(f"  plugins: {len(plugins)}")
+        for plugin in plugins:
+            versions = sorted(plugin.versions.keys())
+            console.print(f"    {plugin.name}: {', '.join(versions)}")
+    else:
+        console.print("  plugins: (none)")
+```
+
+## 5. `plugin/__init__.py` lines 530-544
+
+```python
+    components: "list[str | IDAMetadataDescriptor]" = Field(
+        default_factory=list,
+        description=(
+            "Subdirectory names of plugins bundled inside this suite's archive. "
+            "Each entry is either a string (subdirectory name) or a full "
+            "IDAMetadataDescriptor object (expanded component metadata). "
+            "String entries must match a subdirectory containing its own "
+            "ida-plugin.json whose plugin.name matches the entry. Components "
+            "share the suite's lifecycle and are hidden from top-level plugin "
+            "listings."
+        ),
+        examples=[["hexrays-taint-engine", "hexrays-type-propagation"]],
+```</result>
+<usage><subagent_tokens>40755</subagent_tokens><tool_uses>5</tool_uses><duration_ms>51279</duration_ms></usage>
+</task-notification>
+
+---
+
+go

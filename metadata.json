@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "01M345C42YX81TQR4MGS2TAZYM",
+  "strategy": "manual-commit",
+  "branch": "fix/uninstall-component-terminology",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "src/hcli/commands/plugin/uninstall.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 27,
+    "cache_creation_tokens": 30294,
+    "cache_read_tokens": 620031,
+    "output_tokens": 4581,
+    "api_call_count": 17,
+    "subagent_tokens": {
+      "input_tokens": 32,
+      "cache_creation_tokens": 193552,
+      "cache_read_tokens": 1154473,
+      "output_tokens": 13777,
+      "api_call_count": 24
+    }
+  }
+}
