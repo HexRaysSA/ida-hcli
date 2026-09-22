@@ -3,9 +3,9 @@
   "checkpoint_id": "01M345C42YX81TQR4MGS2TAZYM",
   "strategy": "manual-commit",
   "branch": "fix/uninstall-component-terminology",
-  "checkpoints_count": 4,
+  "checkpoints_count": 1,
   "files_touched": [
-    "src/hcli/commands/plugin/uninstall.py"
+    "src/hcli/commands/mcp/install.py"
   ],
   "sessions": [
     {
@@ -17,17 +17,17 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 27,
-    "cache_creation_tokens": 30294,
-    "cache_read_tokens": 620031,
-    "output_tokens": 4581,
-    "api_call_count": 17,
+    "input_tokens": 32,
+    "cache_creation_tokens": 31784,
+    "cache_read_tokens": 847559,
+    "output_tokens": 5309,
+    "api_call_count": 22,
     "subagent_tokens": {
-      "input_tokens": 32,
-      "cache_creation_tokens": 193552,
-      "cache_read_tokens": 1154473,
-      "output_tokens": 13777,
-      "api_call_count": 24
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
     }
   }
 }
