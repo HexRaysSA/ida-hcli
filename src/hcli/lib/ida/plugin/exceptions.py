@@ -50,6 +50,20 @@ class IDAVersionIncompatibleError(PluginInstallationError):
         super().__init__(f"Plugin not compatible with IDA version '{current}'. Supported versions: {versions_str}")
 
 
+class PythonVersionIncompatibleError(PluginInstallationError):
+    """IDA's Python version does not satisfy the plugin requirement."""
+
+    def __init__(self, current: str, required: str, python_exe: Path):
+        self.current = current
+        self.required = required
+        self.python_exe = python_exe
+        super().__init__(
+            f"Cannot install plugin: plugin requires Python {required}, but IDA's Python environment "
+            f"uses Python {current} ({python_exe}). Use idapyswitch to configure IDA with a compatible "
+            "Python version, then try again."
+        )
+
+
 class PipNotAvailableError(PluginInstallationError):
     """pip is not available in IDA's Python environment."""
 

@@ -433,6 +433,25 @@ def pip_install_packages(
         raise CantInstallPackagesError(error_text)
 
 
+def detect_python_version(python_exe: Path) -> str:
+    """Detect the full major.minor.micro version of a Python interpreter.
+
+    Raises:
+        PythonNotFoundError: if the interpreter can't be run.
+    """
+    try:
+        result = subprocess.run(
+            [str(python_exe), "-c", "import sys; print('.'.join(str(part) for part in sys.version_info[:3]))"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10.0,
+        )
+    except (subprocess.SubprocessError, OSError) as e:
+        raise PythonNotFoundError(f"failed to probe the version of Python interpreter: {python_exe}") from e
+    return result.stdout.strip()
+
+
 def detect_current_python_version() -> str:
     """Detect the major.minor Python version of the active IDA Python.
 

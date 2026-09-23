@@ -11,8 +11,10 @@ from hcli.lib.ida.python import (
     CantInstallPackagesError,
     IdatProbe,
     PipOptions,
+    PythonNotFoundError,
     ResolvedPython,
     _derive_python_exe,
+    detect_python_version,
     find_current_python_executable,
     find_python_version_mismatches,
     format_python_version_mismatch_warning,
@@ -25,6 +27,15 @@ from hcli.lib.ida.python import (
     verify_pip_can_install_packages,
 )
 from hcli.lib.venv import get_virtual_env_version, probe_python_version
+
+
+def test_detect_python_version_returns_full_version():
+    assert detect_python_version(Path(sys.executable)) == ".".join(str(part) for part in sys.version_info[:3])
+
+
+def test_detect_python_version_raises_for_missing_interpreter(tmp_path):
+    with pytest.raises(PythonNotFoundError):
+        detect_python_version(tmp_path / "no-such-python")
 
 
 def has_idat():
