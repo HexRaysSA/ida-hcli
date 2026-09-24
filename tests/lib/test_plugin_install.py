@@ -154,18 +154,15 @@ def test_install_checks_requires_python_before_extracting(virtual_ida_environmen
     ctx = make_test_install_context()
     original = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
     buf = with_requires_python(original, ">=3.12")
-    python_exe = Path("/configured/ida/python")
-    monkeypatch.setattr("hcli.lib.ida.plugin.install.find_current_python_executable", lambda: python_exe)
-    monkeypatch.setattr("hcli.lib.ida.plugin.install.detect_python_version", lambda _: "3.11.9")
+    monkeypatch.setattr("hcli.lib.ida.plugin.context.detect_current_python_version", lambda: "3.11")
 
     with pytest.raises(PythonVersionIncompatibleError) as exc_info:
         install_plugin_archive(buf, "plugin1", ctx)
 
     error = exc_info.value
-    assert error.current == "3.11.9"
+    assert error.current == "3.11"
     assert error.required == ">=3.12"
-    assert error.python_exe == python_exe
-    assert "IDA's Python environment uses Python 3.11.9" in str(error)
+    assert "IDA's Python environment uses Python 3.11" in str(error)
     assert "idapyswitch" in str(error)
     assert not get_plugin_directory("plugin1").exists()
 
@@ -174,8 +171,7 @@ def test_install_accepts_satisfied_requires_python(virtual_ida_environment, monk
     ctx = make_test_install_context()
     original = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
     buf = with_requires_python(original, ">=3.11")
-    monkeypatch.setattr("hcli.lib.ida.plugin.install.find_current_python_executable", lambda: Path("python"))
-    monkeypatch.setattr("hcli.lib.ida.plugin.install.detect_python_version", lambda _: "3.11.9")
+    monkeypatch.setattr("hcli.lib.ida.plugin.context.detect_current_python_version", lambda: "3.11")
 
     install_plugin_archive(buf, "plugin1", ctx)
 
@@ -188,9 +184,7 @@ def test_upgrade_checks_requires_python_before_replacing_plugin(virtual_ida_envi
     v2 = (PLUGINS_DIR / "plugin1" / "plugin1-v2.0.0.zip").read_bytes()
     install_plugin_archive(v1, "plugin1", ctx)
 
-    python_exe = Path("/configured/ida/python")
-    monkeypatch.setattr("hcli.lib.ida.plugin.install.find_current_python_executable", lambda: python_exe)
-    monkeypatch.setattr("hcli.lib.ida.plugin.install.detect_python_version", lambda _: "3.11.9")
+    monkeypatch.setattr("hcli.lib.ida.plugin.context.detect_current_python_version", lambda: "3.11")
 
     with pytest.raises(PythonVersionIncompatibleError):
         upgrade_plugin_archive(with_requires_python(v2, ">=3.12"), "plugin1", ctx)

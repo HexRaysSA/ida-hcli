@@ -53,13 +53,12 @@ class IDAVersionIncompatibleError(PluginInstallationError):
 class PythonVersionIncompatibleError(PluginInstallationError):
     """IDA's Python version does not satisfy the plugin requirement."""
 
-    def __init__(self, current: str, required: str, python_exe: Path):
+    def __init__(self, current: str, required: str):
         self.current = current
         self.required = required
-        self.python_exe = python_exe
         super().__init__(
             f"Cannot install plugin: plugin requires Python {required}, but IDA's Python environment "
-            f"uses Python {current} ({python_exe}). Use idapyswitch to configure IDA with a compatible "
+            f"uses Python {current}. Use idapyswitch to configure IDA with a compatible "
             "Python version, then try again."
         )
 
