@@ -3,7 +3,7 @@ import json
 import logging
 import webbrowser
 from dataclasses import dataclass, field
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import urlencode
 
@@ -619,7 +619,8 @@ class AuthService:
                 pass  # Suppress server logs
 
         # Start server in a separate thread
-        server = HTTPServer(("localhost", OAUTH_SERVER_PORT), OAuthHandler)
+        # Threaded so an idle browser preconnect socket can't block the callback requests
+        server = ThreadingHTTPServer(("localhost", OAUTH_SERVER_PORT), OAuthHandler)
         self._server_thread = Thread(target=server.serve_forever)
         self._server_thread.daemon = True
         self._server_thread.start()
