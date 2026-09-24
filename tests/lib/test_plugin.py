@@ -10,6 +10,7 @@ from hcli.lib.ida.plugin import (
     URLs,
     is_binary_plugin_archive,
     is_plugin_archive,
+    is_python_version_compatible,
     is_source_plugin_archive,
     parse_plugin_version,
 )
@@ -44,6 +45,34 @@ def test_binary_plugin_archive():
 )
 def test_parse_plugin_version_normalizes(raw: str, normalized: str):
     assert str(parse_plugin_version(raw)) == normalized
+
+
+def test_requires_python_metadata():
+    metadata_path = PLUGINS_DIR / "plugin1" / "src-v1" / "ida-plugin.json"
+    doc = json.loads(metadata_path.read_text())
+    doc["plugin"]["requiresPython"] = ">=3.11,<3.14"
+
+    metadata = IDAMetadataDescriptor.model_validate_json(json.dumps(doc))
+
+    assert metadata.plugin.requires_python == ">=3.11,<3.14"
+    assert metadata.plugin.model_dump()["requiresPython"] == ">=3.11,<3.14"
+
+
+@pytest.mark.parametrize("requirement", ["", "3.11", ">=not-a-version"])
+def test_requires_python_rejects_invalid_specifier(requirement):
+    metadata_path = PLUGINS_DIR / "plugin1" / "src-v1" / "ida-plugin.json"
+    doc = json.loads(metadata_path.read_text())
+    doc["plugin"]["requiresPython"] = requirement
+
+    with pytest.raises(ValueError, match="requiresPython"):
+        IDAMetadataDescriptor.model_validate_json(json.dumps(doc))
+
+
+def test_is_python_version_compatible():
+    assert is_python_version_compatible("3.11.0", ">=3.11")
+    assert is_python_version_compatible("3.13.7", ">=3.11,<3.14")
+    assert not is_python_version_compatible("3.10.14", ">=3.11")
+    assert not is_python_version_compatible("3.14.0", ">=3.11,<3.14")
 
 
 def test_parse_plugin_version_sortable():
@@ -125,6 +154,8 @@ def test_plugin_metadata_model_dump_uses_aliases():
     assert "entry_point" not in dump
     assert "logoPath" in dump, "model_dump() must use alias 'logoPath', not 'logo_path'"
     assert "logo_path" not in dump
+    assert "requiresPython" in dump, "model_dump() must use alias 'requiresPython', not 'requires_python'"
+    assert "requires_python" not in dump
 
 
 @pytest.mark.parametrize("required", [True, False])

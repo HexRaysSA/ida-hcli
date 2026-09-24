@@ -276,7 +276,7 @@ def resolve_bundle_install_context(
         yield install_ctx
         return
 
-    current_python_version = detect_current_python_version()
+    current_python_version = detect_current_python_version().major_minor
     with bundle_dependency_source(effective_repo, install_ctx.env.platform, current_python_version) as bundle_opts:
         if bundle_opts is None:
             available = ", ".join(effective_repo.target_ids) or "none"
