@@ -24,7 +24,7 @@ from hcli.lib.ida.python import (
     resolve_current_python,
     verify_pip_can_install_packages,
 )
-from hcli.lib.venv import get_virtual_env_version, probe_python_version
+from hcli.lib.venv import PythonVersion, get_virtual_env_version, probe_python_version, probe_python_version_info
 
 
 def has_idat():
@@ -610,6 +610,17 @@ def test_probe_current_python_info_runs_idat_once_per_process(monkeypatch):
 
     assert first == second == _ida_info((3, 12))
     assert len(calls) == 1
+
+
+def test_probe_python_version_info_returns_full_version():
+    version = probe_python_version_info(Path(sys.executable))
+    assert version == PythonVersion(*sys.version_info[:3])
+    assert str(version) == ".".join(str(part) for part in sys.version_info[:3])
+    assert version.major_minor == f"{sys.version_info.major}.{sys.version_info.minor}"
+
+
+def test_probe_python_version_returns_major_minor():
+    assert probe_python_version(Path(sys.executable)) == f"{sys.version_info.major}.{sys.version_info.minor}"
 
 
 def test_probe_python_version_returns_none_for_unrunnable_interpreter(tmp_path):

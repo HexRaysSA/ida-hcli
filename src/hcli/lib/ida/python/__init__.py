@@ -15,7 +15,13 @@ from rich.markup import escape
 from hcli.env import ENV
 from hcli.lib.console import stderr_console as stderr_console
 from hcli.lib.ida import run_py_in_current_idapython
-from hcli.lib.venv import get_python_exe_candidates, get_virtual_env_version, probe_python_version
+from hcli.lib.venv import (
+    PythonVersion,
+    get_python_exe_candidates,
+    get_virtual_env_version,
+    probe_python_version,
+    probe_python_version_info,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -433,8 +439,8 @@ def pip_install_packages(
         raise CantInstallPackagesError(error_text)
 
 
-def detect_current_python_version() -> str:
-    """Detect the major.minor Python version of the active IDA Python.
+def detect_current_python_version() -> PythonVersion:
+    """Detect the version of the active IDA Python.
 
     Raises:
         PythonNotFoundError: if the interpreter can't be found or its version
@@ -444,7 +450,7 @@ def detect_current_python_version() -> str:
     logger.debug("detecting IDA Python executable...")
     python_exe = find_current_python_executable()
     logger.debug("found IDA Python executable: %s", python_exe)
-    version = probe_python_version(python_exe)
+    version = probe_python_version_info(python_exe)
     if version is None:
         raise PythonNotFoundError(f"failed to probe the version of IDA's Python interpreter: {python_exe}")
     logger.debug("detected Python version: %s", version)

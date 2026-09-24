@@ -26,7 +26,7 @@ class IDAEnvironment:
 
     @functools.cached_property
     def python_version(self) -> str:
-        """major.minor of IDA's Python, probed on first access and cached.
+        """Full version (major.minor.micro) of IDA's Python, probed on first access and cached.
 
         Probing runs idat and the Python interpreter as subprocesses, which is
         slow and not needed by most installs, so it's deferred until a plugin
@@ -35,7 +35,7 @@ class IDAEnvironment:
         Raises:
             PythonNotFoundError: if IDA's Python can't be found or probed.
         """
-        return detect_current_python_version()
+        return str(detect_current_python_version())
 
 
 @dataclass(frozen=True)

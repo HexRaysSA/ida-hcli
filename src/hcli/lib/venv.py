@@ -10,8 +10,30 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Prints the running interpreter's version as `major.minor`.
-PRINT_VERSION_PY = "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+# Prints the running interpreter's version as `major.minor.micro`.
+PRINT_VERSION_PY = "import sys; print('.'.join(str(part) for part in sys.version_info[:3]))"
+
+
+@dataclass(frozen=True)
+class PythonVersion:
+    """The version of a Python interpreter, e.g. 3.11.9."""
+
+    major: int
+    minor: int
+    micro: int
+
+    @classmethod
+    def parse(cls, version: str) -> PythonVersion:
+        major, minor, micro = (int(part) for part in version.strip().split("."))
+        return cls(major, minor, micro)
+
+    @property
+    def major_minor(self) -> str:
+        """The `major.minor` form used by pyvenv.cfg, idapyswitch, and bundle targets."""
+        return f"{self.major}.{self.minor}"
+
+    def __str__(self) -> str:
+        return f"{self.major}.{self.minor}.{self.micro}"
 
 
 def parse_pyvenv_cfg(path: Path) -> dict[str, str]:
@@ -155,8 +177,8 @@ def find_virtual_env_python(virtual_env: str | Path) -> Path | None:
     return None
 
 
-def probe_python_version(python_exe: Path) -> str | None:
-    """Probe the major.minor version of a Python interpreter by running it.
+def probe_python_version_info(python_exe: Path) -> PythonVersion | None:
+    """Probe the full version of a Python interpreter by running it.
 
     Returns None when the interpreter can't be run, so callers can treat this
     as best-effort.
@@ -174,7 +196,19 @@ def probe_python_version(python_exe: Path) -> str | None:
         return None
 
     version = result.stdout.strip()
-    return version or None
+    if not version:
+        return None
+    return PythonVersion.parse(version)
+
+
+def probe_python_version(python_exe: Path) -> str | None:
+    """Probe the major.minor version of a Python interpreter by running it.
+
+    Returns None when the interpreter can't be run, so callers can treat this
+    as best-effort.
+    """
+    version = probe_python_version_info(python_exe)
+    return version.major_minor if version is not None else None
 
 
 def read_virtual_env_version(virtual_env: str | Path) -> str | None:

@@ -23,6 +23,7 @@ from hcli.lib.ida.plugin.repo.bundle import (
     _validate_bundle_path,
     is_plugin_bundle_zip,
 )
+from hcli.lib.venv import PythonVersion
 
 TESTS_DIR = Path(__file__).parent.parent
 PLUGIN1_V1 = TESTS_DIR / "data" / "plugins" / "plugin1" / "plugin1-v1.0.0.zip"
@@ -350,7 +351,7 @@ def test_resolve_targets_all():
 
 def test_resolve_targets_current(monkeypatch):
     monkeypatch.setattr("hcli.lib.ida.find_current_ida_platform", lambda: "linux-x86_64")
-    monkeypatch.setattr("hcli.lib.ida.python.detect_current_python_version", lambda: "3.13")
+    monkeypatch.setattr("hcli.lib.ida.python.detect_current_python_version", lambda: PythonVersion(3, 13, 2))
     targets = _resolve_targets(("current",), ("current",), ())
     assert [t.id for t in targets] == ["linux-x86_64-cp313"]
 

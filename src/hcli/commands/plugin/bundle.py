@@ -165,7 +165,7 @@ def _resolve_targets(
         elif lower == "current":
             from hcli.lib.ida.python import detect_current_python_version
 
-            resolved_pythons.append(detect_current_python_version())
+            resolved_pythons.append(detect_current_python_version().major_minor)
         else:
             resolved_pythons.append(py)
 
