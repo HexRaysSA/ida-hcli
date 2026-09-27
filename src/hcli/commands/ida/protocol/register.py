@@ -5,7 +5,6 @@ import shlex
 
 import rich_click as click
 
-from hcli.env import ENV
 from hcli.lib.commands import async_command
 from hcli.lib.config import config_store
 from hcli.lib.console import console
@@ -17,7 +16,7 @@ from hcli.lib.ida import (
     select_default_ida_instance,
 )
 from hcli.lib.ida.protocol import register_protocol_handler
-from hcli.lib.util.io import get_hcli_command
+from hcli.lib.util.io import get_hcli_command, get_hcli_display_command
 
 
 @click.command(name="register")
@@ -69,7 +68,7 @@ async def _check_and_setup_ida_instances() -> None:
             console.print(f"[green]✓ Default IDA instance: {default_instance}[/green]")
         else:
             console.print(
-                f"[yellow]! No default IDA instance set. Use '{ENV.HCLI_BINARY_NAME} ida switch' to set one.[/yellow]"
+                f"[yellow]! No default IDA instance set. Use '{get_hcli_display_command()} ida switch' to set one.[/yellow]"
             )
         return
 
@@ -114,9 +113,9 @@ async def _check_and_setup_ida_instances() -> None:
 def _print_ida_setup_instructions() -> None:
     """Print instructions for manually setting up IDA instances."""
     console.print("\n[yellow]To use ida:// links, you need to register IDA Pro instances:[/yellow]")
-    console.print(f"  • Auto-discover: [cyan]{ENV.HCLI_BINARY_NAME} ida add --auto[/cyan]")
-    console.print(f"  • Manual: [cyan]{ENV.HCLI_BINARY_NAME} ida add <name> <path>[/cyan]")
+    console.print(f"  • Auto-discover: [cyan]{get_hcli_display_command()} ida add --auto[/cyan]")
+    console.print(f"  • Manual: [cyan]{get_hcli_display_command()} ida add <name> <path>[/cyan]")
     console.print(
-        f"  • Example: [cyan]{ENV.HCLI_BINARY_NAME} ida add ida-pro '/Applications/IDA Professional 9.2.app'[/cyan]"
+        f"  • Example: [cyan]{get_hcli_display_command()} ida add ida-pro '/Applications/IDA Professional 9.2.app'[/cyan]"
     )
-    console.print(f"  • Set default: [cyan]{ENV.HCLI_BINARY_NAME} ida switch <name>[/cyan]")
+    console.print(f"  • Set default: [cyan]{get_hcli_display_command()} ida switch <name>[/cyan]")

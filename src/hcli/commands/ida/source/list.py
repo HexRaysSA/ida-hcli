@@ -5,8 +5,8 @@ from pathlib import Path
 import rich_click as click
 from rich.console import Console
 
-from hcli.env import ENV
 from hcli.lib.config import config_store
+from hcli.lib.util.io import get_hcli_display_command
 
 console = Console()
 
@@ -18,7 +18,7 @@ def list_sources() -> None:
 
     if not sources:
         console.print("[yellow]No sources configured.[/yellow]")
-        console.print(f"[dim]Add sources with: {ENV.HCLI_BINARY_NAME} ida source add <name> <path>[/dim]")
+        console.print(f"[dim]Add sources with: {get_hcli_display_command()} ida source add <name> <path>[/dim]")
         return
 
     console.print(f"[green]Sources ({len(sources)}):[/green]")

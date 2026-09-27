@@ -20,7 +20,7 @@ from hcli.lib.update.version import (
     is_binary,
     is_editable,
 )
-from hcli.lib.util.io import get_arch, get_executable_path, get_os
+from hcli.lib.util.io import get_arch, get_executable_path, get_os, is_uvx_environment
 
 
 @click.command()
@@ -54,6 +54,12 @@ async def update(
     if mode == "auto":
         if is_binary():
             mode = "binary"  # Use GitHub for frozen binaries
+        elif is_uvx_environment():
+            console.print(
+                "[yellow]Running via uvx, which reuses a cached environment; "
+                "run [bold cyan]uvx ida-hcli@latest[/bold cyan] to get the newest version.[/yellow]"
+            )
+            return
         elif is_editable():
             console.print(
                 "[yellow]Editable install detected; "

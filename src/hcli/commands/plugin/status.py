@@ -11,7 +11,6 @@ import rich.table
 import rich_click as click
 from pydantic import BaseModel
 
-from hcli.env import ENV
 from hcli.lib.console import console, print_json
 from hcli.lib.ida import (
     FailedToDetectIDAVersion,
@@ -33,6 +32,7 @@ from hcli.lib.ida.plugin.install import (
     get_plugins_directory,
 )
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin
+from hcli.lib.util.io import get_hcli_display_command
 
 from ._listing import get_repository_group_sort_key, render_plugin_label
 
@@ -289,7 +289,7 @@ def render_status_report_text(
         console.print()
         console.print("[yellow]Incompatible plugins[/yellow] don't work with this version of hcli.")
         console.print(
-            f"[dim]They might be broken or outdated. Try using `{ENV.HCLI_BINARY_NAME} plugin lint /path/to/plugin`.[/dim]"
+            f"[dim]They might be broken or outdated. Try using `{get_hcli_display_command()} plugin lint /path/to/plugin`.[/dim]"
         )
 
     if has_legacy:

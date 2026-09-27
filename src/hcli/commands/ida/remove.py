@@ -7,6 +7,7 @@ from rich.console import Console
 
 from hcli.lib.config import config_store
 from hcli.lib.ida import select_default_ida_instance
+from hcli.lib.util.io import get_hcli_display_command
 
 console = Console()
 
@@ -72,7 +73,9 @@ def _remove_single_instance(name: str, instances: dict[str, str]) -> None:
             for instance_name in instances:
                 console.print(f"  - {instance_name}")
         else:
-            console.print("[yellow]No IDA instances registered. Use 'hcli ida add' to add instances.[/yellow]")
+            console.print(
+                f"[yellow]No IDA instances registered. Use '{get_hcli_display_command()} ida add' to add instances.[/yellow]"
+            )
         raise click.Abort()
 
     # Check if this is the default instance

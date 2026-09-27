@@ -20,6 +20,9 @@
 - Use ida executable in find_current_ida_platform
 - Remove idat invocations for version and platform detection
 - Validate all plugin paths before extracting any
+- Spell suggested follow-up commands the way hcli was launched (e.g. `uvx ida-hcli ...` under uvx, or the full path when a different `hcli` is first on PATH) instead of a bare `hcli`, which could be missing or an older install (#360)
+- Register the `ida://` protocol handler against the running hcli rather than whichever `hcli` comes first on PATH, and via `uvx ida-hcli` when running from uvx's ephemeral cache
+- Under uvx, point update notices and `hcli update` at `uvx ida-hcli@latest` instead of `hcli update` / `uv tool upgrade`
 
 ### Changed
 - Log the Python-relevant environment variables (`VIRTUAL_ENV`, `PYTHONHOME`, `PATH`, ...) passed to `idat` at debug level

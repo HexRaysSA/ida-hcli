@@ -6,9 +6,9 @@ import questionary
 import rich_click as click
 from rich.console import Console
 
-from hcli.env import ENV
 from hcli.lib.config import config_store
 from hcli.lib.ida import get_ida_config, is_idalib_capable_installation, set_ida_config
+from hcli.lib.util.io import get_hcli_display_command
 
 console = Console()
 
@@ -27,7 +27,7 @@ def switch(name: str | None) -> None:
     if not instances:
         console.print("[yellow]No IDA Pro instances registered.[/yellow]")
         console.print(
-            f"[yellow]Use '{ENV.HCLI_BINARY_NAME} ida add --auto' to discover and add IDA installations.[/yellow]"
+            f"[yellow]Use '{get_hcli_display_command()} ida add --auto' to discover and add IDA installations.[/yellow]"
         )
         raise click.Abort()
 

@@ -15,6 +15,7 @@ from rich.markup import escape
 from hcli.env import ENV
 from hcli.lib.console import stderr_console as stderr_console
 from hcli.lib.ida import run_py_in_current_idapython
+from hcli.lib.util.io import get_hcli_display_command
 from hcli.lib.venv import (
     PythonVersion,
     get_python_exe_candidates,
@@ -194,7 +195,7 @@ def _derive_python_exe(info: IdatProbe) -> Path:
 
     raise PythonNotFoundError(
         "Could not detect IDA's Python executable.\n"
-        f"Run '{ENV.HCLI_BINARY_NAME} ida python create-environment' to create a virtual environment for IDA and "
+        f"Run '{get_hcli_display_command()} ida python create-environment' to create a virtual environment for IDA and "
         "set IDAPYTHON_VENV_EXECUTABLE. Or run idapyswitch to select a Python installation. Then try again.\n"
         f"sys.prefix: {info.prefix}\n"
         f"sys.base_prefix: {info.base_prefix}\n"
@@ -373,8 +374,8 @@ def externally_managed_environment_message(python_exe: Path) -> str:
     return (
         f"{python_exe} is an externally managed Python (PEP 668), so pip refuses to install into it. "
         f"Point IDA to a virtual environment instead of the system or Homebrew Python: "
-        f"run '{ENV.HCLI_BINARY_NAME} ida python create-environment' to create one and configure IDA to use it. "
-        f"Run '{ENV.HCLI_BINARY_NAME} ida python doctor' to inspect the current setup."
+        f"run '{get_hcli_display_command()} ida python create-environment' to create one and configure IDA to use it. "
+        f"Run '{get_hcli_display_command()} ida python doctor' to inspect the current setup."
     )
 
 

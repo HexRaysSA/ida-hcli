@@ -12,10 +12,10 @@ from urllib.parse import urlparse
 
 import httpx
 
-from hcli.env import ENV
 from hcli.lib.ida import HEXRAYS_REPO_NAME, PluginRepository
 from hcli.lib.ida.plugin.exceptions import PluginAccessDeniedError
 from hcli.lib.ida.plugin.repo import PLUGIN_REPO_HOST, BasePluginRepo, Plugin, repo_from_url
+from hcli.lib.util.io import get_hcli_display_command
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +24,9 @@ def render_repository_failure(error: Exception) -> str:
     """Why a repository could not be consulted, with the fix when the user has one."""
     if isinstance(error, PluginAccessDeniedError):
         if not error.authenticated:
-            return f"not logged in. Run '{ENV.HCLI_BINARY_NAME} login' to include them."
+            return f"not logged in. Run '{get_hcli_display_command()} login' to include them."
         if error.status_code == 401:
-            return f"credentials rejected. Run '{ENV.HCLI_BINARY_NAME} login' again, or check HCLI_API_KEY."
+            return f"credentials rejected. Run '{get_hcli_display_command()} login' again, or check HCLI_API_KEY."
         return "not entitled"
     if isinstance(error, (httpx.ConnectError, httpx.TimeoutException)):
         return "unreachable"

@@ -17,6 +17,7 @@ from hcli.env import ENV
 from hcli.lib.console import console, stderr_console
 from hcli.lib.extensions import get_extensions
 from hcli.lib.update.version import BackgroundUpdateChecker, is_binary
+from hcli.lib.util.io import get_hcli_display_command
 
 # Configure rich-click styling
 click.rich_click.USE_RICH_MARKUP = True
@@ -59,7 +60,7 @@ def _get_status_section() -> str:
             if email:
                 lines.append(f"  Auth:  [green]{email}[/green]")
             else:
-                lines.append(f"  Auth:  [yellow]Not logged in[/yellow] → {ENV.HCLI_BINARY_NAME} login")
+                lines.append(f"  Auth:  [yellow]Not logged in[/yellow] → {get_hcli_display_command()} login")
 
         # -- IDA --
         instances: dict[str, str] = config_store.get_object("ida.instances", {}) or {}
@@ -75,15 +76,15 @@ def _get_status_section() -> str:
                 lines.extend(
                     (
                         f"  IDA:   [red]Not found[/red] at {path}",
-                        f"         → {ENV.HCLI_BINARY_NAME} ida install -d ida-pro:latest -y",
+                        f"         → {get_hcli_display_command()} ida install -d ida-pro:latest -y",
                     )
                 )
         elif not instances:
             lines.extend(
                 (
                     "  IDA:   [yellow]Not installed[/yellow]",
-                    f"         → {ENV.HCLI_BINARY_NAME} ida install -d ida-pro:latest -l LICENSE_ID -y",
-                    f"         [dim]Find your license ID with: {ENV.HCLI_BINARY_NAME} license list[/dim]",
+                    f"         → {get_hcli_display_command()} ida install -d ida-pro:latest -l LICENSE_ID -y",
+                    f"         [dim]Find your license ID with: {get_hcli_display_command()} license list[/dim]",
                     "         [dim]Installing also activates idalib for Python (import idapro).[/dim]",
                 )
             )
@@ -92,7 +93,7 @@ def _get_status_section() -> str:
             lines.extend(
                 (
                     f"  IDA:   [yellow]{len(instances)} instance(s), no default set[/yellow] ({valid} valid)",
-                    f"         → {ENV.HCLI_BINARY_NAME} ida switch",
+                    f"         → {get_hcli_display_command()} ida switch",
                 )
             )
 
@@ -181,7 +182,7 @@ class MainGroup(click.RichGroup):
                     )
             elif isinstance(e, AuthenticationError):
                 console.print(
-                    f"[red]Authentication failed. Please check your credentials or use '{ENV.HCLI_BINARY_NAME} login'.[/red]"
+                    f"[red]Authentication failed. Please check your credentials or use '{get_hcli_display_command()} login'.[/red]"
                 )
             elif isinstance(e, NotFoundError):
                 console.print(f"[red]Resource not found: {e}[/red]")

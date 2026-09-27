@@ -50,6 +50,7 @@ from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, pars
 from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
 from hcli.lib.ida.plugin.settings import has_setting_in_config, parse_setting_value
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
+from hcli.lib.util.io import get_hcli_display_command
 
 from ._prompt import prompt_plugin_settings
 
@@ -198,7 +199,7 @@ def _render_cleanup_hint(result: InstallResult) -> None:
     leftovers = [d.plugin for d in result.dependencies if d.status == InstallStatus.SUCCESS]
     if leftovers:
         names = " ".join(leftovers)
-        console.print(f"  Run `hcli plugin uninstall {names}` to remove leftover dependencies.")
+        console.print(f"  Run `{get_hcli_display_command()} plugin uninstall {names}` to remove leftover dependencies.")
 
 
 @click.command()
