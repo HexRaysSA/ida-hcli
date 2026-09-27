@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import platform
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -113,6 +114,7 @@ class ConfigurationStep:
     file_content: str | None
     command: list[str] | None
     needs_logout: bool
+    env_var_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -224,6 +226,7 @@ def _build_macos_plan(name: str, value: str, home: Path) -> ConfigurationPlan:
                 file_content=line,
                 command=None,
                 needs_logout=False,
+                env_var_name=name,
             )
         )
     else:
@@ -293,6 +296,7 @@ def _build_linux_plan(name: str, value: str, home: Path) -> ConfigurationPlan:
                 file_content=line,
                 command=None,
                 needs_logout=False,
+                env_var_name=name,
             )
         )
 
@@ -388,7 +392,7 @@ def _file_already_has_content(path: Path, content: str) -> bool:
     if not path.is_file():
         return False
     existing = path.read_text(encoding="utf-8", errors="replace")
-    return content in existing or content.rstrip("\n") in existing.splitlines()
+    return existing.rstrip("\n") == content.rstrip("\n")
 
 
 def _write_file_step(step: ConfigurationStep) -> StepResult:
@@ -406,17 +410,14 @@ def _write_file_step(step: ConfigurationStep) -> StepResult:
     return StepResult(step, success=True, skipped=False, message=f"Created {step.file_path}")
 
 
-def _make_profile_prefix(line: str) -> str:
-    """Extract the assignment prefix so we can find stale lines for the same variable.
+def _make_assignment_pattern(name: str) -> re.Pattern[str]:
+    """Match top-level assignments to exactly ``name`` so stale lines can be replaced.
 
-    ``export FOO="bar"`` -> ``export FOO=``
-    ``set -gx FOO "bar"`` -> ``set -gx FOO ``
+    ``export FOO="bar"`` and ``FOO="bar"`` (sh-like shells)
+    ``set -gx FOO "bar"``, ``set --export FOO bar`` (fish)
     """
-    for sep in ("=", " "):
-        parts = line.split(sep, 2)
-        if len(parts) >= 2:
-            return parts[0] + sep
-    return line
+    n = re.escape(name)
+    return re.compile(rf"^(?:(?:export\s+)?{n}=|set\s+(?:-\S+\s+)*{n}(?:\s|$))")
 
 
 def _append_to_profile(step: ConfigurationStep) -> StepResult:
@@ -430,9 +431,11 @@ def _append_to_profile(step: ConfigurationStep) -> StepResult:
         if line in existing.splitlines():
             return StepResult(step, success=True, skipped=True, message=f"{step.file_path} already contains this line")
 
-    prefix = _make_profile_prefix(line)
     old_lines = existing.splitlines(keepends=True) if existing else []
-    stale = [i for i, l in enumerate(old_lines) if l.rstrip("\n").startswith(prefix)]
+    stale: list[int] = []
+    if step.env_var_name:
+        pattern = _make_assignment_pattern(step.env_var_name)
+        stale = [i for i, l in enumerate(old_lines) if pattern.match(l)]
 
     step.file_path.parent.mkdir(parents=True, exist_ok=True)
 

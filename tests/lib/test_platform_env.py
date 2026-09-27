@@ -283,6 +283,9 @@ def test_file_already_has_content(tmp_path: Path):
     assert _file_already_has_content(f, "IDAPYTHON_VENV_EXECUTABLE=/some/path")
     assert not _file_already_has_content(f, "IDAPYTHON_VENV_EXECUTABLE=/other/path")
     assert not _file_already_has_content(tmp_path / "nonexistent", "anything")
+    # A new value that is a prefix of the old one must not count as configured.
+    f.write_text("IDAPYTHON_VENV_EXECUTABLE=/some/path3\n")
+    assert not _file_already_has_content(f, "IDAPYTHON_VENV_EXECUTABLE=/some/path")
 
 
 def test_execute_step_creates_environment_d(tmp_path: Path):
@@ -364,6 +367,7 @@ def test_execute_step_profile_replaces_stale_line(tmp_path: Path):
         file_content=new_line,
         command=None,
         needs_logout=False,
+        env_var_name=NAME,
     )
     result = execute_step(step)
     assert result.success
@@ -374,6 +378,56 @@ def test_execute_step_profile_replaces_stale_line(tmp_path: Path):
     assert old_line not in content
     assert "# my stuff" in content
     assert "alias ll='ls -l'" in content
+
+
+FISH_UNRELATED = (
+    "set -gx PATH /opt/homebrew/bin $PATH\n"
+    "set -x EDITOR nvim\n"
+    "set --export MY_VAR value\n"
+    "set fish_greeting\n"
+    f"set -gx {NAME}_OTHER keep\n"
+)
+
+
+def _fish_step(profile: Path) -> ConfigurationStep:
+    return ConfigurationStep(
+        kind="shell-profile",
+        description=f"Add export to {profile}",
+        file_path=profile,
+        file_content=render_shell_export(NAME, VALUE, "fish"),
+        command=None,
+        needs_logout=False,
+        env_var_name=NAME,
+    )
+
+
+def test_execute_step_fish_profile_preserves_unrelated_set_lines(tmp_path: Path):
+    # https://github.com/HexRaysSA/ida-hcli/issues/359
+    profile = tmp_path / "config.fish"
+    profile.write_text(FISH_UNRELATED)
+    result = execute_step(_fish_step(profile))
+    assert result.success
+    assert "Added" in result.message
+    assert profile.read_text() == FISH_UNRELATED + f'set -gx {NAME} "{VALUE}"\n'
+
+
+def test_execute_step_fish_profile_replaces_stale_lines(tmp_path: Path):
+    profile = tmp_path / "config.fish"
+    profile.write_text(f"set -gx {NAME} /old/python\n" + FISH_UNRELATED + f"set --export {NAME} /older/python\n")
+    result = execute_step(_fish_step(profile))
+    assert result.success
+    assert "Updated" in result.message
+    assert profile.read_text() == f'set -gx {NAME} "{VALUE}"\n' + FISH_UNRELATED
+
+
+def test_build_plan_sets_env_var_name_on_profile_step(tmp_path: Path):
+    with (
+        patch.dict("os.environ", {"SHELL": "/usr/bin/fish"}),
+        patch("hcli.lib.ida.python.platform_env.has_systemd_user", return_value=False),
+    ):
+        plan = _build_linux_plan(NAME, VALUE, tmp_path)
+    step = next(s for s in plan.steps if s.kind == "shell-profile")
+    assert step.env_var_name == NAME
 
 
 def test_execute_step_creates_launchagent_plist(tmp_path: Path):
