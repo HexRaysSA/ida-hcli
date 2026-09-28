@@ -72,7 +72,17 @@ The `community` repository is the default. A bare `hcli plugin install <name>` s
 ❯ hcli plugin install hexrays/some-private-plugin
 ```
 
-If you're not logged in, the `hexrays` repository returns a 401 and HCLI tells you to authenticate. `hcli plugin search` spans all configured repositories and notes any it could not reach.
+If you're not logged in, the `hexrays` repository returns a 401 and HCLI tells you to authenticate. Commands that look across all configured repositories, such as `hcli plugin search`, `status`, and `upgrade`, print a yellow warning on stderr for each repository they could not use, with the fix when there is one:
+
+```console
+❯ hcli plugin status
+ assist                           1.0.0-beta14  not found in repository
+ capa                             9.4.0
+
+Warning: Skipping plugins from "hexrays" repository: not logged in. Run 'hcli login' to include them.
+```
+
+If you don't use the `hexrays` repository, `hcli plugin repo remove hexrays` stops the warning.
 
 ### Managing repositories
 

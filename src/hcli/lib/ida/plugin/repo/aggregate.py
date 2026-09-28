@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from hcli.env import ENV
 from hcli.lib.ida import HEXRAYS_REPO_NAME, PluginRepository
 from hcli.lib.ida.plugin.exceptions import PluginAccessDeniedError
 from hcli.lib.ida.plugin.repo import PLUGIN_REPO_HOST, BasePluginRepo, Plugin, repo_from_url
@@ -19,16 +20,19 @@ from hcli.lib.ida.plugin.repo import PLUGIN_REPO_HOST, BasePluginRepo, Plugin, r
 logger = logging.getLogger(__name__)
 
 
-def _describe_failure(name: str, error: Exception) -> str:
+def render_repository_failure(error: Exception) -> str:
+    """Why a repository could not be consulted, with the fix when the user has one."""
     if isinstance(error, PluginAccessDeniedError):
         if not error.authenticated:
-            return f"{name}: not logged in"
-        return f"{name}: {'credentials rejected' if error.status_code == 401 else 'not entitled'}"
+            return f"not logged in. Run '{ENV.HCLI_BINARY_NAME} login' to include them."
+        if error.status_code == 401:
+            return f"credentials rejected. Run '{ENV.HCLI_BINARY_NAME} login' again, or check HCLI_API_KEY."
+        return "not entitled"
     if isinstance(error, (httpx.ConnectError, httpx.TimeoutException)):
-        return f"{name}: unreachable"
+        return "unreachable"
     if isinstance(error, httpx.HTTPStatusError):
-        return f"{name}: HTTP {error.response.status_code}"
-    return f"{name}: {error}"
+        return f"HTTP {error.response.status_code}"
+    return str(error)
 
 
 def _identity_host(plugin: Plugin) -> str:
@@ -49,6 +53,9 @@ class AggregatePluginRepo(BasePluginRepo):
         self._plugins: dict[str, list[Plugin]] = {}
         self._children: dict[str, BasePluginRepo] = {}
         self._failures: dict[str, Exception] = {}
+        # Failures swallowed by get_plugins(). A failure raised to the caller
+        # is the caller's to report, so notes() leaves it out.
+        self._skipped: set[str] = set()
         self._dropped: dict[str, int] = {}
         # Which repository served which plugin, remembered at load time rather
         # than reconstructed later by scanning every loaded list.
@@ -97,16 +104,20 @@ class AggregatePluginRepo(BasePluginRepo):
     def notes(self) -> list[str]:
         """What the caller should know about repositories consulted so far.
 
-        Covers both a repository that could not be reached and one that was
-        reached but served plugins it is not entitled to. Both mean the answer
-        is not the whole picture, so both belong in the same report.
+        Covers both a repository that get_plugins() skipped because it could
+        not be consulted and one that was reached but served plugins it is not
+        entitled to. Both mean the answer is not the whole picture, so both
+        belong in the same report.
         """
         notes = []
         for name in self.repositories:
-            if name in self._failures:
-                notes.append(f"skipped -- {_describe_failure(name, self._failures[name])}")
+            if name in self._skipped:
+                reason = render_repository_failure(self._failures[name])
+                notes.append(f'Skipping plugins from "{name}" repository: {reason}')
             if name in self._dropped:
-                notes.append(f"{name}: ignored {self._dropped[name]} plugin(s) claiming Hex-Rays identities")
+                notes.append(
+                    f'Ignoring {self._dropped[name]} plugin(s) from "{name}" repository that claim Hex-Rays identities'
+                )
         return notes
 
     def get_child_repo(self, name: str) -> BasePluginRepo:
@@ -138,6 +149,7 @@ class AggregatePluginRepo(BasePluginRepo):
                 plugins.extend(self._load(name))
             except Exception as e:
                 logger.debug("skipping plugin repository %s: %s", name, e)
+                self._skipped.add(name)
         return plugins
 
     def repo_of(self, plugin: Plugin) -> str | None:
