@@ -22,6 +22,7 @@ from hcli.lib.ida.python.environment import get_recommended_venv_dir, get_system
 from hcli.lib.ida.python.platform_env import (
     build_configuration_plan,
     execute_configuration_plan,
+    preview_profile_change,
     verify_env_var_in_subprocess,
 )
 from hcli.lib.ida.python.venv_create import (
@@ -121,6 +122,12 @@ def configure_env_var(python_exe: Path, *, interactive: bool, quiet: bool) -> tu
         out.print(f"  {i}. {escape(step.description)}", highlight=False)
         if step.file_path is not None:
             out.print(f"     [dim]{escape(str(step.file_path))}[/dim]", highlight=False)
+        if step.kind == "shell-profile":
+            removed, added = preview_profile_change(step)
+            for line in removed:
+                out.print(f"     [red]- {escape(line)}[/red]", highlight=False)
+            for line in added:
+                out.print(f"     [green]+ {escape(line)}[/green]", highlight=False)
 
     for warning in plan.warnings:
         out.print(f"  [yellow]Warning: {escape(warning)}[/yellow]", highlight=False)
