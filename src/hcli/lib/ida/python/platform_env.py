@@ -420,6 +420,26 @@ def _make_assignment_pattern(name: str) -> re.Pattern[str]:
     return re.compile(rf"^(?:(?:export\s+)?{n}=|set\s+(?:-\S+\s+)*{n}(?:\s|$))")
 
 
+def _find_stale_lines(step: ConfigurationStep, lines: list[str]) -> list[int]:
+    if not step.env_var_name:
+        return []
+    pattern = _make_assignment_pattern(step.env_var_name)
+    return [i for i, l in enumerate(lines) if pattern.match(l)]
+
+
+def preview_profile_change(step: ConfigurationStep) -> tuple[list[str], list[str]]:
+    """Return the (removed, added) lines that `execute_step` would apply to a shell profile."""
+    assert step.file_path is not None
+    assert step.file_content is not None
+    line = step.file_content
+
+    existing = step.file_path.read_text(encoding="utf-8", errors="replace") if step.file_path.is_file() else ""
+    old_lines = existing.splitlines()
+    if line in old_lines:
+        return [], []
+    return [old_lines[i] for i in _find_stale_lines(step, old_lines)], [line]
+
+
 def _append_to_profile(step: ConfigurationStep) -> StepResult:
     assert step.file_path is not None
     assert step.file_content is not None
@@ -432,24 +452,17 @@ def _append_to_profile(step: ConfigurationStep) -> StepResult:
             return StepResult(step, success=True, skipped=True, message=f"{step.file_path} already contains this line")
 
     old_lines = existing.splitlines(keepends=True) if existing else []
-    stale: list[int] = []
-    if step.env_var_name:
-        pattern = _make_assignment_pattern(step.env_var_name)
-        stale = [i for i, l in enumerate(old_lines) if pattern.match(l)]
+    stale = _find_stale_lines(step, old_lines)
 
     step.file_path.parent.mkdir(parents=True, exist_ok=True)
 
     if stale:
-        for i in stale:
-            logger.info("removing line %d from %s: %s", i + 1, step.file_path, old_lines[i].rstrip("\n"))
-        logger.info("adding line %d to %s: %s", stale[0] + 1, step.file_path, line)
         old_lines[stale[0]] = line + "\n"
         for i in reversed(stale[1:]):
             del old_lines[i]
         step.file_path.write_text("".join(old_lines), encoding="utf-8")
         return StepResult(step, success=True, skipped=False, message=f"Updated {step.file_path}")
 
-    logger.info("appending line to %s: %s", step.file_path, line)
     with step.file_path.open("a", encoding="utf-8") as f:
         if existing and not existing.endswith("\n"):
             f.write("\n")

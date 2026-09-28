@@ -6,11 +6,8 @@ Tests the decision tree (build_configuration_plan) and file writing
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from hcli.lib.ida.python.platform_env import (
     ENVIRONMENT_D_FILENAME,
@@ -23,6 +20,7 @@ from hcli.lib.ida.python.platform_env import (
     detect_login_shell,
     execute_step,
     get_login_profile_path,
+    preview_profile_change,
     render_shell_export,
 )
 
@@ -414,18 +412,26 @@ def test_execute_step_fish_profile_preserves_unrelated_set_lines(tmp_path: Path)
     assert profile.read_text() == FISH_UNRELATED + f'set -gx {NAME} "{VALUE}"\n'
 
 
-def test_execute_step_fish_profile_replaces_stale_lines(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+def test_execute_step_fish_profile_replaces_stale_lines(tmp_path: Path):
     profile = tmp_path / "config.fish"
     profile.write_text(f"set -gx {NAME} /old/python\n" + FISH_UNRELATED + f"set --export {NAME} /older/python\n")
-    with caplog.at_level(logging.INFO, logger="hcli.lib.ida.python.platform_env"):
-        result = execute_step(_fish_step(profile))
+    step = _fish_step(profile)
+    assert preview_profile_change(step) == (
+        [f"set -gx {NAME} /old/python", f"set --export {NAME} /older/python"],
+        [f'set -gx {NAME} "{VALUE}"'],
+    )
+    result = execute_step(step)
     assert result.success
     assert "Updated" in result.message
     assert profile.read_text() == f'set -gx {NAME} "{VALUE}"\n' + FISH_UNRELATED
-    assert f"removing line 1 from {profile}: set -gx {NAME} /old/python" in caplog.messages
-    assert f"removing line 7 from {profile}: set --export {NAME} /older/python" in caplog.messages
-    assert f'adding line 1 to {profile}: set -gx {NAME} "{VALUE}"' in caplog.messages
-    assert not any("PATH" in m for m in caplog.messages)
+    assert preview_profile_change(step) == ([], [])
+
+
+def test_preview_profile_change_missing_or_unrelated(tmp_path: Path):
+    profile = tmp_path / "config.fish"
+    assert preview_profile_change(_fish_step(profile)) == ([], [f'set -gx {NAME} "{VALUE}"'])
+    profile.write_text(FISH_UNRELATED)
+    assert preview_profile_change(_fish_step(profile)) == ([], [f'set -gx {NAME} "{VALUE}"'])
 
 
 def test_build_plan_sets_env_var_name_on_profile_step(tmp_path: Path):
