@@ -90,8 +90,8 @@ List, add, remove, or change the default repository:
 
 ```console
 ❯ hcli plugin repo list
-community  https://community.plugins.hex-rays.com/plugin-repository.json  default reserved
 hexrays    https://hexrays.plugins.hex-rays.com/plugin-repository.json    reserved
+community  https://community.plugins.hex-rays.com/plugin-repository.json  default reserved
 
 ❯ hcli plugin repo add my-team https://plugins.example.com/repo.json
 added plugin repository 'my-team' -> https://plugins.example.com/repo.json

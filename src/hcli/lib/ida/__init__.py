@@ -786,6 +786,15 @@ PLUGIN_REPOSITORY_NAME_CHARS = "a-z0-9-"
 PLUGIN_REPOSITORY_NAME_RE = re.compile(rf"^[{PLUGIN_REPOSITORY_NAME_CHARS}]+$")
 
 
+def get_plugin_repository_sort_key(name: str) -> tuple[bool, str]:
+    """Order repositories alphabetically, with `community` last.
+
+    Every listing that spans repositories follows this order, so a plugin
+    group appears in the same place in `search`, `status`, and `repo list`.
+    """
+    return (name == COMMUNITY_REPO_NAME, name)
+
+
 class PluginRepositoryConfig(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
@@ -925,7 +934,7 @@ def _migrate_plugin_repositories(config: IDAConfigJson) -> bool:
 
 
 def get_plugin_repositories(config: IDAConfigJson | None = None) -> dict[str, PluginRepository]:
-    """The configured plugin repositories, keyed by name.
+    """The configured plugin repositories, keyed by name, in display order.
 
     Migrates a pre-0.23 config on first read. Reserved repositories are present
     by default (the migration creates them) but can be removed via ``repo remove``.
@@ -982,7 +991,7 @@ def get_plugin_repositories(config: IDAConfigJson | None = None) -> dict[str, Pl
             )
         repos[name] = PluginRepository(name=name, url=url, reserved=True)
 
-    return repos
+    return {name: repos[name] for name in sorted(repos, key=get_plugin_repository_sort_key)}
 
 
 def get_default_plugin_repository_name(config: IDAConfigJson | None = None) -> str:

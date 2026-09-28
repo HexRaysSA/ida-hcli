@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import itertools
 import logging
+from collections.abc import Callable
 from typing import Literal
 
 import rich.table
@@ -30,7 +32,9 @@ from hcli.lib.ida.plugin.install import (
     get_installed_plugin_records,
     get_plugins_directory,
 )
-from hcli.lib.ida.plugin.repo import BasePluginRepo
+from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin
+
+from ._listing import get_repository_group_sort_key, render_plugin_label
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +52,9 @@ class InstalledPluginStatusEntry(BaseModel):
     upgrade_checked: bool
     in_repository: bool | None
     upgradable_to: str | None
+    # Which configured repository serves this plugin. None when the upgrade
+    # check is skipped, when no repository serves it, or under --repo.
+    repo: str | None = None
     components: list[ComponentInfo] | None = None
 
 
@@ -97,6 +104,7 @@ def _collect_installed_entry(
     current_platform: str,
     current_ida_version: str,
     skip_upgrade_check: bool,
+    repo_of: Callable[[Plugin], str | None] | None = None,
 ) -> InstalledPluginStatusEntry:
     components = _collect_components(record)
 
@@ -115,6 +123,7 @@ def _collect_installed_entry(
             record.name, current_platform, current_ida_version, host=record.host
         )
         latest_version = location.metadata.plugin.version
+        repo = repo_of(plugin_repo.get_plugin_by_name(record.name, host=record.host)) if repo_of is not None else None
         return InstalledPluginStatusEntry(
             name=record.name,
             version=record.version,
@@ -123,6 +132,7 @@ def _collect_installed_entry(
             upgradable_to=(
                 latest_version if parse_plugin_version(latest_version) > parse_plugin_version(record.version) else None
             ),
+            repo=repo,
             components=components,
         )
     except (ValueError, KeyError, AmbiguousPluginReferenceError):
@@ -136,7 +146,7 @@ def _collect_installed_entry(
         )
 
 
-def _render_status_row(table: rich.table.Table, entry: PluginStatusEntry) -> None:
+def _render_status_row(table: rich.table.Table, entry: PluginStatusEntry, default_repo: str | None) -> None:
     if isinstance(entry, IncompatiblePluginStatusEntry):
         table.add_row(
             f"[grey69](incompatible)[/grey69] [blue]{entry.name}[/blue]",
@@ -170,13 +180,14 @@ def _render_status_row(table: rich.table.Table, entry: PluginStatusEntry) -> Non
         comp_label = f"({n} component{'s' if n != 1 else ''})"
         status = f"{status}  {comp_label}".strip() if status else comp_label
 
-    table.add_row(entry.name, entry.version, status)
+    table.add_row(render_plugin_label(entry.name, entry.repo, default_repo), entry.version, status)
 
 
 def collect_status_report(
     plugin_repo: BasePluginRepo,
     plugins: tuple[str, ...],
     skip_upgrade_check: bool,
+    repo_of: Callable[[Plugin], str | None] | None = None,
 ) -> StatusReport:
     current_platform = find_current_ida_platform()
     current_ida_version = find_current_ida_version()
@@ -195,10 +206,15 @@ def collect_status_report(
     else:
         installed_records = all_records
 
-    entries: list[PluginStatusEntry] = [
-        _collect_installed_entry(plugin_repo, record, current_platform, current_ida_version, skip_upgrade_check)
+    installed_entries = [
+        _collect_installed_entry(
+            plugin_repo, record, current_platform, current_ida_version, skip_upgrade_check, repo_of=repo_of
+        )
         for record in installed_records
     ]
+    entries: list[PluginStatusEntry] = sorted(
+        installed_entries, key=lambda e: (get_repository_group_sort_key(e.repo), e.name.lower())
+    )
 
     entries.extend(NotFoundPluginStatusEntry(name=name) for name in not_found_names)
 
@@ -225,30 +241,41 @@ def collect_status_report(
     return StatusReport(plugins=entries)
 
 
+def _get_entry_repo(entry: PluginStatusEntry) -> str | None:
+    return entry.repo if isinstance(entry, InstalledPluginStatusEntry) else None
+
+
 def render_status_report_text(
-    report: StatusReport, plugins_filter: tuple[str, ...], *, show_components: bool = False
+    report: StatusReport,
+    plugins_filter: tuple[str, ...],
+    *,
+    show_components: bool = False,
+    default_repo: str | None = None,
 ) -> None:
     table = rich.table.Table(show_header=False, box=None)
     table.add_column("name", style="blue")
     table.add_column("version", style="default")
     table.add_column("status")
 
-    not_found_names: list[str] = []
     has_incompatible = False
     has_legacy = False
 
-    for entry in report.plugins:
-        if isinstance(entry, NotFoundPluginStatusEntry):
-            not_found_names.append(entry.name)
-            continue
-        if isinstance(entry, IncompatiblePluginStatusEntry):
-            has_incompatible = True
-        elif isinstance(entry, LegacyPluginStatusEntry):
-            has_legacy = True
-        _render_status_row(table, entry)
-        if show_components and isinstance(entry, InstalledPluginStatusEntry) and entry.components:
-            for comp in entry.components:
-                table.add_row(f"  [dim]{comp.name}[/dim]", comp.version, "[dim](component)[/dim]")
+    not_found_names = [e.name for e in report.plugins if isinstance(e, NotFoundPluginStatusEntry)]
+    listed = [e for e in report.plugins if not isinstance(e, NotFoundPluginStatusEntry)]
+
+    for i, (_, group) in enumerate(itertools.groupby(listed, key=_get_entry_repo)):
+        if i:
+            table.add_row()
+
+        for entry in group:
+            if isinstance(entry, IncompatiblePluginStatusEntry):
+                has_incompatible = True
+            elif isinstance(entry, LegacyPluginStatusEntry):
+                has_legacy = True
+            _render_status_row(table, entry, default_repo)
+            if show_components and isinstance(entry, InstalledPluginStatusEntry) and entry.components:
+                for comp in entry.components:
+                    table.add_row(f"  [dim]{comp.name}[/dim]", comp.version, "[dim](component)[/dim]")
 
     if table.row_count:
         console.print(table)
@@ -300,13 +327,17 @@ def get_plugin_status(
     and exit with a non-zero status if any of them isn't installed.
     """
     plugin_repo: BasePluginRepo = ctx.obj["plugin_repo"]
+    aggregate = ctx.obj.get("plugin_repos")
+    repo_of = aggregate.repo_of if aggregate is not None else None
     try:
-        report = collect_status_report(plugin_repo, plugins, skip_upgrade_check)
+        report = collect_status_report(plugin_repo, plugins, skip_upgrade_check, repo_of=repo_of)
 
         if json_output:
             render_status_report_json(report)
         else:
-            render_status_report_text(report, plugins, show_components=show_components)
+            render_status_report_text(
+                report, plugins, show_components=show_components, default_repo=ctx.obj.get("default_plugin_repo")
+            )
 
     except MissingCurrentInstallationDirectory:
         explain_missing_current_installation_directory(console)
