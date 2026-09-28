@@ -13,6 +13,7 @@ from click.testing import CliRunner
 from fixtures import *
 
 from hcli.commands.plugin import plugin as plugin_group
+from hcli.env import ENV
 from hcli.lib.ida import (
     COMMUNITY_REPO_NAME,
     HEXRAYS_REPO_NAME,
@@ -22,9 +23,10 @@ from hcli.lib.ida import (
     PluginRepositoryConfig,
     get_plugin_repositories,
 )
+from hcli.lib.ida.plugin.exceptions import PluginAccessDeniedError
 from hcli.lib.ida.plugin.install import get_installed_plugin_records
 from hcli.lib.ida.plugin.repo import repo_from_url
-from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
+from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo, render_repository_failure
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 from hcli.lib.ida.plugin.repo.file import JSONFilePluginRepo
 from hcli.lib.ida.plugin.repo.fs import FileSystemPluginRepo
@@ -415,3 +417,103 @@ def test_reserved_repo_cannot_be_repointed(virtual_ida_environment):
     result = _invoke(runner, "repo", "add", "hexrays", "https://evil.example.com/repo.json")
     assert result.exit_code != 0
     assert "reserved" in result.output
+
+
+# --- Warnings about repositories that could not be consulted ---
+
+
+def test_render_repository_failure_tells_logged_out_user_to_log_in():
+    error = PluginAccessDeniedError("https://hexrays.plugins.hex-rays.com/x.json", 401, authenticated=False)
+    text = render_repository_failure("hexrays", error)
+    assert "hexrays: not logged in" in text
+    assert f"{ENV.HCLI_BINARY_NAME} login" in text
+
+
+def test_render_repository_failure_tells_rejected_user_to_log_in_again():
+    error = PluginAccessDeniedError("https://hexrays.plugins.hex-rays.com/x.json", 401, authenticated=True)
+    text = render_repository_failure("hexrays", error)
+    assert "credentials rejected" in text
+    assert f"{ENV.HCLI_BINARY_NAME} login" in text
+    assert "HCLI_API_KEY" in text
+
+
+def test_render_repository_failure_has_no_login_hint_when_not_entitled():
+    error = PluginAccessDeniedError("https://hexrays.plugins.hex-rays.com/x.json", 403, authenticated=True)
+    text = render_repository_failure("hexrays", error)
+    assert "not entitled" in text
+    assert "login" not in text
+
+
+def _setup_local_and_broken_repos(runner: CliRunner, tmp_path: Path) -> None:
+    fs_url = _write_fs_repo_with_plugins(tmp_path, PLUGIN1_V1).as_uri()
+    missing_url = (tmp_path / "missing" / "plugin-repository.json").as_uri()
+    for args in (
+        ("repo", "remove", "hexrays"),
+        ("repo", "remove", "community"),
+        ("repo", "add", "local", fs_url),
+        ("repo", "add", "broken", missing_url),
+        ("repo", "set-default", "local"),
+    ):
+        result = _invoke(runner, *args)
+        assert result.exit_code == 0, result.output
+
+
+def test_status_warns_about_skipped_repository(virtual_ida_environment, block_network, tmp_path):
+    runner = CliRunner(mix_stderr=False)
+    _setup_local_and_broken_repos(runner, tmp_path)
+
+    result = _invoke(runner, "install", "local/plugin1==1.0.0")
+    assert result.exit_code == 0, result.output
+
+    result = _invoke(runner, "status")
+    assert result.exit_code == 0, result.output
+    assert "plugin1" in result.stdout
+    assert "Warning:" in result.stderr
+    assert "broken" in result.stderr
+    assert "broken" not in result.stdout
+
+
+def test_status_without_upgrade_check_does_not_warn(virtual_ida_environment, block_network, tmp_path):
+    runner = CliRunner(mix_stderr=False)
+    _setup_local_and_broken_repos(runner, tmp_path)
+
+    result = _invoke(runner, "status", "--skip-upgrade-check")
+    assert result.exit_code == 0, result.output
+    assert "broken" not in result.stderr
+
+
+def test_search_json_keeps_warnings_off_stdout(virtual_ida_environment, block_network, tmp_path):
+    runner = CliRunner(mix_stderr=False)
+    _setup_local_and_broken_repos(runner, tmp_path)
+
+    result = _invoke(runner, "search", "--json")
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert any("broken" in note for note in payload["repository_notes"])
+    assert "Warning:" in result.stderr
+    assert "broken" in result.stderr
+
+
+def test_search_text_warns_once(virtual_ida_environment, block_network, tmp_path):
+    runner = CliRunner(mix_stderr=False)
+    _setup_local_and_broken_repos(runner, tmp_path)
+
+    result = _invoke(runner, "search")
+    assert result.exit_code == 0, result.output
+    assert "plugin1" in result.stdout
+    assert "broken" not in result.stdout
+    assert result.stderr.count("broken") == 1
+
+
+def test_aggregate_notes_only_repositories_that_get_plugins_skipped(tmp_path):
+    missing_url = (tmp_path / "missing" / "plugin-repository.json").as_uri()
+    repos = {"broken": PluginRepository(name="broken", url=missing_url, reserved=False)}
+    agg = AggregatePluginRepo(repos)
+
+    with pytest.raises(FileNotFoundError):
+        agg.get_child_repo("broken")
+    assert agg.notes() == []
+
+    assert agg.get_plugins() == []
+    assert len(agg.notes()) == 1
+    assert agg.notes()[0].startswith("skipped -- broken:")

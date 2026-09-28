@@ -7,13 +7,14 @@ from pathlib import Path
 
 import httpx
 import rich_click as click
+from rich.console import Console
 
 import hcli.lib.ida.plugin.repo
 import hcli.lib.ida.plugin.repo.file
 import hcli.lib.ida.plugin.repo.fs
 import hcli.lib.ida.plugin.repo.github
 from hcli.commands.ida.python.explain_environment import explain_environment
-from hcli.lib.console import console
+from hcli.lib.console import console, stderr_console
 from hcli.lib.ida import get_default_plugin_repository_name, get_ida_config, get_plugin_repositories
 from hcli.lib.ida.plugin.bundle import bundle_dependency_source
 from hcli.lib.ida.plugin.context import InstallContext, InstallOptions
@@ -32,6 +33,18 @@ from .search import search_plugins
 from .status import get_plugin_status
 from .uninstall import uninstall_plugin
 from .upgrade import upgrade_plugin
+
+
+def output_repository_warnings(aggregate: AggregatePluginRepo, console: Console) -> None:
+    """Warn about repositories the command could not fully consult.
+
+    Runs when the plugin command group closes, so every subcommand reports
+    them the same way, after its own output. A logged-out user is the common
+    case: the private repository is skipped, and without this the result
+    looks complete.
+    """
+    for note in aggregate.notes():
+        console.print(f"[yellow]Warning:[/yellow] repository {note}")
 
 
 def read_repos_file(path: Path) -> list[str]:
@@ -118,6 +131,7 @@ def plugin(
             # Repositories are fetched lazily, so building the aggregate costs
             # nothing until a command actually looks something up.
             aggregate = AggregatePluginRepo(repositories)
+            ctx.call_on_close(lambda: output_repository_warnings(aggregate, stderr_console))
             ctx.obj["plugin_repos"] = aggregate
             ctx.obj["default_plugin_repo"] = get_default_plugin_repository_name(ida_config)
             plugin_repo = aggregate
@@ -228,12 +242,6 @@ def repo_for_reference(ctx: click.Context, ref: PluginReference) -> hcli.lib.ida
         )
         console.print("Please check your internet connection.")
         raise click.Abort()
-
-    # The survey path reports these through the search result; on this path
-    # there is no result to carry them, so say it here rather than drop a
-    # plugin silently.
-    for note in aggregate.notes():
-        console.print(f"[yellow]Warning:[/yellow] repository {note}")
 
     return child
 

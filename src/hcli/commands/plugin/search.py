@@ -511,7 +511,6 @@ def render_keyword_query_text(result: KeywordQueryResult, default_repo: str | No
 
     if not matches:
         console.print("[grey69]No plugins found[/grey69]")
-        _render_repository_notes(result)
         return
 
     table = rich.table.Table(show_header=False, box=None)
@@ -540,18 +539,6 @@ def render_keyword_query_text(result: KeywordQueryResult, default_repo: str | No
         table.add_row(f"[blue]{label}[/blue]", match.version, status, match.repository)
 
     console.print(table)
-    _render_repository_notes(result)
-
-
-def _render_repository_notes(result: KeywordQueryResult) -> None:
-    """Say which repositories did not contribute, after the results.
-
-    Silence would misrepresent an incomplete search as an empty one -- the
-    common case being a logged-out user, for whom the private repository simply
-    is not there.
-    """
-    for note in result.repository_notes:
-        console.print(f"[grey69]repository {note}[/grey69]")
 
 
 def _has_exact_name_match(plugins: list[Plugin], name: str) -> bool:
