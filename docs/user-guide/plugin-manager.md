@@ -78,7 +78,8 @@ If you're not logged in, the `hexrays` repository returns a 401 and HCLI tells y
 ❯ hcli plugin status
  assist                           1.0.0-beta14  not found in repository
  capa                             9.4.0
-Warning: repository skipped -- hexrays: not logged in. Run 'hcli login' to include it.
+
+Warning: Skipping plugins from "hexrays" repository: not logged in. Run 'hcli login' to include it.
 ```
 
 If you don't use the `hexrays` repository, `hcli plugin repo remove hexrays` stops the warning.

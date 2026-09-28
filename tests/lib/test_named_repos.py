@@ -424,14 +424,14 @@ def test_reserved_repo_cannot_be_repointed(virtual_ida_environment):
 
 def test_render_repository_failure_tells_logged_out_user_to_log_in():
     error = PluginAccessDeniedError("https://hexrays.plugins.hex-rays.com/x.json", 401, authenticated=False)
-    text = render_repository_failure("hexrays", error)
-    assert "hexrays: not logged in" in text
+    text = render_repository_failure(error)
+    assert text.startswith("not logged in.")
     assert f"{ENV.HCLI_BINARY_NAME} login" in text
 
 
 def test_render_repository_failure_tells_rejected_user_to_log_in_again():
     error = PluginAccessDeniedError("https://hexrays.plugins.hex-rays.com/x.json", 401, authenticated=True)
-    text = render_repository_failure("hexrays", error)
+    text = render_repository_failure(error)
     assert "credentials rejected" in text
     assert f"{ENV.HCLI_BINARY_NAME} login" in text
     assert "HCLI_API_KEY" in text
@@ -439,7 +439,7 @@ def test_render_repository_failure_tells_rejected_user_to_log_in_again():
 
 def test_render_repository_failure_has_no_login_hint_when_not_entitled():
     error = PluginAccessDeniedError("https://hexrays.plugins.hex-rays.com/x.json", 403, authenticated=True)
-    text = render_repository_failure("hexrays", error)
+    text = render_repository_failure(error)
     assert "not entitled" in text
     assert "login" not in text
 
@@ -468,7 +468,7 @@ def test_status_warns_about_skipped_repository(virtual_ida_environment, block_ne
     result = _invoke(runner, "status")
     assert result.exit_code == 0, result.output
     assert "plugin1" in result.stdout
-    assert "Warning:" in result.stderr
+    assert '\nWarning: Skipping plugins from "broken" repository: ' in result.stderr
     assert "broken" in result.stderr
     assert "broken" not in result.stdout
 
@@ -516,4 +516,4 @@ def test_aggregate_notes_only_repositories_that_get_plugins_skipped(tmp_path):
 
     assert agg.get_plugins() == []
     assert len(agg.notes()) == 1
-    assert agg.notes()[0].startswith("skipped -- broken:")
+    assert agg.notes()[0].startswith('Skipping plugins from "broken" repository: ')

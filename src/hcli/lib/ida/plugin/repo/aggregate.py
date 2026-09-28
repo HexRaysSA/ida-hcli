@@ -20,19 +20,19 @@ from hcli.lib.ida.plugin.repo import PLUGIN_REPO_HOST, BasePluginRepo, Plugin, r
 logger = logging.getLogger(__name__)
 
 
-def render_repository_failure(name: str, error: Exception) -> str:
+def render_repository_failure(error: Exception) -> str:
     """Why a repository could not be consulted, with the fix when the user has one."""
     if isinstance(error, PluginAccessDeniedError):
         if not error.authenticated:
-            return f"{name}: not logged in. Run '{ENV.HCLI_BINARY_NAME} login' to include it."
+            return f"not logged in. Run '{ENV.HCLI_BINARY_NAME} login' to include it."
         if error.status_code == 401:
-            return f"{name}: credentials rejected. Run '{ENV.HCLI_BINARY_NAME} login' again, or check HCLI_API_KEY."
-        return f"{name}: not entitled"
+            return f"credentials rejected. Run '{ENV.HCLI_BINARY_NAME} login' again, or check HCLI_API_KEY."
+        return "not entitled"
     if isinstance(error, (httpx.ConnectError, httpx.TimeoutException)):
-        return f"{name}: unreachable"
+        return "unreachable"
     if isinstance(error, httpx.HTTPStatusError):
-        return f"{name}: HTTP {error.response.status_code}"
-    return f"{name}: {error}"
+        return f"HTTP {error.response.status_code}"
+    return str(error)
 
 
 def _identity_host(plugin: Plugin) -> str:
@@ -112,9 +112,12 @@ class AggregatePluginRepo(BasePluginRepo):
         notes = []
         for name in self.repositories:
             if name in self._skipped:
-                notes.append(f"skipped -- {render_repository_failure(name, self._failures[name])}")
+                reason = render_repository_failure(self._failures[name])
+                notes.append(f'Skipping plugins from "{name}" repository: {reason}')
             if name in self._dropped:
-                notes.append(f"{name}: ignored {self._dropped[name]} plugin(s) claiming Hex-Rays identities")
+                notes.append(
+                    f'Ignoring {self._dropped[name]} plugin(s) from "{name}" repository that claim Hex-Rays identities'
+                )
         return notes
 
     def get_child_repo(self, name: str) -> BasePluginRepo:

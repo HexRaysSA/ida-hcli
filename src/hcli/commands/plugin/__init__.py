@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 import rich_click as click
 from rich.console import Console
+from rich.markup import escape
 
 import hcli.lib.ida.plugin.repo
 import hcli.lib.ida.plugin.repo.file
@@ -43,8 +44,11 @@ def output_repository_warnings(aggregate: AggregatePluginRepo, console: Console)
     case: the private repository is skipped, and without this the result
     looks complete.
     """
-    for note in aggregate.notes():
-        console.print(f"[yellow]Warning:[/yellow] repository {note}")
+    notes = aggregate.notes()
+    if notes:
+        console.print()
+    for note in notes:
+        console.print(f"[yellow]Warning[/yellow]: {escape(note)}", highlight=False)
 
 
 def read_repos_file(path: Path) -> list[str]:
