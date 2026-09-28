@@ -45,8 +45,8 @@ $ hcli commands
 │ hcli auth switch          │ Switch the default credentials.                                  │
 │ hcli commands             │ List all available command combinations.                         │
 │ hcli download             │ Download IDA binaries, SDKs, and utilities.                      │
-│ hcli extension create     │ Create an hcli extension                                         │
-│ hcli extension list       │ List hcli extensions                                             │
+│ hcli hcli-extensions create │ Create an hcli extension                                       │
+│ hcli hcli-extensions list │ List hcli extensions                                             │
 │ hcli ida install          │ Installs IDA unattended.                                         │
 │ hcli ida set-default      │ Set or show the default IDA installation directory.              │
 │ hcli license get          │ Download license files with optional filtering.                  │

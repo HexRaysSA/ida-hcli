@@ -9,6 +9,7 @@
 - Warn when IDA's Python version (registered by idapyswitch) doesn't match the active virtualenv, in `explain-environment` and before installing plugin dependencies
 - Honor `$IDAPYTHON_VENV_EXECUTABLE` for plugin dependency management
 - Add GitHub Copilot CLI support to `hcli mcp install`
+- Add `hcli extension` as an alias for `hcli plugin`, so `hcli extension install <plugin>` uses the plugin manager
 
 ### Fixed
 - Pass every argument through to the program in `ida python exec` and `ida python run-script`, so `hcli ida python exec -m pip --help` describes pip (#287)
@@ -25,6 +26,7 @@
 - Under uvx, point update notices and `hcli update` at `uvx ida-hcli@latest` instead of `hcli update` / `uv tool upgrade`
 
 ### Changed
+- Move the hcli extension commands from `hcli extension create` and `hcli extension list` to `hcli hcli-extensions create` and `hcli hcli-extensions list`
 - Log the Python-relevant environment variables (`VIRTUAL_ENV`, `PYTHONHOME`, `PATH`, ...) passed to `idat` at debug level
 
 ## [0.15.13] - 2026-01-27

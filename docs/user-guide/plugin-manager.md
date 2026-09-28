@@ -4,6 +4,8 @@ The IDA Plugin Manager handles searching, installing, upgrading, and removing ID
 
 Community plugins are indexed from public GitHub repositories and served through the Hex-Rays portal. Hex-Rays also publishes private plugins available to users with active IDA licenses. Browse available plugins at [plugins.hex-rays.com](https://plugins.hex-rays.com).
 
+`hcli extension` is an alias for `hcli plugin`, so `hcli extension install hint-calls` and `hcli plugin install hint-calls` do the same thing.
+
 !!! note "Development status"
 
       The plugin manager is complete, and we’re now in the process of packaging plugins. Documentation updates are ongoing, and minor adjustments are expected.
