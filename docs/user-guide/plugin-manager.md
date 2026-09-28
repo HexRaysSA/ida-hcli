@@ -79,7 +79,7 @@ If you're not logged in, the `hexrays` repository returns a 401 and HCLI tells y
  assist                           1.0.0-beta14  not found in repository
  capa                             9.4.0
 
-Warning: Skipping plugins from "hexrays" repository: not logged in. Run 'hcli login' to include it.
+Warning: Skipping plugins from "hexrays" repository: not logged in. Run 'hcli login' to include them.
 ```
 
 If you don't use the `hexrays` repository, `hcli plugin repo remove hexrays` stops the warning.

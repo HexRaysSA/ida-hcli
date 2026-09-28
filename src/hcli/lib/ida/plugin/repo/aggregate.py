@@ -24,7 +24,7 @@ def render_repository_failure(error: Exception) -> str:
     """Why a repository could not be consulted, with the fix when the user has one."""
     if isinstance(error, PluginAccessDeniedError):
         if not error.authenticated:
-            return f"not logged in. Run '{ENV.HCLI_BINARY_NAME} login' to include it."
+            return f"not logged in. Run '{ENV.HCLI_BINARY_NAME} login' to include them."
         if error.status_code == 401:
             return f"credentials rejected. Run '{ENV.HCLI_BINARY_NAME} login' again, or check HCLI_API_KEY."
         return "not entitled"
