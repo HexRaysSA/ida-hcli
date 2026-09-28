@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import logging
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -46,6 +47,8 @@ from hcli.lib.ida.plugin.repo import (
     is_compatible_plugin,
     is_compatible_plugin_version,
 )
+
+from ._listing import get_repository_group_sort_key, render_plugin_label
 
 logger = logging.getLogger(__name__)
 
@@ -426,12 +429,15 @@ def collect_keyword_matches(
 ) -> list[KeywordMatchEntry]:
     matches: list[KeywordMatchEntry] = []
 
-    for plugin in sorted(plugins, key=lambda p: p.name.lower()):
+    def get_repo(plugin: Plugin) -> str | None:
+        return repo_of(plugin) if repo_of is not None else None
+
+    for plugin in sorted(plugins, key=lambda p: (get_repository_group_sort_key(get_repo(p)), p.name.lower())):
         if not does_plugin_match_query(query or "", plugin):
             continue
 
         latest_metadata = get_latest_plugin_metadata(plugin)
-        repo = repo_of(plugin) if repo_of is not None else None
+        repo = get_repo(plugin)
 
         if not is_compatible_plugin(plugin, current_platform, current_version):
             matches.append(
@@ -494,18 +500,6 @@ def collect_keyword_query_result(
     )
 
 
-def _display_name(match: KeywordMatchEntry, default_repo: str | None) -> str:
-    """The string a user must type to install this result.
-
-    A plugin from the default repository installs by bare name; anything else
-    needs its "repo/" prefix, so showing the prefix here is not decoration, it
-    is the command.
-    """
-    if match.repo and match.repo != default_repo:
-        return f"{match.repo}/{match.name}"
-    return match.name
-
-
 def render_keyword_query_text(result: KeywordQueryResult, default_repo: str | None = None) -> None:
     matches = result.results
 
@@ -520,24 +514,28 @@ def render_keyword_query_text(result: KeywordQueryResult, default_repo: str | No
     table.add_column("status")
     table.add_column("repo", style="grey69")
 
-    for match in matches:
-        label = _display_name(match, default_repo)
-        if not match.compatible:
-            table.add_row(
-                f"[grey69]{label} (incompatible)[/grey69]",
-                f"[grey69]{match.version}[/grey69]",
-                "",
-                match.repository,
-            )
-            continue
+    for i, (_, group) in enumerate(itertools.groupby(matches, key=lambda m: m.repo)):
+        if i:
+            table.add_row()
 
-        status = ""
-        if match.upgradable:
-            status = f"[yellow]upgradable[/yellow] from {match.installed_version}"
-        elif match.installed:
-            status = "installed"
+        for match in group:
+            label = render_plugin_label(match.name, match.repo, default_repo)
+            if not match.compatible:
+                table.add_row(
+                    f"[grey69]{label} (incompatible)[/grey69]",
+                    f"[grey69]{match.version}[/grey69]",
+                    "",
+                    match.repository,
+                )
+                continue
 
-        table.add_row(f"[blue]{label}[/blue]", match.version, status, match.repository)
+            status = ""
+            if match.upgradable:
+                status = f"[yellow]upgradable[/yellow] from {match.installed_version}"
+            elif match.installed:
+                status = "installed"
+
+            table.add_row(f"[blue]{label}[/blue]", match.version, status, match.repository)
 
     console.print(table)
     _render_repository_notes(result)

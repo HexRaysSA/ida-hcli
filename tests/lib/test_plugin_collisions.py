@@ -534,6 +534,7 @@ def test_status_json_installed_plugin(
             "upgrade_checked": upgrade_checked,
             "in_repository": in_repository,
             "upgradable_to": upgradable_to,
+            "repo": None,
             "components": None,
         }
     ]

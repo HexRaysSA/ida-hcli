@@ -53,8 +53,7 @@ def list_repos(ctx) -> None:
     table.add_column("url", style="grey69")
     table.add_column("")
 
-    for name in sorted(repos):
-        entry = repos[name]
+    for name, entry in repos.items():
         tags = []
         if name == default:
             tags.append("default")

@@ -74,14 +74,27 @@ The `community` repository is the default. A bare `hcli plugin install <name>` s
 
 If you're not logged in, the `hexrays` repository returns a 401 and HCLI tells you to authenticate. `hcli plugin search` spans all configured repositories and notes any it could not reach.
 
+`hcli plugin search` and `hcli plugin status` show plugins in one section per repository, separated by a blank line. The sections use the same order as `hcli plugin repo list`: alphabetical by repository name, with `community` last. A plugin from a repository other than the default shows its `repo/` prefix in grey, because you must type that prefix to install it:
+
+```console
+❯ hcli plugin status
+ hexrays/assist                           1.0.0-beta14  upgradable to 1.0.0-rc.2
+ hexrays/hexrays-malware-analysis-add-on  0.1.20260922  (6 components)
+
+ capa                                     9.4.0
+ ida-cyberchef                            0.3.2
+```
+
+`hcli plugin status --skip-upgrade-check` does not load the repositories, so it cannot tell which repository serves a plugin. It shows all plugins in one section, without prefixes.
+
 ### Managing repositories
 
 List, add, remove, or change the default repository:
 
 ```console
 ❯ hcli plugin repo list
-community  https://community.plugins.hex-rays.com/plugin-repository.json  default reserved
 hexrays    https://hexrays.plugins.hex-rays.com/plugin-repository.json    reserved
+community  https://community.plugins.hex-rays.com/plugin-repository.json  default reserved
 
 ❯ hcli plugin repo add my-team https://plugins.example.com/repo.json
 added plugin repository 'my-team' -> https://plugins.example.com/repo.json
