@@ -6,8 +6,11 @@ Tests the decision tree (build_configuration_plan) and file writing
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from hcli.lib.ida.python.platform_env import (
     ENVIRONMENT_D_FILENAME,
@@ -411,13 +414,18 @@ def test_execute_step_fish_profile_preserves_unrelated_set_lines(tmp_path: Path)
     assert profile.read_text() == FISH_UNRELATED + f'set -gx {NAME} "{VALUE}"\n'
 
 
-def test_execute_step_fish_profile_replaces_stale_lines(tmp_path: Path):
+def test_execute_step_fish_profile_replaces_stale_lines(tmp_path: Path, caplog: pytest.LogCaptureFixture):
     profile = tmp_path / "config.fish"
     profile.write_text(f"set -gx {NAME} /old/python\n" + FISH_UNRELATED + f"set --export {NAME} /older/python\n")
-    result = execute_step(_fish_step(profile))
+    with caplog.at_level(logging.INFO, logger="hcli.lib.ida.python.platform_env"):
+        result = execute_step(_fish_step(profile))
     assert result.success
     assert "Updated" in result.message
     assert profile.read_text() == f'set -gx {NAME} "{VALUE}"\n' + FISH_UNRELATED
+    assert f"removing line 1 from {profile}: set -gx {NAME} /old/python" in caplog.messages
+    assert f"removing line 7 from {profile}: set --export {NAME} /older/python" in caplog.messages
+    assert f'adding line 1 to {profile}: set -gx {NAME} "{VALUE}"' in caplog.messages
+    assert not any("PATH" in m for m in caplog.messages)
 
 
 def test_build_plan_sets_env_var_name_on_profile_step(tmp_path: Path):

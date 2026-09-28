@@ -440,12 +440,16 @@ def _append_to_profile(step: ConfigurationStep) -> StepResult:
     step.file_path.parent.mkdir(parents=True, exist_ok=True)
 
     if stale:
+        for i in stale:
+            logger.info("removing line %d from %s: %s", i + 1, step.file_path, old_lines[i].rstrip("\n"))
+        logger.info("adding line %d to %s: %s", stale[0] + 1, step.file_path, line)
         old_lines[stale[0]] = line + "\n"
         for i in reversed(stale[1:]):
             del old_lines[i]
         step.file_path.write_text("".join(old_lines), encoding="utf-8")
         return StepResult(step, success=True, skipped=False, message=f"Updated {step.file_path}")
 
+    logger.info("appending line to %s: %s", step.file_path, line)
     with step.file_path.open("a", encoding="utf-8") as f:
         if existing and not existing.endswith("\n"):
             f.write("\n")
