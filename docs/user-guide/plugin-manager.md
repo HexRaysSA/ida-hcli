@@ -85,8 +85,6 @@ If you're not logged in, the `hexrays` repository returns a 401 and HCLI tells y
  ida-cyberchef                            0.3.2
 ```
 
-`hcli plugin status --skip-upgrade-check` does not load the repositories, so it cannot tell which repository serves a plugin. It shows all plugins in one section, without prefixes.
-
 ### Managing repositories
 
 List, add, remove, or change the default repository:
