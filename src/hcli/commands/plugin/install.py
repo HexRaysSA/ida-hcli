@@ -48,7 +48,7 @@ from hcli.lib.ida.plugin.reference import (
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
 from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
 from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
-from hcli.lib.ida.plugin.settings import has_setting_in_config, parse_setting_value
+from hcli.lib.ida.plugin.settings import get_settings_to_prompt, has_setting_in_config, parse_setting_value
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 from hcli.lib.util.io import get_hcli_display_command
 
@@ -131,14 +131,18 @@ def _resolve_interactive_settings(
         )
 
     if console.is_interactive:
-        if config_prefix:
-            console.print(f"\nconfigure component [blue]{plugin_name}[/blue]:")
         existing_config = get_ida_config()
         existing_values: dict[str, str | bool] = {}
         if plugin_name in existing_config.plugins:
             existing_values = dict(existing_config.plugins[plugin_name].settings)
 
-        answers = prompt_plugin_settings(metadata.plugin.settings, existing_values)
+        settings_to_prompt = get_settings_to_prompt(metadata.plugin.settings, existing_values)
+        if not settings_to_prompt:
+            return {}
+
+        if config_prefix:
+            console.print(f"\nconfigure component [blue]{plugin_name}[/blue]:")
+        answers = prompt_plugin_settings(settings_to_prompt, existing_values)
         if answers is None:
             raise click.Abort()
 

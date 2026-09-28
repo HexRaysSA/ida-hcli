@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -267,6 +268,18 @@ def apply_resolved_settings(
         except (KeyError, ValueError):
             return False
     return True
+
+
+def get_settings_to_prompt(
+    settings: list[PluginSettingDescriptor],
+    existing_values: Mapping[str, str | bool],
+) -> list[PluginSettingDescriptor]:
+    """Select the settings to ask about during install.
+
+    Settings with ``prompt=False`` use their default. Settings with a stored
+    value keep it; ``hcli plugin config <plugin> setup`` changes them.
+    """
+    return [s for s in settings if s.prompt and s.key not in existing_values]
 
 
 def has_setting_in_config(plugin_name: str, key: str) -> bool:
