@@ -11,6 +11,7 @@ from hcli.lib.ida.handler.url_handler import URLHandler
 from hcli.lib.ida.ipc import IDAIPCClient
 from hcli.lib.ida.launcher import IDALauncher, LaunchConfig
 from hcli.lib.ida.resolve import _idb_names_match, _print, resolve_and_navigate
+from hcli.lib.util.io import get_hcli_display_command
 
 console = Console()
 
@@ -129,7 +130,9 @@ class DefaultURLHandler(URLHandler):
                         console.print(f"[red]IDB '{target_idb_name}' not found in source '{source_name}'.[/red]")
                     else:
                         console.print(f"[red]IDB '{target_idb_name}' not found in any source.[/red]")
-                    console.print("[dim]Configure sources with: hcli ida source add <name> <path>[/dim]")
+                    console.print(
+                        f"[dim]Configure sources with: {get_hcli_display_command()} ida source add <name> <path>[/dim]"
+                    )
 
         resolve_and_navigate(
             uri=uri,

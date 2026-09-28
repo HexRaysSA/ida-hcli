@@ -29,7 +29,7 @@ from hcli.lib.ida import (
     is_ida_dir,
     is_idalib_capable_installation,
 )
-from hcli.lib.util.io import get_os
+from hcli.lib.util.io import get_hcli_display_command, get_os
 
 
 @click.option(
@@ -123,8 +123,8 @@ async def install(
                     instance_name = generate_instance_name(install_dir_path)
                     console.print(
                         f"\n[yellow]IDA is already installed at {install_dir_path}[/yellow]\n\n"
-                        f"  To set it as the default: [bold]hcli ida switch {instance_name}[/bold]\n"
-                        f"  To reinstall, first remove it: [bold]hcli ida remove {instance_name}[/bold]\n"
+                        f"  To set it as the default: [bold]{get_hcli_display_command()} ida switch {instance_name}[/bold]\n"
+                        f"  To reinstall, first remove it: [bold]{get_hcli_display_command()} ida remove {instance_name}[/bold]\n"
                     )
                 else:
                     console.print(
@@ -302,8 +302,8 @@ def create_python_environment_for_install(install_dir_path: Path, *, interactive
     except click.ClickException as e:
         console.print(f"[red]Could not create the Python environment: {e.message}[/red]")
         console.print(
-            f"IDA is installed. Run `{ENV.HCLI_BINARY_NAME} ida python create-environment` to try again, "
-            f"or `{ENV.HCLI_BINARY_NAME} ida python doctor` to inspect the environment."
+            f"IDA is installed. Run `{get_hcli_display_command()} ida python create-environment` to try again, "
+            f"or `{get_hcli_display_command()} ida python doctor` to inspect the environment."
         )
         raise click.exceptions.Exit(1)
     finally:

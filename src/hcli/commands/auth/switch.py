@@ -4,11 +4,11 @@ import questionary
 import rich_click as click
 
 from hcli.commands.common import safe_ask_async
-from hcli.env import ENV
 from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
 from hcli.lib.constants import cli
+from hcli.lib.util.io import get_hcli_display_command
 
 
 @click.command(name="switch")
@@ -24,7 +24,7 @@ async def switch_credentials(name: str | None) -> None:
     if not sources:
         console.print("[yellow]No credentials found.[/yellow]")
         console.print(
-            f"Use '[bold]{ENV.HCLI_BINARY_NAME} login[/bold]' or '[bold]{ENV.HCLI_BINARY_NAME} auth key install[/bold]' to add credentials."
+            f"Use '[bold]{get_hcli_display_command()} login[/bold]' or '[bold]{get_hcli_display_command()} auth key install[/bold]' to add credentials."
         )
         return
 

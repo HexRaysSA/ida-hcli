@@ -27,6 +27,7 @@ from hcli.lib.ida.python.environment import (
     identify_setup_pattern,
     render_set_env_var_command,
 )
+from hcli.lib.util.io import get_hcli_display_command
 from hcli.lib.venv import find_virtual_env_python, get_virtual_env_version
 
 logger = logging.getLogger(__name__)
@@ -153,7 +154,7 @@ def build_doctor_report() -> DoctorReport:
                         "The virtual environment may have been deleted, moved, or not yet created."
                     ),
                     fix_hint=(
-                        f"Run `{ENV.HCLI_BINARY_NAME} ida python create-environment` to create a virtual "
+                        f"Run `{get_hcli_display_command()} ida python create-environment` to create a virtual "
                         "environment and configure $IDAPYTHON_VENV_EXECUTABLE."
                     ),
                 )
@@ -165,7 +166,7 @@ def build_doctor_report() -> DoctorReport:
                 summary="HCLI cannot determine IDA's Python interpreter",
                 detail=python_exe_error or "",
                 fix_hint=(
-                    f"Run `{ENV.HCLI_BINARY_NAME} ida python create-environment` to create a virtual environment "
+                    f"Run `{get_hcli_display_command()} ida python create-environment` to create a virtual environment "
                     "and set IDAPYTHON_VENV_EXECUTABLE. Or set HCLI_CURRENT_IDA_PYTHON_EXE to the interpreter "
                     "that IDA uses."
                 ),
@@ -267,7 +268,9 @@ def render_doctor_report_text(report: DoctorReport) -> None:
 
     if not report.findings:
         console.print("[green]IDA's Python environment matches the recommended setup.[/green]")
-        console.print(f"You can install plugins with Python dependencies with `{ENV.HCLI_BINARY_NAME} plugin install`.")
+        console.print(
+            f"You can install plugins with Python dependencies with `{get_hcli_display_command()} plugin install`."
+        )
     else:
         errors = [f for f in report.findings if f.severity == "error"]
         warnings = [f for f in report.findings if f.severity == "warning"]
@@ -285,7 +288,7 @@ def render_doctor_report_text(report: DoctorReport) -> None:
             highlight=False,
         )
         console.print(
-            f"  {ENV.HCLI_BINARY_NAME} plugin --no-python-environment-check install <name>",
+            f"  {get_hcli_display_command()} plugin --no-python-environment-check install <name>",
             highlight=False,
         )
         console.print()

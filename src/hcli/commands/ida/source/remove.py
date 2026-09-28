@@ -3,8 +3,8 @@ from __future__ import annotations
 import rich_click as click
 from rich.console import Console
 
-from hcli.env import ENV
 from hcli.lib.config import config_store
+from hcli.lib.util.io import get_hcli_display_command
 
 console = Console()
 
@@ -20,7 +20,7 @@ def remove(name: str) -> None:
 
     if name not in sources:
         console.print(f"[yellow]Source not found: '{name}'[/yellow]")
-        console.print(f"[dim]Use '{ENV.HCLI_BINARY_NAME} ida source list' to see configured sources.[/dim]")
+        console.print(f"[dim]Use '{get_hcli_display_command()} ida source list' to see configured sources.[/dim]")
         return
 
     del sources[name]

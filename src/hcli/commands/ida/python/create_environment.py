@@ -35,6 +35,7 @@ from hcli.lib.ida.python.venv_create import (
     inspect_target,
     plan_virtual_environment,
 )
+from hcli.lib.util.io import get_hcli_display_command
 
 logger = logging.getLogger(__name__)
 
@@ -78,13 +79,13 @@ def _explain_existing_target(inspection: TargetInspection) -> str:
             f"{ENV.HCLI_BINARY_NAME} never deletes it for you.\n"
             f"  1. Remove the directory: {target}\n"
             f"     This deletes the packages installed in it. Reinstall plugins afterwards with "
-            f"`{ENV.HCLI_BINARY_NAME} plugin install`.\n"
-            f"  2. Run `{ENV.HCLI_BINARY_NAME} ida python create-environment` again."
+            f"`{get_hcli_display_command()} plugin install`.\n"
+            f"  2. Run `{get_hcli_display_command()} ida python create-environment` again."
         )
     if inspection.kind == "broken-venv":
         return (
             f"{target} {inspection.reason}.\n"
-            f"Remove the directory and run `{ENV.HCLI_BINARY_NAME} ida python create-environment` again. "
+            f"Remove the directory and run `{get_hcli_display_command()} ida python create-environment` again. "
             f"Or pass --path to use a different location."
         )
     return (
@@ -208,7 +209,7 @@ def _print_failure_summary(out, failed: list[PluginMigrationResult]) -> None:
     out.print()
     out.print(
         "Reinstall these plugins from their original source "
-        f"(`{ENV.HCLI_BINARY_NAME} plugin install <name>`) so their "
+        f"(`{get_hcli_display_command()} plugin install <name>`) so their "
         "dependencies are available in the new environment."
     )
 
@@ -249,7 +250,7 @@ def migrate_plugin_dependencies(
             deps_str = ", ".join(plugin.dependencies)
             out.print(f"  [blue]{plugin.name}[/blue]: {deps_str}")
         out.print(
-            f"Reinstall these plugins with `{ENV.HCLI_BINARY_NAME} plugin install <name>` "
+            f"Reinstall these plugins with `{get_hcli_display_command()} plugin install <name>` "
             "to restore their dependencies."
         )
         return [], True

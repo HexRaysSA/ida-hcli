@@ -1,7 +1,12 @@
 """File I/O and system utilities."""
 
+import functools
+import os
 import platform
+import re
+import shlex
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -52,6 +57,51 @@ def get_executable_path() -> Path:
         return Path(__file__)
 
 
+# Names of the uv cache buckets that hold the throwaway environments `uvx` (and
+# `uv run --with`) execute from, e.g. ~/.cache/uv/archive-v0/<hash>.
+_UV_CACHE_BUCKET = re.compile(r"^(archive|environments|builds)-v\d+$")
+
+# Console scripts ida-hcli installs (see [project.scripts] in pyproject.toml).
+_CONSOLE_SCRIPT_NAMES = frozenset({"hcli", "ida-hcli"})
+
+
+def is_uvx_environment() -> bool:
+    """Whether hcli runs from a uv cache environment, as created by `uvx ida-hcli`.
+
+    Such an environment is not on PATH and may be garbage-collected by uv at any time,
+    so neither a bare `hcli` (which may resolve to some other, older install) nor the
+    path of the running script is a durable way to invoke this hcli again.
+    """
+    return any(_UV_CACHE_BUCKET.match(part) for part in Path(sys.prefix).parts)
+
+
+def _running_script() -> Path | None:
+    """The hcli executable or console script this process was started through, if any."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable)
+    argv0 = sys.argv[0] if sys.argv else ""
+    if not argv0:
+        return None
+    path = Path(argv0)
+    name = path.stem if path.suffix.lower() == ".exe" else path.name
+    # Rules out `python -m hcli` (argv0 is .../hcli/__main__.py) and hcli imported as a
+    # library by some other program, whose argv0 says nothing about how to run hcli.
+    if name not in _CONSOLE_SCRIPT_NAMES:
+        return None
+    # Windows launchers may report argv0 without the .exe suffix.
+    for candidate in (path, path.with_name(path.name + ".exe")):
+        if candidate.is_file():
+            return candidate.absolute()
+    return None
+
+
+def _same_file(a: str | Path, b: str | Path) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
 def get_hcli_command() -> list[str]:
     """Return the argv tokens that invoke hcli.
 
@@ -61,10 +111,24 @@ def get_hcli_command() -> list[str]:
     (``subprocess.list2cmdline`` for a Windows command line, ``shlex.join`` for a
     POSIX shell or a macOS/Linux URL-handler template) — never by concatenating the
     tokens raw, which would word-split install paths that contain spaces.
+
+    The hcli that is running wins over whatever `hcli` comes first on PATH: that may
+    be an older install than the one the user just invoked.
     """
     # Running from a frozen binary: sys.executable is the hcli executable itself.
     if getattr(sys, "frozen", False):
         return [sys.executable]
+
+    # Running via uvx: the cache environment is ephemeral, so go back through uvx.
+    if is_uvx_environment():
+        uvx_path = shutil.which("uvx")
+        if uvx_path:
+            return [uvx_path, "ida-hcli"]
+
+    # The console script this process was launched through.
+    script = _running_script()
+    if script is not None:
+        return [str(script)]
 
     # hcli on PATH.
     hcli_path = shutil.which("hcli")
@@ -82,6 +146,39 @@ def get_hcli_command() -> list[str]:
         return [python_path, "-m", "hcli"]
 
     raise RuntimeError("Could not find hcli executable")
+
+
+def _quote_for_shell(arg: str) -> str:
+    if sys.platform == "win32":
+        return subprocess.list2cmdline([arg])
+    return shlex.quote(arg)
+
+
+@functools.cache
+def get_hcli_display_command() -> str:
+    """How to spell hcli in instructions the user is told to run, e.g. "hcli" or "uvx ida-hcli".
+
+    Mirrors the way the user actually launched hcli, so that suggested follow-up
+    commands run this hcli rather than some other (possibly stale) install on PATH,
+    or fail with "command not found" because hcli was never installed at all.
+    """
+    from hcli.env import ENV
+
+    if is_uvx_environment():
+        return "uvx ida-hcli"
+
+    script = _running_script()
+    if script is None:
+        if sys.argv and Path(sys.argv[0]).name == "__main__.py":
+            return f"{_quote_for_shell(sys.executable)} -m hcli"
+        return ENV.HCLI_BINARY_NAME
+
+    # Prefer the short name when it resolves to this very executable.
+    name = script.stem if script.suffix.lower() == ".exe" else script.name
+    on_path = shutil.which(name)
+    if on_path and _same_file(on_path, script):
+        return name
+    return _quote_for_shell(str(script))
 
 
 def get_os() -> str:

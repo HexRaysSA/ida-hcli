@@ -16,6 +16,7 @@ from semantic_version import SimpleSpec
 from hcli import __version__
 from hcli.env import ENV
 from hcli.lib.update.release import GitHubRepo, get_compatible_version
+from hcli.lib.util.io import get_hcli_display_command, is_uvx_environment
 
 
 def compare_versions(current: str, latest: Version) -> bool:
@@ -155,11 +156,12 @@ class BackgroundUpdateChecker:
 
     def _format_update_message(self, current: str, latest: str) -> str:
         """Format the update notification message."""
-        return (
-            f"\n[yellow]Update available![/yellow] "
-            f"[dim]{current}[/dim] -> [green]{latest}[/green]\n"
-            f"[dim]Run[/dim] [bold cyan]{ENV.HCLI_BINARY_NAME} update[/bold cyan] [dim]to update[/dim]\n"
-        )
+        if is_uvx_environment():
+            # uvx keeps reusing its cached environment; `@latest` makes it resolve anew.
+            how = "[dim]Run[/dim] [bold cyan]uvx ida-hcli@latest[/bold cyan] [dim]to use it[/dim]"
+        else:
+            how = f"[dim]Run[/dim] [bold cyan]{get_hcli_display_command()} update[/bold cyan] [dim]to update[/dim]"
+        return f"\n[yellow]Update available![/yellow] [dim]{current}[/dim] -> [green]{latest}[/green]\n{how}\n"
 
     def _format_no_update_message(self, current: str, latest: str) -> str:
         """Format the update notification message."""

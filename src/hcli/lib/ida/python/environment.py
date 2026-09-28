@@ -58,7 +58,7 @@ from hcli.lib.ida.python import (
     probe_current_python_info,
     resolve_current_python,
 )
-from hcli.lib.util.io import get_os
+from hcli.lib.util.io import get_hcli_display_command, get_os
 from hcli.lib.venv import (
     find_candidate_virtual_envs,
     get_virtual_env_version,
@@ -323,7 +323,7 @@ def _render_create_environment_hint(state: PythonEnvironmentState) -> str:
     version = state.ida_python_version or state.python_version or "3.X"
     set_var = render_set_env_var_command("IDAPYTHON_VENV_EXECUTABLE", str(venv_python), state.system)
     return (
-        f"Run `{ENV.HCLI_BINARY_NAME} ida python create-environment`. It creates a virtual environment at "
+        f"Run `{get_hcli_display_command()} ida python create-environment`. It creates a virtual environment at "
         f"{venv_dir} with Python {version} and configures IDA to use it.\n"
         f"Or do it yourself:\n"
         f"  uv venv --seed --python {version} {venv_dir}\n"
@@ -340,7 +340,7 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
     """
     findings: list[EnvironmentFinding] = []
     exe = str(state.python_exe)
-    doctor = f"{ENV.HCLI_BINARY_NAME} ida python doctor"
+    doctor = f"{get_hcli_display_command()} ida python doctor"
 
     if state.uv_ephemeral:
         findings.append(
@@ -495,7 +495,7 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
                 fix_hint=(
                     f"Run idapyswitch to select a Python {state.python_version} installation for IDA. "
                     f"Or recreate the virtualenv with Python {state.ida_python_version}: "
-                    f"`{ENV.HCLI_BINARY_NAME} ida python create-environment` selects the matching version."
+                    f"`{get_hcli_display_command()} ida python create-environment` selects the matching version."
                 ),
             )
         )
@@ -571,8 +571,8 @@ def format_environment_warnings(findings: list[EnvironmentFinding]) -> str:
 
     lines.extend(
         [
-            f"Run `{ENV.HCLI_BINARY_NAME} ida python doctor` for details and fixes.",
-            f"To skip this check: `{ENV.HCLI_BINARY_NAME} plugin --no-python-environment-check install <name>`",
+            f"Run `{get_hcli_display_command()} ida python doctor` for details and fixes.",
+            f"To skip this check: `{get_hcli_display_command()} plugin --no-python-environment-check install <name>`",
         ]
     )
     return "\n".join(lines)
@@ -585,8 +585,8 @@ def format_environment_findings_plain(findings: list[EnvironmentFinding]) -> str
         lines.append(f"- [{finding.severity}] {finding.summary}")
     lines.extend(
         [
-            f"Run '{ENV.HCLI_BINARY_NAME} ida python doctor' for details and fixes.",
-            f"To skip this check: {ENV.HCLI_BINARY_NAME} plugin --no-python-environment-check install <name>",
+            f"Run '{get_hcli_display_command()} ida python doctor' for details and fixes.",
+            f"To skip this check: {get_hcli_display_command()} plugin --no-python-environment-check install <name>",
         ]
     )
     return "\n".join(lines)
@@ -1146,8 +1146,8 @@ def collect_notes(
             EnvironmentNote(
                 kind="hint",
                 text=(
-                    f"To use a virtualenv with IDA, run `{ENV.HCLI_BINARY_NAME} ida python create-environment`, "
-                    f"or check the current setup with `{ENV.HCLI_BINARY_NAME} ida python doctor`."
+                    f"To use a virtualenv with IDA, run `{get_hcli_display_command()} ida python create-environment`, "
+                    f"or check the current setup with `{get_hcli_display_command()} ida python doctor`."
                 ),
             )
         )
@@ -1166,7 +1166,7 @@ def collect_notes(
                 text=(
                     f"{python_environment.python_exe} is an externally-managed Python (PEP 668); pip will refuse "
                     "to install plugin dependencies into it directly. Point IDA at a virtual environment instead: "
-                    f"`{ENV.HCLI_BINARY_NAME} ida python create-environment`."
+                    f"`{get_hcli_display_command()} ida python create-environment`."
                 ),
             )
         )

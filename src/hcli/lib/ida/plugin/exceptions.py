@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from hcli.env import ENV
+from hcli.lib.util.io import get_hcli_display_command
 
 
 class PluginInstallationError(Exception):
@@ -20,7 +20,7 @@ class PluginAlreadyInstalledError(PluginInstallationError):
         self.path = path
         super().__init__(
             f"Plugin '{name}' is already installed at {path}. "
-            f"Use '{ENV.HCLI_BINARY_NAME} plugin upgrade {name}' to update or '{ENV.HCLI_BINARY_NAME} plugin uninstall {name}' first."
+            f"Use '{get_hcli_display_command()} plugin upgrade {name}' to update or '{get_hcli_display_command()} plugin uninstall {name}' first."
         )
 
 
@@ -71,7 +71,7 @@ class PipNotAvailableError(PluginInstallationError):
             f"pip is not available in IDA's Python environment at {python_exe}. "
             "If you created the venv with `uv venv` without `--seed`, recreate it with `uv venv --seed`. "
             f"Or add pip with `{python_exe} -m ensurepip --upgrade`. "
-            f"Run `{ENV.HCLI_BINARY_NAME} ida python doctor` for details."
+            f"Run `{get_hcli_display_command()} ida python doctor` for details."
         )
 
 
@@ -116,7 +116,7 @@ class BrokenPluginInstallationError(PluginInstallationError):
         self.path = path
         super().__init__(
             f"Found remnants of a broken installation of '{name}' at {path}. "
-            f"Run '{ENV.HCLI_BINARY_NAME} plugin uninstall {name}' to remove them, then retry."
+            f"Run '{get_hcli_display_command()} plugin uninstall {name}' to remove them, then retry."
         )
 
 
@@ -214,11 +214,11 @@ class PluginAccessDeniedError(Exception):
         where = f"repository '{repo_name}'" if repo_name else "the plugin repository"
         msg = f"Access denied (HTTP {status_code}) by {where}. "
         if not authenticated:
-            msg += f"Run '{ENV.HCLI_BINARY_NAME} login' and try again."
+            msg += f"Run '{get_hcli_display_command()} login' and try again."
         elif status_code == 401:
             # 401 *with* credentials attached means they were rejected -- an
             # expired session or a revoked key -- not an entitlement problem.
-            msg += f"Your credentials were rejected: run '{ENV.HCLI_BINARY_NAME} login' again, or check HCLI_API_KEY."
+            msg += f"Your credentials were rejected: run '{get_hcli_display_command()} login' again, or check HCLI_API_KEY."
         else:
             msg += "Your account is not entitled to it."
         super().__init__(msg)
