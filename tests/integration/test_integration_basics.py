@@ -11,7 +11,18 @@ import pytest
 # live local state (stored credentials, registered IDA installs, extensions), and
 # every command module is imported to register it. A crash in any of that shows up
 # here.
-TOP_LEVEL_COMMANDS = ("auth", "download", "extension", "ida", "license", "plugin", "share", "update", "whoami")
+TOP_LEVEL_COMMANDS = (
+    "auth",
+    "download",
+    "extension",
+    "hcli-extensions",
+    "ida",
+    "license",
+    "plugin",
+    "share",
+    "update",
+    "whoami",
+)
 
 
 @pytest.mark.integration

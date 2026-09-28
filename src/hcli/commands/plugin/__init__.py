@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -346,3 +347,8 @@ def _explain_environment_alias(ctx, json_output: bool) -> None:
 
 
 plugin.add_command(_explain_environment_alias)
+
+
+extension = copy.copy(plugin)
+extension.name = "extension"
+extension.help = "Manage IDA Pro plugins (alias for `plugin`)."

@@ -10,7 +10,7 @@ def register_commands(cli: click.Group) -> None:
     from .login import login
     from .logout import logout
     from .mcp import mcp
-    from .plugin import plugin
+    from .plugin import extension, plugin
     from .update import update
     from .whoami import whoami
 
@@ -21,12 +21,13 @@ def register_commands(cli: click.Group) -> None:
     cli.add_command(download)
     cli.add_command(commands)
     cli.add_command(plugin)
+    cli.add_command(extension)
     cli.add_command(mcp)
 
     # groups
     from .asset import asset
     from .auth import auth
-    from .extension import extension
+    from .hcli_extensions import hcli_extensions
     from .ida import ida
     from .license import license
     from .share import share
@@ -35,5 +36,5 @@ def register_commands(cli: click.Group) -> None:
     cli.add_command(ida)
     cli.add_command(share)
     cli.add_command(license)
-    cli.add_command(extension)
+    cli.add_command(hcli_extensions)
     cli.add_command(asset)
