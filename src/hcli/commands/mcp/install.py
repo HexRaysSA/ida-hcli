@@ -357,7 +357,7 @@ def _install_ida_plugin(ctx: click.Context) -> None:
     # than abort before the agent integration below ever runs.
     ctx.invoke(
         install_plugin,
-        plugin="https://github.com/HexRaysSA/ida-mcp",
+        plugin="ida-mcp@https://github.com/HexRaysSA/ida-mcp",
         editable=False,
         config=(),
         no_build_isolation=False,
