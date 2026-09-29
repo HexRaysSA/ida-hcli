@@ -352,17 +352,25 @@ def _print_mcp_json() -> None:
 
 
 def _install_ida_plugin(ctx: click.Context) -> None:
-    # `upgrade=True`: this command is the entry point users re-run to (re)wire
-    # an agent, so an already-installed ida-mcp must upgrade in place rather
-    # than abort before the agent integration below ever runs.
-    ctx.invoke(
-        install_plugin,
-        plugin="ida-mcp@https://github.com/HexRaysSA/ida-mcp",
-        editable=False,
-        config=(),
-        no_build_isolation=False,
-        upgrade=True,
-    )
+    # `plugin@url` references resolve through the repository state that the
+    # `plugin` group callback builds, and `mcp` bypasses that group. Run it
+    # here, exactly as `hcli plugin install` would, so the two stay in sync.
+    from hcli.commands.plugin import plugin as plugin_group
+
+    with click.Context(plugin_group, info_name="plugin", parent=ctx, obj={}) as plugin_ctx:
+        plugin_ctx.invoked_subcommand = "install"
+        plugin_ctx.invoke(plugin_group)
+        # `upgrade=True`: this command is the entry point users re-run to (re)wire
+        # an agent, so an already-installed ida-mcp must upgrade in place rather
+        # than abort before the agent integration below ever runs.
+        plugin_ctx.invoke(
+            install_plugin,
+            plugin="ida-mcp@https://github.com/HexRaysSA/ida-mcp",
+            editable=False,
+            config=(),
+            no_build_isolation=False,
+            upgrade=True,
+        )
 
 
 @click.command()

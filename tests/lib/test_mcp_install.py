@@ -223,15 +223,35 @@ def test_omp_updates_existing_local_plugin(tmp_path: Path) -> None:
     ]
 
 
-def test_ida_plugin_install_upgrades_when_already_installed() -> None:
-    """Re-running `hcli mcp install` must upgrade the plugin, not abort on it."""
+def test_ida_plugin_install_upgrades_when_already_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Re-running `hcli mcp install` must upgrade the plugin, not abort on it.
+
+    The qualified `ida-mcp@<url>` reference resolves through the state the
+    `plugin` group builds, so that group must run first and share its `obj`.
+    """
+    import rich_click as click
+
+    from hcli.commands.mcp.install import install_plugin
+    from hcli.commands.plugin import plugin as plugin_group
+
     calls: list[dict[str, object]] = []
+    group_obj_ids: list[int] = []
 
-    class FakeContext:
-        def invoke(self, command: object, **kwargs: object) -> None:
-            calls.append(kwargs)
+    def fake_group(ctx: click.Context, **kwargs: object) -> None:
+        ctx.obj["plugin_repo"] = object()
+        group_obj_ids.append(id(ctx.obj))
 
-    _install_ida_plugin(FakeContext())  # type: ignore[arg-type]
+    def fake_install(ctx: click.Context, **kwargs: object) -> None:
+        assert "plugin_repo" in ctx.obj
+        assert id(ctx.obj) in group_obj_ids
+        calls.append(kwargs)
+
+    monkeypatch.setattr(plugin_group, "callback", click.pass_context(fake_group))
+    monkeypatch.setattr(install_plugin, "callback", click.pass_context(fake_install))
+
+    with click.Context(click.Group("mcp"), obj=None) as ctx:
+        _install_ida_plugin(ctx)
 
     assert len(calls) == 1
     assert calls[0]["upgrade"] is True
+    assert calls[0]["plugin"] == "ida-mcp@https://github.com/HexRaysSA/ida-mcp"
