@@ -341,6 +341,13 @@ class BasePluginRepo(ABC):
         location = self.find_compatible_plugin_from_spec(plugin_spec, current_platform, current_version, host=host)
         return self._fetch_and_verify(location)
 
+    def fetch_plugin_location(self, location: PluginArchiveLocation) -> tuple[str, bytes]:
+        """Fetch the archive at a location returned by ``find_compatible_plugin_from_spec``.
+
+        Lets a caller inspect the index metadata before paying for the download.
+        """
+        return self._fetch_and_verify(location)
+
     def _fetch_and_verify(self, location: PluginArchiveLocation) -> tuple[str, bytes]:
         plugin_name = location.metadata.plugin.name
         logger.debug("plugin name: %s", plugin_name)

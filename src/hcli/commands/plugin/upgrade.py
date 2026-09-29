@@ -14,7 +14,7 @@ from hcli.lib.ida import (
     explain_failed_to_detect_ida_version,
     explain_missing_current_installation_directory,
 )
-from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
+from hcli.lib.ida.plugin import get_metadata_from_plugin_archive, parse_plugin_version
 from hcli.lib.ida.plugin.context import IDAEnvironment, InstallContext, InstallOptions
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
 from hcli.lib.ida.plugin.install import apply_upgrade, find_installed_plugin, sweep_trash
@@ -102,9 +102,18 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         else:
             plugin_repo = ctx.obj["plugin_repo"]
         try:
-            plugin_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
+            location = plugin_repo.find_compatible_plugin_from_spec(
                 bare_spec, ida_env.platform, ida_env.ida_version, host=installed.host
             )
+
+            # The latest compatible version is the one installed: nothing to do,
+            # which is success, not an error. Checked on the index metadata so
+            # no archive is downloaded.
+            if parse_plugin_version(location.metadata.plugin.version) == parse_plugin_version(installed.version):
+                console.print(f"[blue]{installed.name}[/blue] is already up to date ({installed.version})")
+                return
+
+            plugin_name, buf = plugin_repo.fetch_plugin_location(location)
         except (httpx.ConnectError, httpx.TimeoutException):
             console.print("[red]Cannot connect to plugin repository - network unavailable.[/red]")
             console.print("Please check your internet connection.")

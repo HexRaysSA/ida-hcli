@@ -15,7 +15,7 @@ from hcli.lib.ida.plugin.install import (
     sweep_trash,
 )
 from hcli.lib.ida.plugin.install import uninstall_plugin as uninstall_plugin_impl
-from hcli.lib.ida.plugin.reference import DependencyEntry
+from hcli.lib.ida.plugin.reference import DependencyEntry, parse_installed_plugin_name
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 @click.option("--yes", "-y", is_flag=True, default=False, help="Confirm all prompts automatically.")
 def uninstall_plugin(plugin: str, yes: bool) -> None:
     """Remove an installed plugin."""
+    plugin = parse_installed_plugin_name(plugin)
     dep_names: list[str] = []
     try:
         sweep_trash()

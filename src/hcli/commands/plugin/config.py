@@ -14,6 +14,7 @@ from hcli.lib.ida import get_ida_config
 from hcli.lib.ida.plugin.install import (
     get_metadata_from_plugin_directory,
 )
+from hcli.lib.ida.plugin.reference import parse_installed_plugin_name
 from hcli.lib.ida.plugin.settings import (
     del_plugin_setting,
     get_plugin_setting,
@@ -38,7 +39,7 @@ def resolve_config_plugin_name(plugin_name: str) -> str:
 def config(ctx, plugin_name: str) -> None:
     """Manage plugin configuration settings."""
     ctx.ensure_object(dict)
-    ctx.obj["config_plugin_name"] = plugin_name
+    ctx.obj["config_plugin_name"] = parse_installed_plugin_name(plugin_name)
 
 
 @config.command()

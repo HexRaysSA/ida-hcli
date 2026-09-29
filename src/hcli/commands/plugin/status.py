@@ -31,6 +31,7 @@ from hcli.lib.ida.plugin.install import (
     get_installed_plugin_records,
     get_plugins_directory,
 )
+from hcli.lib.ida.plugin.reference import parse_installed_plugin_name
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin
 from hcli.lib.util.io import get_hcli_display_command
 
@@ -198,7 +199,7 @@ def collect_status_report(
     if plugins:
         installed_records = []
         for name in plugins:
-            record = find_installed_plugin_in(all_records, name)
+            record = find_installed_plugin_in(all_records, parse_installed_plugin_name(name))
             if record is None:
                 not_found_names.append(name)
             else:
