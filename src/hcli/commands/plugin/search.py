@@ -48,7 +48,7 @@ from hcli.lib.ida.plugin.repo import (
     is_compatible_plugin_version,
 )
 
-from ._listing import get_repository_group_sort_key, render_plugin_label
+from ._listing import format_install_reference, get_repository_group_sort_key, render_plugin_label
 
 logger = logging.getLogger(__name__)
 
@@ -70,17 +70,21 @@ class PluginNameQueryResult(BaseModel):
     plugin: dict[str, Any]
     installed_version: str | None
     versions: list[VersionEntry]
+    # Which configured repository served this plugin; see KeywordMatchEntry.repo.
+    repo: str | None = None
 
 
 class PluginExactVersionQueryResult(BaseModel):
     plugin: dict[str, Any]
     download_locations: list[DownloadLocationEntry]
+    repo: str | None = None
 
 
 class PluginVersionRangeQueryResult(BaseModel):
     plugin: dict[str, Any]
     installed_version: str | None
     versions: list[VersionEntry]
+    repo: str | None = None
 
 
 class KeywordMatchEntry(BaseModel):
@@ -103,6 +107,11 @@ class KeywordQueryResult(BaseModel):
     # that served plugins it is not entitled to. Additive: empty means the
     # results are the whole picture.
     repository_notes: list[str] = Field(default_factory=list)
+
+
+def no_repo(plugin: Plugin) -> str | None:
+    """repo_of for a single repository (--repo), where naming it would be noise."""
+    return None
 
 
 class AmbiguityErrorResult(BaseModel):
@@ -259,6 +268,13 @@ def render_plugin_versions_text(entries: list[VersionEntry], installed_version: 
     console.print(table)
 
 
+def render_install_hint(name: str, repo: str | None, default_repo: str | None, version_spec: str = "") -> None:
+    """Show the exact install command, since a plugin outside the default repository needs its "repo/" prefix."""
+    reference = format_install_reference(name, repo, default_repo) + version_spec
+    console.print()
+    console.print(f"[grey69]install with:[/grey69] hcli plugin install {reference}", highlight=False)
+
+
 def get_matching_versions(plugin: Plugin, version_spec: str) -> list[str]:
     wanted_spec = semantic_version.SimpleSpec(version_spec)
     return [
@@ -281,6 +297,7 @@ def collect_plugin_name_query_result(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
+    repo_of: Callable[[Plugin], str | None] = no_repo,
 ) -> PluginNameQueryResult:
     plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
     entries, installed_version = collect_version_entries(
@@ -294,12 +311,23 @@ def collect_plugin_name_query_result(
         plugin=collect_plugin_metadata(get_latest_plugin_metadata(plugin)),
         installed_version=installed_version,
         versions=entries,
+        repo=repo_of(plugin),
     )
 
 
-def render_plugin_name_query_text(result: PluginNameQueryResult) -> None:
+def render_versions_query_text(
+    result: PluginNameQueryResult | PluginVersionRangeQueryResult,
+    title: str,
+    default_repo: str | None = None,
+) -> None:
     render_plugin_metadata_text(result.plugin)
-    render_plugin_versions_text(result.versions, result.installed_version, "available versions:")
+    render_plugin_versions_text(result.versions, result.installed_version, title)
+    if any(entry.compatible for entry in result.versions):
+        render_install_hint(result.plugin["name"], result.repo, default_repo)
+
+
+def render_plugin_name_query_text(result: PluginNameQueryResult, default_repo: str | None = None) -> None:
+    render_versions_query_text(result, "available versions:", default_repo)
 
 
 def render_ida_versions(versions: Sequence[IdaVersion]) -> str:
@@ -333,7 +361,11 @@ def collect_download_locations(locations: list[PluginArchiveLocation]) -> list[D
     ]
 
 
-def collect_plugin_exact_version_query_result(plugin: Plugin, version: str) -> PluginExactVersionQueryResult:
+def collect_plugin_exact_version_query_result(
+    plugin: Plugin,
+    version: str,
+    repo: str | None = None,
+) -> PluginExactVersionQueryResult:
     if version not in plugin.versions:
         raise KeyError(f"version {version} not found for plugin {plugin.name}")
 
@@ -342,10 +374,14 @@ def collect_plugin_exact_version_query_result(plugin: Plugin, version: str) -> P
     return PluginExactVersionQueryResult(
         plugin=collect_plugin_metadata(metadata),
         download_locations=collect_download_locations(locations),
+        repo=repo,
     )
 
 
-def render_plugin_exact_version_query_text(result: PluginExactVersionQueryResult) -> None:
+def render_plugin_exact_version_query_text(
+    result: PluginExactVersionQueryResult,
+    default_repo: str | None = None,
+) -> None:
     render_plugin_metadata_text(result.plugin)
 
     table = rich.table.Table(show_header=False, box=None)
@@ -362,6 +398,7 @@ def render_plugin_exact_version_query_text(result: PluginExactVersionQueryResult
 
     console.print("download locations:")
     console.print(table)
+    render_install_hint(result.plugin["name"], result.repo, default_repo, "==" + result.plugin["version"])
 
 
 def collect_plugin_version_range_query_result(
@@ -370,6 +407,7 @@ def collect_plugin_version_range_query_result(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
+    repo: str | None = None,
 ) -> PluginVersionRangeQueryResult:
     matching_versions = get_matching_versions(plugin, ref.version_spec)
     if not matching_versions:
@@ -386,12 +424,15 @@ def collect_plugin_version_range_query_result(
         plugin=collect_plugin_metadata(plugin.versions[matching_versions[0]][0].metadata),
         installed_version=installed_version,
         versions=entries,
+        repo=repo,
     )
 
 
-def render_plugin_version_range_query_text(result: PluginVersionRangeQueryResult) -> None:
-    render_plugin_metadata_text(result.plugin)
-    render_plugin_versions_text(result.versions, result.installed_version, "matching versions:")
+def render_plugin_version_range_query_text(
+    result: PluginVersionRangeQueryResult,
+    default_repo: str | None = None,
+) -> None:
+    render_versions_query_text(result, "matching versions:", default_repo)
 
 
 def collect_plugin_spec_query_result(
@@ -400,23 +441,35 @@ def collect_plugin_spec_query_result(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
+    repo_of: Callable[[Plugin], str | None] = no_repo,
 ) -> PluginExactVersionQueryResult | PluginVersionRangeQueryResult:
     plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
+    repo = repo_of(plugin)
 
     if ref.version_spec.startswith("=="):
         version = ref.version_spec[2:]
         if not version:
             raise ValueError(f"invalid plugin version: {ref.version_spec!r}")
-        return collect_plugin_exact_version_query_result(plugin, version)
+        return collect_plugin_exact_version_query_result(plugin, version, repo=repo)
 
-    return collect_plugin_version_range_query_result(plugin, ref, current_version, current_platform, installed_records)
+    return collect_plugin_version_range_query_result(
+        plugin,
+        ref,
+        current_version,
+        current_platform,
+        installed_records,
+        repo=repo,
+    )
 
 
-def render_plugin_spec_query_text(result: PluginExactVersionQueryResult | PluginVersionRangeQueryResult) -> None:
+def render_plugin_spec_query_text(
+    result: PluginExactVersionQueryResult | PluginVersionRangeQueryResult,
+    default_repo: str | None = None,
+) -> None:
     if isinstance(result, PluginExactVersionQueryResult):
-        render_plugin_exact_version_query_text(result)
+        render_plugin_exact_version_query_text(result, default_repo=default_repo)
     else:
-        render_plugin_version_range_query_text(result)
+        render_plugin_version_range_query_text(result, default_repo=default_repo)
 
 
 def collect_keyword_matches(
@@ -425,19 +478,16 @@ def collect_keyword_matches(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
-    repo_of: Callable[[Plugin], str | None] | None = None,
+    repo_of: Callable[[Plugin], str | None] = no_repo,
 ) -> list[KeywordMatchEntry]:
     matches: list[KeywordMatchEntry] = []
 
-    def get_repo(plugin: Plugin) -> str | None:
-        return repo_of(plugin) if repo_of is not None else None
-
-    for plugin in sorted(plugins, key=lambda p: (get_repository_group_sort_key(get_repo(p)), p.name.lower())):
+    for plugin in sorted(plugins, key=lambda p: (get_repository_group_sort_key(repo_of(p)), p.name.lower())):
         if not does_plugin_match_query(query or "", plugin):
             continue
 
         latest_metadata = get_latest_plugin_metadata(plugin)
-        repo = get_repo(plugin)
+        repo = repo_of(plugin)
 
         if not is_compatible_plugin(plugin, current_platform, current_version):
             matches.append(
@@ -483,7 +533,7 @@ def collect_keyword_query_result(
     current_version: str,
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
-    repo_of: Callable[[Plugin], str | None] | None = None,
+    repo_of: Callable[[Plugin], str | None] = no_repo,
     repository_notes: list[str] | None = None,
 ) -> KeywordQueryResult:
     return KeywordQueryResult(
@@ -594,7 +644,7 @@ def search_plugins(ctx, query: str | None = None, json_output: bool = False) -> 
         # the default, and reports the ones it could not reach rather than
         # failing on them.
         plugins: list[Plugin] = plugin_repo.get_plugins()
-        repo_of = aggregate.repo_of if aggregate is not None else None
+        repo_of = aggregate.repo_of if aggregate is not None else no_repo
         repository_notes = aggregate.notes() if aggregate is not None else []
         installed_records = get_installed_plugin_records()
 
@@ -624,11 +674,12 @@ def search_plugins(ctx, query: str | None = None, json_output: bool = False) -> 
                     current_version,
                     current_platform,
                     installed_records,
+                    repo_of=repo_of,
                 )
                 if json_output:
                     print_json(_dump_result(spec_result))
                 else:
-                    render_plugin_spec_query_text(spec_result)
+                    render_plugin_spec_query_text(spec_result, default_repo=default_repo)
             else:
                 name_result = collect_plugin_name_query_result(
                     plugins,
@@ -636,11 +687,12 @@ def search_plugins(ctx, query: str | None = None, json_output: bool = False) -> 
                     current_version,
                     current_platform,
                     installed_records,
+                    repo_of=repo_of,
                 )
                 if json_output:
                     print_json(_dump_result(name_result))
                 else:
-                    render_plugin_name_query_text(name_result)
+                    render_plugin_name_query_text(name_result, default_repo=default_repo)
 
         except AmbiguousPluginReferenceError as e:
             # get_plugin_by_name does not know the user's version spec; attach

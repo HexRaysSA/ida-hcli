@@ -46,6 +46,14 @@ _GITHUB_DIRECT_INSTALL_RE = re.compile(
 _REPO_PREFIX_RE = re.compile(rf"^([{PLUGIN_REPOSITORY_NAME_CHARS}]+)/(.+)$")
 
 
+def _split_repo_prefix(value: str) -> tuple[str | None, str]:
+    """Split a leading "repo/" off ``value``, returning ``(repo, rest)``."""
+    prefix_match = _REPO_PREFIX_RE.match(value)
+    if prefix_match:
+        return prefix_match.group(1), prefix_match.group(2)
+    return None, value
+
+
 @dataclass(frozen=True)
 class PluginReference:
     """A parsed plugin reference.
@@ -192,10 +200,7 @@ def parse_plugin_reference(value: str) -> PluginReference:
     # pattern requires every character before the first "/" to be [a-z0-9-],
     # which "https://..." (colon) and "name@https://..." (at-sign, colon) both
     # fail, so a scheme can never parse as a repository name.
-    repo: str | None = None
-    prefix_match = _REPO_PREFIX_RE.match(value)
-    if prefix_match:
-        repo, value = prefix_match.group(1), prefix_match.group(2)
+    repo, value = _split_repo_prefix(value)
 
     host: str | None = None
     remaining = value
@@ -219,6 +224,16 @@ def parse_plugin_reference(value: str) -> PluginReference:
         raise ValueError(f"plugin reference name must not contain '/': {name!r}")
 
     return PluginReference(name=name, version_spec=version_spec, host=host, repo=repo)
+
+
+def parse_installed_plugin_name(value: str) -> str:
+    """Return the installed plugin name that ``value`` refers to.
+
+    An installed plugin is identified by its name alone. A "repo/" prefix only
+    says which repository hcli found the plugin in, so it is accepted and
+    dropped, letting a user reuse the reference they installed with.
+    """
+    return _split_repo_prefix(value)[1]
 
 
 def parse_dependency_spec(spec: str) -> PluginReference:
