@@ -204,7 +204,9 @@ HCLI does not uninstall Python dependencies when plugins are uninstalled. Orphan
 
 ## Bundle creation behavior
 
-`hcli plugin bundle create` accepts explicit plugin versions and local plugin ZIP paths as positional arguments. Repository plugin references must include an exact version, for example `oplog==0.1.3`. Bare latest resolution is intentionally not part of the first version. `--path` selects the output archive path.
+`hcli plugin bundle create` accepts repository plugin references, local plugin directories, and local plugin ZIP paths as positional arguments. `--path` selects the output archive path.
+
+A repository plugin reference can be a bare name (`oplog`), an exact pin (`oplog==0.1.3`), or a range (`oplog>=0.1`, `oplog~=0.1`), with an optional `@host` suffix. Each target cell (one platform and one Python version) is a separate resolution. For each cell, HCLI selects the newest version that matches the reference and supports the cell's platform. Thus a bare name gives the newest version that installs on each target, and one bundle can contain different versions of a plugin for different platforms. The archive filenames then get a platform suffix, for example `oplog-0.2.0-linux-x86_64.zip`. To get the same version on all platforms, use an exact pin. HCLI writes each resolution of a reference that is not an exact pin to stderr, for example `resolved oplog: 0.2.0 (linux-x86_64), 0.1.3 (windows-x86_64)`, so you can see which versions went into the bundle. A platform name in this output stands for all cells of that platform; a target ID such as `linux-x86_64-cp312` names one cell.
 
 Targeting uses `--platform` and `--python`, both required and repeatable. Each accepts `current` (auto-detect this machine), `all` (all supported values), or a specific value. `--platform` accepts the canonical IDA platform name (e.g. `linux-x86_64`) or short aliases (`linux`, `windows`, `macos-arm64`, `macos-intel`). `--python` accepts a `major.minor` version string (e.g. `3.12`). HCLI builds the cross product of all resolved platforms and Python versions. Duplicate targets are deduplicated.
 
@@ -212,9 +214,9 @@ The supported Python versions for `--python all` are maintained as a hardcoded c
 
 A legacy `--target` flag (e.g. `--target linux-x86_64-cp312`) is accepted for scripting but hidden from help. It cannot be combined with `--platform` or `--python`.
 
-Bundle creation resolves all selected plugin archives, reads their `ida-plugin.json` metadata, collects all `pythonDependencies` (including PEP 723 inline dependencies and component dependencies), and materializes a flat wheelhouse per target tuple. A single online Linux builder can create wheelhouses for all target platforms when all dependencies publish compatible wheels.
+Bundle creation resolves all selected plugin archives, reads their `ida-plugin.json` metadata, collects the `pythonDependencies` (including PEP 723 inline dependencies and component dependencies) of the plugins resolved for each target cell, and materializes a flat wheelhouse per target cell from that cell's list only. A plugin version that a cell does not use does not add wheels to that cell's wheelhouse. A single online Linux builder can create wheelhouses for all target platforms when all dependencies publish compatible wheels.
 
-When a bundled plugin declares `dependencies` (plugin-to-plugin), those dependent plugins are fetched from the repository and included in the bundle recursively, along with their own Python dependencies. Required dependencies that cannot be resolved cause bundle creation to fail. Optional dependencies that cannot be resolved are skipped with a warning. Dependency resolution is bounded to 10 levels of transitive depth to guard against cycles or runaway chains.
+When a bundled plugin declares `dependencies` (plugin-to-plugin), those dependent plugins are fetched from the repository and included in the bundle recursively, along with their own Python dependencies. Dependencies resolve for each target cell, from the plugin versions selected for that cell, with the same rules as positional references: an unpinned dependency resolves to the newest version that supports the cell's platform. A dependency that only one cell's plugin versions declare is included for that cell only. HCLI writes each included dependency and its versions to stderr. A required dependency that cannot be resolved for a cell causes bundle creation to fail, because the plugin that declares it cannot install on that cell. The error names the dependent plugin and the platform. Optional dependencies that cannot be resolved are skipped with a warning. Dependency resolution is bounded to 10 levels of transitive depth to guard against cycles or runaway chains.
 
 The preferred wheelhouse materialization path is one `pip download` invocation per target. For cross-target downloads HCLI must pass all compatibility options together:
 
@@ -265,7 +267,7 @@ The `@host` is parsed from the spec before resolution. Unambiguous plugins do no
 
 ## Known limitations observed during all-plugin bundle testing
 
-Bundle creation pools all `pythonDependencies` from every included plugin into a single `pip download` invocation per target. A single unresolvable dependency (nonexistent version, missing wheel for the target) fails the entire wheelhouse for that target. There is no per-plugin isolation.
+Bundle creation pools the `pythonDependencies` of every plugin resolved for a target cell into a single `pip download` invocation for that cell. A single unresolvable dependency (nonexistent version, missing wheel for the target) fails the entire wheelhouse for that target. There is no per-plugin isolation.
 
 Plugins observed with broken or unavailable dependencies at the time of testing (2026-05-04):
 
