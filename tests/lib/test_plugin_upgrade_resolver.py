@@ -216,3 +216,48 @@ def test_upgrade_fetches_from_configured_bundle_repository(
 
     assert result.exit_code == 0, _get_output(result)
     assert _get_installed() == {"a": "2.0.0", "b": "1.0.0"}
+
+
+def test_upgrade_with_a_range_that_the_newest_installed_version_matches_is_up_to_date(
+    virtual_ida_environment, tmp_path
+):
+    archives = {"a2.zip": _make_plugin_zip("a", "2.0.0"), "a1.zip": _make_plugin_zip("a", "1.0.0")}
+    _install_from(tmp_path, "installed", archives, "a")
+    repo_dir = _make_named_repo_dir(tmp_path, "repo", archives)
+
+    result = _invoke("--repo", str(repo_dir), "upgrade", "a>=1.0")
+
+    assert result.exit_code == 0, _get_output(result)
+    assert "a is already up to date (2.0.0)" in _get_output(result)
+
+
+def test_upgrade_to_a_pin_that_cannot_install_fails(windows_ida_environment, tmp_path):
+    _install_from(tmp_path, "installed", {"a1.zip": _make_plugin_zip("a", "1.0.0")}, "a")
+    repo_dir = _make_named_repo_dir(
+        tmp_path,
+        "repo",
+        {
+            "a3.zip": _make_plugin_zip("a", "3.0.0", platforms=["linux-x86_64"]),
+            "a1.zip": _make_plugin_zip("a", "1.0.0"),
+        },
+    )
+
+    result = _invoke("--repo", str(repo_dir), "upgrade", "a==3.0.0")
+
+    assert result.exit_code != 0
+    output = _get_output(result)
+    assert "a 3.0.0 does not support windows-x86_64" in output
+    assert "already up to date" not in output
+    assert _get_installed() == {"a": "1.0.0"}
+
+
+def test_upgrade_fails_when_no_repository_lists_the_installed_plugin(virtual_ida_environment, tmp_path):
+    _install_from(tmp_path, "installed", {"a1.zip": _make_plugin_zip("a", "1.0.0")}, "a")
+    repo_dir = _make_named_repo_dir(tmp_path, "repo", {"b1.zip": _make_plugin_zip("b", "1.0.0")})
+
+    result = _invoke("--repo", str(repo_dir), "upgrade", "a")
+
+    assert result.exit_code != 0
+    output = _get_output(result)
+    assert "plugin not found: a" in output
+    assert "already up to date" not in output

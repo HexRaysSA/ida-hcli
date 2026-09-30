@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from dataclasses import dataclass, field
 
 from hcli.lib.ida.plugin import IDAMetadataDescriptor, get_metadata_from_plugin_archive
@@ -121,6 +122,8 @@ def install_dependencies(
     required = {
         requirement.name.lower() for requirement in _get_reachable_requirements(metadata, plan, required_only=True)
     }
+    # Settings are keyed by the name that a plugin declares, which can differ in case from the repository name.
+    settings_by_key = {key.lower(): value for key, value in (settings or {}).items()}
     failed: set[str] = set()
     for name in plan.order:
         location = plan.selected[name]
@@ -134,7 +137,7 @@ def install_dependencies(
             if blocked:
                 raise RuntimeError(f"{name} was not installed because its required dependency {blocked[0]} failed")
             _install_planned_dependency(
-                name, location, plugin_repo, ctx, upgrade=is_upgrade, settings=(settings or {}).get(name)
+                name, location, plugin_repo, ctx, upgrade=is_upgrade, settings=settings_by_key.get(name.lower())
             )
         except Exception as e:
             logger.debug("failed to install dependency %s: %s", name, e, exc_info=True)
@@ -159,9 +162,9 @@ def _get_reachable_requirements(
     selected = {name.lower(): location for name, location in plan.selected.items()}
     reachable: list[Requirement] = []
     visited: set[str] = set()
-    queue = list(get_requirements(metadata))
+    queue = deque(get_requirements(metadata))
     while queue:
-        requirement = queue.pop(0)
+        requirement = queue.popleft()
         if required_only and not requirement.required:
             continue
         reachable.append(requirement)

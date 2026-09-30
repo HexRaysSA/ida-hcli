@@ -132,3 +132,13 @@ def test_scoped_repo_merges_one_plugin_listed_by_two_configured_repositories(tmp
         ("1.0.0", (tmp_path / "other" / "b-1.0.0.zip").read_bytes()),
         ("2.0.0", (tmp_path / "other" / "b-2.0.0.zip").read_bytes()),
     }
+
+
+def test_scoped_repo_keeps_an_archive_that_two_plugins_share(tmp_path):
+    a = _make_location(tmp_path, "a", "1.0.0")
+    b = a.model_copy(update={"metadata": _make_location(tmp_path, "b", "1.0.0").metadata})
+    repo = ScopedPluginRepo(RecordingPluginRepo(a, b))
+
+    plugins = {plugin.name: plugin.versions["1.0.0"] for plugin in repo.get_plugins()}
+
+    assert plugins == {"a": [a], "b": [b]}

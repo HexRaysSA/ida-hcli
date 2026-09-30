@@ -46,8 +46,9 @@ class ScopedPluginRepo(BasePluginRepo):
                     merged_locations = target.versions.setdefault(version, [])
                     for location in locations:
                         location_key = (location.url, location.sha256)
-                        if location_key not in self._owners:
-                            self._owners[location_key] = owner
+                        self._owners.setdefault(location_key, owner)
+                        # An archive with several root plugins is listed under each of them.
+                        if all((known.url, known.sha256) != location_key for known in merged_locations):
                             merged_locations.append(location)
             self._plugins = list(merged.values())
         return self._plugins

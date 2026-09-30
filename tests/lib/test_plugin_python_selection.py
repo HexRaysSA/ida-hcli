@@ -113,38 +113,6 @@ def test_is_compatible_location_probes_python_only_when_required():
     assert is_compatible_location(location, "linux-x86_64", python_version=_raise_if_called)
 
 
-def test_find_plugin_from_spec_skips_versions_excluded_by_requires_python():
-    repo = _make_repo(_make_location("a", "1.9.0"), _make_location("a", "2.0.0", requires_python=">=3.12"))
-
-    assert repo.find_plugin_from_spec("a", python_version="3.10.12").metadata.plugin.version == "1.9.0"
-    assert repo.find_plugin_from_spec("a", python_version="3.12.0").metadata.plugin.version == "2.0.0"
-    assert repo.find_plugin_from_spec("a").metadata.plugin.version == "2.0.0"
-
-
-def test_find_compatible_plugin_from_spec_calls_python_version_lazily():
-    repo = _make_repo(_make_location("a", "1.9.0"), _make_location("a", "2.0.0", requires_python=">=3.12"))
-
-    calls: list[str] = []
-
-    def get_python_version() -> str:
-        calls.append("probe")
-        return "3.10.12"
-
-    location = repo.find_compatible_plugin_from_spec("a", "linux-x86_64", "9.1", python_version=get_python_version)
-    assert location.metadata.plugin.version == "1.9.0"
-    assert calls == ["probe"]
-
-    location = repo.find_compatible_plugin_from_spec("a==1.9.0", "linux-x86_64", "9.1", python_version=_raise_if_called)
-    assert location.metadata.plugin.version == "1.9.0"
-
-
-def test_find_plugin_from_spec_fails_when_no_version_supports_python():
-    repo = _make_repo(_make_location("a", "2.0.0", requires_python=">=3.12"))
-
-    with pytest.raises(KeyError):
-        repo.find_plugin_from_spec("a", python_version="3.10.12")
-
-
 @pytest.fixture
 def requires_python_repo_dir(tmp_path: Path):
     """Filesystem repository with a 1.9.0 (no requiresPython) and a 2.0.0 whose requiresPython is set per test."""

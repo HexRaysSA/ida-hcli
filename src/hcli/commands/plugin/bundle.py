@@ -368,6 +368,7 @@ def _get_local_metadata(buf: bytes) -> IDAMetadataDescriptor:
     Raises:
         ValueError: when the archive does not contain a valid plugin.
     """
+    # The index drops an invalid archive without a reason, so validate first to report the cause.
     for path, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
         validate_metadata_in_plugin_archive(buf, path, metadata)
 
@@ -423,8 +424,8 @@ def _get_cell_closures(
         resolution.root_names[spec] = name
 
     for target in pip_targets:
-        for _, buf in local_roots.values():
-            _validate_local_root_python(buf, target)
+        for metadata in fixed.values():
+            _validate_local_root_python(metadata, target)
 
         cell = Cell(target.ida_platform, python_version=target.python_version, label=target.id)
         with rich.status.Status(f"resolving plugins for {target.id}", console=stderr_console):
@@ -457,17 +458,16 @@ def _group_skipped_by_target(
     return grouped
 
 
-def _validate_local_root_python(buf: bytes, target: PipTarget) -> None:
-    """Check that a local plugin archive's requiresPython allows the cell's Python version.
+def _validate_local_root_python(metadata: IDAMetadataDescriptor, target: PipTarget) -> None:
+    """Check that a local plugin's requiresPython allows the cell's Python version.
 
     Raises:
         RuntimeError: when requiresPython excludes the cell.
     """
-    _, metadata = find_root_manifest_in_archive(buf)
-    requirement = metadata.plugin.requires_python
-    if requirement is not None and not is_python_version_compatible(target.python_version, requirement):
+    requires_python = metadata.plugin.requires_python
+    if requires_python is not None and not is_python_version_compatible(target.python_version, requires_python):
         raise RuntimeError(
-            f"{metadata.plugin.name} {metadata.plugin.version} requires Python {requirement}, "
+            f"{metadata.plugin.name} {metadata.plugin.version} requires Python {requires_python}, "
             f"which excludes target {target.id}"
         )
 

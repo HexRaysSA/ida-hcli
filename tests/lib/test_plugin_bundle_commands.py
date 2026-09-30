@@ -23,6 +23,7 @@ from hcli.commands.plugin.bundle import (
 from hcli.lib.ida.plugin.bundle import PipTarget
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 from hcli.lib.ida.plugin.repo.fs import FileSystemPluginRepo
+from hcli.lib.ida.plugin.resolve import Cell, Requirement, resolve
 from hcli.lib.ida.python import PipOptions
 
 TESTS_DIR = Path(__file__).parent.parent
@@ -620,10 +621,10 @@ def test_bundle_create_selects_version_per_python_version(tmp_path, requires_pyt
     repo = PluginBundleRepo(out)
     try:
         assert repo.target_ids == ["linux-x86_64-cp310", "linux-x86_64-cp312"]
-        location = repo.find_plugin_from_spec("plugin-a", "linux-x86_64", python_version="3.10")
-        assert location.metadata.plugin.version == "1.9.0"
-        location = repo.find_plugin_from_spec("plugin-a", "linux-x86_64", python_version="3.12")
-        assert location.metadata.plugin.version == "2.0.0"
+        cp310 = resolve([Requirement.from_spec("plugin-a")], repo, Cell("linux-x86_64", python_version="3.10"))
+        assert cp310.selected["plugin-a"].metadata.plugin.version == "1.9.0"
+        cp312 = resolve([Requirement.from_spec("plugin-a")], repo, Cell("linux-x86_64", python_version="3.12"))
+        assert cp312.selected["plugin-a"].metadata.plugin.version == "2.0.0"
     finally:
         repo.close()
 

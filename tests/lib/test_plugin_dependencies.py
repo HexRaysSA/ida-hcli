@@ -1004,3 +1004,22 @@ def _parse_metadata(zip_data: bytes, name: str) -> tuple[Path, IDAMetadataDescri
     from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
 
     return get_metadata_from_plugin_archive(zip_data, name)
+
+
+def test_install_dependencies_applies_settings_given_under_the_declared_name(virtual_ida_environment):
+    from hcli.lib.ida.plugin.settings import get_plugin_setting
+
+    ctx = make_test_install_context(check_environment=False)
+    dep = _make_plugin_metadata("dep-a", "1.0.0")
+    dep["plugin"]["settings"] = [{"key": "api_key", "type": "string", "required": True, "name": "API Key"}]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("dep-a/ida-plugin.json", json.dumps(dep))
+        zf.writestr("dep-a/dep-a.py", "# plugin")
+    metadata = IDAMetadataDescriptor.model_validate(_make_plugin_metadata("my-pack", "1.0.0", deps=["Dep-A"]))
+
+    with _make_fs_repo({"dep-a.zip": buf.getvalue()}) as repo:
+        result = install_dependencies(metadata, repo, ctx, settings={"Dep-A": {"api_key": "secret"}})
+
+    assert result.installed == ["dep-a"]
+    assert get_plugin_setting("dep-a", "api_key") == "secret"

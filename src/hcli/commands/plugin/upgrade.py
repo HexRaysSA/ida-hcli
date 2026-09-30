@@ -114,13 +114,18 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         requirement = Requirement(ref.name, ref.version_spec, installed.host)
         try:
             newer_repo = NewerVersionsRepo(source_repo, installed.name, installed.host, installed.version)
-            # Nothing newer in the index is success unless the spec asks for an older version. No Python probe.
+            newer_repo.get_plugin_by_name(installed.name, host=installed.host)
+            # Nothing newer to install is success, not an error, when the installed
+            # version matches the spec. Checked on the index metadata, so no archive
+            # is downloaded and IDA's Python is not probed.
+            is_installed_match = requirement.matches(installed.version)
             if not newer_repo.has_newer_versions(requirement.version_spec):
-                older_version = newer_repo.get_older_version(requirement.version_spec) if ref.version_spec else None
+                if is_installed_match:
+                    console.print(f"[blue]{installed.name}[/blue] is already up to date ({installed.version})")
+                    return
+                older_version = newer_repo.get_older_version(requirement.version_spec)
                 if older_version is not None:
                     raise PluginVersionDowngradeError(installed.name, installed.version, older_version)
-                console.print(f"[blue]{installed.name}[/blue] is already up to date ({installed.version})")
-                return
 
             try:
                 resolution = resolve(
@@ -132,6 +137,8 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             except (AmbiguousRequirementError, StepLimitError):
                 raise
             except ResolutionError as e:
+                if not is_installed_match:
+                    raise
                 logger.debug("no viable upgrade: %s", e)
                 console.print(f"[blue]{installed.name}[/blue] is already up to date ({installed.version})")
                 console.print(f"  newer versions cannot be installed here: {'; '.join(e.reasons)}")

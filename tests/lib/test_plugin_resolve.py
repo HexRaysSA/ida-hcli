@@ -695,20 +695,19 @@ def test_first_compatible_location_wins_within_a_version():
         Cell(LINUX),
         Cell(WINDOWS),
         Cell(LINUX, ida_version="9.1"),
-        Cell(LINUX, python_version="3.10"),
-        Cell(WINDOWS, ida_version="9.2", python_version="3.13"),
+        Cell(WINDOWS, ida_version="9.2"),
     ],
 )
 @pytest.mark.parametrize("spec", ["a", "a==1.0.0", "a>=1.5", "a<=1.9", "b", f"b@{OTHER_HOST}", "c"])
 def test_resolution_without_dependencies_matches_find_plugin_from_spec(cell: Cell, spec: str):
     repo = ListPluginRepo(
-        loc("a", "2.0.0", platforms=[LINUX], requires_python=">=3.12"),
+        loc("a", "2.0.0", platforms=[LINUX]),
         loc("a", "1.5.0", ida_versions=["9.2"]),
         loc("a", "1.0.0", platforms=[WINDOWS]),
         loc("a", "1.0.0", platforms=[LINUX]),
         loc("b", "3.0.0", host=OTHER_HOST, platforms=[WINDOWS]),
         loc("b", "2.0.0", host=OTHER_HOST),
-        loc("c", "1.0.0", requires_python="<3.11", ida_versions=["9.1"]),
+        loc("c", "1.0.0", ida_versions=["9.1"]),
     )
     requirement = req(spec)
 
@@ -718,7 +717,6 @@ def test_resolution_without_dependencies_matches_find_plugin_from_spec(cell: Cel
             cell.platform,
             cell.ida_version,
             host=requirement.host,
-            python_version=cell.python_version,
         )
     except KeyError:
         with pytest.raises(ResolutionError):
@@ -812,19 +810,6 @@ def test_conflicting_ranges_on_installed_plugin_name_every_constraint():
     assert "b 2.0.0 is installed" in message
     assert "b>=1.0" in message
     assert "b<=1.2" in message
-
-
-def test_pin_below_installed_version_does_not_block_a_later_upgrade():
-    repo = ListPluginRepo(
-        loc("r1", "1.0.0", deps=["b==1.0.0"]),
-        loc("r2", "1.0.0", deps=["b==3.0.0"]),
-        loc("b", "3.0.0"),
-        loc("b", "1.0.0"),
-    )
-
-    resolution = resolve([req("r1"), req("r2")], repo, Cell(LINUX), installed={"b": "2.0.0"})
-
-    assert versions(resolution) == {"r1": "1.0.0", "r2": "1.0.0", "b": "3.0.0"}
 
 
 @pytest.mark.parametrize("roots", [["a", "r"], ["r", "a"]])
@@ -989,3 +974,28 @@ def test_requirement_with_another_host_conflicts_with_a_selected_plugin():
 
     assert excinfo.value.chain == ("c 1.0.0", f"b@{OTHER_HOST}")
     assert f"b 1.0.0 is already selected for a 1.0.0 -> b@{HOST}" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("roots", [["r1", "r2"], ["r2", "r1"]])
+def test_pin_below_installed_version_does_not_block_an_upgrade_in_any_root_order(roots: list[str]):
+    repo = ListPluginRepo(
+        loc("r1", "1.0.0", deps=["b==1.0.0"]),
+        loc("r2", "1.0.0", deps=["b==3.0.0"]),
+        loc("b", "3.0.0"),
+        loc("b", "1.0.0"),
+    )
+
+    resolution = resolve([req(root) for root in roots], repo, Cell(LINUX), installed={"b": "2.0.0"})
+
+    assert versions(resolution) == {"r1": "1.0.0", "r2": "1.0.0", "b": "3.0.0"}
+    assert len(resolution.warnings) == 1
+
+
+def test_skipped_optional_root_on_an_installed_plugin_is_not_a_root():
+    repo = ListPluginRepo(loc("x", "3.0.0", platforms=[LINUX]))
+    root = req("x>=3.0", required=False)
+
+    resolution = resolve([root], repo, Cell(WINDOWS), installed={"x": "2.0.0"})
+
+    assert resolution.roots == {}
+    assert [item.requirement for item in resolution.skipped] == [root]

@@ -449,18 +449,25 @@ class _Resolver:
         return _Choice(name=name, version=version, host=None, source="installed", chain=chain)
 
     def satisfies(self, choice: _Choice, requirement: Requirement) -> tuple[bool, str | None]:
-        """Whether a chosen plugin satisfies a requirement, and a warning when it does so only by keeping a newer version."""
+        """Whether a chosen plugin satisfies a requirement, and a warning when it does so only by keeping a newer version.
+
+        A pin below the installed version is satisfied, with a warning, by any version at or above the installed
+        one, so that the order of the requirements does not decide whether an upgrade of the installed plugin is
+        possible.
+        """
         if requirement.host and choice.host and not _is_same_host(requirement.host, choice.host):
             return False, None
         if requirement.matches(choice.version):
             return True, None
         pin = requirement.pin
+        installed = self.installed.get(requirement.name.lower())
         if (
-            choice.source == "installed"
+            installed is not None
             and pin is not None
-            and parse_plugin_version(pin) < parse_plugin_version(choice.version)
+            and parse_plugin_version(pin) < parse_plugin_version(installed[1]) <= parse_plugin_version(choice.version)
         ):
-            return True, f"{choice.label} is installed, which is newer than {requirement}; not downgrading"
+            name, version = installed
+            return True, f"{name} {version} is installed, which is newer than {requirement}; not downgrading"
         return False, None
 
     def get_reasons(self, requirement: Requirement, visited: set[tuple[_PluginId, str]]) -> list[str]:
@@ -565,7 +572,6 @@ class _Resolver:
             existing = chosen.get(key)
             if existing is None and self.installed.get(key) is not None:
                 existing = self.get_installed_choice(requirement, item.chain)
-                chosen[key] = existing
 
             constraints: tuple[_Pending, ...] = (item,)
             if existing is not None:
@@ -573,6 +579,7 @@ class _Resolver:
                 if ok:
                     if warning:
                         warnings_list.append(warning)
+                        chosen[key] = existing
                     else:
                         chosen[key] = replace(existing, constraints=(*existing.constraints, item))
                     continue

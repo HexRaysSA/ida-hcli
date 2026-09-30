@@ -281,14 +281,12 @@ class BasePluginRepo(ABC):
         current_platform: str | None = None,
         current_version: str | None = None,
         host: str | None = None,
-        python_version: PythonVersionSource = None,
     ) -> PluginArchiveLocation:
         """Find a plugin location, filtering by whichever parameters are provided.
 
-        Matches on version spec always. Additionally filters by platform, IDA
-        version, and Python version (see ``is_compatible_location``) when those
-        parameters are not None. Returns the first matching location from the
-        highest matching version.
+        Matches on version spec always. Additionally filters by platform and/or
+        IDA version when those parameters are not None. Returns the first
+        matching location from the highest matching version.
 
         Callers that know the target environment should prefer
         ``find_compatible_plugin_from_spec`` which requires both platform and
@@ -308,14 +306,13 @@ class BasePluginRepo(ABC):
 
             logger.debug("found matching version: %s", version)
             for i, location in enumerate(plugin.versions[version]):
-                if not is_compatible_location(location, current_platform, current_version, python_version):
+                if not is_compatible_location(location, current_platform, current_version):
                     metadata = location.metadata.plugin
                     logger.debug(
-                        "skipping location %d: platforms: %s, IDA versions: %s, requiresPython: %s",
+                        "skipping location %d: platforms: %s, IDA versions: %s",
                         i,
                         metadata.platforms,
                         metadata.ida_versions,
-                        metadata.requires_python,
                     )
                     continue
 
@@ -329,7 +326,6 @@ class BasePluginRepo(ABC):
         current_platform: str,
         current_version: str,
         host: str | None = None,
-        python_version: PythonVersionSource = None,
     ) -> PluginArchiveLocation:
         """Find a plugin location matching spec, platform, and IDA version.
 
@@ -338,9 +334,7 @@ class BasePluginRepo(ABC):
         where some parameters are unavailable, use ``find_plugin_from_spec``
         directly.
         """
-        return self.find_plugin_from_spec(
-            plugin_spec, current_platform, current_version, host=host, python_version=python_version
-        )
+        return self.find_plugin_from_spec(plugin_spec, current_platform, current_version, host=host)
 
     def fetch_plugin_from_spec(
         self,
@@ -348,7 +342,6 @@ class BasePluginRepo(ABC):
         current_platform: str | None = None,
         current_version: str | None = None,
         host: str | None = None,
-        python_version: PythonVersionSource = None,
     ) -> tuple[str, bytes]:
         """Fetch a plugin, filtering by whichever parameters are provided.
 
@@ -356,9 +349,7 @@ class BasePluginRepo(ABC):
         ``fetch_compatible_plugin_from_spec`` which requires both platform and
         IDA version, preventing accidental omission.
         """
-        location = self.find_plugin_from_spec(
-            plugin_spec, current_platform, current_version, host=host, python_version=python_version
-        )
+        location = self.find_plugin_from_spec(plugin_spec, current_platform, current_version, host=host)
         return self._fetch_and_verify(location)
 
     def fetch_compatible_plugin_from_spec(
@@ -367,7 +358,6 @@ class BasePluginRepo(ABC):
         current_platform: str,
         current_version: str,
         host: str | None = None,
-        python_version: PythonVersionSource = None,
     ) -> tuple[str, bytes]:
         """Fetch a plugin matching spec, platform, and IDA version.
 
@@ -376,9 +366,7 @@ class BasePluginRepo(ABC):
         where some parameters are unavailable, use ``fetch_plugin_from_spec``
         directly.
         """
-        location = self.find_compatible_plugin_from_spec(
-            plugin_spec, current_platform, current_version, host=host, python_version=python_version
-        )
+        location = self.find_compatible_plugin_from_spec(plugin_spec, current_platform, current_version, host=host)
         return self._fetch_and_verify(location)
 
     def fetch_plugin_location(self, location: PluginArchiveLocation) -> tuple[str, bytes]:
