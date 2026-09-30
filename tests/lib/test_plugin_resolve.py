@@ -7,6 +7,7 @@ import pytest
 from hcli.lib.ida.plugin import IDAMetadataDescriptor
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveLocation
 from hcli.lib.ida.plugin.resolve import (
+    AmbiguousRequirementError,
     Cell,
     Requirement,
     ResolutionError,
@@ -310,7 +311,8 @@ def test_cycle_of_required_dependencies_resolves():
     resolution = resolve([req("a")], repo, Cell(LINUX))
 
     assert versions(resolution) == {"a": "1.0.0", "b": "1.0.0"}
-    assert set(resolution.order) == {"a", "b"}
+    assert resolution.order == ["b", "a"]
+    assert resolve([req("b")], repo, Cell(LINUX)).order == ["a", "b"]
 
 
 def test_cycle_that_cannot_install_on_the_cell_is_removed():
@@ -676,3 +678,187 @@ def test_cell_label():
     assert str(Cell(LINUX, python_version="3.12")) == f"{LINUX} Python 3.12"
     assert str(Cell(LINUX, ida_version="9.2", python_version=lambda: "3.12")) == f"{LINUX} IDA 9.2"
     assert str(Cell(LINUX, python_version="3.12", label="linux-x86_64-cp312")) == "linux-x86_64-cp312"
+
+
+def test_optional_dependencies_do_not_multiply_steps_before_a_required_conflict():
+    repo = ListPluginRepo(
+        loc("a", "1.0.0", deps=[{"plugin": f"o{i}", "required": False} for i in range(12)]),
+        *(loc(f"o{i}", "1.0.0") for i in range(12)),
+        loc("r1", "1.0.0", deps=["q==1.0.0"]),
+        loc("r2", "1.0.0", deps=["q==2.0.0"]),
+        loc("q", "2.0.0"),
+        loc("q", "1.0.0"),
+    )
+
+    with pytest.raises(ResolutionError) as excinfo:
+        resolve([req("a"), req("r1"), req("r2")], repo, Cell(LINUX))
+
+    assert not isinstance(excinfo.value, StepLimitError)
+    assert excinfo.value.chain == ("r2 1.0.0", "q==2.0.0")
+    assert "q 1.0.0 is already selected for r1 1.0.0 -> q==1.0.0" in str(excinfo.value)
+
+
+def test_optional_dependency_whose_subtree_conflicts_is_rolled_back():
+    repo = ListPluginRepo(
+        loc("a", "1.0.0", deps=[{"plugin": "x", "required": False}]),
+        loc("x", "1.0.0", deps=["z", "y==2.0.0"]),
+        loc("z", "1.0.0"),
+        loc("r", "1.0.0", deps=["y==1.0.0"]),
+        loc("y", "2.0.0"),
+        loc("y", "1.0.0"),
+    )
+
+    resolution = resolve([req("a"), req("r")], repo, Cell(LINUX))
+
+    assert versions(resolution) == {"a": "1.0.0", "r": "1.0.0", "y": "1.0.0"}
+    assert resolution.order == ["a", "y", "r"]
+    assert resolution.warnings == []
+    assert len(resolution.skipped) == 1
+    skipped = resolution.skipped[0]
+    assert skipped.chain == ("a 1.0.0", "x")
+    assert "y 1.0.0 is already selected for r 1.0.0 -> y==1.0.0" in skipped.reason
+
+
+def test_conflict_with_installed_plugin_names_every_constraint():
+    repo = ListPluginRepo(
+        loc("a", "1.0.0", deps=["b==1.0.0"]),
+        loc("c", "1.0.0", deps=["b==2.0.0"]),
+        loc("b", "2.0.0"),
+        loc("b", "1.0.0"),
+    )
+    cell = Cell(LINUX, label="linux-cell")
+
+    with pytest.raises(ResolutionError) as excinfo:
+        resolve([req("a"), req("c")], repo, cell, installed={"b": "1.0.0"})
+
+    message = str(excinfo.value)
+    assert excinfo.value.chain == ("c 1.0.0", "b==2.0.0")
+    assert "linux-cell" in message
+    assert "b 1.0.0 is installed" in message
+    assert "a 1.0.0 -> b==1.0.0" in message
+    assert "c 1.0.0 -> b==2.0.0" in message
+
+
+def test_conflicting_ranges_on_installed_plugin_name_every_constraint():
+    repo = ListPluginRepo(loc("b", "2.0.0"), loc("b", "0.9.0"))
+
+    with pytest.raises(ResolutionError) as excinfo:
+        resolve([req("b>=1.0"), req("b<=1.2")], repo, Cell(LINUX), installed={"b": "2.0.0"})
+
+    message = str(excinfo.value)
+    assert "b 2.0.0 is installed" in message
+    assert "b>=1.0" in message
+    assert "b<=1.2" in message
+
+
+def test_pin_below_installed_version_does_not_block_a_later_upgrade():
+    repo = ListPluginRepo(
+        loc("r1", "1.0.0", deps=["b==1.0.0"]),
+        loc("r2", "1.0.0", deps=["b==3.0.0"]),
+        loc("b", "3.0.0"),
+        loc("b", "1.0.0"),
+    )
+
+    resolution = resolve([req("r1"), req("r2")], repo, Cell(LINUX), installed={"b": "2.0.0"})
+
+    assert versions(resolution) == {"r1": "1.0.0", "r2": "1.0.0", "b": "3.0.0"}
+
+
+@pytest.mark.parametrize("roots", [["a", "r"], ["r", "a"]])
+def test_version_that_needs_an_ambiguous_plugin_is_not_viable_in_any_root_order(roots: list[str]):
+    repo = ListPluginRepo(
+        loc("a", "2.0.0", deps=["x"]),
+        loc("a", "1.0.0"),
+        loc("r", "1.0.0", deps=["a==1.0.0"]),
+        loc("x", "1.0.0"),
+        loc("x", "1.0.0", host=OTHER_HOST),
+    )
+
+    resolution = resolve([req(root) for root in roots], repo, Cell(LINUX))
+
+    assert versions(resolution) == {"a": "1.0.0", "r": "1.0.0"}
+
+
+def test_root_whose_versions_all_need_an_ambiguous_plugin_is_an_ambiguity_error():
+    repo = ListPluginRepo(
+        loc("a", "1.0.0", deps=["x"]),
+        loc("x", "1.0.0"),
+        loc("x", "1.0.0", host=OTHER_HOST),
+    )
+
+    with pytest.raises(AmbiguousRequirementError) as excinfo:
+        resolve([req("a")], repo, Cell(LINUX))
+
+    message = str(excinfo.value)
+    assert excinfo.value.chain == ("a",)
+    assert excinfo.value.candidates == [("x", HOST), ("x", OTHER_HOST)]
+    assert LINUX in message
+    assert "a 1.0.0 needs x" in message
+    assert f"x@{HOST}" in message
+    assert f"x@{OTHER_HOST}" in message
+
+
+def test_incompatible_version_is_explained_by_the_location_for_the_platform():
+    repo = ListPluginRepo(
+        loc("a", "1.0.0", platforms=[LINUX]),
+        loc("a", "1.0.0", platforms=[WINDOWS], requires_python=">=3.12"),
+    )
+
+    with pytest.raises(ResolutionError) as excinfo:
+        resolve([req("a")], repo, Cell(WINDOWS, python_version="3.10"))
+
+    message = str(excinfo.value)
+    assert "a 1.0.0 requires Python >=3.12" in message
+    assert "does not support" not in message
+
+
+def test_dependency_chain_deeper_than_the_recursion_limit_gives_a_resolution_error():
+    count = 1500
+    repo = ListPluginRepo(
+        *(loc(f"p{i}", "1.0.0", deps=[f"p{i + 1}"]) for i in range(count)),
+        loc(f"p{count}", "1.0.0"),
+    )
+
+    with pytest.raises(ResolutionError) as excinfo:
+        resolve([req("p0")], repo, Cell(LINUX))
+
+    assert "too many" in str(excinfo.value)
+    assert LINUX in str(excinfo.value)
+
+
+def test_skipped_optional_requirement_is_reported_once():
+    repo = ListPluginRepo(
+        loc("a", "1.0.0", deps=[{"plugin": "x", "required": False}]),
+        loc("b", "1.0.0", deps=[{"plugin": "x", "required": False}]),
+    )
+
+    resolution = resolve([req("a"), req("b")], repo, Cell(LINUX))
+
+    assert [s.chain for s in resolution.skipped] == [("a 1.0.0", "x")]
+
+
+def test_kept_newer_version_is_warned_once():
+    repo = ListPluginRepo(
+        loc("a", "1.0.0", deps=["b==1.0.0"]),
+        loc("c", "1.0.0", deps=["b==1.0.0"]),
+        loc("b", "1.0.0"),
+    )
+
+    resolution = resolve([req("a"), req("c")], repo, Cell(LINUX), installed={"b": "2.0.0"})
+
+    assert len(resolution.warnings) == 1
+
+
+def test_requirement_with_another_host_conflicts_with_a_selected_plugin():
+    repo = ListPluginRepo(
+        loc("a", "1.0.0", deps=[f"b@{HOST}"]),
+        loc("c", "1.0.0", deps=[f"b@{OTHER_HOST}"]),
+        loc("b", "1.0.0"),
+        loc("b", "1.0.0", host=OTHER_HOST),
+    )
+
+    with pytest.raises(ResolutionError) as excinfo:
+        resolve([req("a"), req("c")], repo, Cell(LINUX))
+
+    assert excinfo.value.chain == ("c 1.0.0", f"b@{OTHER_HOST}")
+    assert f"b 1.0.0 is already selected for a 1.0.0 -> b@{HOST}" in str(excinfo.value)

@@ -181,6 +181,10 @@ class ResolutionError(Exception):
         super().__init__(f"cannot resolve {' -> '.join(self.chain)} for {cell}: {'; '.join(self.reasons)}")
 
 
+def _render_ambiguity(name: str, candidates: Sequence[tuple[str, str]]) -> str:
+    return f"{name} is ambiguous, use one of: {', '.join(f'{name}@{host}' for _, host in candidates)}"
+
+
 class AmbiguousRequirementError(ResolutionError):
     """A requirement without a host matches plugins from more than one host.
 
@@ -188,10 +192,16 @@ class AmbiguousRequirementError(ResolutionError):
         candidates: `(name, host)` of each matching plugin.
     """
 
-    def __init__(self, cell: Cell, chain: Sequence[str], name: str, candidates: Sequence[tuple[str, str]]) -> None:
+    def __init__(
+        self,
+        cell: Cell,
+        chain: Sequence[str],
+        name: str,
+        candidates: Sequence[tuple[str, str]],
+        reasons: Sequence[str] | None = None,
+    ) -> None:
         self.candidates = list(candidates)
-        qualified = ", ".join(f"{name}@{host}" for _, host in self.candidates)
-        super().__init__(cell, chain, [f"{name} is ambiguous, use one of: {qualified}"])
+        super().__init__(cell, chain, reasons or [_render_ambiguity(name, self.candidates)])
 
 
 class StepLimitError(ResolutionError):
@@ -199,6 +209,17 @@ class StepLimitError(ResolutionError):
 
 
 _Source = Literal["repo", "fixed", "installed"]
+_PluginId = tuple[str, str]
+
+
+@dataclass(frozen=True)
+class _Pending:
+    requirement: Requirement
+    parents: tuple[str, ...]
+
+    @property
+    def chain(self) -> tuple[str, ...]:
+        return (*self.parents, str(self.requirement))
 
 
 @dataclass(frozen=True)
@@ -208,7 +229,7 @@ class _Choice:
     host: str | None
     source: _Source
     chain: tuple[str, ...]
-    constraints: tuple[Requirement, ...] = ()
+    constraints: tuple[_Pending, ...] = ()
     location: PluginArchiveLocation | None = None
     metadata: IDAMetadataDescriptor | None = None
 
@@ -225,16 +246,6 @@ class _Choice:
 
 
 @dataclass(frozen=True)
-class _Pending:
-    requirement: Requirement
-    parents: tuple[str, ...]
-
-    @property
-    def chain(self) -> tuple[str, ...]:
-        return (*self.parents, str(self.requirement))
-
-
-@dataclass(frozen=True)
 class _Solution:
     chosen: dict[str, _Choice]
     skipped: tuple[SkippedRequirement, ...]
@@ -243,11 +254,23 @@ class _Solution:
 
 @dataclass(frozen=True)
 class _Failure:
+    """A failed required requirement.
+
+    Attributes:
+        ambiguity: the first ambiguous name, with its candidates, found while explaining the failure.
+    """
+
     chain: tuple[str, ...]
     reasons: tuple[str, ...]
+    ambiguity: tuple[str, tuple[tuple[str, str], ...]] | None = None
 
 
-_PluginId = tuple[str, str]
+@dataclass
+class _Explanation:
+    """State shared while explaining one failure."""
+
+    visited: set[tuple[_PluginId, str]] = field(default_factory=set)
+    ambiguity: tuple[str, tuple[tuple[str, str], ...]] | None = None
 
 
 def _get_plugin_id(plugin: Plugin) -> _PluginId:
@@ -332,23 +355,14 @@ class _Resolver:
                             changed = True
                             break
 
-    def is_satisfied_by_installed(self, requirement: Requirement) -> bool:
-        installed = self.installed.get(requirement.name.lower())
-        if installed is None:
-            return False
-        return self.satisfies(self.get_installed_choice(requirement, ()), requirement)[0]
-
     def has_candidate(self, requirement: Requirement) -> bool:
         key = requirement.name.lower()
         if key in self.fixed:
             return self.satisfies(self.get_fixed_choice(key), requirement)[0]
-        if self.is_satisfied_by_installed(requirement):
+        if key in self.installed and self.satisfies(self.get_installed_choice(requirement, ()), requirement)[0]:
             return True
         plugin = self.lookup(requirement)
-        if isinstance(plugin, AmbiguousPluginReferenceError):
-            # ambiguity is reported as an error when selection reaches the requirement
-            return True
-        if plugin is None:
+        if not isinstance(plugin, Plugin):
             return False
         return any(requirement.matches(version) for version in self.viable[_get_plugin_id(plugin)])
 
@@ -382,13 +396,16 @@ class _Resolver:
             return True, f"{choice.label} is installed, which is newer than {requirement}; not downgrading"
         return False, None
 
-    def explain(self, requirement: Requirement, visited: set[tuple[_PluginId, str]]) -> list[str]:
-        """Explain why a requirement has no viable candidate."""
+    def explain(self, requirement: Requirement, explanation: _Explanation) -> list[str]:
+        """Explain why the versions that match a requirement are not viable."""
         key = requirement.name.lower()
         if key in self.fixed:
             return [self.get_fixed_choice(key).describe()]
         plugin = self.lookup(requirement)
-        if not isinstance(plugin, Plugin):
+        if isinstance(plugin, AmbiguousPluginReferenceError):
+            explanation.ambiguity = explanation.ambiguity or (requirement.name, tuple(plugin.candidates))
+            return [_render_ambiguity(requirement.name, plugin.candidates)]
+        if plugin is None:
             return [f"{requirement.name} is not in the repository"]
 
         plugin_id = _get_plugin_id(plugin)
@@ -403,13 +420,27 @@ class _Resolver:
         reasons: list[str] = []
         for version in matching:
             if version not in self.compatible.get(plugin_id, {}):
-                reasons.append(f"{plugin.name} {version} {self.explain_incompatible(plugin.versions[version][0])}")
+                reasons.append(f"{plugin.name} {version} {self.explain_incompatible(plugin.versions[version])}")
             elif (plugin_id, version) in self.removed:
-                reasons.append(self.explain_removal(plugin, version, visited))
+                reasons.append(self.explain_removal(plugin, version, explanation))
         return reasons
 
-    def explain_incompatible(self, location: PluginArchiveLocation) -> str:
-        """Explain why a location cannot install on the cell."""
+    def explain_conflict(self, existing: _Choice | None, constraints: tuple[_Pending, ...], name: str) -> list[str]:
+        """Explain why no viable version satisfies every constraint on one plugin."""
+        reasons = [existing.describe()] if existing is not None else []
+        chains = ", ".join(" -> ".join(constraint.chain) for constraint in constraints)
+        reasons.append(f"no viable {name} version satisfies all of: {chains}")
+        return reasons
+
+    def explain_incompatible(self, locations: list[PluginArchiveLocation]) -> str:
+        """Explain why the locations of one version cannot install on the cell, from the location closest to it."""
+        location = max(
+            locations,
+            key=lambda location: (
+                is_compatible_location(location, self.cell.platform),
+                is_compatible_location(location, self.cell.platform, self.cell.ida_version),
+            ),
+        )
         plugin = location.metadata.plugin
         if not is_compatible_location(location, self.cell.platform):
             return f"does not support {self.cell.platform}"
@@ -418,17 +449,16 @@ class _Resolver:
         python_version = self.python_version() if callable(self.python_version) else self.python_version
         return f"requires Python {plugin.requires_python}, and {self.cell} has Python {python_version}"
 
-    def explain_removal(self, plugin: Plugin, version: str, visited: set[tuple[_PluginId, str]]) -> str:
+    def explain_removal(self, plugin: Plugin, version: str, explanation: _Explanation) -> str:
         node = (_get_plugin_id(plugin), version)
         requirement = self.removed[node]
         prefix = f"{plugin.name} {version} needs {requirement}"
-        if node in visited:
+        if node in explanation.visited:
             return f"{prefix} (see above)"
-        visited.add(node)
-        reasons = self.explain(requirement, visited)
-        if reasons == [f"{requirement.name} is not in the repository"]:
+        explanation.visited.add(node)
+        if requirement.name.lower() not in self.fixed and self.lookup(requirement) is None:
             return f"{prefix}, which is not in the repository"
-        return f"{prefix}: {'; '.join(reasons)}"
+        return f"{prefix}: {'; '.join(self.explain(requirement, explanation))}"
 
     def step(self, pending: _Pending) -> None:
         self.steps += 1
@@ -445,6 +475,8 @@ class _Resolver:
         """Satisfy the pending requirements in order, trying candidates newest first.
 
         Each candidate choice recurses, so the recursion depth is bounded by the number of plugin names.
+        Required requirements stay ahead of optional ones in `pending` (see `_schedule`), so the
+        failure of a required requirement never makes the search retry an optional one.
 
         Raises:
             AmbiguousRequirementError: when a requirement without a host matches plugins from several hosts.
@@ -464,20 +496,21 @@ class _Resolver:
                 existing = self.get_installed_choice(requirement, item.chain)
                 chosen[key] = existing
 
-            constraints: tuple[Requirement, ...] = (requirement,)
+            constraints: tuple[_Pending, ...] = (item,)
             if existing is not None:
                 ok, warning = self.satisfies(existing, requirement)
                 if ok:
                     if warning:
                         warnings_list.append(warning)
-                    chosen[key] = replace(existing, constraints=(*existing.constraints, requirement))
+                    else:
+                        chosen[key] = replace(existing, constraints=(*existing.constraints, item))
                     continue
                 if existing.source != "installed":
                     failure = _fail(item, skipped_list, [existing.describe()])
                     if failure is not None:
                         return failure
                     continue
-                constraints = (*existing.constraints, requirement)
+                constraints = (*existing.constraints, item)
 
             plugin = self.lookup(requirement)
             if isinstance(plugin, AmbiguousPluginReferenceError):
@@ -488,13 +521,18 @@ class _Resolver:
                     return failure
                 continue
 
+            viable = self.viable[_get_plugin_id(plugin)]
             candidates = [
                 (version, location)
-                for version, location in self.viable[_get_plugin_id(plugin)].items()
-                if all(constraint.matches(version) for constraint in constraints)
+                for version, location in viable.items()
+                if all(constraint.requirement.matches(version) for constraint in constraints)
             ]
             if not candidates:
-                failure = _fail(item, skipped_list, self.explain(requirement, set()))
+                explanation = _Explanation()
+                reasons = self.explain(requirement, explanation)
+                if any(requirement.matches(version) for version in viable):
+                    reasons.extend(self.explain_conflict(existing, constraints, plugin.name))
+                failure = _fail(item, skipped_list, reasons, explanation.ambiguity)
                 if failure is not None:
                     return failure
                 continue
@@ -511,9 +549,9 @@ class _Resolver:
                     location=location,
                 )
                 parents = (*item.parents, choice.label)
-                dependencies = tuple(_Pending(dep, parents) for dep in get_requirements(location.metadata))
+                dependencies = [_Pending(dep, parents) for dep in get_requirements(location.metadata)]
                 result = self.solve(
-                    dependencies + pending[index + 1 :],
+                    _schedule(dependencies, pending[index + 1 :]),
                     {**chosen, key: choice},
                     tuple(skipped_list),
                     tuple(warnings_list),
@@ -530,10 +568,22 @@ class _Resolver:
         return _Solution(chosen, tuple(skipped_list), tuple(warnings_list))
 
 
-def _fail(item: _Pending, skipped: list[SkippedRequirement], reasons: Sequence[str]) -> _Failure | None:
+def _schedule(dependencies: Sequence[_Pending], rest: Sequence[_Pending]) -> tuple[_Pending, ...]:
+    """Queue new dependencies ahead of the rest, with every required requirement ahead of every optional one."""
+    required = [item for item in (*dependencies, *rest) if item.requirement.required]
+    optional = [item for item in (*rest, *dependencies) if not item.requirement.required]
+    return (*required, *optional)
+
+
+def _fail(
+    item: _Pending,
+    skipped: list[SkippedRequirement],
+    reasons: Sequence[str],
+    ambiguity: tuple[str, tuple[tuple[str, str], ...]] | None = None,
+) -> _Failure | None:
     """Fail a required requirement, or record an optional one as skipped and return None."""
     if item.requirement.required:
-        return _Failure(item.chain, tuple(reasons))
+        return _Failure(item.chain, tuple(reasons), ambiguity)
     skipped.append(SkippedRequirement(item.requirement, item.chain, "; ".join(reasons)))
     return None
 
@@ -584,10 +634,17 @@ def resolve(
             plugin are not resolved again.
         max_steps: number of requirement visits after which the search gives up.
 
+    The caller checks that each fixed plugin is compatible with the cell.
+
+    A version that requires a name that is ambiguous is not viable. Ambiguity is an error when a
+    root, a requirement of a fixed plugin, or an optional requirement of a selected version is
+    ambiguous, or when it is why a required requirement has no viable candidate.
+
     Raises:
         ResolutionError: when a required requirement cannot be satisfied.
         AmbiguousRequirementError: when a requirement without a host matches plugins from several hosts.
-        StepLimitError: when the search takes more than `max_steps` steps.
+        StepLimitError: when the search takes more than `max_steps` steps, or needs more selections
+            than the recursion limit allows.
         PythonNotFoundError: when `cell.python_version` is a function that cannot detect IDA's Python.
     """
     resolver = _Resolver(repo.get_plugins(), cell, fixed or {}, installed or {}, max_steps)
@@ -611,8 +668,17 @@ def resolve(
     resolver.compute_viability([item.requirement for item in pending])
 
     chosen = {key: resolver.get_fixed_choice(key) for key in resolver.fixed}
-    result = resolver.solve(tuple(pending), chosen, (), ())
+    starts = [*fixed_first, *(root.name.lower() for root in roots)]
+    try:
+        result = resolver.solve(_schedule([], pending), chosen, (), ())
+        order = _get_order(result.chosen, starts) if isinstance(result, _Solution) else []
+    except RecursionError:
+        chain = [", ".join(str(root) for root in roots)]
+        raise StepLimitError(cell, chain, ["too many plugins to select within the recursion limit"]) from None
     if isinstance(result, _Failure):
+        if result.ambiguity is not None:
+            name, candidates = result.ambiguity
+            raise AmbiguousRequirementError(cell, result.chain, name, candidates, result.reasons)
         raise ResolutionError(cell, result.chain, result.reasons)
 
     selected = {
@@ -620,10 +686,13 @@ def resolve(
         for choice in result.chosen.values()
         if choice.source == "repo" and choice.location is not None
     }
+    skipped: dict[tuple[str, str, str | None], SkippedRequirement] = {}
+    for item in result.skipped:
+        skipped.setdefault((item.requirement.name.lower(), item.requirement.version_spec, item.requirement.host), item)
     return Resolution(
         selected=selected,
-        order=_get_order(result.chosen, [*fixed_first, *(root.name.lower() for root in roots)]),
+        order=order,
         roots={root: result.chosen[root.name.lower()].name for root in roots if root.name.lower() in result.chosen},
-        skipped=list(result.skipped),
-        warnings=list(result.warnings),
+        skipped=list(skipped.values()),
+        warnings=list(dict.fromkeys(result.warnings)),
     )
