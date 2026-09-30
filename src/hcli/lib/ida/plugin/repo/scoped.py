@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping
 
 from hcli.lib.ida.plugin.reference import normalize_plugin_host
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveLocation
 from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
-
-logger = logging.getLogger(__name__)
 
 
 class ScopedPluginRepo(BasePluginRepo):

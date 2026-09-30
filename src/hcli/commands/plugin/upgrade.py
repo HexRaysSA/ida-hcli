@@ -115,8 +115,8 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         try:
             newer_repo = NewerVersionsRepo(source_repo, installed.name, installed.host, installed.version)
             # Nothing newer in the index is success unless the spec asks for an older version. No Python probe.
-            if not newer_repo.has_newer_versions(requirement):
-                older_version = newer_repo.get_older_version(requirement) if ref.version_spec else None
+            if not newer_repo.has_newer_versions(requirement.version_spec):
+                older_version = newer_repo.get_older_version(requirement.version_spec) if ref.version_spec else None
                 if older_version is not None:
                     raise PluginVersionDowngradeError(installed.name, installed.version, older_version)
                 console.print(f"[blue]{installed.name}[/blue] is already up to date ({installed.version})")

@@ -24,6 +24,7 @@ from hcli.lib.ida.plugin.reference import PluginReference
 from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo, is_plugin_bundle_zip
 from hcli.lib.ida.python import PipOptions, merge_bundle_pip_options
+from hcli.lib.venv import PythonVersion
 
 from .bundle import bundle
 from .config import config
@@ -289,7 +290,7 @@ def resolve_bundle_install_context(
         yield install_ctx
         return
 
-    current_python_version = ".".join(install_ctx.env.python_version.split(".")[:2])
+    current_python_version = PythonVersion.parse(install_ctx.env.python_version).major_minor
     with bundle_dependency_source(effective_repo, install_ctx.env.platform, current_python_version) as bundle_opts:
         if bundle_opts is None:
             available = ", ".join(effective_repo.target_ids) or "none"

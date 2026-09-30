@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import semantic_version
+
 from hcli.lib.ida.plugin import parse_plugin_version
 from hcli.lib.ida.plugin.reference import normalize_plugin_host
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveLocation
-from hcli.lib.ida.plugin.resolve import Requirement
 
 
 class NewerVersionsRepo(BasePluginRepo):
@@ -27,22 +28,25 @@ class NewerVersionsRepo(BasePluginRepo):
             self._plugins = [self._filter(plugin) for plugin in self._inner.get_plugins()]
         return self._plugins
 
-    def has_newer_versions(self, requirement: Requirement) -> bool:
+    def has_newer_versions(self, version_spec: str) -> bool:
+        """Check whether a version newer than the installed version matches `version_spec`, such as `>=1.0`, or empty for any version."""
+        spec = semantic_version.SimpleSpec(version_spec or ">=0")
         return any(
-            requirement.matches(version)
+            parse_plugin_version(version) in spec
             for plugin in self.get_plugins()
             if self._is_upgraded_plugin(plugin)
             for version in plugin.versions
         )
 
-    def get_older_version(self, requirement: Requirement) -> str | None:
-        """Get the newest version that matches the requirement and is older than the installed version."""
+    def get_older_version(self, version_spec: str) -> str | None:
+        """Get the newest version that matches `version_spec` and is older than the installed version."""
+        spec = semantic_version.SimpleSpec(version_spec or ">=0")
         versions = [
             version
             for plugin in self._inner.get_plugins()
             if self._is_upgraded_plugin(plugin)
             for version in plugin.versions
-            if requirement.matches(version) and parse_plugin_version(version) < self._installed_version
+            if parse_plugin_version(version) in spec and parse_plugin_version(version) < self._installed_version
         ]
         return max(versions, key=parse_plugin_version, default=None)
 

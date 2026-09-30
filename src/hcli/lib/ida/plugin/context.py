@@ -6,7 +6,7 @@ import functools
 from dataclasses import dataclass, field
 
 from hcli.lib.ida import find_current_ida_platform, find_current_ida_version
-from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, detect_current_python_version
+from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, PythonNotFoundError, detect_current_python_version
 
 
 @dataclass(frozen=True)
@@ -24,18 +24,29 @@ class IDAEnvironment:
             ida_version=find_current_ida_version(),
         )
 
-    @functools.cached_property
+    @property
     def python_version(self) -> str:
         """Full version (major.minor.micro) of IDA's Python, probed on first access and cached.
 
         Probing runs idat and the Python interpreter as subprocesses, which is
         slow and not needed by most installs, so it's deferred until a plugin
-        actually asks for it (e.g. via `requiresPython`).
+        actually asks for it (e.g. via `requiresPython`). A failed probe is
+        cached too, and later accesses raise the same error.
 
         Raises:
             PythonNotFoundError: if IDA's Python can't be found or probed.
         """
-        return str(detect_current_python_version())
+        result = self._probe_python_version
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    @functools.cached_property
+    def _probe_python_version(self) -> str | PythonNotFoundError:
+        try:
+            return str(detect_current_python_version())
+        except PythonNotFoundError as e:
+            return e
 
 
 @dataclass(frozen=True)
