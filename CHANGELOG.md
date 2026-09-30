@@ -24,6 +24,8 @@
 - Spell suggested follow-up commands the way hcli was launched (e.g. `uvx ida-hcli ...` under uvx, or the full path when a different `hcli` is first on PATH) instead of a bare `hcli`, which could be missing or an older install (#360)
 - Register the `ida://` protocol handler against the running hcli rather than whichever `hcli` comes first on PATH, and via `uvx ida-hcli` when running from uvx's ephemeral cache
 - Under uvx, point update notices and `hcli update` at `uvx ida-hcli@latest` instead of `hcli update` / `uv tool upgrade`
+- Ask only for plugin settings without a value in `ida-config.json` during `hcli plugin install`, and store answers that equal the default so a reinstall does not ask for them again
+- Store answers that equal the default in `hcli plugin config <plugin> setup`, so a setting can be set back to its default
 
 ### Changed
 - Move the hcli extension commands from `hcli extension create` and `hcli extension list` to `hcli hcli-extensions create` and `hcli hcli-extensions list`

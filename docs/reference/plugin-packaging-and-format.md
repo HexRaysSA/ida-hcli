@@ -125,9 +125,9 @@ So, you can use `hcli plugin lint /path/to/plugin[.zip]` to check for problems a
 ### Shared Settings
 
 HCLI is aware of settings that plugins declare in `ida-plugin.json` and prompts users for their value
-during installation. A setting that already has a value in `ida-config.json` is not prompted again when the
-plugin is reinstalled; use `hcli plugin config <plugin> setup` to change it. The settings are written into
-`ida-config.json` and can be queried at plugin runtime
+during installation. The answers, including answers equal to the default, are written into `ida-config.json`.
+A setting that already has a value there is not prompted again when the plugin is reinstalled or upgraded;
+use `hcli plugin config <plugin> setup` to change it. The settings can be queried at plugin runtime
 using the [ida-settings](https://pypi.org/project/ida-settings/) (v3) Python package:
 
 ```py
