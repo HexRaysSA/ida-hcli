@@ -868,37 +868,46 @@ def test_bundle_create_includes_dependency_of_a_local_component(tmp_path):
     assert _get_bundled_plugin_members(out) == ["plugins/b-1.0.0.zip", "plugins/suite-1.0.0.zip"]
 
 
-def test_bundle_create_selects_named_repository_for_prefixed_spec(tmp_path):
+def _invoke_create_with_repos(tmp_path: Path, repos: dict[str, dict[str, bytes]], targets: list[str], specs: list[str]):
+    """Run bundle create against configured repositories; the first one is the default."""
     from hcli.lib.ida import PluginRepository
     from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
 
-    main_dir = tmp_path / "main"
-    main_dir.mkdir()
-    (main_dir / "a2.zip").write_bytes(_make_plugin_zip("a", "2.0.0"))
-    other_dir = tmp_path / "other"
-    other_dir.mkdir()
-    (other_dir / "a1.zip").write_bytes(_make_plugin_zip("a", "1.0.0"))
-
-    aggregate = AggregatePluginRepo(
-        {
-            "main": PluginRepository(name="main", url=main_dir.as_uri(), reserved=False),
-            "other": PluginRepository(name="other", url=other_dir.as_uri(), reserved=False),
-        }
-    )
+    configs: dict[str, PluginRepository] = {}
+    for repo_name, archives in repos.items():
+        repo_dir = tmp_path / repo_name
+        repo_dir.mkdir()
+        for filename, data in archives.items():
+            (repo_dir / filename).write_bytes(data)
+        configs[repo_name] = PluginRepository(name=repo_name, url=repo_dir.as_uri(), reserved=False)
+    aggregate = AggregatePluginRepo(configs)
     obj = {
         "pip_options": PipOptions(),
         "plugin_repo": aggregate,
         "plugin_repos": aggregate,
-        "default_plugin_repo": "main",
+        "default_plugin_repo": next(iter(repos)),
     }
 
-    out = tmp_path / "output.zip"
-    runner = CliRunner(mix_stderr=False)
-    argv = ["create", "--path", str(out), "--target", "linux-x86_64-cp312", "other/a"]
-    result = runner.invoke(bundle, argv, obj=obj)
+    argv = ["create", "--path", str(tmp_path / "output.zip")]
+    for target in targets:
+        argv.extend(["--target", target])
+    argv.extend(specs)
+    return CliRunner(mix_stderr=False).invoke(bundle, argv, obj=obj)
+
+
+def test_bundle_create_selects_named_repository_for_prefixed_spec(tmp_path):
+    result = _invoke_create_with_repos(
+        tmp_path,
+        {
+            "main": {"a2.zip": _make_plugin_zip("a", "2.0.0")},
+            "other": {"a1.zip": _make_plugin_zip("a", "1.0.0")},
+        },
+        ["linux-x86_64-cp312"],
+        ["other/a"],
+    )
 
     assert result.exit_code == 0, result.output + result.stderr
-    assert _get_bundled_plugin_members(out) == ["plugins/a-1.0.0.zip"]
+    assert _get_bundled_plugin_members(tmp_path / "output.zip") == ["plugins/a-1.0.0.zip"]
     assert "resolved other/a: 1.0.0" in _get_stderr(result)
 
 
@@ -908,4 +917,140 @@ def test_bundle_create_refuses_repository_prefix_with_repo_option(tmp_path, vers
 
     assert result.exit_code != 0
     assert "Cannot use the repository prefix 'other/' with --repo" in result.output
+    assert not out.exists()
+
+
+def test_bundle_create_fails_for_one_plugin_with_two_repository_prefixes(tmp_path):
+    result = _invoke_create_with_repos(
+        tmp_path,
+        {
+            "main": {"a3.zip": _make_plugin_zip("a", "3.0.0")},
+            "other": {"a1.zip": _make_plugin_zip("a", "1.0.0")},
+        },
+        ["linux-x86_64-cp312"],
+        ["main/a", "other/a"],
+    )
+
+    assert result.exit_code != 0
+    output = " ".join(result.output.split())
+    assert "'main/a' and 'other/a' select plugin a from different repositories" in output
+    assert not (tmp_path / "output.zip").exists()
+
+
+def test_bundle_create_resolves_dependencies_of_prefixed_plugin(tmp_path):
+    result = _invoke_create_with_repos(
+        tmp_path,
+        {
+            "main": {"c1.zip": _make_plugin_zip("c", "1.0.0")},
+            "other": {"a1.zip": _make_plugin_zip("a", "1.0.0", deps=["c"])},
+        },
+        ["linux-x86_64-cp312"],
+        ["other/a"],
+    )
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(tmp_path / "output.zip") == ["plugins/a-1.0.0.zip", "plugins/c-1.0.0.zip"]
+
+
+def test_bundle_create_takes_dependency_with_prefixed_name_from_named_repository(tmp_path):
+    result = _invoke_create_with_repos(
+        tmp_path,
+        {
+            "main": {"a2.zip": _make_plugin_zip("a", "2.0.0"), "b1.zip": _make_plugin_zip("b", "1.0.0", deps=["a"])},
+            "other": {"a1.zip": _make_plugin_zip("a", "1.0.0")},
+        },
+        ["linux-x86_64-cp312"],
+        ["other/a", "b"],
+    )
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(tmp_path / "output.zip") == ["plugins/a-1.0.0.zip", "plugins/b-1.0.0.zip"]
+
+
+def test_bundle_create_error_for_prefixed_spec_names_the_repository(tmp_path):
+    result = _invoke_create_with_repos(
+        tmp_path,
+        {
+            "main": {"x1.zip": _make_plugin_zip("x", "1.0.0")},
+            "other": {"a1.zip": _make_plugin_zip("a", "1.0.0")},
+        },
+        ["linux-x86_64-cp312"],
+        ["other/x"],
+    )
+
+    assert result.exit_code != 0
+    message = str(result.exception)
+    assert message.startswith("cannot resolve x for linux-x86_64-cp312: ")
+    assert message.endswith("(x comes only from repository other)")
+
+
+def test_bundle_create_treats_one_plugin_in_two_repositories_as_one_plugin(tmp_path):
+    result = _invoke_create_with_repos(
+        tmp_path,
+        {
+            "main": {"a1.zip": _make_plugin_zip("a", "1.0.0", deps=["b"]), "b1.zip": _make_plugin_zip("b", "1.0.0")},
+            "other": {"b1.zip": _make_plugin_zip("b", "1.0.0"), "b2.zip": _make_plugin_zip("b", "2.0.0")},
+        },
+        ["linux-x86_64-cp312"],
+        ["a"],
+    )
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(tmp_path / "output.zip") == ["plugins/a-1.0.0.zip", "plugins/b-2.0.0.zip"]
+
+
+def test_bundle_create_lists_each_ambiguous_candidate_once(tmp_path):
+    other_host = "https://github.com/other/other"
+    result = _invoke_create_with_repos(
+        tmp_path,
+        {
+            "main": {"a1.zip": _make_plugin_zip("a", "1.0.0", deps=["b"]), "b1.zip": _make_plugin_zip("b", "1.0.0")},
+            "other": {
+                "b1.zip": _make_plugin_zip("b", "1.0.0"),
+                "b-other.zip": _make_plugin_zip("b", "1.0.0", host=other_host),
+            },
+        },
+        ["linux-x86_64-cp312"],
+        ["a"],
+    )
+
+    assert result.exit_code != 0
+    message = str(result.exception)
+    assert message.endswith(f"b is ambiguous, use one of: b@{HOST}, b@{other_host}")
+
+
+def test_bundle_create_uses_local_root_for_dependency_of_repository_root(tmp_path):
+    local_b = tmp_path / "b-local.zip"
+    local_b.write_bytes(_make_plugin_zip("b", "1.0.0"))
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {
+            "a1.zip": _make_plugin_zip("a", "1.0.0", deps=["b"]),
+            "b2.zip": _make_plugin_zip("b", "2.0.0"),
+        },
+    )
+
+    out = tmp_path / "output.zip"
+    result = _invoke_create(repo_dir, out, ["linux-x86_64-cp312"], [str(local_b), "a"])
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(out) == ["plugins/a-1.0.0.zip", "plugins/b-1.0.0.zip"]
+    with zipfile.ZipFile(out) as zf:
+        assert zf.read("plugins/b-1.0.0.zip") == local_b.read_bytes()
+
+
+def test_bundle_create_names_the_cause_of_an_invalid_local_archive(tmp_path):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("noep/ida-plugin.json", json.dumps(_make_plugin_metadata("noep", "1.0.0")))
+    local = tmp_path / "noep.zip"
+    local.write_bytes(buf.getvalue())
+
+    out = tmp_path / "output.zip"
+    runner = CliRunner(mix_stderr=False)
+    argv = ["create", "--path", str(out), "--target", "linux-x86_64-cp312", str(local)]
+    result = runner.invoke(bundle, argv, obj={"pip_options": PipOptions()})
+
+    assert result.exit_code != 0
+    assert "Entry point file not found in archive: 'noep.py'" in str(result.exception)
     assert not out.exists()

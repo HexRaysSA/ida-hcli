@@ -23,6 +23,7 @@ from hcli.lib.ida.plugin import (
     get_python_dependencies_from_plugin_archive,
     get_version_from_plugin_archive,
     is_python_version_compatible,
+    validate_metadata_in_plugin_archive,
 )
 from hcli.lib.ida.plugin.bundle import (
     ALL_PLATFORMS,
@@ -32,7 +33,7 @@ from hcli.lib.ida.plugin.bundle import (
     to_manifest_target,
 )
 from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
-from hcli.lib.ida.plugin.reference import parse_plugin_reference
+from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveIndex, PluginArchiveLocation
 from hcli.lib.ida.plugin.repo.bundle import (
     PluginBundleRepo,
@@ -321,6 +322,7 @@ class _BundleSourceRepo(BasePluginRepo):
     """The plugins that bundle create selects from, fetched once across target cells.
 
     The plugins named by a `repo/`-prefixed spec come from that named repository only.
+    Plugins with the same name and host from different repositories are one plugin.
     Each archive is fetched from the repository that listed it, one time.
     """
 
@@ -343,11 +345,18 @@ class _BundleSourceRepo(BasePluginRepo):
             for name, repo in self._named.items():
                 sources.extend((repo, plugin) for plugin in repo.get_plugins() if plugin.name.lower() == name)
 
+            merged: dict[tuple[str, str], Plugin] = {}
             for repo, plugin in sources:
-                for locations in plugin.versions.values():
+                key = (plugin.name.lower(), normalize_plugin_host(plugin.host))
+                target = merged.setdefault(key, Plugin(name=plugin.name, host=plugin.host, versions={}))
+                for version, locations in plugin.versions.items():
+                    merged_locations = target.versions.setdefault(version, [])
                     for location in locations:
-                        self._owners[(location.url, location.sha256)] = repo
-            self._plugins = [plugin for _, plugin in sources]
+                        location_key = (location.url, location.sha256)
+                        if location_key not in self._owners:
+                            self._owners[location_key] = repo
+                            merged_locations.append(location)
+            self._plugins = list(merged.values())
         return self._plugins
 
     def _fetch_and_verify(self, location: PluginArchiveLocation) -> tuple[str, bytes]:
@@ -360,15 +369,20 @@ class _BundleSourceRepo(BasePluginRepo):
 
 def _get_named_repos(
     ctx: click.Context, plugin_specs: tuple[str, ...], bundle_repo: str | None
-) -> dict[str, BasePluginRepo]:
+) -> dict[str, tuple[str, BasePluginRepo]]:
     """Select the named repository of each positional spec with a `repo/` prefix, by plugin name.
 
+    Returns:
+        the repository name and repository, by lowercase plugin name.
+
     Raises:
-        click.Abort: when a prefix is combined with --repo, or names an unknown or unreachable repository.
+        click.Abort: when a prefix is combined with --repo, names an unknown or unreachable repository,
+            or when two specs select one plugin from different repositories.
     """
     from hcli.commands.plugin import repo_for_reference
 
-    named: dict[str, BasePluginRepo] = {}
+    named: dict[str, tuple[str, BasePluginRepo]] = {}
+    prefixed_specs: dict[str, str] = {}
     for spec in plugin_specs:
         if _is_local_plugin_spec(spec):
             continue
@@ -384,7 +398,14 @@ def _get_named_repos(
                 f"--repo already selects the only repository searched."
             )
             raise click.Abort()
-        named[ref.name] = repo_for_reference(ctx, ref)
+        key = ref.name.lower()
+        if key in named and named[key][0] != ref.repo:
+            console.print(
+                f"[red]'{prefixed_specs[key]}' and '{spec}' select plugin {ref.name} from different repositories[/red]"
+            )
+            raise click.Abort()
+        prefixed_specs.setdefault(key, spec)
+        named[key] = (ref.repo, repo_for_reference(ctx, ref))
     return named
 
 
@@ -394,6 +415,9 @@ def _get_local_metadata(buf: bytes) -> IDAMetadataDescriptor:
     Raises:
         ValueError: when the archive does not contain a valid plugin.
     """
+    for path, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
+        validate_metadata_in_plugin_archive(buf, path, metadata)
+
     index = PluginArchiveIndex()
     index.index_plugin_archive(buf, "local")
     plugins = index.get_plugins()
@@ -408,7 +432,7 @@ def _get_cell_closures(
     plugin_specs: tuple[str, ...],
     pip_targets: list[PipTarget],
     plugin_repo: BasePluginRepo | None,
-    named_repos: Mapping[str, BasePluginRepo] | None = None,
+    named_repos: Mapping[str, tuple[str, BasePluginRepo]] | None = None,
 ) -> _BundleResolution:
     """Resolve the plugin specs and their loose dependencies separately for each target cell.
 
@@ -436,7 +460,8 @@ def _get_cell_closures(
 
     if roots and plugin_repo is None and not named_repos:
         raise click.BadParameter("no plugin repository available to resolve spec")
-    repo = _BundleSourceRepo(plugin_repo, named_repos or {})
+    named_repos = named_repos or {}
+    repo = _BundleSourceRepo(plugin_repo, {name: named_repo for name, (_, named_repo) in named_repos.items()})
 
     resolution = _BundleResolution(root_names={}, closures={})
     for spec, (name, _) in local_roots.items():
@@ -451,7 +476,7 @@ def _get_cell_closures(
             try:
                 cell_resolution = resolve(list(roots.values()), repo, cell, fixed=fixed)
             except ResolutionError as e:
-                raise RuntimeError(str(e)) from e
+                raise RuntimeError(_render_resolution_error(e, named_repos)) from e
 
             closure = {name: buf for name, buf in local_roots.values()}
             for name, location in cell_resolution.selected.items():
@@ -463,6 +488,17 @@ def _get_cell_closures(
         resolution.skipped[target] = cell_resolution.skipped
 
     return resolution
+
+
+def _render_resolution_error(error: ResolutionError, named_repos: Mapping[str, tuple[str, BasePluginRepo]]) -> str:
+    """Render a resolution error, naming the repository when a `repo/` prefix limits the failing plugin."""
+    try:
+        name = Requirement.from_spec(error.chain[-1]).name
+    except ValueError:
+        return str(error)
+    if name.lower() not in named_repos:
+        return str(error)
+    return f"{error} ({name} comes only from repository {named_repos[name.lower()][0]})"
 
 
 def _group_skipped_by_target(

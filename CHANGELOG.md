@@ -21,6 +21,10 @@
 - `hcli plugin bundle create` fails when a plugin dependency name matches plugins from more than one host, instead of treating the dependency as missing
 - `hcli plugin bundle create` fails with an error when a local plugin requires a plugin dependency and no plugin repository is available, instead of leaving the dependency out
 - `hcli plugin bundle create` fails when a local plugin's `requiresPython` excludes a target cell
+- `hcli plugin bundle create` fails with the cause when a local plugin archive is not valid, for example when its entry point file is missing, instead of bundling an archive that the bundle index leaves out
+- `hcli plugin bundle create` fails when a plugin dependency pins a version that a local plugin in the bundle does not have, instead of building a bundle that cannot install the dependent plugin
+- `hcli plugin bundle create` fails when two specs select one plugin from different repositories with a `repo/` prefix, and a `repo/` prefix also limits dependencies with that name to the named repository
+- `hcli plugin bundle create` treats a plugin with the same name and host in two configured repositories as one plugin, instead of reporting it as ambiguous
 - Resolve plugin dependencies with an `@host` suffix, or with a name in a different letter case, during `hcli plugin bundle create`
 - `hcli plugin bundle create` resolves plugins, plugin dependencies, and Python dependencies separately for each target cell, so a wheelhouse only contains the wheels of the plugins resolved for its cell
 - Pass every argument through to the program in `ida python exec` and `ida python run-script`, so `hcli ida python exec -m pip --help` describes pip (#287)
