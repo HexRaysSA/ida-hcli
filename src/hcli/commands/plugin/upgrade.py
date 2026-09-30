@@ -103,7 +103,11 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             plugin_repo = ctx.obj["plugin_repo"]
         try:
             location = plugin_repo.find_compatible_plugin_from_spec(
-                bare_spec, ida_env.platform, ida_env.ida_version, host=installed.host
+                bare_spec,
+                ida_env.platform,
+                ida_env.ida_version,
+                host=installed.host,
+                python_version=lambda: ida_env.python_version,
             )
 
             # The latest compatible version is the one installed: nothing to do,

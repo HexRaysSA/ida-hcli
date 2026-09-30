@@ -20,6 +20,7 @@ from hcli.lib.ida.plugin import (
     get_metadatas_with_paths_from_plugin_archive,
     get_python_dependencies_from_plugin_archive,
     get_version_from_plugin_archive,
+    is_python_version_compatible,
 )
 from hcli.lib.ida.plugin.bundle import (
     ALL_PLATFORMS,
@@ -82,6 +83,7 @@ def _resolve_plugin_bytes(
     spec: str,
     plugin_repo: BasePluginRepo | None,
     current_platform: str | None = None,
+    python_version: str | None = None,
 ) -> tuple[str, bytes]:
     path = Path(spec).expanduser()
 
@@ -109,7 +111,7 @@ def _resolve_plugin_bytes(
     if plugin_repo is None:
         raise click.BadParameter("no plugin repository available to resolve spec")
 
-    return plugin_repo.fetch_plugin_from_spec(clean_spec, current_platform, host=host)
+    return plugin_repo.fetch_plugin_from_spec(clean_spec, current_platform, host=host, python_version=python_version)
 
 
 def _resolve_targets(
@@ -356,7 +358,8 @@ def _get_cell_closures(
 
     Raises:
         click.BadParameter: when a repository spec is given without a plugin repository.
-        RuntimeError: when a plugin spec or a required dependency cannot be resolved for a cell.
+        RuntimeError: when a plugin spec or a required dependency cannot be resolved for a cell,
+            or when a local plugin's requiresPython excludes a cell.
     """
     repo = _CachingPluginRepo(plugin_repo) if plugin_repo is not None else None
 
@@ -372,20 +375,36 @@ def _get_cell_closures(
         for spec in plugin_specs:
             if spec in local_roots:
                 name, buf = local_roots[spec]
+                _validate_local_root_python(buf, target)
             else:
                 with rich.status.Status(f"resolving {spec} for {target.id}", console=stderr_console):
                     try:
-                        name, buf = _resolve_plugin_bytes(spec, repo, target.ida_platform)
+                        name, buf = _resolve_plugin_bytes(spec, repo, target.ida_platform, target.python_version)
                     except KeyError as e:
-                        raise RuntimeError(f"cannot resolve '{spec}' for {target.ida_platform}: {e}") from e
+                        raise RuntimeError(f"cannot resolve '{spec}' for {target.id}: {e}") from e
             resolution.root_names[spec] = name
             roots[name] = buf
 
         with rich.status.Status(f"resolving loose dependencies for {target.id}", console=stderr_console):
-            dependencies = _resolve_loose_deps(roots, repo, target.ida_platform)
+            dependencies = _resolve_loose_deps(roots, repo, target.ida_platform, target.python_version)
         resolution.closures[target] = {**roots, **dependencies}
 
     return resolution
+
+
+def _validate_local_root_python(buf: bytes, target: PipTarget) -> None:
+    """Check that a local plugin archive's requiresPython allows the cell's Python version.
+
+    Raises:
+        RuntimeError: when requiresPython excludes the cell.
+    """
+    _, metadata = find_root_manifest_in_archive(buf)
+    requirement = metadata.plugin.requires_python
+    if requirement is not None and not is_python_version_compatible(target.python_version, requirement):
+        raise RuntimeError(
+            f"{metadata.plugin.name} {metadata.plugin.version} requires Python {requirement}, "
+            f"which excludes target {target.id}"
+        )
 
 
 def _get_python_deps(closure: dict[str, bytes]) -> list[str]:
@@ -402,7 +421,8 @@ def _stage_plugin_archives(
 ) -> None:
     """Write the distinct archives of one plugin into the staging directory and index them.
 
-    Archive filenames get a platform suffix when the target cells resolved to different archives.
+    Archive filenames get a platform suffix when the target cells resolved to different archives,
+    or a target ID suffix when the platform suffix does not give each archive its own filename.
 
     Raises:
         ValueError: when two different archives map to the same filename.
@@ -414,14 +434,24 @@ def _stage_plugin_archives(
         targets_by_hash.setdefault(h, []).append(target)
         buf_by_hash[h] = buf
 
-    for h, buf in buf_by_hash.items():
-        version = get_version_from_plugin_archive(buf, name)
+    versions_by_hash = {h: get_version_from_plugin_archive(buf, name) for h, buf in buf_by_hash.items()}
+    filenames_by_hash: dict[str, str] = {}
+    for h, version in versions_by_hash.items():
         if len(buf_by_hash) > 1:
-            suffix = "-" + "+".join(sorted({t.ida_platform for t in targets_by_hash[h]}))
-            archive_filename = f"{name}-{version}{suffix}.zip"
+            suffix = "+".join(sorted({t.ida_platform for t in targets_by_hash[h]}))
+            filenames_by_hash[h] = f"{name}-{version}-{suffix}.zip"
         else:
-            archive_filename = f"{name}-{version}.zip"
+            filenames_by_hash[h] = f"{name}-{version}.zip"
 
+    filenames = list(filenames_by_hash.values())
+    for h, filename in filenames_by_hash.items():
+        if filenames.count(filename) > 1:
+            suffix = "+".join(sorted(t.id for t in targets_by_hash[h]))
+            filenames_by_hash[h] = f"{name}-{versions_by_hash[h]}-{suffix}.zip"
+
+    for h, buf in buf_by_hash.items():
+        archive_filename = filenames_by_hash[h]
+        version = versions_by_hash[h]
         dest = plugins_dir / archive_filename
         if not dest.exists():
             dest.write_bytes(buf)
@@ -479,10 +509,12 @@ def _resolve_loose_deps(
     known_archives: dict[str, bytes],
     plugin_repo: BasePluginRepo | None,
     platform: str,
+    python_version: str | None = None,
 ) -> dict[str, bytes]:
-    """Resolve loose plugin dependencies recursively for one platform.
+    """Resolve loose plugin dependencies recursively for one platform and Python version.
 
-    A dependency without a version pin resolves to the newest version that supports the platform.
+    A dependency without a version pin resolves to the newest version that supports the platform
+    and whose requiresPython allows the Python version.
 
     Returns new archives, by plugin name, not already in known_archives.
 
@@ -513,7 +545,10 @@ def _resolve_loose_deps(
                     try:
                         # key by the repository's plugin name: lookup ignores case, so the declared name may differ
                         resolved_name, dep_buf = plugin_repo.fetch_plugin_from_spec(
-                            f"{dep_name}{entry.reference.version_spec}", platform, host=entry.reference.host
+                            f"{dep_name}{entry.reference.version_spec}",
+                            platform,
+                            host=entry.reference.host,
+                            python_version=python_version,
                         )
                     except Exception as e:
                         dependent = f"{metadata.plugin.name} {metadata.plugin.version}"

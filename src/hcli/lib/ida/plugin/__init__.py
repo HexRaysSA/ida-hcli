@@ -479,7 +479,8 @@ class PluginMetadata(BaseModel):
         default=None,
         description=(
             "Python version requirement for the IDA Python environment, expressed as a PEP 440 version specifier. "
-            "HCLI checks this before installing the plugin."
+            "HCLI skips plugin versions whose requirement excludes the target Python version when it selects a "
+            "version, and checks it again before installing the plugin."
         ),
         examples=[">=3.11"],
     )

@@ -22,6 +22,7 @@ from hcli.commands.plugin.bundle import (
     bundle,
 )
 from hcli.lib.ida.plugin.bundle import PipTarget
+from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 from hcli.lib.ida.plugin.repo.fs import FileSystemPluginRepo
 from hcli.lib.ida.python import PipOptions
 
@@ -47,6 +48,7 @@ def _make_plugin_metadata(
     python_deps: list[str] | str | None = None,
     components: list[str] | None = None,
     platforms: list[str] | None = None,
+    requires_python: str | None = None,
 ) -> dict:
     plugin: dict = {
         "name": name,
@@ -63,6 +65,8 @@ def _make_plugin_metadata(
         plugin["components"] = components
     if platforms is not None:
         plugin["platforms"] = platforms
+    if requires_python is not None:
+        plugin["requiresPython"] = requires_python
     return {"IDAMetadataDescriptorVersion": 1, "plugin": plugin}
 
 
@@ -584,3 +588,87 @@ def test_render_versions_by_target_groups_by_platform_when_possible():
 def test_render_versions_by_target_lists_partial_coverage():
     bufs = {LINUX_312: _make_plugin_zip("plugin-a", "1.0.0")}
     assert _render_versions_by_target("plugin-a", bufs, [LINUX_312, WINDOWS_312]) == "1.0.0 (linux-x86_64)"
+
+
+# ---------------------------------------------------------------------------
+# requiresPython
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def requires_python_repo_dir(tmp_path) -> Path:
+    """Repository with plugin-a 1.9.0 (no requiresPython) and 2.0.0 (requiresPython >=3.12)."""
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "plugin-a-v1.9.zip").write_bytes(_make_plugin_zip("plugin-a", "1.9.0"))
+    (repo_dir / "plugin-a-v2.zip").write_bytes(_make_plugin_zip("plugin-a", "2.0.0", requires_python=">=3.12"))
+    return repo_dir
+
+
+def test_bundle_create_selects_version_per_python_version(tmp_path, requires_python_repo_dir):
+    out = tmp_path / "output.zip"
+    result = _invoke_create(requires_python_repo_dir, out, ["linux-x86_64-cp310", "linux-x86_64-cp312"], ["plugin-a"])
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(out) == [
+        "plugins/plugin-a-1.9.0-linux-x86_64.zip",
+        "plugins/plugin-a-2.0.0-linux-x86_64.zip",
+    ]
+    assert "resolved plugin-a: 1.9.0 (linux-x86_64-cp310), 2.0.0 (linux-x86_64-cp312)" in " ".join(
+        result.stderr.split()
+    )
+
+    repo = PluginBundleRepo(out)
+    try:
+        assert repo.target_ids == ["linux-x86_64-cp310", "linux-x86_64-cp312"]
+        location = repo.find_plugin_from_spec("plugin-a", "linux-x86_64", python_version="3.10")
+        assert location.metadata.plugin.version == "1.9.0"
+        location = repo.find_plugin_from_spec("plugin-a", "linux-x86_64", python_version="3.12")
+        assert location.metadata.plugin.version == "2.0.0"
+    finally:
+        repo.close()
+
+
+def test_bundle_create_selects_dependency_version_per_python_version(tmp_path, requires_python_repo_dir):
+    root = tmp_path / "root.zip"
+    root.write_bytes(_make_plugin_zip("root", "1.0.0", deps=["plugin-a"]))
+
+    out = tmp_path / "output.zip"
+    result = _invoke_create(requires_python_repo_dir, out, ["linux-x86_64-cp310", "linux-x86_64-cp312"], [str(root)])
+
+    assert result.exit_code == 0, result.output + result.stderr
+    stderr = " ".join(result.stderr.split())
+    assert "included dependency: plugin-a 1.9.0 (linux-x86_64-cp310), 2.0.0 (linux-x86_64-cp312)" in stderr
+
+
+def test_bundle_create_uses_target_ids_when_platform_names_collide(tmp_path):
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "old-python.zip").write_bytes(_make_plugin_zip("plugin-a", "1.0.0", requires_python="<3.12"))
+    (repo_dir / "new-python.zip").write_bytes(_make_plugin_zip("plugin-a", "1.0.0", requires_python=">=3.12"))
+
+    out = tmp_path / "output.zip"
+    result = _invoke_create(repo_dir, out, ["linux-x86_64-cp311", "linux-x86_64-cp312"], ["plugin-a"])
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(out) == [
+        "plugins/plugin-a-1.0.0-linux-x86_64-cp311.zip",
+        "plugins/plugin-a-1.0.0-linux-x86_64-cp312.zip",
+    ]
+
+
+def test_bundle_create_fails_when_local_spec_excludes_cell_python(tmp_path):
+    local = tmp_path / "plugin-a.zip"
+    local.write_bytes(_make_plugin_zip("plugin-a", "2.0.0", requires_python=">=3.12"))
+
+    out = tmp_path / "output.zip"
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(
+        bundle,
+        ["create", "--path", str(out), "--target", "linux-x86_64-cp312", "--target", "linux-x86_64-cp310", str(local)],
+        obj={"pip_options": PipOptions()},
+    )
+
+    assert result.exit_code != 0
+    assert str(result.exception) == "plugin-a 2.0.0 requires Python >=3.12, which excludes target linux-x86_64-cp310"
+    assert not out.exists()

@@ -163,6 +163,24 @@ def virtual_ida_environment(temp_hcli_idausr_dir, hook_current_platform, hook_cu
     yield
 
 
+@pytest.fixture
+def virtual_ida_environment_without_python(virtual_ida_environment):
+    """`virtual_ida_environment` where IDA's Python cannot be found, so any probe raises PythonNotFoundError."""
+    idausr_dir = Path(os.environ["HCLI_IDAUSR"])
+    with temp_env_var("HCLI_CURRENT_IDA_PYTHON_EXE", str(idausr_dir / "missing-python")):
+        yield
+
+
+@pytest.fixture
+def virtual_ida_environment_with_current_python(virtual_ida_environment):
+    """`virtual_ida_environment` where IDA's Python is the interpreter running the tests.
+
+    Only suitable for plugins without Python dependencies, since pip would install into this interpreter.
+    """
+    with temp_env_var("HCLI_CURRENT_IDA_PYTHON_EXE", sys.executable):
+        yield
+
+
 def get_python_exe_for_venv(venv_path: Path) -> Path:
     return venv_path / "Scripts" / "python.exe" if os.name == "nt" else venv_path / "bin" / "python"
 

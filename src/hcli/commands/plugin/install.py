@@ -342,7 +342,11 @@ def install_plugin(
             try:
                 with rich.status.Status("fetching plugin", console=stderr_console):
                     plugin_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
-                        bare_spec, ida_env.platform, ida_env.ida_version, host=ref.host
+                        bare_spec,
+                        ida_env.platform,
+                        ida_env.ida_version,
+                        host=ref.host,
+                        python_version=lambda: ida_env.python_version,
                     )
             except AmbiguousPluginReferenceError as e:
                 if ref.version_spec and not e.version_spec:

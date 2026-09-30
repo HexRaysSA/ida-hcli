@@ -16,6 +16,7 @@ from hcli.lib.ida.plugin.install import (
     install_plugin_archive,
     install_python_dependencies,
     upgrade_plugin_archive,
+    validate_python_version,
 )
 from hcli.lib.ida.plugin.reference import DependencyEntry
 from hcli.lib.ida.plugin.repo import BasePluginRepo
@@ -217,8 +218,9 @@ def _install_one_dependency(
         logger.info("dependency %s at %s needs upgrade to %s", dep_name, installed.version, pinned_version)
         bare_spec = dep_name + version_spec
         _dep_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
-            bare_spec, ctx.env.platform, ctx.env.ida_version, host=host
+            bare_spec, ctx.env.platform, ctx.env.ida_version, host=host, python_version=lambda: ctx.env.python_version
         )
+        validate_python_version(get_metadata_from_plugin_archive(buf, _dep_name)[1], ctx)
         _install_dependency_python_deps(buf, _dep_name, ctx, excluded_plugins={dep_name})
         upgrade_plugin_archive(buf, _dep_name, ctx)
         _apply_settings(dep_name, settings)
@@ -227,8 +229,9 @@ def _install_one_dependency(
 
     bare_spec = dep_name + version_spec
     _dep_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
-        bare_spec, ctx.env.platform, ctx.env.ida_version, host=host
+        bare_spec, ctx.env.platform, ctx.env.ida_version, host=host, python_version=lambda: ctx.env.python_version
     )
+    validate_python_version(get_metadata_from_plugin_archive(buf, _dep_name)[1], ctx)
     _install_dependency_python_deps(buf, _dep_name, ctx)
     install_plugin_archive(buf, _dep_name, ctx)
     _apply_settings(dep_name, settings)
