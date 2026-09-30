@@ -25,6 +25,7 @@ from hcli.lib.ida.plugin import (
 )
 from hcli.lib.ida.plugin.components import find_root_manifest_in_archive, validate_components_for_install
 from hcli.lib.ida.plugin.context import IDAEnvironment, InstallContext, InstallOptions
+from hcli.lib.ida.plugin.dependencies import get_install_cell, get_installed_versions
 from hcli.lib.ida.plugin.exceptions import (
     AmbiguousPluginReferenceError,
     InstalledPluginNameConflictError,
@@ -35,11 +36,11 @@ from hcli.lib.ida.plugin.install import (
     apply_upgrade,
     find_installed_plugin,
     get_metadata_from_plugin_directory,
+    get_metadata_with_components,
     pack_plugin_directory_to_zip,
     sweep_trash,
 )
 from hcli.lib.ida.plugin.reference import (
-    DependencyEntry,
     format_qualified_plugin_reference,
     is_github_direct_install_url,
     normalize_plugin_host,
@@ -47,6 +48,8 @@ from hcli.lib.ida.plugin.reference import (
 )
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
 from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
+from hcli.lib.ida.plugin.repo.scoped import ScopedPluginRepo
+from hcli.lib.ida.plugin.resolve import AmbiguousRequirementError, Requirement, get_requirements, resolve
 from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
 from hcli.lib.ida.plugin.settings import get_settings_to_prompt, has_setting_in_config, parse_setting_value
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
@@ -248,6 +251,7 @@ def install_plugin(
     check_environment = not ctx.obj.get("no_python_environment_check", False)
     plugin_repo_obj = ctx.obj.get("plugin_repo")
     plugin_spec = plugin
+    source_repo: ScopedPluginRepo | None = None
     try:
         sweep_trash()
 
@@ -333,27 +337,31 @@ def install_plugin(
 
             from hcli.commands.plugin import repo_for_reference
 
-            # Resolve in exactly one repository -- the one named by the
-            # prefix, else the default.
+            # The root resolves in exactly one repository: the one named by the
+            # prefix, else the default. Its dependencies resolve across all of them.
             plugin_repo: BasePluginRepo = repo_for_reference(ctx, ref)
             plugin_repo_obj = plugin_repo
+            source_repo = ScopedPluginRepo(ctx.obj.get("plugin_repos") or plugin_repo, {ref.name: plugin_repo})
 
-            bare_spec = ref.name + ref.version_spec
+            requirement = Requirement.from_spec(plugin_spec)
             try:
                 with rich.status.Status("fetching plugin", console=stderr_console):
-                    plugin_name, buf = plugin_repo.fetch_compatible_plugin_from_spec(
-                        bare_spec,
-                        ida_env.platform,
-                        ida_env.ida_version,
-                        host=ref.host,
-                        python_version=lambda: ida_env.python_version,
+                    resolution = resolve(
+                        [requirement],
+                        source_repo,
+                        get_install_cell(install_ctx),
+                        installed=get_installed_versions(exclude=ref.name),
                     )
-            except AmbiguousPluginReferenceError as e:
-                if ref.version_spec and not e.version_spec:
-                    e = AmbiguousPluginReferenceError(e.name, e.candidates, ref.version_spec)
-                console.print(f"[red]Error[/red]: plugin name '{e.name}' is ambiguous")
+                    plugin_name, buf = source_repo.fetch_plugin_location(
+                        resolution.selected[resolution.roots[requirement]]
+                    )
+            except AmbiguousRequirementError as e:
+                if len(e.chain) > 1:
+                    raise
+                ambiguous = AmbiguousPluginReferenceError(ref.name, e.candidates, ref.version_spec)
+                console.print(f"[red]Error[/red]: plugin name '{ambiguous.name}' is ambiguous")
                 console.print("Choose one of:")
-                for candidate_ref in e.candidate_refs:
+                for candidate_ref in ambiguous.candidate_refs:
                     console.print(f"  {format_qualified_plugin_reference(candidate_ref)}")
                 raise click.Abort()
 
@@ -404,7 +412,7 @@ def install_plugin(
         assert source is not None
         component_metadatas = validate_components_for_install(metadata, source, plugin_name, is_upgrade=is_upgrade)
 
-        dep_names = {e.reference.name for e in metadata.plugin.dependencies if isinstance(e, DependencyEntry)}
+        dep_names = {r.name for r in get_requirements(get_metadata_with_components(metadata, component_metadatas))}
         cli_settings = _partition_config_items(config, component_metadatas, dep_names)
 
         resolved_settings: dict[str | None, dict[str, str]] = {}
@@ -424,7 +432,8 @@ def install_plugin(
 
         from hcli.commands.plugin import resolve_bundle_install_context
 
-        dep_repo = ctx.obj.get("plugin_repos") or plugin_repo_obj
+        if source_repo is None and plugin_repo_obj is not None:
+            source_repo = ScopedPluginRepo(ctx.obj.get("plugin_repos") or plugin_repo_obj)
 
         with resolve_bundle_install_context(plugin_repo_obj, install_ctx, plugin_name) as effective_ctx:
             if is_upgrade:
@@ -436,7 +445,7 @@ def install_plugin(
                         metadata=metadata,
                         ctx=effective_ctx,
                         settings=resolved_settings or None,
-                        plugin_repo=dep_repo,
+                        plugin_repo=source_repo,
                     )
             else:
                 with rich.status.Status(
@@ -449,7 +458,7 @@ def install_plugin(
                         metadata=metadata,
                         ctx=effective_ctx,
                         settings=resolved_settings or None,
-                        plugin_repo=dep_repo,
+                        plugin_repo=source_repo,
                         editable=editable,
                     )
 

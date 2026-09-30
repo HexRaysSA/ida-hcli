@@ -8,7 +8,8 @@
 - `hcli plugin install`, `hcli plugin upgrade`, plugin dependency installation, and `hcli plugin bundle create` skip plugin versions whose `requiresPython` excludes the target Python version, and select the newest version that is compatible
 - `hcli plugin bundle create` selects, for each target cell, the newest plugin version whose required plugin dependencies can also be resolved for that cell, and goes back to older versions when two plugins pin different versions of one dependency
 - `hcli plugin bundle create` accepts a `repo/` prefix on a plugin spec to select a configured plugin repository
-- Recursive plugin dependency installation: dependencies that declare their own dependencies are now resolved transitively, up to depth 10
+- Recursive plugin dependency installation: dependencies that declare their own dependencies are resolved transitively
+- `hcli plugin install` selects, for the current IDA installation, the newest version of the plugin whose required plugin dependencies can also be resolved, and goes back to older versions of the plugin or of a dependency when a newer one cannot be satisfied
 - Add `--allowed-editions` to `hcli asset put` to gate an asset by licence edition, addon code, or `any_edition`
 - Warn when IDA's Python version (registered by idapyswitch) doesn't match the active virtualenv, in `explain-environment` and before installing plugin dependencies
 - Honor `$IDAPYTHON_VENV_EXECUTABLE` for plugin dependency management
@@ -17,6 +18,9 @@
 
 ### Fixed
 - Check `requiresPython` of a plugin dependency before installing its Python packages
+- `hcli plugin install` and `hcli plugin upgrade` fail before they write any file when a required plugin dependency cannot be resolved, instead of installing the plugin and then removing it
+- `hcli plugin install` installs the plugin dependencies of the components of a plugin
+- `hcli plugin install` fetches plugin dependencies from a plugin bundle that is a configured plugin repository
 - `hcli plugin bundle create` skips an optional plugin dependency whose own required dependencies cannot be resolved, with a warning, instead of failing the bundle
 - `hcli plugin bundle create` fails when a plugin dependency name matches plugins from more than one host, instead of treating the dependency as missing
 - `hcli plugin bundle create` fails with an error when a local plugin requires a plugin dependency and no plugin repository is available, instead of leaving the dependency out

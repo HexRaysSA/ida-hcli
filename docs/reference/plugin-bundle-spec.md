@@ -176,7 +176,7 @@ HCLI selects a wheelhouse whose target tuple matches:
 
 If no target tuple matches, HCLI fails before changing plugins or installing dependencies.
 
-The bundle acts as a plugin repository during install. HCLI selects the newest bundled version that supports the platform, the IDA version, and IDA's Python version (from `requiresPython`), so a bundle that contains different versions for different Python versions installs the version that was bundled for the matching cell.
+The bundle acts as a plugin repository during install. Install uses the resolver of bundle creation. HCLI selects the newest bundled version that supports the platform, the IDA version, and IDA's Python version (from `requiresPython`), and whose required plugin dependencies the bundle can also satisfy for the current installation. Thus a bundle that contains different versions for different platforms or Python versions installs the version that was bundled for the matching cell. Plugin dependencies come from the bundle too, also when the bundle is a configured plugin repository. When a required plugin dependency cannot be resolved, the install fails before it changes plugins or installs Python dependencies.
 
 A plugin bundle may contain target tuples for operating systems and Python versions other than the machine that created it. Cross-target creation is supported when every dependency can be obtained as a compatible wheel for the requested target. If a required dependency is available only as an sdist, or only as a wheel with a platform baseline newer than the target, bundle creation or audit must fail for that target unless the user supplies a matching prebuilt wheel.
 

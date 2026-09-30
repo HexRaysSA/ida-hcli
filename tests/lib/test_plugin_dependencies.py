@@ -23,6 +23,7 @@ from hcli.lib.ida.plugin import IDAMetadataDescriptor
 from hcli.lib.ida.plugin.dependencies import install_dependencies
 from hcli.lib.ida.plugin.install import (
     get_installed_plugin_records,
+    get_plugin_directory,
     install_plugin_archive,
     is_plugin_installed,
     uninstall_plugin,
@@ -918,7 +919,7 @@ def test_lint_bare_dep_no_warning_for_community_plugin(capsys):
 # ---------------------------------------------------------------------------
 
 
-def test_apply_install_rolls_back_on_required_dep_failure(virtual_ida_environment):
+def test_apply_install_fails_before_writing_on_unresolvable_required_dep(virtual_ida_environment):
     from hcli.lib.ida.plugin.install import apply_install
     from hcli.lib.ida.plugin.result import InstallStatus
 
@@ -935,7 +936,34 @@ def test_apply_install_rolls_back_on_required_dep_failure(virtual_ida_environmen
             plugin_repo=repo,
         )
 
+    assert result.status == InstallStatus.FAILED
+    assert result.reason is not None
+    assert "cannot resolve my-pack 1.0.0 -> dep-missing for " in result.reason
+    assert not get_plugin_directory("my-pack").exists()
+
+
+def test_apply_install_rolls_back_when_required_dep_fails_to_install(virtual_ida_environment):
+    from hcli.lib.ida.plugin.install import apply_install
+    from hcli.lib.ida.plugin.result import InstallStatus
+
+    ctx = make_test_install_context(check_environment=False)
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"])
+    _, metadata = _parse_metadata(pack_zip, "my-pack")
+    remnant = get_plugin_directory("dep-a")
+    remnant.mkdir(parents=True)
+    (remnant / "leftover.txt").write_text("not a plugin")
+
+    with _make_fs_repo({"dep-a.zip": _make_plugin_zip("dep-a", "1.0.0")}) as repo:
+        result = apply_install(
+            source=pack_zip,
+            plugin_name="my-pack",
+            metadata=metadata,
+            ctx=ctx,
+            plugin_repo=repo,
+        )
+
     assert result.status == InstallStatus.ROLLED_BACK
+    assert result.reason == "required dependency failed"
     assert not is_plugin_installed("my-pack")
 
 
