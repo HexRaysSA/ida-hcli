@@ -306,13 +306,21 @@ class BasePluginRepo(ABC):
 
             logger.debug("found matching version: %s", version)
             for i, location in enumerate(plugin.versions[version]):
-                if not is_compatible_location(location, current_platform, current_version):
-                    metadata = location.metadata.plugin
+                if current_platform is not None and current_platform not in location.metadata.plugin.platforms:
                     logger.debug(
-                        "skipping location %d: platforms: %s, IDA versions: %s",
+                        "skipping location %d: unsupported platforms: %s",
                         i,
-                        metadata.platforms,
-                        metadata.ida_versions,
+                        location.metadata.plugin.platforms,
+                    )
+                    continue
+
+                if current_version is not None and not is_ida_version_compatible(
+                    current_version, location.metadata.plugin.ida_versions
+                ):
+                    logger.debug(
+                        "skipping location %d: unsupported IDA versions: %s",
+                        i,
+                        location.metadata.plugin.ida_versions,
                     )
                     continue
 

@@ -397,6 +397,7 @@ def _get_cell_closures(
         click.BadParameter: when a repository spec is given without a plugin repository.
         RuntimeError: when a plugin spec or a required dependency cannot be resolved for a cell,
             or when a local plugin's requiresPython excludes a cell.
+        ValueError: when a local plugin archive is not valid.
     """
     local_roots: dict[str, tuple[str, bytes]] = {}
     fixed: dict[str, IDAMetadataDescriptor] = {}
@@ -409,11 +410,12 @@ def _get_cell_closures(
             fixed[name] = _get_local_metadata(buf)
         else:
             try:
-                roots[spec] = Requirement.from_spec(spec)
-                if root_hosts and spec in root_hosts:
-                    roots[spec] = replace(roots[spec], host=root_hosts[spec])
+                requirement = Requirement.from_spec(spec)
             except ValueError as e:
                 raise click.BadParameter(f"invalid plugin spec '{spec}': {e}") from e
+            if root_hosts and spec in root_hosts:
+                requirement = replace(requirement, host=root_hosts[spec])
+            roots[spec] = requirement
 
     if roots and plugin_repo is None:
         raise click.BadParameter("no plugin repository available to resolve spec")
@@ -434,7 +436,7 @@ def _get_cell_closures(
             except ResolutionError as e:
                 raise RuntimeError(str(e)) from e
 
-            closure = {name: buf for name, buf in local_roots.values()}
+            closure = dict(local_roots.values())
             for name, location in cell_resolution.selected.items():
                 closure[name] = repo.fetch_plugin_location(location)[1]
 

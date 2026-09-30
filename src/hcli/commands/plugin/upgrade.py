@@ -114,6 +114,8 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         requirement = Requirement(ref.name, ref.version_spec, installed.host)
         try:
             newer_repo = NewerVersionsRepo(source_repo, installed.name, installed.host, installed.version)
+            # Fail with KeyError when no repository lists the installed plugin,
+            # before "no newer version" can report it as up to date.
             newer_repo.get_plugin_by_name(installed.name, host=installed.host)
             # Nothing newer to install is success, not an error, when the installed
             # version matches the spec. Checked on the index metadata, so no archive

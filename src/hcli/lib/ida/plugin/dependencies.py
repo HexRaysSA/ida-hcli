@@ -35,7 +35,10 @@ class DependencyResult:
 
 
 def get_install_cell(ctx: InstallContext) -> Cell:
-    """The resolver cell of the IDA installation. IDA's Python is probed only when a candidate declares `requiresPython`."""
+    """The resolver cell of the IDA installation.
+
+    IDA's Python is probed only when a candidate declares `requiresPython`.
+    """
     return Cell(ctx.env.platform, ctx.env.ida_version, python_version=lambda: ctx.env.python_version)
 
 

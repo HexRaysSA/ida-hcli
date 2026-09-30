@@ -29,7 +29,10 @@ class NewerVersionsRepo(BasePluginRepo):
         return self._plugins
 
     def has_newer_versions(self, version_spec: str) -> bool:
-        """Check whether a version newer than the installed version matches `version_spec`, such as `>=1.0`, or empty for any version."""
+        """Check whether a version newer than the installed version matches `version_spec`.
+
+        `version_spec` is a specifier such as `>=1.0`, or empty for any version.
+        """
         spec = semantic_version.SimpleSpec(version_spec or ">=0")
         return any(
             parse_plugin_version(version) in spec

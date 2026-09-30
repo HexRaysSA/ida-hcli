@@ -449,7 +449,7 @@ class _Resolver:
         return _Choice(name=name, version=version, host=None, source="installed", chain=chain)
 
     def satisfies(self, choice: _Choice, requirement: Requirement) -> tuple[bool, str | None]:
-        """Whether a chosen plugin satisfies a requirement, and a warning when it does so only by keeping a newer version.
+        """Whether a chosen plugin satisfies a requirement, and a warning when it keeps a newer installed version.
 
         A pin below the installed version is satisfied, with a warning, by any version at or above the installed
         one, so that the order of the requirements does not decide whether an upgrade of the installed plugin is
