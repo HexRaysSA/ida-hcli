@@ -269,3 +269,87 @@ def test_install_fetches_dependency_from_configured_bundle_repository(
 
     assert result.exit_code == 0, _get_output(result)
     assert _get_installed() == {"a": "1.0.0", "b": "1.0.0"}
+
+
+def test_install_selects_root_without_requires_python_when_python_cannot_be_detected(
+    virtual_ida_environment_without_python, tmp_path
+):
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {
+            "a2.zip": _make_plugin_zip("a", "2.0.0"),
+            "a1.zip": _make_plugin_zip("a", "1.0.0", requires_python=">=3.0"),
+        },
+    )
+
+    result = _install(repo_dir, "a")
+
+    assert result.exit_code == 0, _get_output(result)
+    assert _get_installed() == {"a": "2.0.0"}
+
+
+def test_install_selects_older_dependency_without_requires_python_when_python_cannot_be_detected(
+    virtual_ida_environment_without_python, tmp_path
+):
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {
+            "a1.zip": _make_plugin_zip("a", "1.0.0", deps=["b"]),
+            "b2.zip": _make_plugin_zip("b", "2.0.0", requires_python=">=3.0"),
+            "b1.zip": _make_plugin_zip("b", "1.0.0"),
+        },
+    )
+
+    result = _install(repo_dir, "a")
+
+    assert result.exit_code == 0, _get_output(result)
+    assert _get_installed() == {"a": "1.0.0", "b": "1.0.0"}
+
+
+def test_install_reports_ambiguous_dependency_by_its_own_name(virtual_ida_environment, tmp_path):
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {
+            "a1.zip": _make_plugin_zip("a", "1.0.0", deps=["b"]),
+            "b-one.zip": _make_plugin_zip("b", "1.0.0", host="https://github.com/one/b"),
+            "b-two.zip": _make_plugin_zip("b", "1.0.0", host="https://github.com/two/b"),
+        },
+    )
+
+    result = _install(repo_dir, "a")
+
+    assert result.exit_code != 0
+    assert "plugin name 'a' is ambiguous" not in _get_output(result)
+    assert "b is ambiguous" in _get_output(result)
+    assert _get_installed() == {}
+
+
+def test_install_upgrade_reports_why_newer_version_cannot_install(windows_ida_environment, tmp_path):
+    (tmp_path / "old").mkdir()
+    assert _install(_make_repo_dir(tmp_path / "old", {"a1.zip": _make_plugin_zip("a", "1.0.0")}), "a").exit_code == 0
+    (tmp_path / "new").mkdir()
+    repo_dir = _make_repo_dir(
+        tmp_path / "new",
+        {
+            "a2.zip": _make_plugin_zip("a", "2.0.0", platforms=["linux-x86_64"]),
+            "a1.zip": _make_plugin_zip("a", "1.0.0"),
+        },
+    )
+
+    result = CliRunner(mix_stderr=False).invoke(plugin_group, ["--repo", str(repo_dir), "install", "-U", "a"])
+
+    assert result.exit_code == 0, _get_output(result)
+    assert "Already installed plugin: a==1.0.0" in _get_output(result)
+    assert "newer versions cannot be installed here: a 2.0.0 does not support windows-x86_64" in _get_output(result)
+    assert _get_installed() == {"a": "1.0.0"}
+
+
+def test_install_upgrade_without_newer_version_reports_only_the_installed_version(virtual_ida_environment, tmp_path):
+    repo_dir = _make_repo_dir(tmp_path, {"a1.zip": _make_plugin_zip("a", "1.0.0")})
+    assert _install(repo_dir, "a").exit_code == 0
+
+    result = CliRunner(mix_stderr=False).invoke(plugin_group, ["--repo", str(repo_dir), "install", "-U", "a"])
+
+    assert result.exit_code == 0, _get_output(result)
+    assert "Already installed plugin: a==1.0.0" in _get_output(result)
+    assert "newer versions" not in _get_output(result)

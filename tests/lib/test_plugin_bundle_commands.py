@@ -1054,3 +1054,32 @@ def test_bundle_create_names_the_cause_of_an_invalid_local_archive(tmp_path):
     assert result.exit_code != 0
     assert "Entry point file not found in archive: 'noep.py'" in str(result.exception)
     assert not out.exists()
+
+
+def test_bundle_create_fetches_archives_from_a_configured_bundle_repository(tmp_path):
+    from hcli.lib.ida import PluginRepository
+    from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
+
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {"a1.zip": _make_plugin_zip("a", "1.0.0", deps=["b"]), "b1.zip": _make_plugin_zip("b", "1.0.0")},
+    )
+    source_bundle = tmp_path / "source.zip"
+    result = _invoke_create(repo_dir, source_bundle, ["linux-x86_64-cp312"], ["a"])
+    assert result.exit_code == 0, result.output + result.stderr
+
+    aggregate = AggregatePluginRepo(
+        {"offline": PluginRepository(name="offline", url=source_bundle.as_uri(), reserved=False)}
+    )
+    obj = {
+        "pip_options": PipOptions(),
+        "plugin_repo": aggregate,
+        "plugin_repos": aggregate,
+        "default_plugin_repo": "offline",
+    }
+    out = tmp_path / "output.zip"
+    argv = ["create", "--path", str(out), "--target", "linux-x86_64-cp312", "a"]
+    result = CliRunner(mix_stderr=False).invoke(bundle, argv, obj=obj)
+
+    assert result.exit_code == 0, f"{result.output}{result.stderr}{result.exception!r}"
+    assert _get_bundled_plugin_members(out) == ["plugins/a-1.0.0.zip", "plugins/b-1.0.0.zip"]

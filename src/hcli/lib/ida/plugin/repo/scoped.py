@@ -16,8 +16,9 @@ class ScopedPluginRepo(BasePluginRepo):
     """The plugins of a repository, with some plugin names taken from a named repository only.
 
     `get_plugins()` reads the repositories one time. Plugins with the same name and host from
-    different repositories are one plugin. Each archive is fetched from the repository that listed
-    it, which for an `AggregatePluginRepo` is the configured repository that served the plugin.
+    different repositories are one plugin. Each archive is fetched one time, from the repository
+    that listed it, which for an `AggregatePluginRepo` is the configured repository that served
+    the plugin.
     """
 
     def __init__(self, inner: BasePluginRepo | None, named: Mapping[str, BasePluginRepo] | None = None) -> None:
@@ -25,6 +26,7 @@ class ScopedPluginRepo(BasePluginRepo):
         self._named = {name.lower(): repo for name, repo in (named or {}).items()}
         self._plugins: list[Plugin] | None = None
         self._owners: dict[tuple[str, str], BasePluginRepo] = {}
+        self._archives: dict[tuple[str, str], tuple[str, bytes]] = {}
 
     def get_plugins(self) -> list[Plugin]:
         if self._plugins is None:
@@ -54,11 +56,15 @@ class ScopedPluginRepo(BasePluginRepo):
         return self._plugins
 
     def _fetch_and_verify(self, location: PluginArchiveLocation) -> tuple[str, bytes]:
-        self.get_plugins()
-        owner = self._owners.get((location.url, location.sha256))
-        if owner is None:
-            return super()._fetch_and_verify(location)
-        return owner._fetch_and_verify(location)
+        key = (location.url, location.sha256)
+        if key not in self._archives:
+            self.get_plugins()
+            owner = self._owners.get(key)
+            if owner is None:
+                self._archives[key] = super()._fetch_and_verify(location)
+            else:
+                self._archives[key] = owner._fetch_and_verify(location)
+        return self._archives[key]
 
 
 def _get_owner(repo: BasePluginRepo, plugin: Plugin) -> BasePluginRepo:

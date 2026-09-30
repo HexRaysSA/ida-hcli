@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import functools
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
@@ -189,6 +189,7 @@ class AmbiguousRequirementError(ResolutionError):
     """A requirement without a host matches plugins from more than one host.
 
     Attributes:
+        name: the plugin name of the ambiguous requirement.
         candidates: `(name, host)` of each matching plugin.
     """
 
@@ -200,6 +201,7 @@ class AmbiguousRequirementError(ResolutionError):
         candidates: Sequence[tuple[str, str]],
         reasons: Sequence[str] | None = None,
     ) -> None:
+        self.name = name
         self.candidates = list(candidates)
         super().__init__(cell, chain, reasons or [_render_ambiguity(name, self.candidates)])
 
@@ -284,6 +286,31 @@ def _is_same_host(a: str, b: str) -> bool:
         return a == b
 
 
+class _PythonProbeError(Exception):
+    """IDA's Python version cannot be detected."""
+
+
+class _PythonProbe:
+    """Calls a Python version function at most once, and remembers its result or its failure."""
+
+    def __init__(self, get_python_version: Callable[[], str]) -> None:
+        self.get_python_version = get_python_version
+        self.version: str | None = None
+        self.error: Exception | None = None
+
+    def __call__(self) -> str:
+        if self.version is None and self.error is None:
+            try:
+                self.version = self.get_python_version()
+            except Exception as e:
+                logger.debug("cannot detect IDA's Python: %s", e)
+                self.error = e
+        if self.error is not None:
+            raise _PythonProbeError(str(self.error)) from self.error
+        assert self.version is not None
+        return self.version
+
+
 class _Resolver:
     def __init__(
         self,
@@ -297,7 +324,7 @@ class _Resolver:
         self.cell = cell
         python_version = cell.python_version
         self.python_version: PythonVersionSource = (
-            functools.cache(python_version) if callable(python_version) else python_version
+            _PythonProbe(python_version) if callable(python_version) else python_version
         )
         self.fixed = {name.lower(): metadata for name, metadata in fixed.items()}
         self.installed = {name.lower(): (name, version) for name, version in installed.items()}
@@ -324,10 +351,19 @@ class _Resolver:
         compatible: dict[str, PluginArchiveLocation] = {}
         for version in sorted(plugin.versions, key=parse_plugin_version, reverse=True):
             for location in plugin.versions[version]:
-                if is_compatible_location(location, self.cell.platform, self.cell.ida_version, self.python_version):
+                if self.is_compatible(location):
                     compatible[version] = location
                     break
         return compatible
+
+    def is_compatible(self, location: PluginArchiveLocation) -> bool:
+        """Whether a location can install on the cell. A location that declares `requiresPython` is not
+        compatible when IDA's Python cannot be detected.
+        """
+        try:
+            return is_compatible_location(location, self.cell.platform, self.cell.ida_version, self.python_version)
+        except _PythonProbeError:
+            return False
 
     def compute_viability(self, requirements: list[Requirement]) -> None:
         """Find the plugins that the requirements can reach, then remove locations until every one is viable."""
@@ -446,7 +482,10 @@ class _Resolver:
             return f"does not support {self.cell.platform}"
         if not is_compatible_location(location, None, self.cell.ida_version):
             return f"does not support IDA {self.cell.ida_version}"
-        python_version = self.python_version() if callable(self.python_version) else self.python_version
+        try:
+            python_version = self.python_version() if callable(self.python_version) else self.python_version
+        except _PythonProbeError as e:
+            return f"requires Python {plugin.requires_python}, and IDA's Python cannot be detected: {e}"
         return f"requires Python {plugin.requires_python}, and {self.cell} has Python {python_version}"
 
     def explain_removal(self, plugin: Plugin, version: str, explanation: _Explanation) -> str:
@@ -636,6 +675,10 @@ def resolve(
 
     The caller checks that each fixed plugin is compatible with the cell.
 
+    When `cell.python_version` is a function, it is called at most once, and only when a candidate
+    declares `requiresPython`. When it raises, the candidates that declare `requiresPython` are not
+    compatible, and the others stay candidates.
+
     A version that requires a name that is ambiguous is not viable. Ambiguity is an error when a
     root, a requirement of a fixed plugin, or an optional requirement of a selected version is
     ambiguous, or when it is why a required requirement has no viable candidate.
@@ -645,7 +688,6 @@ def resolve(
         AmbiguousRequirementError: when a requirement without a host matches plugins from several hosts.
         StepLimitError: when the search takes more than `max_steps` steps, or needs more selections
             than the recursion limit allows.
-        PythonNotFoundError: when `cell.python_version` is a function that cannot detect IDA's Python.
     """
     resolver = _Resolver(repo.get_plugins(), cell, fixed or {}, installed or {}, max_steps)
 

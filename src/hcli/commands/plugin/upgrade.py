@@ -14,13 +14,14 @@ from hcli.lib.ida import (
     explain_failed_to_detect_ida_version,
     explain_missing_current_installation_directory,
 )
-from hcli.lib.ida.plugin import get_metadata_from_plugin_archive, parse_plugin_version
+from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
 from hcli.lib.ida.plugin.context import IDAEnvironment, InstallContext, InstallOptions
 from hcli.lib.ida.plugin.dependencies import get_install_cell, get_installed_versions
 from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError, PluginVersionDowngradeError
 from hcli.lib.ida.plugin.install import apply_upgrade, find_installed_plugin, sweep_trash
 from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
-from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveLocation
+from hcli.lib.ida.plugin.repo import BasePluginRepo
+from hcli.lib.ida.plugin.repo.newer import NewerVersionsRepo
 from hcli.lib.ida.plugin.repo.scoped import ScopedPluginRepo
 from hcli.lib.ida.plugin.resolve import Requirement, ResolutionError, StepLimitError, resolve
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
@@ -28,61 +29,6 @@ from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 from .install import render_install_result
 
 logger = logging.getLogger(__name__)
-
-
-class _NewerVersionsRepo(BasePluginRepo):
-    """A repository view in which one plugin has only the versions newer than its installed version.
-
-    The resolver then never checks the compatibility of the installed or older versions, so an
-    upgrade with nothing newer does not probe IDA's Python.
-    """
-
-    def __init__(self, inner: BasePluginRepo, name: str, host: str, installed_version: str) -> None:
-        self._inner = inner
-        self._name = name.lower()
-        self._host = normalize_plugin_host(host)
-        self._installed_version = parse_plugin_version(installed_version)
-        self._plugins: list[Plugin] | None = None
-
-    def get_plugins(self) -> list[Plugin]:
-        if self._plugins is None:
-            self._plugins = [self._filter(plugin) for plugin in self._inner.get_plugins()]
-        return self._plugins
-
-    def has_newer_versions(self, requirement: Requirement) -> bool:
-        return any(
-            requirement.matches(version)
-            for plugin in self.get_plugins()
-            if self._is_upgraded_plugin(plugin)
-            for version in plugin.versions
-        )
-
-    def get_older_version(self, requirement: Requirement) -> str | None:
-        """Get the newest version that matches the requirement and is older than the installed version."""
-        versions = [
-            version
-            for plugin in self._inner.get_plugins()
-            if self._is_upgraded_plugin(plugin)
-            for version in plugin.versions
-            if requirement.matches(version) and parse_plugin_version(version) < self._installed_version
-        ]
-        return max(versions, key=parse_plugin_version, default=None)
-
-    def _is_upgraded_plugin(self, plugin: Plugin) -> bool:
-        return plugin.name.lower() == self._name and normalize_plugin_host(plugin.host) == self._host
-
-    def _filter(self, plugin: Plugin) -> Plugin:
-        if not self._is_upgraded_plugin(plugin):
-            return plugin
-        versions = {
-            version: locations
-            for version, locations in plugin.versions.items()
-            if parse_plugin_version(version) > self._installed_version
-        }
-        return plugin.model_copy(update={"versions": versions})
-
-    def _fetch_and_verify(self, location: PluginArchiveLocation) -> tuple[str, bytes]:
-        return self._inner._fetch_and_verify(location)
 
 
 @click.command()
@@ -161,7 +107,7 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         # when the repository has a colliding name.
         requirement = Requirement(ref.name, ref.version_spec, installed.host)
         try:
-            newer_repo = _NewerVersionsRepo(source_repo, installed.name, installed.host, installed.version)
+            newer_repo = NewerVersionsRepo(source_repo, installed.name, installed.host, installed.version)
             # Nothing newer in the index is success unless the spec asks for an older version. No Python probe.
             if not newer_repo.has_newer_versions(requirement):
                 older_version = newer_repo.get_older_version(requirement) if ref.version_spec else None

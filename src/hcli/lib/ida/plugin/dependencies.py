@@ -55,7 +55,6 @@ def plan_dependencies(metadata: IDAMetadataDescriptor, plugin_repo: BasePluginRe
 
     Raises:
         ResolutionError: when a required dependency cannot be satisfied.
-        PythonNotFoundError: when a candidate declares `requiresPython` and IDA's Python cannot be detected.
     """
     return resolve(
         [],

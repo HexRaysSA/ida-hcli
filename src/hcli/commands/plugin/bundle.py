@@ -33,12 +33,13 @@ from hcli.lib.ida.plugin.bundle import (
     to_manifest_target,
 )
 from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
-from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
-from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveIndex, PluginArchiveLocation
+from hcli.lib.ida.plugin.reference import parse_plugin_reference
+from hcli.lib.ida.plugin.repo import BasePluginRepo, PluginArchiveIndex
 from hcli.lib.ida.plugin.repo.bundle import (
     PluginBundleRepo,
     is_plugin_bundle_zip,
 )
+from hcli.lib.ida.plugin.repo.scoped import ScopedPluginRepo
 from hcli.lib.ida.plugin.resolve import Cell, Requirement, ResolutionError, SkippedRequirement, resolve
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, find_current_python_executable
 
@@ -318,55 +319,6 @@ class _BundleResolution:
     skipped: dict[PipTarget, list[SkippedRequirement]] = field(default_factory=dict)
 
 
-class _BundleSourceRepo(BasePluginRepo):
-    """The plugins that bundle create selects from, fetched once across target cells.
-
-    The plugins named by a `repo/`-prefixed spec come from that named repository only.
-    Plugins with the same name and host from different repositories are one plugin.
-    Each archive is fetched from the repository that listed it, one time.
-    """
-
-    def __init__(self, inner: BasePluginRepo | None, named: Mapping[str, BasePluginRepo]) -> None:
-        self._inner = inner
-        self._named = {name.lower(): repo for name, repo in named.items()}
-        self._plugins: list[Plugin] | None = None
-        self._owners: dict[tuple[str, str], BasePluginRepo] = {}
-        self._archives: dict[tuple[str, str], tuple[str, bytes]] = {}
-
-    def get_plugins(self) -> list[Plugin]:
-        if self._plugins is None:
-            sources: list[tuple[BasePluginRepo, Plugin]] = []
-            if self._inner is not None:
-                sources.extend(
-                    (self._inner, plugin)
-                    for plugin in self._inner.get_plugins()
-                    if plugin.name.lower() not in self._named
-                )
-            for name, repo in self._named.items():
-                sources.extend((repo, plugin) for plugin in repo.get_plugins() if plugin.name.lower() == name)
-
-            merged: dict[tuple[str, str], Plugin] = {}
-            for repo, plugin in sources:
-                key = (plugin.name.lower(), normalize_plugin_host(plugin.host))
-                target = merged.setdefault(key, Plugin(name=plugin.name, host=plugin.host, versions={}))
-                for version, locations in plugin.versions.items():
-                    merged_locations = target.versions.setdefault(version, [])
-                    for location in locations:
-                        location_key = (location.url, location.sha256)
-                        if location_key not in self._owners:
-                            self._owners[location_key] = repo
-                            merged_locations.append(location)
-            self._plugins = list(merged.values())
-        return self._plugins
-
-    def _fetch_and_verify(self, location: PluginArchiveLocation) -> tuple[str, bytes]:
-        key = (location.url, location.sha256)
-        if key not in self._archives:
-            self.get_plugins()
-            self._archives[key] = self._owners[key]._fetch_and_verify(location)
-        return self._archives[key]
-
-
 def _get_named_repos(
     ctx: click.Context, plugin_specs: tuple[str, ...], bundle_repo: str | None
 ) -> dict[str, tuple[str, BasePluginRepo]]:
@@ -461,7 +413,7 @@ def _get_cell_closures(
     if roots and plugin_repo is None and not named_repos:
         raise click.BadParameter("no plugin repository available to resolve spec")
     named_repos = named_repos or {}
-    repo = _BundleSourceRepo(plugin_repo, {name: named_repo for name, (_, named_repo) in named_repos.items()})
+    repo = ScopedPluginRepo(plugin_repo, {name: named_repo for name, (_, named_repo) in named_repos.items()})
 
     resolution = _BundleResolution(root_names={}, closures={})
     for spec, (name, _) in local_roots.items():

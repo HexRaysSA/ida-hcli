@@ -125,7 +125,9 @@ def test_upgrade_without_newer_version_does_not_probe_python(virtual_ida_environ
     assert "a is already up to date (2.0.0)" in _get_output(result)
 
 
-def test_upgrade_fails_when_python_probe_is_needed_for_newer_version(virtual_ida_environment_without_python, tmp_path):
+def test_upgrade_keeps_version_when_newer_version_needs_undetectable_python(
+    virtual_ida_environment_without_python, tmp_path
+):
     _install_from(tmp_path, "installed", {"a2.zip": _make_plugin_zip("a", "2.0.0")}, "a")
     repo_dir = _make_named_repo_dir(
         tmp_path,
@@ -138,8 +140,9 @@ def test_upgrade_fails_when_python_probe_is_needed_for_newer_version(virtual_ida
 
     result = _invoke("--repo", str(repo_dir), "upgrade", "a")
 
-    assert result.exit_code != 0
-    assert "already up to date" not in _get_output(result)
+    assert result.exit_code == 0, _get_output(result)
+    assert "a is already up to date (2.0.0)" in _get_output(result)
+    assert "a 3.0.0 requires Python >=3.0, and IDA's Python cannot be detected" in _get_output(result)
     assert _get_installed() == {"a": "2.0.0"}
 
 

@@ -184,6 +184,41 @@ def test_python_version_function_is_called_once():
     assert calls == [1]
 
 
+def test_failed_python_probe_excludes_only_versions_that_declare_requires_python():
+    calls: list[int] = []
+
+    def get_python_version() -> str:
+        calls.append(1)
+        raise RuntimeError("no idat")
+
+    repo = ListPluginRepo(
+        loc("a", "2.0.0", deps=["b"]),
+        loc("a", "1.0.0", requires_python=">=3.0"),
+        loc("b", "1.0.0"),
+        loc("b", "0.9.0", requires_python=">=3.0"),
+    )
+
+    assert versions(resolve([req("a")], repo, Cell(LINUX, python_version=get_python_version))) == {
+        "a": "2.0.0",
+        "b": "1.0.0",
+    }
+    assert calls == [1]
+
+
+def test_failed_python_probe_is_the_reason_when_every_version_declares_requires_python():
+    def get_python_version() -> str:
+        raise RuntimeError("no idat")
+
+    repo = ListPluginRepo(loc("a", "1.0.0", deps=["b"]), loc("b", "1.0.0", requires_python=">=3.0"))
+
+    with pytest.raises(ResolutionError) as excinfo:
+        resolve([req("a")], repo, Cell(LINUX, python_version=get_python_version))
+
+    assert "a 1.0.0 needs b: b 1.0.0 requires Python >=3.0, and IDA's Python cannot be detected: no idat" in str(
+        excinfo.value
+    )
+
+
 def test_get_plugins_is_called_once_per_resolution():
     repo = ListPluginRepo(
         loc("a", "1.0.0", deps=["b", "c"]),
