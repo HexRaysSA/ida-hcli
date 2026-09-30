@@ -23,8 +23,8 @@
 - Spell suggested follow-up commands the way hcli was launched (e.g. `uvx ida-hcli ...` under uvx, or the full path when a different `hcli` is first on PATH) instead of a bare `hcli`, which could be missing or an older install (#360)
 - Register the `ida://` protocol handler against the running hcli rather than whichever `hcli` comes first on PATH, and via `uvx ida-hcli` when running from uvx's ephemeral cache
 - Under uvx, point update notices and `hcli update` at `uvx ida-hcli@latest` instead of `hcli update` / `uv tool upgrade`
-- Ask only for plugin settings without a value in `ida-config.json` during `hcli plugin install`, and store answers that equal the default so a reinstall does not ask for them again
-- Store answers that equal the default in `hcli plugin config <plugin> setup`, so a setting can be set back to its default
+- Ask only for plugin settings without a value in `ida-config.json` during `hcli plugin install`
+- Store plugin setting values that equal the default, from install prompts, `--config`, and `hcli plugin config <plugin> setup`, so a stored value can be set back to the default and a reinstall does not ask again (#371)
 
 ### Changed
 - Log the Python-relevant environment variables (`VIRTUAL_ENV`, `PYTHONHOME`, `PATH`, ...) passed to `idat` at debug level

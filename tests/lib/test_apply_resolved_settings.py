@@ -48,3 +48,14 @@ def test_apply_resolved_settings_empty_dict(virtual_ida_environment):
 
     ok = apply_resolved_settings("plugin1", metadata, {})
     assert ok is True
+
+
+def test_apply_resolved_settings_replaces_stored_value_with_default(virtual_ida_environment):
+    ctx = make_test_install_context()
+    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v5.0.0.zip").read_bytes()
+    install_plugin_archive(buf, "plugin1", ctx)
+    _, metadata = get_metadata_from_plugin_archive(buf, "plugin1")
+
+    assert apply_resolved_settings("plugin1", metadata, {"key2": "default-3"})
+    assert apply_resolved_settings("plugin1", metadata, {"key2": "default-2"})
+    assert get_plugin_setting("plugin1", "key2") == "default-2"
