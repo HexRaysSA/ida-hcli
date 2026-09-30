@@ -511,6 +511,7 @@ def test_required_dep_cascading_rollback(virtual_ida_environment):
         )
 
     assert result.required_failure is not None
+    assert result.required_failure[0] == "pack-b"
     assert not is_plugin_installed("pack-b")
 
 

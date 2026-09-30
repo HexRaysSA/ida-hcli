@@ -92,7 +92,7 @@ def install_dependencies(
             plan = plan_dependencies(metadata, plugin_repo, ctx)
         except ResolutionError as e:
             logger.debug("failed to resolve dependencies of %s: %s", metadata.plugin.name, e, exc_info=True)
-            name = Requirement.from_spec(e.chain[1]).name if len(e.chain) > 1 else e.chain[-1]
+            name = e.requirements[0].name if e.requirements else metadata.plugin.name
             result.required_failure = (name, str(e))
             result.failed.append((name, str(e)))
             return result

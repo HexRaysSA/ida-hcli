@@ -839,7 +839,7 @@ def test_bundle_create_fails_for_ambiguous_dependency_name(tmp_path):
 
     assert result.exit_code != 0
     message = str(result.exception)
-    assert message.startswith("cannot resolve a for linux-x86_64-cp312: a 1.0.0 needs b: b is ambiguous, use one of: ")
+    assert message.startswith("cannot resolve a 1.0.0 -> b for linux-x86_64-cp312: b is ambiguous, use one of: ")
     assert f"b@{HOST}" in message
     assert f"b@{other_host}" in message
 

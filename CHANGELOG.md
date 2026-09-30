@@ -25,7 +25,7 @@
 - `hcli plugin bundle create` skips an optional plugin dependency whose own required dependencies cannot be resolved, with a warning, instead of failing the bundle
 - `hcli plugin upgrade` fetches the plugin and its dependencies from a plugin bundle that is a configured plugin repository
 - `hcli plugin upgrade` does not probe IDA's Python when the repository has no version newer than the installed one
-- `hcli plugin bundle create` fails when a plugin dependency name matches plugins from more than one host, instead of treating the dependency as missing
+- `hcli plugin bundle create`, `hcli plugin install`, and `hcli plugin upgrade` fail when a plugin dependency name without `@host` matches plugins from more than one host, in any version that can install on the target, instead of treating the dependency as missing
 - `hcli plugin bundle create` fails with an error when a local plugin requires a plugin dependency and no plugin repository is available, instead of leaving the dependency out
 - `hcli plugin bundle create` fails when a local plugin's `requiresPython` excludes a target cell
 - `hcli plugin bundle create` fails with the cause when a local plugin archive is not valid, for example when its entry point file is missing, instead of bundling an archive that the bundle index leaves out

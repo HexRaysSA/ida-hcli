@@ -69,6 +69,29 @@ def test_upgrade_reports_no_viable_upgrade_when_newest_dependency_is_unavailable
     assert _get_installed() == {"a": "1.0.0"}
 
 
+def test_upgrade_fails_when_a_newer_version_needs_an_ambiguous_plugin(windows_ida_environment, tmp_path):
+    _install_from(tmp_path, "installed", {"a1.zip": _make_plugin_zip("a", "1.0.0")}, "a")
+    repo_dir = _make_named_repo_dir(
+        tmp_path,
+        "repo",
+        {
+            "a2.zip": _make_plugin_zip("a", "2.0.0", deps=["b"]),
+            "a1.zip": _make_plugin_zip("a", "1.0.0"),
+            "b-one.zip": _make_plugin_zip("b", "1.0.0", host="https://github.com/one/b"),
+            "b-two.zip": _make_plugin_zip("b", "1.0.0", host="https://github.com/two/b"),
+        },
+    )
+
+    result = _invoke("--repo", str(repo_dir), "upgrade", "a")
+
+    assert result.exit_code != 0
+    output = _get_output(result)
+    assert "cannot resolve a 2.0.0 -> b for windows-x86_64" in output
+    assert "b is ambiguous" in output
+    assert "already up to date" not in output
+    assert _get_installed() == {"a": "1.0.0"}
+
+
 def test_upgrade_selects_newest_viable_version(windows_ida_environment, tmp_path):
     _install_from(tmp_path, "installed", {"a1.zip": _make_plugin_zip("a", "1.0.0")}, "a")
     repo_dir = _make_named_repo_dir(

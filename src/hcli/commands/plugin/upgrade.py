@@ -23,7 +23,13 @@ from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_re
 from hcli.lib.ida.plugin.repo import BasePluginRepo
 from hcli.lib.ida.plugin.repo.newer import NewerVersionsRepo
 from hcli.lib.ida.plugin.repo.scoped import ScopedPluginRepo
-from hcli.lib.ida.plugin.resolve import Requirement, ResolutionError, StepLimitError, resolve
+from hcli.lib.ida.plugin.resolve import (
+    AmbiguousRequirementError,
+    Requirement,
+    ResolutionError,
+    StepLimitError,
+    resolve,
+)
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 
 from .install import render_install_result
@@ -123,7 +129,7 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
                     get_install_cell(install_ctx),
                     installed=get_installed_versions(exclude=installed.name),
                 )
-            except StepLimitError:
+            except (AmbiguousRequirementError, StepLimitError):
                 raise
             except ResolutionError as e:
                 logger.debug("no viable upgrade: %s", e)

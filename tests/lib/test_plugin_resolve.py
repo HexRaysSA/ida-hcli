@@ -313,6 +313,32 @@ def test_missing_required_dependency_names_chain_and_reason():
     assert "a 1.0.0 needs b, which is not in the repository" in message
 
 
+def test_failure_of_a_dependency_of_a_fixed_plugin_names_its_requirements():
+    local = IDAMetadataDescriptor.model_validate(make_metadata_dict("local", "0.1.0", deps=["b"]))
+    repo = ListPluginRepo(loc("b", "1.0.0", deps=["c==1.0.0"]), loc("c", "2.0.0"))
+
+    with pytest.raises(ResolutionError) as excinfo:
+        resolve([], repo, Cell(LINUX), fixed={"local": local})
+
+    assert excinfo.value.chain == ("local 0.1.0", "b")
+    assert excinfo.value.requirements == (req("b"),)
+
+
+def test_failure_below_a_root_names_every_requirement_on_the_way():
+    repo = ListPluginRepo(
+        loc("a", "1.0.0", deps=["b"]),
+        loc("b", "1.0.0", deps=["c==1.0.0"]),
+        loc("c", "2.0.0"),
+        loc("c", "1.0.0"),
+    )
+
+    with pytest.raises(ResolutionError) as excinfo:
+        resolve([req("c==2.0.0"), req("a")], repo, Cell(LINUX))
+
+    assert excinfo.value.chain == ("a 1.0.0", "b 1.0.0", "c==1.0.0")
+    assert excinfo.value.requirements == (req("a"), req("b"), req("c==1.0.0"))
+
+
 def test_missing_root_fails():
     repo = ListPluginRepo(loc("a", "1.0.0"))
 
@@ -432,8 +458,9 @@ def test_step_limit_gives_its_own_error():
 
     message = str(excinfo.value)
     assert "20 steps" in message
-    assert LINUX in message
+    assert excinfo.value.cell == Cell(LINUX)
     assert excinfo.value.chain
+    assert f"cannot resolve {' -> '.join(excinfo.value.chain)} for {LINUX}" in message
 
 
 def test_requirement_with_host_selects_that_plugin():
@@ -482,7 +509,8 @@ def test_ambiguous_root_is_a_hard_error():
         resolve([req("a")], repo, Cell(LINUX))
 
     assert excinfo.value.chain == ("a",)
-    assert "a is ambiguous" in str(excinfo.value)
+    assert excinfo.value.cell == Cell(LINUX)
+    assert str(excinfo.value).startswith(f"cannot resolve a for {LINUX}: a is ambiguous")
 
 
 def test_names_match_case_insensitively():
@@ -800,7 +828,7 @@ def test_pin_below_installed_version_does_not_block_a_later_upgrade():
 
 
 @pytest.mark.parametrize("roots", [["a", "r"], ["r", "a"]])
-def test_version_that_needs_an_ambiguous_plugin_is_not_viable_in_any_root_order(roots: list[str]):
+def test_version_that_needs_an_ambiguous_plugin_is_an_error_in_any_root_order(roots: list[str]):
     repo = ListPluginRepo(
         loc("a", "2.0.0", deps=["x"]),
         loc("a", "1.0.0"),
@@ -809,14 +837,22 @@ def test_version_that_needs_an_ambiguous_plugin_is_not_viable_in_any_root_order(
         loc("x", "1.0.0", host=OTHER_HOST),
     )
 
-    resolution = resolve([req(root) for root in roots], repo, Cell(LINUX))
+    with pytest.raises(AmbiguousRequirementError) as excinfo:
+        resolve([req(root) for root in roots], repo, Cell(LINUX))
 
-    assert versions(resolution) == {"a": "1.0.0", "r": "1.0.0"}
+    assert excinfo.value.name == "x"
+    assert excinfo.value.chain == ("a 2.0.0", "x")
+    assert excinfo.value.cell == Cell(LINUX)
+    assert excinfo.value.candidates == [("x", HOST), ("x", OTHER_HOST)]
+    assert str(excinfo.value) == (
+        f"cannot resolve a 2.0.0 -> x for {LINUX}: x is ambiguous, use one of: x@{HOST}, x@{OTHER_HOST}"
+    )
 
 
-def test_root_whose_versions_all_need_an_ambiguous_plugin_is_an_ambiguity_error():
+def test_ambiguous_plugin_behind_a_version_that_cannot_install_is_an_error():
     repo = ListPluginRepo(
-        loc("a", "1.0.0", deps=["x"]),
+        loc("a", "2.0.0", deps=["missing", {"plugin": "x", "required": False}]),
+        loc("a", "1.0.0"),
         loc("x", "1.0.0"),
         loc("x", "1.0.0", host=OTHER_HOST),
     )
@@ -824,13 +860,69 @@ def test_root_whose_versions_all_need_an_ambiguous_plugin_is_an_ambiguity_error(
     with pytest.raises(AmbiguousRequirementError) as excinfo:
         resolve([req("a")], repo, Cell(LINUX))
 
-    message = str(excinfo.value)
-    assert excinfo.value.chain == ("a",)
+    assert excinfo.value.chain == ("a 2.0.0", "x")
+
+
+def test_ambiguous_plugin_behind_a_location_for_another_platform_is_not_an_error():
+    repo = ListPluginRepo(
+        loc("a", "1.0.0", platforms=[WINDOWS], deps=["x"]),
+        loc("a", "1.0.0", platforms=[LINUX]),
+        loc("x", "1.0.0"),
+        loc("x", "1.0.0", host=OTHER_HOST),
+    )
+
+    resolution = resolve([req("a")], repo, Cell(LINUX))
+
+    assert versions(resolution) == {"a": "1.0.0"}
+
+
+def test_ambiguous_name_satisfied_by_an_installed_plugin_is_not_an_error():
+    repo = ListPluginRepo(
+        loc("a", "1.0.0", deps=["x"]),
+        loc("x", "1.0.0"),
+        loc("x", "1.0.0", host=OTHER_HOST),
+    )
+
+    resolution = resolve([req("a")], repo, Cell(LINUX), installed={"x": "1.0.0"})
+
+    assert versions(resolution) == {"a": "1.0.0"}
+
+
+def test_ambiguous_name_that_needs_an_upgrade_of_an_installed_plugin_is_an_error():
+    repo = ListPluginRepo(
+        loc("a", "1.0.0", deps=["x==2.0.0"]),
+        loc("x", "2.0.0"),
+        loc("x", "2.0.0", host=OTHER_HOST),
+    )
+
+    with pytest.raises(AmbiguousRequirementError) as excinfo:
+        resolve([req("a")], repo, Cell(LINUX), installed={"x": "1.0.0"})
+
+    assert excinfo.value.chain == ("a 1.0.0", "x==2.0.0")
+
+
+def test_ambiguous_name_of_a_fixed_plugin_is_not_an_error():
+    fixed = IDAMetadataDescriptor.model_validate(make_metadata_dict("x", "1.0.0"))
+    repo = ListPluginRepo(
+        loc("a", "1.0.0", deps=["x"]),
+        loc("x", "1.0.0"),
+        loc("x", "1.0.0", host=OTHER_HOST),
+    )
+
+    resolution = resolve([req("a")], repo, Cell(LINUX), fixed={"x": fixed})
+
+    assert versions(resolution) == {"a": "1.0.0"}
+
+
+def test_ambiguity_candidates_are_listed_once():
+    repo = ListPluginRepo(loc("x", "1.0.0"), loc("x", "1.0.0", host=OTHER_HOST))
+    repo.plugins.append(Plugin(name="x", host=HOST, versions={}))
+
+    with pytest.raises(AmbiguousRequirementError) as excinfo:
+        resolve([req("x")], repo, Cell(LINUX))
+
     assert excinfo.value.candidates == [("x", HOST), ("x", OTHER_HOST)]
-    assert LINUX in message
-    assert "a 1.0.0 needs x" in message
-    assert f"x@{HOST}" in message
-    assert f"x@{OTHER_HOST}" in message
+    assert str(excinfo.value).endswith(f"use one of: x@{HOST}, x@{OTHER_HOST}")
 
 
 def test_incompatible_version_is_explained_by_the_location_for_the_platform():
