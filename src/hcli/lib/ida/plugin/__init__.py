@@ -267,7 +267,8 @@ class PluginSettingDescriptor(BaseModel):
         default=None,
         description=(
             "Default value used when no other config provides one. "
-            "Not written into `ida-config.json`; provided on-demand."
+            "Written into `ida-config.json` only when the user selects it, such as at an install prompt; "
+            "otherwise provided on-demand."
         ),
     )
 
