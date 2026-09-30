@@ -7,10 +7,10 @@
 - Support an optional `requiresPython` field in `ida-plugin.json` and check it against IDA's Python environment before installation
 - `hcli plugin install`, `hcli plugin upgrade`, plugin dependency installation, and `hcli plugin bundle create` skip plugin versions whose `requiresPython` excludes the target Python version, and select the newest version that is compatible. When IDA's Python cannot be detected, `hcli plugin install` and `hcli plugin upgrade` skip only the versions that declare `requiresPython`
 - `hcli plugin bundle create` selects, for each target cell, the newest plugin version whose required plugin dependencies can also be resolved for that cell, and goes back to older versions when two plugins pin different versions of one dependency
-- `hcli plugin bundle create` accepts a `repo/` prefix on a plugin spec to select a configured plugin repository
+- `hcli plugin bundle create` accepts a `repo/` prefix on a plugin spec to select the plugin from a configured plugin repository. The spec and its dependencies resolve across all configured repositories
 - Recursive plugin dependency installation: dependencies that declare their own dependencies are resolved transitively
 - `hcli plugin install` selects, for the current IDA installation, the newest version of the plugin whose required plugin dependencies can also be resolved, and goes back to older versions of the plugin or of a dependency when a newer one cannot be satisfied
-- `hcli plugin upgrade` selects the newest version newer than the installed one whose required plugin dependencies can also be resolved. When no newer version can be installed, it reports that the plugin is up to date and prints why each newer version was rejected. `hcli plugin install --upgrade` prints the same reasons when it keeps the installed version
+- `hcli plugin upgrade` selects the newest version newer than the installed one whose required plugin dependencies can also be resolved. When no newer version can be installed, it reports that the plugin is up to date and prints why each newer version was rejected
 - Add `--allowed-editions` to `hcli asset put` to gate an asset by licence edition, addon code, or `any_edition`
 - Warn when IDA's Python version (registered by idapyswitch) doesn't match the active virtualenv, in `explain-environment` and before installing plugin dependencies
 - Honor `$IDAPYTHON_VENV_EXECUTABLE` for plugin dependency management
@@ -30,7 +30,6 @@
 - `hcli plugin bundle create` fails when a local plugin's `requiresPython` excludes a target cell
 - `hcli plugin bundle create` fails with the cause when a local plugin archive is not valid, for example when its entry point file is missing, instead of bundling an archive that the bundle index leaves out
 - `hcli plugin bundle create` fails when a plugin dependency pins a version that a local plugin in the bundle does not have, instead of building a bundle that cannot install the dependent plugin
-- `hcli plugin bundle create` fails when two specs select one plugin from different repositories with a `repo/` prefix, and a `repo/` prefix also limits dependencies with that name to the named repository
 - `hcli plugin bundle create` treats a plugin with the same name and host in two configured repositories as one plugin, instead of reporting it as ambiguous
 - Resolve plugin dependencies with an `@host` suffix, or with a name in a different letter case, during `hcli plugin bundle create`
 - `hcli plugin bundle create` resolves plugins, plugin dependencies, and Python dependencies separately for each target cell, so a wheelhouse only contains the wheels of the plugins resolved for its cell

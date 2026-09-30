@@ -32,7 +32,6 @@ from hcli.lib.ida.plugin.exceptions import (
     PluginNotInstalledError,
 )
 from hcli.lib.ida.plugin.install import (
-    InstalledPluginRecord,
     apply_install,
     apply_upgrade,
     find_installed_plugin,
@@ -49,12 +48,10 @@ from hcli.lib.ida.plugin.reference import (
 )
 from hcli.lib.ida.plugin.repo import BasePluginRepo, fetch_plugin_archive
 from hcli.lib.ida.plugin.repo.github import fetch_github_release_zip_asset, parse_github_url
-from hcli.lib.ida.plugin.repo.newer import NewerVersionsRepo
 from hcli.lib.ida.plugin.repo.scoped import ScopedPluginRepo
 from hcli.lib.ida.plugin.resolve import (
     AmbiguousRequirementError,
     Requirement,
-    ResolutionError,
     get_requirements,
     resolve,
 )
@@ -165,22 +162,6 @@ def _resolve_interactive_settings(
     return {}
 
 
-def _get_upgrade_blocker(
-    source_repo: BasePluginRepo, requirement: Requirement, installed: InstalledPluginRecord, ctx: InstallContext
-) -> str | None:
-    """Why the versions newer than the installed one cannot install, or None when the repository has none."""
-    newer_repo = NewerVersionsRepo(source_repo, installed.name, installed.host, installed.version)
-    if not newer_repo.has_newer_versions(requirement):
-        return None
-    try:
-        resolve(
-            [requirement], newer_repo, get_install_cell(ctx), installed=get_installed_versions(exclude=installed.name)
-        )
-    except ResolutionError as e:
-        return "; ".join(e.reasons)
-    return None
-
-
 def render_install_result(result: InstallResult, *, editable: bool = False, is_upgrade: bool = False) -> None:
     """Walk an InstallResult tree and print status lines to the console."""
     if result.status == InstallStatus.SUCCESS:
@@ -276,7 +257,6 @@ def install_plugin(
     plugin_repo_obj = ctx.obj.get("plugin_repo")
     plugin_spec = plugin
     source_repo: ScopedPluginRepo | None = None
-    requirement: Requirement | None = None
     try:
         sweep_trash()
 
@@ -428,12 +408,6 @@ def install_plugin(
                 console.print(
                     f"[green]Already installed[/green] plugin: [blue]{plugin_name}[/blue]=={installed.version}"
                 )
-                if source_repo is not None and requirement is not None:
-                    blocker = _get_upgrade_blocker(
-                        source_repo, dataclasses.replace(requirement, host=installed.host), installed, install_ctx
-                    )
-                    if blocker is not None:
-                        console.print(f"  newer versions cannot be installed here: {blocker}")
                 return
             is_upgrade = True
 

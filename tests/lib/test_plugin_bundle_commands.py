@@ -895,7 +895,26 @@ def _invoke_create_with_repos(tmp_path: Path, repos: dict[str, dict[str, bytes]]
     return CliRunner(mix_stderr=False).invoke(bundle, argv, obj=obj)
 
 
+OTHER_HOST = "https://github.com/other/other"
+
+
 def test_bundle_create_selects_named_repository_for_prefixed_spec(tmp_path):
+    result = _invoke_create_with_repos(
+        tmp_path,
+        {
+            "main": {"a2.zip": _make_plugin_zip("a", "2.0.0")},
+            "other": {"a1.zip": _make_plugin_zip("a", "1.0.0", host=OTHER_HOST)},
+        },
+        ["linux-x86_64-cp312"],
+        ["other/a"],
+    )
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(tmp_path / "output.zip") == ["plugins/a-1.0.0.zip"]
+    assert "resolved other/a: 1.0.0" in _get_stderr(result)
+
+
+def test_bundle_create_prefixed_spec_selects_from_every_repository_that_lists_the_plugin(tmp_path):
     result = _invoke_create_with_repos(
         tmp_path,
         {
@@ -907,8 +926,7 @@ def test_bundle_create_selects_named_repository_for_prefixed_spec(tmp_path):
     )
 
     assert result.exit_code == 0, result.output + result.stderr
-    assert _get_bundled_plugin_members(tmp_path / "output.zip") == ["plugins/a-1.0.0.zip"]
-    assert "resolved other/a: 1.0.0" in _get_stderr(result)
+    assert _get_bundled_plugin_members(tmp_path / "output.zip") == ["plugins/a-2.0.0.zip"]
 
 
 def test_bundle_create_refuses_repository_prefix_with_repo_option(tmp_path, versioned_repo_dir):
@@ -920,7 +938,25 @@ def test_bundle_create_refuses_repository_prefix_with_repo_option(tmp_path, vers
     assert not out.exists()
 
 
-def test_bundle_create_fails_for_one_plugin_with_two_repository_prefixes(tmp_path):
+def test_bundle_create_fails_for_two_repository_prefixes_that_select_different_plugins(tmp_path):
+    result = _invoke_create_with_repos(
+        tmp_path,
+        {
+            "main": {"a3.zip": _make_plugin_zip("a", "3.0.0")},
+            "other": {"a1.zip": _make_plugin_zip("a", "1.0.0", host=OTHER_HOST)},
+        },
+        ["linux-x86_64-cp312"],
+        ["main/a", "other/a"],
+    )
+
+    assert result.exit_code != 0
+    assert str(result.exception) == (
+        f"cannot resolve a@{OTHER_HOST} for linux-x86_64-cp312: a 3.0.0 is already selected for a@{HOST}"
+    )
+    assert not (tmp_path / "output.zip").exists()
+
+
+def test_bundle_create_accepts_two_repository_prefixes_that_select_one_plugin(tmp_path):
     result = _invoke_create_with_repos(
         tmp_path,
         {
@@ -931,10 +967,8 @@ def test_bundle_create_fails_for_one_plugin_with_two_repository_prefixes(tmp_pat
         ["main/a", "other/a"],
     )
 
-    assert result.exit_code != 0
-    output = " ".join(result.output.split())
-    assert "'main/a' and 'other/a' select plugin a from different repositories" in output
-    assert not (tmp_path / "output.zip").exists()
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(tmp_path / "output.zip") == ["plugins/a-3.0.0.zip"]
 
 
 def test_bundle_create_resolves_dependencies_of_prefixed_plugin(tmp_path):
@@ -952,7 +986,7 @@ def test_bundle_create_resolves_dependencies_of_prefixed_plugin(tmp_path):
     assert _get_bundled_plugin_members(tmp_path / "output.zip") == ["plugins/a-1.0.0.zip", "plugins/c-1.0.0.zip"]
 
 
-def test_bundle_create_takes_dependency_with_prefixed_name_from_named_repository(tmp_path):
+def test_bundle_create_satisfies_bare_dependency_with_the_prefixed_root(tmp_path):
     result = _invoke_create_with_repos(
         tmp_path,
         {
@@ -960,14 +994,14 @@ def test_bundle_create_takes_dependency_with_prefixed_name_from_named_repository
             "other": {"a1.zip": _make_plugin_zip("a", "1.0.0")},
         },
         ["linux-x86_64-cp312"],
-        ["other/a", "b"],
+        ["other/a==1.0.0", "b"],
     )
 
     assert result.exit_code == 0, result.output + result.stderr
     assert _get_bundled_plugin_members(tmp_path / "output.zip") == ["plugins/a-1.0.0.zip", "plugins/b-1.0.0.zip"]
 
 
-def test_bundle_create_error_for_prefixed_spec_names_the_repository(tmp_path):
+def test_bundle_create_fails_for_prefixed_spec_that_the_repository_does_not_list(tmp_path):
     result = _invoke_create_with_repos(
         tmp_path,
         {
@@ -979,9 +1013,29 @@ def test_bundle_create_error_for_prefixed_spec_names_the_repository(tmp_path):
     )
 
     assert result.exit_code != 0
-    message = str(result.exception)
-    assert message.startswith("cannot resolve x for linux-x86_64-cp312: ")
-    assert message.endswith("(x comes only from repository other)")
+    assert "Plugin x is not in repository other" in " ".join(result.output.split())
+    assert not (tmp_path / "output.zip").exists()
+
+
+def test_bundle_create_fails_for_prefixed_spec_that_is_ambiguous_in_the_repository(tmp_path):
+    result = _invoke_create_with_repos(
+        tmp_path,
+        {
+            "main": {"x1.zip": _make_plugin_zip("x", "1.0.0")},
+            "other": {
+                "a1.zip": _make_plugin_zip("a", "1.0.0"),
+                "a-other.zip": _make_plugin_zip("a", "1.0.0", host=OTHER_HOST),
+            },
+        },
+        ["linux-x86_64-cp312"],
+        ["other/a"],
+    )
+
+    assert result.exit_code != 0
+    output = " ".join(result.output.split())
+    assert "Plugin name 'a' is ambiguous in repository other" in output
+    assert f"other/a@{HOST}" in output
+    assert f"other/a@{OTHER_HOST}" in output
 
 
 def test_bundle_create_treats_one_plugin_in_two_repositories_as_one_plugin(tmp_path):
