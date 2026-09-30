@@ -7,7 +7,8 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,6 +18,7 @@ import rich_click as click
 from hcli import __version__ as hcli_version
 from hcli.lib.console import console, stderr_console
 from hcli.lib.ida.plugin import (
+    IDAMetadataDescriptor,
     get_metadatas_with_paths_from_plugin_archive,
     get_python_dependencies_from_plugin_archive,
     get_version_from_plugin_archive,
@@ -30,12 +32,13 @@ from hcli.lib.ida.plugin.bundle import (
     to_manifest_target,
 )
 from hcli.lib.ida.plugin.components import find_root_manifest_in_archive
-from hcli.lib.ida.plugin.reference import DependencyEntry, parse_plugin_reference
+from hcli.lib.ida.plugin.reference import parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveIndex, PluginArchiveLocation
 from hcli.lib.ida.plugin.repo.bundle import (
     PluginBundleRepo,
     is_plugin_bundle_zip,
 )
+from hcli.lib.ida.plugin.resolve import Cell, Requirement, ResolutionError, SkippedRequirement, resolve
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, find_current_python_executable
 
 logger = logging.getLogger(__name__)
@@ -79,39 +82,18 @@ def _is_local_plugin_spec(spec: str) -> bool:
     return (path.is_dir() and (path / "ida-plugin.json").is_file()) or (path.exists() and spec.endswith(".zip"))
 
 
-def _resolve_plugin_bytes(
-    spec: str,
-    plugin_repo: BasePluginRepo | None,
-    current_platform: str | None = None,
-    python_version: str | None = None,
-) -> tuple[str, bytes]:
+def _read_local_plugin(spec: str) -> tuple[str, bytes]:
+    """Read the archive of a local plugin directory or ZIP, and the plugin's name."""
     path = Path(spec).expanduser()
 
-    if path.is_dir() and (path / "ida-plugin.json").is_file():
+    if path.is_dir():
         from hcli.lib.ida.plugin.install import pack_plugin_directory_to_zip
 
         buf = pack_plugin_directory_to_zip(path.resolve())
-        _, meta = find_root_manifest_in_archive(buf)
-        return meta.plugin.name, buf
-
-    if path.exists() and spec.endswith(".zip"):
+    else:
         buf = path.read_bytes()
-        _, meta = find_root_manifest_in_archive(buf)
-        return meta.plugin.name, buf
-
-    host: str | None = None
-    clean_spec = spec
-    try:
-        ref = parse_plugin_reference(spec)
-        host = ref.host
-        clean_spec = f"{ref.name}{ref.version_spec}" if ref.version_spec else ref.name
-    except ValueError:
-        pass
-
-    if plugin_repo is None:
-        raise click.BadParameter("no plugin repository available to resolve spec")
-
-    return plugin_repo.fetch_plugin_from_spec(clean_spec, current_platform, host=host, python_version=python_version)
+    _, meta = find_root_manifest_in_archive(buf)
+    return meta.plugin.name, buf
 
 
 def _resolve_targets(
@@ -225,6 +207,7 @@ def create(
     """Create a plugin bundle from plugin specs, local directories, and/or ZIPs."""
     pip_options: PipOptions = ctx.obj.get("pip_options", PIP_OPTIONS_DEFAULT)
     parent_repo = ctx.obj.get("plugin_repo")
+    named_repos = _get_named_repos(ctx, plugin_specs, bundle_repo)
 
     if bundle_repo is not None:
         from hcli.lib.ida.plugin.repo.file import JSONFilePluginRepo
@@ -253,7 +236,7 @@ def create(
         deps_dir = staging / "dependencies" / "python"
         deps_dir.mkdir(parents=True)
 
-        resolution = _get_cell_closures(plugin_specs, pip_targets, parent_repo)
+        resolution = _get_cell_closures(plugin_specs, pip_targets, parent_repo, named_repos)
 
         plugin_index = PluginArchiveIndex()
         bufs_by_name: dict[str, dict[PipTarget, bytes]] = {}
@@ -273,6 +256,12 @@ def create(
         for name in dependency_names:
             versions = _render_versions_by_target(name, bufs_by_name[name], pip_targets)
             stderr_console.print(f"  included dependency: {name} {versions}")
+
+        for (chain, reason), skipped_targets in _group_skipped_by_target(resolution.skipped, pip_targets).items():
+            labels = ", ".join(_get_target_labels(skipped_targets, pip_targets))
+            stderr_console.print(
+                f"[yellow]warning[/yellow]: skipped optional dependency {' -> '.join(chain)} ({labels}): {reason}"
+            )
 
         target_manifests = []
         for target in pip_targets:
@@ -313,9 +302,6 @@ def create(
         console.print(f"    {t.ida_platform}  Python {t.python_version}")
 
 
-MAX_LOOSE_DEP_DEPTH = 10
-
-
 @dataclass
 class _BundleResolution:
     """The plugins selected for each target cell.
@@ -323,73 +309,172 @@ class _BundleResolution:
     Attributes:
         root_names: plugin name for each positional spec.
         closures: plugin archives by plugin name, for each target cell.
+        skipped: optional dependencies that could not be resolved, for each target cell.
     """
 
     root_names: dict[str, str]
     closures: dict[PipTarget, dict[str, bytes]]
+    skipped: dict[PipTarget, list[SkippedRequirement]] = field(default_factory=dict)
 
 
-class _CachingPluginRepo(BasePluginRepo):
-    """Wraps a plugin repository so that the index and each archive are fetched once across target cells."""
+class _BundleSourceRepo(BasePluginRepo):
+    """The plugins that bundle create selects from, fetched once across target cells.
 
-    def __init__(self, inner: BasePluginRepo) -> None:
+    The plugins named by a `repo/`-prefixed spec come from that named repository only.
+    Each archive is fetched from the repository that listed it, one time.
+    """
+
+    def __init__(self, inner: BasePluginRepo | None, named: Mapping[str, BasePluginRepo]) -> None:
         self._inner = inner
+        self._named = {name.lower(): repo for name, repo in named.items()}
         self._plugins: list[Plugin] | None = None
+        self._owners: dict[tuple[str, str], BasePluginRepo] = {}
         self._archives: dict[tuple[str, str], tuple[str, bytes]] = {}
 
     def get_plugins(self) -> list[Plugin]:
         if self._plugins is None:
-            self._plugins = self._inner.get_plugins()
+            sources: list[tuple[BasePluginRepo, Plugin]] = []
+            if self._inner is not None:
+                sources.extend(
+                    (self._inner, plugin)
+                    for plugin in self._inner.get_plugins()
+                    if plugin.name.lower() not in self._named
+                )
+            for name, repo in self._named.items():
+                sources.extend((repo, plugin) for plugin in repo.get_plugins() if plugin.name.lower() == name)
+
+            for repo, plugin in sources:
+                for locations in plugin.versions.values():
+                    for location in locations:
+                        self._owners[(location.url, location.sha256)] = repo
+            self._plugins = [plugin for _, plugin in sources]
         return self._plugins
 
     def _fetch_and_verify(self, location: PluginArchiveLocation) -> tuple[str, bytes]:
         key = (location.url, location.sha256)
         if key not in self._archives:
-            self._archives[key] = self._inner._fetch_and_verify(location)
+            self.get_plugins()
+            self._archives[key] = self._owners[key]._fetch_and_verify(location)
         return self._archives[key]
+
+
+def _get_named_repos(
+    ctx: click.Context, plugin_specs: tuple[str, ...], bundle_repo: str | None
+) -> dict[str, BasePluginRepo]:
+    """Select the named repository of each positional spec with a `repo/` prefix, by plugin name.
+
+    Raises:
+        click.Abort: when a prefix is combined with --repo, or names an unknown or unreachable repository.
+    """
+    from hcli.commands.plugin import repo_for_reference
+
+    named: dict[str, BasePluginRepo] = {}
+    for spec in plugin_specs:
+        if _is_local_plugin_spec(spec):
+            continue
+        try:
+            ref = parse_plugin_reference(spec)
+        except ValueError:
+            continue
+        if ref.repo is None:
+            continue
+        if bundle_repo is not None:
+            console.print(
+                f"[red]Cannot use the repository prefix '{ref.repo}/' with --repo[/red]: "
+                f"--repo already selects the only repository searched."
+            )
+            raise click.Abort()
+        named[ref.name] = repo_for_reference(ctx, ref)
+    return named
+
+
+def _get_local_metadata(buf: bytes) -> IDAMetadataDescriptor:
+    """Read a local plugin's metadata, with its components expanded as a repository index lists them.
+
+    Raises:
+        ValueError: when the archive does not contain a valid plugin.
+    """
+    index = PluginArchiveIndex()
+    index.index_plugin_archive(buf, "local")
+    plugins = index.get_plugins()
+    if not plugins:
+        _, metadata = find_root_manifest_in_archive(buf)
+        raise ValueError(f"{metadata.plugin.name} {metadata.plugin.version} is not a valid plugin archive")
+    [locations] = plugins[0].versions.values()
+    return locations[0].metadata
 
 
 def _get_cell_closures(
     plugin_specs: tuple[str, ...],
     pip_targets: list[PipTarget],
     plugin_repo: BasePluginRepo | None,
+    named_repos: Mapping[str, BasePluginRepo] | None = None,
 ) -> _BundleResolution:
     """Resolve the plugin specs and their loose dependencies separately for each target cell.
+
+    Local specs are fixed roots. Repository specs are resolved in order, newest viable version first.
 
     Raises:
         click.BadParameter: when a repository spec is given without a plugin repository.
         RuntimeError: when a plugin spec or a required dependency cannot be resolved for a cell,
             or when a local plugin's requiresPython excludes a cell.
     """
-    repo = _CachingPluginRepo(plugin_repo) if plugin_repo is not None else None
-
     local_roots: dict[str, tuple[str, bytes]] = {}
+    fixed: dict[str, IDAMetadataDescriptor] = {}
+    roots: dict[str, Requirement] = {}
     for spec in plugin_specs:
         if _is_local_plugin_spec(spec):
             with rich.status.Status(f"resolving {spec}", console=stderr_console):
-                local_roots[spec] = _resolve_plugin_bytes(spec, None)
+                name, buf = _read_local_plugin(spec)
+            local_roots[spec] = (name, buf)
+            fixed[name] = _get_local_metadata(buf)
+        else:
+            try:
+                roots[spec] = Requirement.from_spec(spec)
+            except ValueError as e:
+                raise click.BadParameter(f"invalid plugin spec '{spec}': {e}") from e
+
+    if roots and plugin_repo is None and not named_repos:
+        raise click.BadParameter("no plugin repository available to resolve spec")
+    repo = _BundleSourceRepo(plugin_repo, named_repos or {})
 
     resolution = _BundleResolution(root_names={}, closures={})
-    for target in pip_targets:
-        roots: dict[str, bytes] = {}
-        for spec in plugin_specs:
-            if spec in local_roots:
-                name, buf = local_roots[spec]
-                _validate_local_root_python(buf, target)
-            else:
-                with rich.status.Status(f"resolving {spec} for {target.id}", console=stderr_console):
-                    try:
-                        name, buf = _resolve_plugin_bytes(spec, repo, target.ida_platform, target.python_version)
-                    except KeyError as e:
-                        raise RuntimeError(f"cannot resolve '{spec}' for {target.id}: {e}") from e
-            resolution.root_names[spec] = name
-            roots[name] = buf
+    for spec, (name, _) in local_roots.items():
+        resolution.root_names[spec] = name
 
-        with rich.status.Status(f"resolving loose dependencies for {target.id}", console=stderr_console):
-            dependencies = _resolve_loose_deps(roots, repo, target.ida_platform, target.python_version)
-        resolution.closures[target] = {**roots, **dependencies}
+    for target in pip_targets:
+        for _, buf in local_roots.values():
+            _validate_local_root_python(buf, target)
+
+        cell = Cell(target.ida_platform, python_version=target.python_version, label=target.id)
+        with rich.status.Status(f"resolving plugins for {target.id}", console=stderr_console):
+            try:
+                cell_resolution = resolve(list(roots.values()), repo, cell, fixed=fixed)
+            except ResolutionError as e:
+                raise RuntimeError(str(e)) from e
+
+            closure = {name: buf for name, buf in local_roots.values()}
+            for name, location in cell_resolution.selected.items():
+                closure[name] = repo.fetch_plugin_location(location)[1]
+
+        for spec, requirement in roots.items():
+            resolution.root_names[spec] = cell_resolution.roots[requirement]
+        resolution.closures[target] = closure
+        resolution.skipped[target] = cell_resolution.skipped
 
     return resolution
+
+
+def _group_skipped_by_target(
+    skipped: dict[PipTarget, list[SkippedRequirement]],
+    pip_targets: list[PipTarget],
+) -> dict[tuple[tuple[str, ...], str], list[PipTarget]]:
+    """Group the skipped optional dependencies by chain and reason, keeping target cell order."""
+    grouped: dict[tuple[tuple[str, ...], str], list[PipTarget]] = {}
+    for target in pip_targets:
+        for item in skipped.get(target, []):
+            grouped.setdefault((item.chain, item.reason), []).append(target)
+    return grouped
 
 
 def _validate_local_root_python(buf: bytes, target: PipTarget) -> None:
@@ -467,21 +552,26 @@ def _render_versions_by_target(
 ) -> str:
     """Render the plugin version selected for each target cell, like ``2.0.0 (linux-x86_64), 1.0.0 (windows-x86_64)``.
 
-    Renders only the version when a single version covers every target cell.
+    Renders only the version when a single archive covers every target cell.
+    Each distinct archive is listed separately, even when two archives have the same version.
     A platform name stands for all target cells of that platform.
     """
-    targets_by_version: dict[str, list[PipTarget]] = {}
+    targets_by_hash: dict[str, list[PipTarget]] = {}
+    version_by_hash: dict[str, str] = {}
     for target in pip_targets:
         if target in bufs_by_target:
-            version = get_version_from_plugin_archive(bufs_by_target[target], name)
-            targets_by_version.setdefault(version, []).append(target)
+            buf = bufs_by_target[target]
+            h = hashlib.sha256(buf).hexdigest()
+            targets_by_hash.setdefault(h, []).append(target)
+            if h not in version_by_hash:
+                version_by_hash[h] = get_version_from_plugin_archive(buf, name)
 
-    if len(targets_by_version) == 1 and len(bufs_by_target) == len(pip_targets):
-        return next(iter(targets_by_version))
+    if len(targets_by_hash) == 1 and len(bufs_by_target) == len(pip_targets):
+        return next(iter(version_by_hash.values()))
 
     return ", ".join(
-        f"{version} ({', '.join(_get_target_labels(targets, pip_targets))})"
-        for version, targets in targets_by_version.items()
+        f"{version_by_hash[h]} ({', '.join(_get_target_labels(targets, pip_targets))})"
+        for h, targets in targets_by_hash.items()
     )
 
 
@@ -503,71 +593,6 @@ def _collect_all_python_deps(buf: bytes) -> list[str]:
     for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
         deps.extend(get_python_dependencies_from_plugin_archive(buf, metadata))
     return deps
-
-
-def _resolve_loose_deps(
-    known_archives: dict[str, bytes],
-    plugin_repo: BasePluginRepo | None,
-    platform: str,
-    python_version: str | None = None,
-) -> dict[str, bytes]:
-    """Resolve loose plugin dependencies recursively for one platform and Python version.
-
-    A dependency without a version pin resolves to the newest version that supports the platform
-    and whose requiresPython allows the Python version.
-
-    Returns new archives, by plugin name, not already in known_archives.
-
-    Raises:
-        RuntimeError: when a required dependency cannot be resolved.
-    """
-    if plugin_repo is None:
-        return {}
-
-    resolved: dict[str, bytes] = {}
-    seen_names: set[str] = {name.lower() for name in known_archives}
-    queue: list[bytes] = list(known_archives.values())
-    depth = 0
-
-    while queue and depth < MAX_LOOSE_DEP_DEPTH:
-        next_queue: list[bytes] = []
-        for buf in queue:
-            for _, metadata in get_metadatas_with_paths_from_plugin_archive(buf):
-                for entry in metadata.plugin.dependencies:
-                    if not isinstance(entry, DependencyEntry):
-                        continue
-                    dep_name = entry.reference.name
-                    if dep_name.lower() in seen_names:
-                        continue
-                    seen_names.add(dep_name.lower())
-
-                    spec = entry.format_spec()
-                    try:
-                        # key by the repository's plugin name: lookup ignores case, so the declared name may differ
-                        resolved_name, dep_buf = plugin_repo.fetch_plugin_from_spec(
-                            f"{dep_name}{entry.reference.version_spec}",
-                            platform,
-                            host=entry.reference.host,
-                            python_version=python_version,
-                        )
-                    except Exception as e:
-                        dependent = f"{metadata.plugin.name} {metadata.plugin.version}"
-                        if entry.required:
-                            raise RuntimeError(
-                                f"{dependent} requires '{spec}', which cannot be resolved for {platform}: {e}"
-                            ) from e
-                        logger.warning(
-                            "skipping optional dependency '%s' of %s for %s: %s", spec, dependent, platform, e
-                        )
-                        continue
-
-                    resolved[resolved_name] = dep_buf
-                    next_queue.append(dep_buf)
-
-        queue = next_queue
-        depth += 1
-
-    return resolved
 
 
 def _download_wheelhouse(

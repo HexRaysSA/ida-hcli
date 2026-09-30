@@ -6,6 +6,8 @@
 - `hcli plugin bundle create` accepts bare and range plugin specs, and resolves them and unpinned plugin dependencies to the newest version for each target platform
 - Support an optional `requiresPython` field in `ida-plugin.json` and check it against IDA's Python environment before installation
 - `hcli plugin install`, `hcli plugin upgrade`, plugin dependency installation, and `hcli plugin bundle create` skip plugin versions whose `requiresPython` excludes the target Python version, and select the newest version that is compatible
+- `hcli plugin bundle create` selects, for each target cell, the newest plugin version whose required plugin dependencies can also be resolved for that cell, and goes back to older versions when two plugins pin different versions of one dependency
+- `hcli plugin bundle create` accepts a `repo/` prefix on a plugin spec to select a configured plugin repository
 - Recursive plugin dependency installation: dependencies that declare their own dependencies are now resolved transitively, up to depth 10
 - Add `--allowed-editions` to `hcli asset put` to gate an asset by licence edition, addon code, or `any_edition`
 - Warn when IDA's Python version (registered by idapyswitch) doesn't match the active virtualenv, in `explain-environment` and before installing plugin dependencies
@@ -15,6 +17,9 @@
 
 ### Fixed
 - Check `requiresPython` of a plugin dependency before installing its Python packages
+- `hcli plugin bundle create` skips an optional plugin dependency whose own required dependencies cannot be resolved, with a warning, instead of failing the bundle
+- `hcli plugin bundle create` fails when a plugin dependency name matches plugins from more than one host, instead of treating the dependency as missing
+- `hcli plugin bundle create` fails with an error when a local plugin requires a plugin dependency and no plugin repository is available, instead of leaving the dependency out
 - `hcli plugin bundle create` fails when a local plugin's `requiresPython` excludes a target cell
 - Resolve plugin dependencies with an `@host` suffix, or with a name in a different letter case, during `hcli plugin bundle create`
 - `hcli plugin bundle create` resolves plugins, plugin dependencies, and Python dependencies separately for each target cell, so a wheelhouse only contains the wheels of the plugins resolved for its cell

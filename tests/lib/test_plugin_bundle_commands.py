@@ -18,7 +18,6 @@ from hcli.commands.plugin.bundle import (
     _get_cell_closures,
     _get_python_deps,
     _render_versions_by_target,
-    _resolve_loose_deps,
     bundle,
 )
 from hcli.lib.ida.plugin.bundle import PipTarget
@@ -49,12 +48,13 @@ def _make_plugin_metadata(
     components: list[str] | None = None,
     platforms: list[str] | None = None,
     requires_python: str | None = None,
+    host: str = HOST,
 ) -> dict:
     plugin: dict = {
         "name": name,
         "version": version,
         "entryPoint": f"{name}.py",
-        "urls": {"repository": HOST},
+        "urls": {"repository": host},
         "authors": [{"name": "Test", "email": "test@example.com"}],
     }
     if deps is not None:
@@ -303,101 +303,99 @@ def test_collect_python_deps_empty_when_no_deps():
 
 
 # ---------------------------------------------------------------------------
-# _resolve_loose_deps: unit tests
+# _get_cell_closures: loose dependencies
 # ---------------------------------------------------------------------------
 
-
-def test_resolve_loose_deps_fetches_direct_dependency():
-    plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=["plugin-b"])
-    plugin_b = _make_plugin_zip("plugin-b", "2.0.0")
-
-    with _make_fs_repo({"plugin-b.zip": plugin_b}) as repo:
-        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="linux-x86_64")
-
-    assert "plugin-b" in resolved
+LINUX_312 = PipTarget.parse("linux-x86_64-cp312")
+LINUX_311 = PipTarget.parse("linux-x86_64-cp311")
+LINUX_310 = PipTarget.parse("linux-x86_64-cp310")
+WINDOWS_312 = PipTarget.parse("windows-x86_64-cp312")
 
 
-def test_resolve_loose_deps_fetches_transitive_dependencies():
+@contextlib.contextmanager
+def _local_zip(buf: bytes) -> Iterator[str]:
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "local.zip"
+        path.write_bytes(buf)
+        yield str(path)
+
+
+def test_get_cell_closures_fetches_transitive_dependencies():
     plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=["plugin-b"])
     plugin_b = _make_plugin_zip("plugin-b", "1.0.0", deps=["plugin-c"])
     plugin_c = _make_plugin_zip("plugin-c", "1.0.0")
 
-    with _make_fs_repo({"plugin-b.zip": plugin_b, "plugin-c.zip": plugin_c}) as repo:
-        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="linux-x86_64")
+    with _make_fs_repo({"a.zip": plugin_a, "b.zip": plugin_b, "c.zip": plugin_c}) as repo:
+        closures = _get_cell_closures(("plugin-a",), [LINUX_312], repo).closures
 
-    assert "plugin-b" in resolved
-    assert "plugin-c" in resolved
+    assert closures[LINUX_312] == {"plugin-a": plugin_a, "plugin-b": plugin_b, "plugin-c": plugin_c}
 
 
-def test_resolve_loose_deps_skips_already_included():
+def test_get_cell_closures_includes_local_root_and_its_dependencies():
     plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=["plugin-b"])
-    plugin_b = _make_plugin_zip("plugin-b", "1.0.0")
+    plugin_b = _make_plugin_zip("plugin-b", "2.0.0")
 
-    with _make_fs_repo({"plugin-b.zip": plugin_b}) as repo:
-        resolved = _resolve_loose_deps(
-            {"plugin-a": plugin_a, "plugin-b": plugin_b},
-            repo,
-            platform="linux-x86_64",
-        )
+    with _make_fs_repo({"b.zip": plugin_b}) as repo, _local_zip(plugin_a) as local:
+        closures = _get_cell_closures((local,), [LINUX_312], repo).closures
 
-    assert resolved == {}
+    assert closures[LINUX_312] == {"plugin-a": plugin_a, "plugin-b": plugin_b}
 
 
-def test_resolve_loose_deps_handles_no_repo():
-    plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=["plugin-b"])
-    resolved = _resolve_loose_deps({"plugin-a": plugin_a}, None, platform="linux-x86_64")
-    assert resolved == {}
-
-
-def test_resolve_loose_deps_handles_optional_missing_dep():
-    plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=[{"plugin": "missing-dep", "required": False}])
-    with _make_fs_repo({}) as repo:
-        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="linux-x86_64")
-    assert resolved == {}
-
-
-def test_resolve_loose_deps_handles_cycle():
+def test_get_cell_closures_resolves_a_dependency_cycle():
     plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=["plugin-b"])
     plugin_b = _make_plugin_zip("plugin-b", "1.0.0", deps=["plugin-a"])
 
-    with _make_fs_repo({"plugin-b.zip": plugin_b}) as repo:
-        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="linux-x86_64")
+    with _make_fs_repo({"a.zip": plugin_a, "b.zip": plugin_b}) as repo:
+        closures = _get_cell_closures(("plugin-a",), [LINUX_312], repo).closures
 
-    assert "plugin-b" in resolved
-    assert len(resolved) == 1
-
-
-def test_resolve_loose_deps_fetches_latest_version_for_platform():
-    plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=["plugin-b"])
-    plugin_b_v1 = _make_plugin_zip("plugin-b", "1.0.0")
-    plugin_b_v2 = _make_plugin_zip("plugin-b", "2.0.0", platforms=["linux-x86_64"])
-
-    with _make_fs_repo({"plugin-b-v1.zip": plugin_b_v1, "plugin-b-v2.zip": plugin_b_v2}) as repo:
-        linux = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="linux-x86_64")
-        windows = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="windows-x86_64")
-
-    assert linux == {"plugin-b": plugin_b_v2}
-    assert windows == {"plugin-b": plugin_b_v1}
+    assert closures[LINUX_312] == {"plugin-a": plugin_a, "plugin-b": plugin_b}
 
 
-def test_resolve_loose_deps_honors_dependency_host():
+def test_get_cell_closures_honors_dependency_host():
     plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=[f"plugin-b@{HOST}"])
     plugin_b = _make_plugin_zip("plugin-b", "1.0.0")
 
-    with _make_fs_repo({"plugin-b.zip": plugin_b}) as repo:
-        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="linux-x86_64")
+    with _make_fs_repo({"a.zip": plugin_a, "b.zip": plugin_b}) as repo:
+        closures = _get_cell_closures(("plugin-a",), [LINUX_312], repo).closures
 
-    assert resolved == {"plugin-b": plugin_b}
+    assert closures[LINUX_312]["plugin-b"] == plugin_b
 
 
-def test_resolve_loose_deps_keys_by_repository_plugin_name():
+def test_get_cell_closures_keys_by_repository_plugin_name():
     plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=["Plugin-B"])
     plugin_b = _make_plugin_zip("plugin-b", "1.0.0")
 
-    with _make_fs_repo({"plugin-b.zip": plugin_b}) as repo:
-        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="linux-x86_64")
+    with _make_fs_repo({"a.zip": plugin_a, "b.zip": plugin_b}) as repo:
+        closures = _get_cell_closures(("plugin-a",), [LINUX_312], repo).closures
 
-    assert resolved == {"plugin-b": plugin_b}
+    assert set(closures[LINUX_312]) == {"plugin-a", "plugin-b"}
+
+
+def test_get_cell_closures_skips_missing_optional_dependency():
+    plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=[{"plugin": "missing-dep", "required": False}])
+
+    with _make_fs_repo({"a.zip": plugin_a}) as repo:
+        resolution = _get_cell_closures(("plugin-a",), [LINUX_312], repo)
+
+    assert resolution.closures[LINUX_312] == {"plugin-a": plugin_a}
+    [skipped] = resolution.skipped[LINUX_312]
+    assert skipped.requirement.name == "missing-dep"
+    assert skipped.reason == "missing-dep is not in the repository"
+
+
+def test_get_cell_closures_fails_for_required_dependency_without_repository():
+    plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=["plugin-b"])
+
+    with (
+        _local_zip(plugin_a) as local,
+        pytest.raises(
+            RuntimeError,
+            match=re.escape(
+                "cannot resolve plugin-a 1.0.0 -> plugin-b for linux-x86_64-cp312: plugin-b is not in the repository"
+            ),
+        ),
+    ):
+        _get_cell_closures((local,), [LINUX_312], None)
 
 
 # ---------------------------------------------------------------------------
@@ -532,10 +530,6 @@ def test_bundle_create_resolves_bare_loose_dependency_per_platform(tmp_path, ver
 # per-cell resolution
 # ---------------------------------------------------------------------------
 
-LINUX_312 = PipTarget.parse("linux-x86_64-cp312")
-LINUX_311 = PipTarget.parse("linux-x86_64-cp311")
-WINDOWS_312 = PipTarget.parse("windows-x86_64-cp312")
-
 
 def test_get_cell_closures_collects_python_deps_per_cell():
     plugin_a_v1 = _make_plugin_zip("plugin-a", "1.0.0", python_deps=["shared-pkg"])
@@ -561,23 +555,28 @@ def test_get_cell_closures_names_cell_and_dependent_for_unresolvable_dependency(
         _make_fs_repo({"a1.zip": plugin_a, "b1.zip": plugin_b}) as repo,
         pytest.raises(
             RuntimeError,
-            match=re.escape("plugin-a 1.0.0 requires 'plugin-b', which cannot be resolved for windows-x86_64"),
+            match=re.escape(
+                "cannot resolve plugin-a for windows-x86_64-cp312: "
+                "plugin-a 1.0.0 needs plugin-b: plugin-b 1.0.0 does not support windows-x86_64"
+            ),
         ),
     ):
         _get_cell_closures(("plugin-a",), [LINUX_312, WINDOWS_312], repo)
 
 
 def test_render_versions_by_target_collapses_single_version():
-    bufs = {t: _make_plugin_zip("plugin-a", "1.0.0") for t in (LINUX_311, LINUX_312, WINDOWS_312)}
+    buf = _make_plugin_zip("plugin-a", "1.0.0")
+    bufs = dict.fromkeys((LINUX_311, LINUX_312, WINDOWS_312), buf)
     assert _render_versions_by_target("plugin-a", bufs, [LINUX_311, LINUX_312, WINDOWS_312]) == "1.0.0"
 
 
 def test_render_versions_by_target_groups_by_platform_when_possible():
     targets = [LINUX_311, LINUX_312, WINDOWS_312]
+    v2 = _make_plugin_zip("plugin-a", "2.0.0")
     bufs = {
         LINUX_311: _make_plugin_zip("plugin-a", "1.0.0"),
-        LINUX_312: _make_plugin_zip("plugin-a", "2.0.0"),
-        WINDOWS_312: _make_plugin_zip("plugin-a", "2.0.0"),
+        LINUX_312: v2,
+        WINDOWS_312: v2,
     }
     assert (
         _render_versions_by_target("plugin-a", bufs, targets)
@@ -671,4 +670,242 @@ def test_bundle_create_fails_when_local_spec_excludes_cell_python(tmp_path):
 
     assert result.exit_code != 0
     assert str(result.exception) == "plugin-a 2.0.0 requires Python >=3.12, which excludes target linux-x86_64-cp310"
+    assert not out.exists()
+
+
+def test_render_versions_by_target_lists_different_archives_of_one_version_separately():
+    targets = [LINUX_310, LINUX_311, LINUX_312, WINDOWS_312]
+    old_python = _make_plugin_zip("plugin-a", "1.0.0", requires_python="<3.12")
+    new_python = _make_plugin_zip("plugin-a", "1.0.0", requires_python=">=3.12")
+    bufs = {LINUX_310: old_python, LINUX_311: old_python, LINUX_312: new_python, WINDOWS_312: new_python}
+    assert (
+        _render_versions_by_target("plugin-a", bufs, targets)
+        == "1.0.0 (linux-x86_64-cp310, linux-x86_64-cp311), 1.0.0 (linux-x86_64-cp312, windows-x86_64)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# resolver behavior through bundle create
+# ---------------------------------------------------------------------------
+
+LINUX_AND_WINDOWS = ["linux-x86_64-cp312", "windows-x86_64-cp312"]
+
+
+def _make_repo_dir(tmp_path: Path, archives: dict[str, bytes]) -> Path:
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    for filename, data in archives.items():
+        (repo_dir / filename).write_bytes(data)
+    return repo_dir
+
+
+def _get_stderr(result) -> str:
+    return " ".join(result.stderr.split())
+
+
+def test_bundle_create_selects_older_root_when_newest_dependency_is_unavailable(tmp_path):
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {
+            "a2.zip": _make_plugin_zip("a", "2.0.0", deps=["b"]),
+            "a1.zip": _make_plugin_zip("a", "1.0.0"),
+            "b1.zip": _make_plugin_zip("b", "1.0.0", platforms=["linux-x86_64"]),
+        },
+    )
+
+    out = tmp_path / "output.zip"
+    result = _invoke_create(repo_dir, out, LINUX_AND_WINDOWS, ["a"])
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(out) == [
+        "plugins/a-1.0.0-windows-x86_64.zip",
+        "plugins/a-2.0.0-linux-x86_64.zip",
+        "plugins/b-1.0.0.zip",
+    ]
+    stderr = _get_stderr(result)
+    assert "resolved a: 2.0.0 (linux-x86_64), 1.0.0 (windows-x86_64)" in stderr
+    assert "included dependency: b 1.0.0 (linux-x86_64)" in stderr
+
+
+def test_bundle_create_selects_older_dependency_when_its_newest_dependency_is_unavailable(tmp_path):
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {
+            "a1.zip": _make_plugin_zip("a", "1.0.0", deps=["b"]),
+            "b2.zip": _make_plugin_zip("b", "2.0.0", deps=["c"]),
+            "b1.zip": _make_plugin_zip("b", "1.0.0"),
+            "c1.zip": _make_plugin_zip("c", "1.0.0", platforms=["linux-x86_64"]),
+        },
+    )
+
+    out = tmp_path / "output.zip"
+    result = _invoke_create(repo_dir, out, LINUX_AND_WINDOWS, ["a"])
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(out) == [
+        "plugins/a-1.0.0.zip",
+        "plugins/b-1.0.0-windows-x86_64.zip",
+        "plugins/b-2.0.0-linux-x86_64.zip",
+        "plugins/c-1.0.0.zip",
+    ]
+    assert "included dependency: b 2.0.0 (linux-x86_64), 1.0.0 (windows-x86_64)" in _get_stderr(result)
+
+
+def test_bundle_create_selects_version_by_requires_python_across_platforms(tmp_path, requires_python_repo_dir):
+    out = tmp_path / "output.zip"
+    result = _invoke_create(requires_python_repo_dir, out, ["linux-x86_64-cp310", "windows-x86_64-cp312"], ["plugin-a"])
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(out) == [
+        "plugins/plugin-a-1.9.0-linux-x86_64.zip",
+        "plugins/plugin-a-2.0.0-windows-x86_64.zip",
+    ]
+    assert "resolved plugin-a: 1.9.0 (linux-x86_64), 2.0.0 (windows-x86_64)" in _get_stderr(result)
+
+
+def test_bundle_create_skips_optional_dependency_whose_subtree_fails(tmp_path):
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {
+            "a1.zip": _make_plugin_zip("a", "1.0.0", deps=[{"plugin": "opt", "required": False}]),
+            "opt1.zip": _make_plugin_zip("opt", "1.0.0", deps=["missing"]),
+        },
+    )
+
+    out = tmp_path / "output.zip"
+    result = _invoke_create(repo_dir, out, ["linux-x86_64-cp312"], ["a"])
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(out) == ["plugins/a-1.0.0.zip"]
+    assert (
+        "skipped optional dependency a 1.0.0 -> opt (linux-x86_64): "
+        "opt 1.0.0 needs missing, which is not in the repository"
+    ) in _get_stderr(result)
+
+
+def test_bundle_create_finds_common_version_for_two_roots(tmp_path):
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {
+            "r1.zip": _make_plugin_zip("r1", "1.0.0", deps=["b"]),
+            "r2.zip": _make_plugin_zip("r2", "1.0.0", deps=["b==1.0.0"]),
+            "b2.zip": _make_plugin_zip("b", "2.0.0"),
+            "b1.zip": _make_plugin_zip("b", "1.0.0"),
+        },
+    )
+
+    out = tmp_path / "output.zip"
+    result = _invoke_create(repo_dir, out, ["linux-x86_64-cp312"], ["r1", "r2"])
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(out) == ["plugins/b-1.0.0.zip", "plugins/r1-1.0.0.zip", "plugins/r2-1.0.0.zip"]
+
+
+def test_bundle_create_fails_for_conflicting_pins_from_two_roots(tmp_path):
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {
+            "r1.zip": _make_plugin_zip("r1", "1.0.0", deps=["b==1.0.0"]),
+            "r2.zip": _make_plugin_zip("r2", "1.0.0", deps=["b==2.0.0"]),
+            "b2.zip": _make_plugin_zip("b", "2.0.0"),
+            "b1.zip": _make_plugin_zip("b", "1.0.0"),
+        },
+    )
+
+    out = tmp_path / "output.zip"
+    result = _invoke_create(repo_dir, out, ["linux-x86_64-cp312"], ["r1", "r2"])
+
+    assert result.exit_code != 0
+    assert str(result.exception) == (
+        "cannot resolve r2 1.0.0 -> b==2.0.0 for linux-x86_64-cp312: "
+        "b 1.0.0 is already selected for r1 1.0.0 -> b==1.0.0"
+    )
+    assert not out.exists()
+
+
+def test_bundle_create_fails_for_ambiguous_dependency_name(tmp_path):
+    other_host = "https://github.com/other/other"
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {
+            "a1.zip": _make_plugin_zip("a", "1.0.0", deps=["b"]),
+            "b-test.zip": _make_plugin_zip("b", "1.0.0"),
+            "b-other.zip": _make_plugin_zip("b", "1.0.0", host=other_host),
+        },
+    )
+
+    out = tmp_path / "output.zip"
+    result = _invoke_create(repo_dir, out, ["linux-x86_64-cp312"], ["a"])
+
+    assert result.exit_code != 0
+    message = str(result.exception)
+    assert message.startswith("cannot resolve a 1.0.0 -> b for linux-x86_64-cp312: b is ambiguous, use one of: ")
+    assert f"b@{HOST}" in message
+    assert f"b@{other_host}" in message
+
+
+def test_bundle_create_includes_dependency_of_a_component(tmp_path):
+    suite = _make_suite_zip("suite", "1.0.0", [("comp", "1.0.0", {"deps": ["b"]})])
+    plugin_b = _make_plugin_zip("b", "1.0.0")
+    repo_dir = _make_repo_dir(tmp_path, {"suite.zip": suite, "b1.zip": plugin_b})
+
+    out = tmp_path / "output.zip"
+    result = _invoke_create(repo_dir, out, ["linux-x86_64-cp312"], ["suite"])
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(out) == ["plugins/b-1.0.0.zip", "plugins/suite-1.0.0.zip"]
+
+
+def test_bundle_create_includes_dependency_of_a_local_component(tmp_path):
+    suite = tmp_path / "suite.zip"
+    suite.write_bytes(_make_suite_zip("suite", "1.0.0", [("comp", "1.0.0", {"deps": ["b"]})]))
+    repo_dir = _make_repo_dir(tmp_path, {"b1.zip": _make_plugin_zip("b", "1.0.0")})
+
+    out = tmp_path / "output.zip"
+    result = _invoke_create(repo_dir, out, ["linux-x86_64-cp312"], [str(suite)])
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(out) == ["plugins/b-1.0.0.zip", "plugins/suite-1.0.0.zip"]
+
+
+def test_bundle_create_selects_named_repository_for_prefixed_spec(tmp_path):
+    from hcli.lib.ida import PluginRepository
+    from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
+
+    main_dir = tmp_path / "main"
+    main_dir.mkdir()
+    (main_dir / "a2.zip").write_bytes(_make_plugin_zip("a", "2.0.0"))
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    (other_dir / "a1.zip").write_bytes(_make_plugin_zip("a", "1.0.0"))
+
+    aggregate = AggregatePluginRepo(
+        {
+            "main": PluginRepository(name="main", url=main_dir.as_uri(), reserved=False),
+            "other": PluginRepository(name="other", url=other_dir.as_uri(), reserved=False),
+        }
+    )
+    obj = {
+        "pip_options": PipOptions(),
+        "plugin_repo": aggregate,
+        "plugin_repos": aggregate,
+        "default_plugin_repo": "main",
+    }
+
+    out = tmp_path / "output.zip"
+    runner = CliRunner(mix_stderr=False)
+    argv = ["create", "--path", str(out), "--target", "linux-x86_64-cp312", "other/a"]
+    result = runner.invoke(bundle, argv, obj=obj)
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _get_bundled_plugin_members(out) == ["plugins/a-1.0.0.zip"]
+    assert "resolved other/a: 1.0.0" in _get_stderr(result)
+
+
+def test_bundle_create_refuses_repository_prefix_with_repo_option(tmp_path, versioned_repo_dir):
+    out = tmp_path / "output.zip"
+    result = _invoke_create(versioned_repo_dir, out, ["linux-x86_64-cp312"], ["other/plugin-a"])
+
+    assert result.exit_code != 0
+    assert "Cannot use the repository prefix 'other/' with --repo" in result.output
     assert not out.exists()
