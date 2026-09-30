@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -255,9 +254,9 @@ def apply_resolved_settings(
     """Apply pre-resolved settings to IDA config without interactive prompts.
 
     Each value is parsed according to the setting descriptor's type, validated,
-    and written. Values equal to the default are written too, so that a later
-    install does not prompt for them again. Returns False on any validation
-    failure.
+    and written. Values equal to the default are written too, so that they
+    replace any stored value and a later install does not prompt for them
+    again. Returns False on any validation failure.
     """
     for key, value_str in settings.items():
         try:
@@ -272,7 +271,7 @@ def apply_resolved_settings(
 
 def get_settings_to_prompt(
     settings: list[PluginSettingDescriptor],
-    existing_values: Mapping[str, str | bool],
+    existing_values: dict[str, str | bool],
 ) -> list[PluginSettingDescriptor]:
     """Select the settings to ask about during install.
 
