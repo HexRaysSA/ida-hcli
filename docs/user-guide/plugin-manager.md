@@ -137,6 +137,8 @@ A plugin can declare other plugins as dependencies in its `ida-plugin.json`, and
 
 If a dependency is already installed and satisfies the version requirement, it is skipped. If the installed version is older than a pinned version, HCLI upgrades it. If the installed version is newer than a pin, HCLI keeps it and logs a warning. A plugin with the same name and host in more than one configured repository is one plugin. When a bare dependency name matches plugins from different hosts, the install stops with an error; the declaring plugin must use the `name@host` format to disambiguate.
 
+`hcli plugin upgrade foo` uses the same rules, but only for versions of `foo` that are newer than the installed one. It installs the newest of them whose dependencies can be resolved. When none can be installed, it prints that `foo` is up to date, followed by `newer versions cannot be installed here:` and the reasons, and exits with success. When the repository has no newer version, HCLI does not check IDA's Python version.
+
 On upgrade, HCLI installs any newly-added dependencies and tells you about any that were removed from the manifest (they stay installed so you can remove them yourself if no longer needed).
 
 On uninstall, HCLI lists installed dependencies and asks whether to remove them:

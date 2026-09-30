@@ -10,6 +10,7 @@
 - `hcli plugin bundle create` accepts a `repo/` prefix on a plugin spec to select a configured plugin repository
 - Recursive plugin dependency installation: dependencies that declare their own dependencies are resolved transitively
 - `hcli plugin install` selects, for the current IDA installation, the newest version of the plugin whose required plugin dependencies can also be resolved, and goes back to older versions of the plugin or of a dependency when a newer one cannot be satisfied
+- `hcli plugin upgrade` selects the newest version newer than the installed one whose required plugin dependencies can also be resolved. When no newer version can be installed, it reports that the plugin is up to date and prints why each newer version was rejected
 - Add `--allowed-editions` to `hcli asset put` to gate an asset by licence edition, addon code, or `any_edition`
 - Warn when IDA's Python version (registered by idapyswitch) doesn't match the active virtualenv, in `explain-environment` and before installing plugin dependencies
 - Honor `$IDAPYTHON_VENV_EXECUTABLE` for plugin dependency management
@@ -22,6 +23,8 @@
 - `hcli plugin install` installs the plugin dependencies of the components of a plugin
 - `hcli plugin install` fetches plugin dependencies from a plugin bundle that is a configured plugin repository
 - `hcli plugin bundle create` skips an optional plugin dependency whose own required dependencies cannot be resolved, with a warning, instead of failing the bundle
+- `hcli plugin upgrade` fetches the plugin and its dependencies from a plugin bundle that is a configured plugin repository
+- `hcli plugin upgrade` does not probe IDA's Python when the repository has no version newer than the installed one
 - `hcli plugin bundle create` fails when a plugin dependency name matches plugins from more than one host, instead of treating the dependency as missing
 - `hcli plugin bundle create` fails with an error when a local plugin requires a plugin dependency and no plugin repository is available, instead of leaving the dependency out
 - `hcli plugin bundle create` fails when a local plugin's `requiresPython` excludes a target cell
