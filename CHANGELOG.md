@@ -13,7 +13,7 @@
 - Add `hcli extension` as an alias for `hcli plugin`, so `hcli extension install <plugin>` uses the plugin manager
 
 ### Fixed
-- Resolve plugin dependencies with an `@host` suffix during `hcli plugin bundle create`
+- Resolve plugin dependencies with an `@host` suffix, or with a name in a different letter case, during `hcli plugin bundle create`
 - `hcli plugin bundle create` resolves plugins, plugin dependencies, and Python dependencies separately for each target cell, so a wheelhouse only contains the wheels of the plugins resolved for its cell
 - Pass every argument through to the program in `ida python exec` and `ida python run-script`, so `hcli ida python exec -m pip --help` describes pip (#287)
 - Update uv.lock for better Python 3.14 support

@@ -316,14 +316,19 @@ MAX_LOOSE_DEP_DEPTH = 10
 
 @dataclass
 class _BundleResolution:
+    """The plugins selected for each target cell.
+
+    Attributes:
+        root_names: plugin name for each positional spec.
+        closures: plugin archives by plugin name, for each target cell.
+    """
+
     root_names: dict[str, str]
-    """plugin name for each positional spec"""
     closures: dict[PipTarget, dict[str, bytes]]
-    """plugin archives by plugin name, for each target cell"""
 
 
 class _CachingPluginRepo(BasePluginRepo):
-    """Wraps a plugin repository so that each archive is fetched once across target cells."""
+    """Wraps a plugin repository so that the index and each archive are fetched once across target cells."""
 
     def __init__(self, inner: BasePluginRepo) -> None:
         self._inner = inner
@@ -479,7 +484,7 @@ def _resolve_loose_deps(
 
     A dependency without a version pin resolves to the newest version that supports the platform.
 
-    Returns new archives not already in known_archives.
+    Returns new archives, by plugin name, not already in known_archives.
 
     Raises:
         RuntimeError: when a required dependency cannot be resolved.
@@ -506,7 +511,8 @@ def _resolve_loose_deps(
 
                     spec = entry.format_spec()
                     try:
-                        _, dep_buf = plugin_repo.fetch_plugin_from_spec(
+                        # key by the repository's plugin name: lookup ignores case, so the declared name may differ
+                        resolved_name, dep_buf = plugin_repo.fetch_plugin_from_spec(
                             f"{dep_name}{entry.reference.version_spec}", platform, host=entry.reference.host
                         )
                     except Exception as e:
@@ -520,7 +526,7 @@ def _resolve_loose_deps(
                         )
                         continue
 
-                    resolved[dep_name] = dep_buf
+                    resolved[resolved_name] = dep_buf
                     next_queue.append(dep_buf)
 
         queue = next_queue

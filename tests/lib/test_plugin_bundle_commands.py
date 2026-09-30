@@ -363,6 +363,39 @@ def test_resolve_loose_deps_handles_cycle():
     assert len(resolved) == 1
 
 
+def test_resolve_loose_deps_fetches_latest_version_for_platform():
+    plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=["plugin-b"])
+    plugin_b_v1 = _make_plugin_zip("plugin-b", "1.0.0")
+    plugin_b_v2 = _make_plugin_zip("plugin-b", "2.0.0", platforms=["linux-x86_64"])
+
+    with _make_fs_repo({"plugin-b-v1.zip": plugin_b_v1, "plugin-b-v2.zip": plugin_b_v2}) as repo:
+        linux = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="linux-x86_64")
+        windows = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="windows-x86_64")
+
+    assert linux == {"plugin-b": plugin_b_v2}
+    assert windows == {"plugin-b": plugin_b_v1}
+
+
+def test_resolve_loose_deps_honors_dependency_host():
+    plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=[f"plugin-b@{HOST}"])
+    plugin_b = _make_plugin_zip("plugin-b", "1.0.0")
+
+    with _make_fs_repo({"plugin-b.zip": plugin_b}) as repo:
+        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="linux-x86_64")
+
+    assert resolved == {"plugin-b": plugin_b}
+
+
+def test_resolve_loose_deps_keys_by_repository_plugin_name():
+    plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=["Plugin-B"])
+    plugin_b = _make_plugin_zip("plugin-b", "1.0.0")
+
+    with _make_fs_repo({"plugin-b.zip": plugin_b}) as repo:
+        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="linux-x86_64")
+
+    assert resolved == {"plugin-b": plugin_b}
+
+
 # ---------------------------------------------------------------------------
 # bundle create: integration tests for loose deps
 # ---------------------------------------------------------------------------
@@ -404,29 +437,6 @@ def test_bundle_create_includes_loose_dependencies(tmp_path):
     assert len(plugin_members) == 2
     assert any("plugin-a" in m for m in plugin_members)
     assert any("plugin-b" in m for m in plugin_members)
-
-
-def test_resolve_loose_deps_fetches_latest_version_for_platform():
-    plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=["plugin-b"])
-    plugin_b_v1 = _make_plugin_zip("plugin-b", "1.0.0")
-    plugin_b_v2 = _make_plugin_zip("plugin-b", "2.0.0", platforms=["linux-x86_64"])
-
-    with _make_fs_repo({"plugin-b-v1.zip": plugin_b_v1, "plugin-b-v2.zip": plugin_b_v2}) as repo:
-        linux = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="linux-x86_64")
-        windows = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="windows-x86_64")
-
-    assert linux == {"plugin-b": plugin_b_v2}
-    assert windows == {"plugin-b": plugin_b_v1}
-
-
-def test_resolve_loose_deps_honors_dependency_host():
-    plugin_a = _make_plugin_zip("plugin-a", "1.0.0", deps=[f"plugin-b@{HOST}"])
-    plugin_b = _make_plugin_zip("plugin-b", "1.0.0")
-
-    with _make_fs_repo({"plugin-b.zip": plugin_b}) as repo:
-        resolved = _resolve_loose_deps({"plugin-a": plugin_a}, repo, platform="linux-x86_64")
-
-    assert resolved == {"plugin-b": plugin_b}
 
 
 # ---------------------------------------------------------------------------
