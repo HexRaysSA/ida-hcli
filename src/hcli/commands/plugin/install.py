@@ -142,7 +142,7 @@ def _resolve_interactive_settings(
 
         if config_prefix:
             console.print(f"\nconfigure component [blue]{plugin_name}[/blue]:")
-        answers = prompt_plugin_settings(settings_to_prompt, existing_values)
+        answers = prompt_plugin_settings(settings_to_prompt)
         if answers is None:
             raise click.Abort()
 

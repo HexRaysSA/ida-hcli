@@ -5,7 +5,7 @@ from fixtures import PLUGINS_DIR, make_test_install_context
 
 from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
 from hcli.lib.ida.plugin.install import install_plugin_archive
-from hcli.lib.ida.plugin.settings import apply_resolved_settings, get_plugin_setting
+from hcli.lib.ida.plugin.settings import apply_resolved_settings, get_plugin_setting, has_setting_in_config
 
 
 def test_apply_resolved_settings_writes_values(virtual_ida_environment):
@@ -19,7 +19,7 @@ def test_apply_resolved_settings_writes_values(virtual_ida_environment):
     assert get_plugin_setting("plugin1", "key1") == "hello"
 
 
-def test_apply_resolved_settings_skips_defaults(virtual_ida_environment):
+def test_apply_resolved_settings_writes_defaults(virtual_ida_environment):
     ctx = make_test_install_context()
     buf = (PLUGINS_DIR / "plugin1" / "plugin1-v5.0.0.zip").read_bytes()
     install_plugin_archive(buf, "plugin1", ctx)
@@ -27,6 +27,7 @@ def test_apply_resolved_settings_skips_defaults(virtual_ida_environment):
 
     ok = apply_resolved_settings("plugin1", metadata, {"key2": "default-2"})
     assert ok is True
+    assert has_setting_in_config("plugin1", "key2")
 
 
 def test_apply_resolved_settings_returns_false_on_unknown_key(virtual_ida_environment):

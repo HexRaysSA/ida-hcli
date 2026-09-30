@@ -182,9 +182,6 @@ def setup(ctx) -> None:
             raise click.Abort()
 
         for key, answer in answers.items():
-            descr = metadata.plugin.get_setting(key)
-            if descr.default == answer:
-                continue
             set_plugin_setting(plugin_name, key, answer)
 
         console.print(f"[green]Configured[/green] {plugin_name}")
