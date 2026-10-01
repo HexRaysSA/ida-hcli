@@ -23,6 +23,7 @@ from hcli.lib.ida.plugin import IDAMetadataDescriptor
 from hcli.lib.ida.plugin.dependencies import install_dependencies
 from hcli.lib.ida.plugin.install import (
     get_installed_plugin_records,
+    get_plugin_directory,
     install_plugin_archive,
     is_plugin_installed,
     uninstall_plugin,
@@ -510,6 +511,7 @@ def test_required_dep_cascading_rollback(virtual_ida_environment):
         )
 
     assert result.required_failure is not None
+    assert result.required_failure[0] == "pack-b"
     assert not is_plugin_installed("pack-b")
 
 
@@ -823,6 +825,23 @@ def test_cross_repo_bare_name_ambiguous_raises(virtual_ida_environment):
     assert result.failed[0][0] == "dep-a"
 
 
+def test_installed_dep_is_not_replaced_by_a_plugin_from_another_host(virtual_ida_environment):
+    ctx = make_test_install_context()
+    install_plugin_archive(_make_plugin_zip("dep-a", "1.0.0", host=HOST), "dep-a", ctx)
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a==2.0.0"], host=HOST_B)
+    dep_a_private = _make_plugin_zip("dep-a", "2.0.0", host=HOST_B)
+
+    with _make_combined_repo([{"dep-a.zip": dep_a_private}]) as combined:
+        install_plugin_archive(pack_zip, "my-pack", ctx)
+        _, metadata = _parse_metadata(pack_zip, "my-pack")
+        result = install_dependencies(metadata=metadata, plugin_repo=combined, ctx=ctx)
+
+    assert result.required_failure is not None
+    assert result.required_failure[0] == "dep-a"
+    assert not result.upgraded
+    assert _get_installed_version("dep-a") == "1.0.0"
+
+
 def test_cross_repo_unique_bare_name_resolves(virtual_ida_environment):
     ctx = make_test_install_context()
     pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"], host=HOST_B)
@@ -918,7 +937,7 @@ def test_lint_bare_dep_no_warning_for_community_plugin(capsys):
 # ---------------------------------------------------------------------------
 
 
-def test_apply_install_rolls_back_on_required_dep_failure(virtual_ida_environment):
+def test_apply_install_fails_before_writing_on_unresolvable_required_dep(virtual_ida_environment):
     from hcli.lib.ida.plugin.install import apply_install
     from hcli.lib.ida.plugin.result import InstallStatus
 
@@ -935,7 +954,34 @@ def test_apply_install_rolls_back_on_required_dep_failure(virtual_ida_environmen
             plugin_repo=repo,
         )
 
+    assert result.status == InstallStatus.FAILED
+    assert result.reason is not None
+    assert "cannot resolve my-pack 1.0.0 -> dep-missing for " in result.reason
+    assert not get_plugin_directory("my-pack").exists()
+
+
+def test_apply_install_rolls_back_when_required_dep_fails_to_install(virtual_ida_environment):
+    from hcli.lib.ida.plugin.install import apply_install
+    from hcli.lib.ida.plugin.result import InstallStatus
+
+    ctx = make_test_install_context(check_environment=False)
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"])
+    _, metadata = _parse_metadata(pack_zip, "my-pack")
+    remnant = get_plugin_directory("dep-a")
+    remnant.mkdir(parents=True)
+    (remnant / "leftover.txt").write_text("not a plugin")
+
+    with _make_fs_repo({"dep-a.zip": _make_plugin_zip("dep-a", "1.0.0")}) as repo:
+        result = apply_install(
+            source=pack_zip,
+            plugin_name="my-pack",
+            metadata=metadata,
+            ctx=ctx,
+            plugin_repo=repo,
+        )
+
     assert result.status == InstallStatus.ROLLED_BACK
+    assert result.reason == "required dependency failed"
     assert not is_plugin_installed("my-pack")
 
 
@@ -975,3 +1021,22 @@ def _parse_metadata(zip_data: bytes, name: str) -> tuple[Path, IDAMetadataDescri
     from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
 
     return get_metadata_from_plugin_archive(zip_data, name)
+
+
+def test_install_dependencies_applies_settings_given_under_the_declared_name(virtual_ida_environment):
+    from hcli.lib.ida.plugin.settings import get_plugin_setting
+
+    ctx = make_test_install_context(check_environment=False)
+    dep = _make_plugin_metadata("dep-a", "1.0.0")
+    dep["plugin"]["settings"] = [{"key": "api_key", "type": "string", "required": True, "name": "API Key"}]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("dep-a/ida-plugin.json", json.dumps(dep))
+        zf.writestr("dep-a/dep-a.py", "# plugin")
+    metadata = IDAMetadataDescriptor.model_validate(_make_plugin_metadata("my-pack", "1.0.0", deps=["Dep-A"]))
+
+    with _make_fs_repo({"dep-a.zip": buf.getvalue()}) as repo:
+        result = install_dependencies(metadata, repo, ctx, settings={"Dep-A": {"api_key": "secret"}})
+
+    assert result.installed == ["dep-a"]
+    assert get_plugin_setting("dep-a", "api_key") == "secret"

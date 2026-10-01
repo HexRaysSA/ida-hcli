@@ -14,12 +14,22 @@ from hcli.lib.ida import (
     explain_failed_to_detect_ida_version,
     explain_missing_current_installation_directory,
 )
-from hcli.lib.ida.plugin import get_metadata_from_plugin_archive, parse_plugin_version
+from hcli.lib.ida.plugin import get_metadata_from_plugin_archive
 from hcli.lib.ida.plugin.context import IDAEnvironment, InstallContext, InstallOptions
-from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError
+from hcli.lib.ida.plugin.dependencies import get_install_cell, get_installed_versions
+from hcli.lib.ida.plugin.exceptions import PluginNotInstalledError, PluginVersionDowngradeError
 from hcli.lib.ida.plugin.install import apply_upgrade, find_installed_plugin, sweep_trash
 from hcli.lib.ida.plugin.reference import normalize_plugin_host, parse_plugin_reference
 from hcli.lib.ida.plugin.repo import BasePluginRepo
+from hcli.lib.ida.plugin.repo.newer import NewerVersionsRepo
+from hcli.lib.ida.plugin.repo.scoped import ScopedPluginRepo
+from hcli.lib.ida.plugin.resolve import (
+    AmbiguousRequirementError,
+    Requirement,
+    ResolutionError,
+    StepLimitError,
+    resolve,
+)
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
 
 from .install import render_install_result
@@ -88,10 +98,6 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             )
             raise click.Abort()
 
-        # Anchor the lookup to the installed host regardless of whether the
-        # user supplied it. This is what makes bare-name upgrades work even
-        # when the repository has a colliding name.
-        bare_spec = ref.name + ref.version_spec
         logger.info("finding plugin in repository")
         # An explicit repo prefix narrows resolution to one repository,
         # mirroring the @host check above.
@@ -101,19 +107,47 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
             plugin_repo: BasePluginRepo = repo_for_reference(ctx, ref)
         else:
             plugin_repo = ctx.obj["plugin_repo"]
+        source_repo = ScopedPluginRepo(ctx.obj.get("plugin_repos") or plugin_repo, {ref.name: plugin_repo})
+        # Anchor the lookup to the installed host regardless of whether the
+        # user supplied it. This is what makes bare-name upgrades work even
+        # when the repository has a colliding name.
+        requirement = Requirement(ref.name, ref.version_spec, installed.host)
         try:
-            location = plugin_repo.find_compatible_plugin_from_spec(
-                bare_spec, ida_env.platform, ida_env.ida_version, host=installed.host
-            )
+            newer_repo = NewerVersionsRepo(source_repo, installed.name, installed.host, installed.version)
+            # Fail with KeyError when no repository lists the installed plugin,
+            # before "no newer version" can report it as up to date.
+            newer_repo.get_plugin_by_name(installed.name, host=installed.host)
+            # Nothing newer to install is success, not an error, when the installed
+            # version matches the spec. Checked on the index metadata, so no archive
+            # is downloaded and IDA's Python is not probed.
+            is_installed_match = requirement.matches(installed.version)
+            if not newer_repo.has_newer_versions(requirement.version_spec):
+                if is_installed_match:
+                    console.print(f"[blue]{installed.name}[/blue] is already up to date ({installed.version})")
+                    return
+                older_version = newer_repo.get_older_version(requirement.version_spec)
+                if older_version is not None:
+                    raise PluginVersionDowngradeError(installed.name, installed.version, older_version)
 
-            # The latest compatible version is the one installed: nothing to do,
-            # which is success, not an error. Checked on the index metadata so
-            # no archive is downloaded.
-            if parse_plugin_version(location.metadata.plugin.version) == parse_plugin_version(installed.version):
+            try:
+                resolution = resolve(
+                    [requirement],
+                    newer_repo,
+                    get_install_cell(install_ctx),
+                    installed=get_installed_versions(exclude=installed.name),
+                )
+            except (AmbiguousRequirementError, StepLimitError):
+                raise
+            except ResolutionError as e:
+                if not is_installed_match:
+                    raise
+                logger.debug("no viable upgrade: %s", e)
                 console.print(f"[blue]{installed.name}[/blue] is already up to date ({installed.version})")
+                console.print(f"  newer versions cannot be installed here: {'; '.join(e.reasons)}")
                 return
 
-            plugin_name, buf = plugin_repo.fetch_plugin_location(location)
+            location = resolution.selected[resolution.roots[requirement]]
+            plugin_name, buf = source_repo.fetch_plugin_location(location)
         except (httpx.ConnectError, httpx.TimeoutException):
             console.print("[red]Cannot connect to plugin repository - network unavailable.[/red]")
             console.print("Please check your internet connection.")
@@ -122,8 +156,6 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 
         from hcli.commands.plugin import resolve_bundle_install_context
-
-        dep_repo = ctx.obj.get("plugin_repos") or plugin_repo
 
         with (
             resolve_bundle_install_context(plugin_repo, install_ctx, plugin_name, host=installed.host) as effective_ctx,
@@ -134,7 +166,7 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
                 plugin_name=plugin_name,
                 metadata=metadata,
                 ctx=effective_ctx,
-                plugin_repo=dep_repo,
+                plugin_repo=source_repo,
                 old_deps=old_deps,
             )
 

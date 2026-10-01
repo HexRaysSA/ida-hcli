@@ -53,6 +53,7 @@ from hcli.lib.ida.plugin.exceptions import (
     PythonVersionIncompatibleError,
 )
 from hcli.lib.ida.plugin.reference import DependencyEntry, normalize_plugin_host
+from hcli.lib.ida.plugin.resolve import Resolution, get_requirements
 from hcli.lib.ida.plugin.result import InstallResult, InstallStatus
 from hcli.lib.ida.python import (
     PIP_OPTIONS_DEFAULT,
@@ -1101,6 +1102,8 @@ def apply_install(
     try:
         component_metadatas = validate_components_for_install(metadata, source, plugin_name, is_upgrade=False)
         destination_path = validate_for_install(metadata, ctx)
+        expanded = get_metadata_with_components(metadata, component_metadatas)
+        plan = _plan_loose_dependencies(expanded, plugin_repo, ctx)
 
         if editable:
             assert isinstance(source, Path)
@@ -1159,7 +1162,7 @@ def apply_install(
             reason=str(e),
         )
 
-    dep_results, required_failure = _install_loose_dependencies(metadata, plugin_repo, ctx, named or None)
+    dep_results, required_failure = _install_loose_dependencies(expanded, plugin_repo, ctx, named or None, plan)
 
     if required_failure:
         _rollback_fresh_install(plugin_name)
@@ -1207,6 +1210,8 @@ def apply_upgrade(
 
         component_metadatas = validate_components_for_install(metadata, zip_data, plugin_name, is_upgrade=True)
         destination_path = validate_for_upgrade(metadata, ctx)
+        expanded = get_metadata_with_components(metadata, component_metadatas)
+        plan = _plan_loose_dependencies(expanded, plugin_repo, ctx)
 
         python_deps = collect_python_dependencies_from_archive(zip_data, metadata_path, metadata)
         install_python_dependencies(python_deps, ctx, excluded_plugins={metadata.plugin.name})
@@ -1251,7 +1256,7 @@ def apply_upgrade(
 
     # Required dependency failures are not fatal for upgrades: the plugin
     # files are already at the new version and cannot be cheaply reversed.
-    install_results, _required_failure = _install_loose_dependencies(metadata, plugin_repo, ctx, named or None)
+    install_results, _required_failure = _install_loose_dependencies(expanded, plugin_repo, ctx, named or None, plan)
     dep_results.extend(install_results)
 
     return InstallResult(
@@ -1270,11 +1275,38 @@ def _rollback_fresh_install(plugin_name: str) -> None:
         logger.debug("rollback failed for %s", plugin_name, exc_info=True)
 
 
+def get_metadata_with_components(
+    metadata: IDAMetadataDescriptor, component_metadatas: dict[str, IDAMetadataDescriptor]
+) -> IDAMetadataDescriptor:
+    """A copy of `metadata` whose components are the metadata of every component, nested ones included."""
+    if not component_metadatas:
+        return metadata
+    plugin = metadata.plugin.model_copy(update={"components": list(component_metadatas.values())})
+    return metadata.model_copy(update={"plugin": plugin})
+
+
+def _plan_loose_dependencies(
+    metadata: IDAMetadataDescriptor, plugin_repo: BasePluginRepo | None, ctx: InstallContext
+) -> Resolution | None:
+    """Resolve the plugin dependencies of `metadata` before anything is written.
+
+    Raises:
+        ResolutionError: when a required dependency cannot be satisfied.
+    """
+    # Deferred: dependencies.py imports from install.py at module level.
+    from hcli.lib.ida.plugin.dependencies import plan_dependencies
+
+    if plugin_repo is None or not get_requirements(metadata):
+        return None
+    return plan_dependencies(metadata, plugin_repo, ctx)
+
+
 def _install_loose_dependencies(
     metadata: IDAMetadataDescriptor,
     plugin_repo: BasePluginRepo | None,
     ctx: InstallContext,
     settings: dict[str, dict[str, str]] | None = None,
+    plan: Resolution | None = None,
 ) -> tuple[list[InstallResult], bool]:
     """Install loose dependencies and return InstallResult entries.
 
@@ -1285,7 +1317,8 @@ def _install_loose_dependencies(
     # Deferred: dependencies.py imports from install.py at module level.
     from hcli.lib.ida.plugin.dependencies import install_dependencies
 
-    if not metadata.plugin.dependencies:
+    requirements = get_requirements(metadata)
+    if not requirements:
         return [], False
 
     if plugin_repo is None:
@@ -1293,11 +1326,10 @@ def _install_loose_dependencies(
         # Report each as FAILED but don't treat any as a required failure so
         # the parent install still succeeds (the user can install deps manually).
         results: list[InstallResult] = []
-        for entry in metadata.plugin.dependencies:
-            assert isinstance(entry, DependencyEntry)
+        for requirement in requirements:
             results.append(
                 InstallResult(
-                    plugin=entry.format_spec(),
+                    plugin=str(requirement),
                     version="",
                     status=InstallStatus.FAILED,
                     reason="cannot auto-install from a local source",
@@ -1311,6 +1343,7 @@ def _install_loose_dependencies(
             plugin_repo=plugin_repo,
             ctx=ctx,
             settings=settings,
+            plan=plan,
         )
     except Exception as e:
         logger.debug("dependency installation failed: %s", e, exc_info=True)

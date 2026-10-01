@@ -3,6 +3,7 @@ import logging
 import urllib.request
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -19,6 +20,7 @@ from hcli.lib.ida.plugin import (
     get_metadatas_with_paths_from_plugin_archive,
     get_python_dependencies_from_plugin_archive,
     is_ida_version_compatible,
+    is_python_version_compatible,
     parse_plugin_version,
     split_plugin_version_spec,
     validate_metadata_in_plugin_archive,
@@ -153,6 +155,40 @@ class Plugin(BaseModel):
     host: str  # repo URL (or other canonical URL in the future, when supported.)
     # version -> list[PluginVersion]
     versions: dict[str, list[PluginArchiveLocation]]
+
+
+PythonVersionSource = str | Callable[[], str] | None
+"""A Python version, a function that returns one (called only when needed), or None to skip the check."""
+
+
+def is_compatible_location(
+    location: PluginArchiveLocation,
+    platform: str | None,
+    ida_version: str | None = None,
+    python_version: PythonVersionSource = None,
+) -> bool:
+    """Whether a location can install on the given platform, IDA version, and Python version.
+
+    Each check is skipped when its argument is None. `python_version` may be a function,
+    which is called only when the location declares `requiresPython`. A `major.minor`
+    version is tested as `major.minor.0`.
+
+    Raises:
+        PythonNotFoundError: when `python_version` is a function that cannot detect IDA's Python.
+    """
+    plugin = location.metadata.plugin
+    if platform is not None and platform not in plugin.platforms:
+        return False
+
+    if ida_version is not None and not is_ida_version_compatible(ida_version, plugin.ida_versions):
+        return False
+
+    if python_version is not None and plugin.requires_python is not None:
+        version = python_version() if callable(python_version) else python_version
+        if not is_python_version_compatible(version, plugin.requires_python):
+            return False
+
+    return True
 
 
 def is_compatible_plugin_version_location(
