@@ -23,6 +23,7 @@
 - `hcli plugin install` installs the plugin dependencies of the components of a plugin
 - `hcli plugin install` fetches plugin dependencies from a plugin bundle that is a configured plugin repository
 - `hcli plugin bundle create` skips an optional plugin dependency whose own required dependencies cannot be resolved, with a warning, instead of failing the bundle
+- `hcli plugin bundle create` skips an optional plugin dependency for a target cell when pip cannot download its Python dependencies for that cell, with a warning, instead of failing the bundle
 - `hcli plugin upgrade` fetches the plugin and its dependencies from a plugin bundle that is a configured plugin repository
 - `hcli plugin upgrade` does not probe IDA's Python when the repository has no version newer than the installed one
 - `hcli plugin bundle create`, `hcli plugin install`, and `hcli plugin upgrade` fail when a plugin dependency name without `@host` matches plugins from more than one host, in any version that can install on the target, instead of treating the dependency as missing

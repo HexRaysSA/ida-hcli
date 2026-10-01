@@ -15,7 +15,9 @@ from click.testing import CliRunner
 
 from hcli.commands.plugin.bundle import (
     _collect_all_python_deps,
+    _download_cell_wheelhouse,
     _get_cell_closures,
+    _get_optional_groups,
     _get_python_deps,
     _render_versions_by_target,
     bundle,
@@ -1138,3 +1140,158 @@ def test_bundle_create_fetches_archives_from_a_configured_bundle_repository(tmp_
 
     assert result.exit_code == 0, f"{result.output}{result.stderr}{result.exception!r}"
     assert _get_bundled_plugin_members(out) == ["plugins/a-1.0.0.zip", "plugins/b-1.0.0.zip"]
+
+
+# ---------------------------------------------------------------------------
+# optional dependencies whose Python dependencies cannot be downloaded
+# ---------------------------------------------------------------------------
+
+
+def _optional(name: str) -> dict:
+    return {"plugin": name, "required": False}
+
+
+def test_get_optional_groups_follows_required_requirements_only():
+    archives = {
+        "a.zip": _make_plugin_zip("a", "1.0.0", deps=["b", _optional("opt")]),
+        "b.zip": _make_plugin_zip("b", "1.0.0"),
+        "opt.zip": _make_plugin_zip("opt", "1.0.0", deps=["c"]),
+        "c.zip": _make_plugin_zip("c", "1.0.0"),
+    }
+    with _make_fs_repo(archives) as repo:
+        resolution = _get_cell_closures(("a",), [LINUX_312], repo)
+
+    required, groups = _get_optional_groups(["a"], resolution.metadata[LINUX_312])
+
+    assert required == ["a", "b"]
+    [group] = groups
+    assert group.parent == "a"
+    assert group.plugins == ("opt", "c")
+    assert group.chain == ("a 1.0.0", "opt")
+
+
+def test_get_optional_groups_ignores_optional_requirement_that_is_also_required():
+    archives = {
+        "a.zip": _make_plugin_zip("a", "1.0.0", deps=["b", _optional("c")]),
+        "b.zip": _make_plugin_zip("b", "1.0.0", deps=["c"]),
+        "c.zip": _make_plugin_zip("c", "1.0.0"),
+    }
+    with _make_fs_repo(archives) as repo:
+        resolution = _get_cell_closures(("a",), [LINUX_312], repo)
+
+    required, groups = _get_optional_groups(["a"], resolution.metadata[LINUX_312])
+
+    assert required == ["a", "b", "c"]
+    assert groups == []
+
+
+def test_get_optional_groups_lists_nested_group_after_its_parent():
+    archives = {
+        "a.zip": _make_plugin_zip("a", "1.0.0", deps=[_optional("opt")]),
+        "opt.zip": _make_plugin_zip("opt", "1.0.0", deps=[_optional("nested")]),
+        "nested.zip": _make_plugin_zip("nested", "1.0.0"),
+    }
+    with _make_fs_repo(archives) as repo:
+        resolution = _get_cell_closures(("a",), [LINUX_312], repo)
+
+    _, groups = _get_optional_groups(["a"], resolution.metadata[LINUX_312])
+
+    assert [(group.parent, group.plugins) for group in groups] == [("a", ("opt",)), ("opt", ("nested",))]
+    assert groups[1].chain == ("a 1.0.0", "opt 1.0.0", "nested")
+
+
+def test_get_optional_groups_chain_names_required_plugins_inside_a_group():
+    archives = {
+        "a.zip": _make_plugin_zip("a", "1.0.0", deps=[_optional("opt")]),
+        "opt.zip": _make_plugin_zip("opt", "1.0.0", deps=["c"]),
+        "c.zip": _make_plugin_zip("c", "1.0.0", deps=[_optional("nested")]),
+        "nested.zip": _make_plugin_zip("nested", "1.0.0"),
+    }
+    with _make_fs_repo(archives) as repo:
+        resolution = _get_cell_closures(("a",), [LINUX_312], repo)
+
+    _, groups = _get_optional_groups(["a"], resolution.metadata[LINUX_312])
+
+    assert groups[1].chain == ("a 1.0.0", "opt 1.0.0", "c 1.0.0", "nested")
+
+
+def _make_wheel(directory: Path, name: str) -> str:
+    filename = f"{name.replace('-', '_')}-1.0-py3-none-any.whl"
+    dist_info = f"{name.replace('-', '_')}-1.0.dist-info"
+    with zipfile.ZipFile(directory / filename, "w") as zf:
+        zf.writestr(f"{dist_info}/METADATA", f"Metadata-Version: 2.1\nName: {name}\nVersion: 1.0\n")
+        zf.writestr(f"{dist_info}/WHEEL", "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n")
+        zf.writestr(f"{dist_info}/RECORD", "")
+    return filename
+
+
+@pytest.fixture
+def local_wheels(tmp_path) -> tuple[PipOptions, dict[str, str]]:
+    """Offline pip options whose only source holds `present-pkg` and `other-pkg`."""
+    wheels_dir = tmp_path / "wheels"
+    wheels_dir.mkdir()
+    filenames = {name: _make_wheel(wheels_dir, name) for name in ("present-pkg", "other-pkg")}
+    return PipOptions(offline=True, find_links=(wheels_dir,), disable_pip_version_check=True), filenames
+
+
+def _download_for(archives: dict[str, bytes], dest: Path, pip_options: PipOptions):
+    with _make_fs_repo(archives) as repo:
+        resolution = _get_cell_closures(("a",), [LINUX_312], repo)
+    dest.mkdir()
+    closure, skipped = _download_cell_wheelhouse(
+        Path(sys.executable),
+        LINUX_312,
+        resolution.closures[LINUX_312],
+        resolution.metadata[LINUX_312],
+        ["a"],
+        dest,
+        pip_options,
+    )
+    return closure, skipped
+
+
+def test_download_cell_wheelhouse_includes_optional_dependency_with_wheels(tmp_path, local_wheels):
+    pip_options, filenames = local_wheels
+    archives = {
+        "a.zip": _make_plugin_zip("a", "1.0.0", deps=[_optional("opt")], python_deps=["present-pkg"]),
+        "opt.zip": _make_plugin_zip("opt", "1.0.0", python_deps=["other-pkg"]),
+    }
+
+    closure, skipped = _download_for(archives, tmp_path / "wh", pip_options)
+
+    assert set(closure) == {"a", "opt"}
+    assert skipped == []
+    assert sorted(p.name for p in (tmp_path / "wh").iterdir()) == sorted(filenames.values())
+
+
+def test_download_cell_wheelhouse_skips_optional_dependency_without_wheels(tmp_path, local_wheels):
+    pip_options, filenames = local_wheels
+    archives = {
+        "a.zip": _make_plugin_zip(
+            "a", "1.0.0", deps=[_optional("opt"), _optional("no-deps")], python_deps=["present-pkg"]
+        ),
+        "opt.zip": _make_plugin_zip("opt", "1.0.0", deps=["c", _optional("nested")], python_deps=["absent-pkg"]),
+        "c.zip": _make_plugin_zip("c", "1.0.0"),
+        "nested.zip": _make_plugin_zip("nested", "1.0.0"),
+        "no-deps.zip": _make_plugin_zip("no-deps", "1.0.0"),
+    }
+
+    closure, skipped = _download_for(archives, tmp_path / "wh", pip_options)
+
+    assert set(closure) == {"a", "no-deps"}
+    [item] = skipped
+    assert item.requirement.name == "opt"
+    assert item.chain == ("a 1.0.0", "opt")
+    assert item.reason == "no matching wheel for absent-pkg"
+    assert [p.name for p in (tmp_path / "wh").iterdir()] == [filenames["present-pkg"]]
+
+
+def test_download_cell_wheelhouse_fails_for_required_python_dependency_without_wheels(tmp_path, local_wheels):
+    pip_options, _ = local_wheels
+    archives = {
+        "a.zip": _make_plugin_zip("a", "1.0.0", deps=[_optional("opt")], python_deps=["absent-pkg"]),
+        "opt.zip": _make_plugin_zip("opt", "1.0.0", python_deps=["other-pkg"]),
+    }
+
+    with pytest.raises(RuntimeError, match="pip download failed for target linux-x86_64-cp312"):
+        _download_for(archives, tmp_path / "wh", pip_options)
