@@ -1200,6 +1200,21 @@ def test_get_optional_groups_lists_nested_group_after_its_parent():
     assert groups[1].chain == ("a 1.0.0", "opt 1.0.0", "nested")
 
 
+def test_get_optional_groups_chain_names_required_plugins_inside_a_group():
+    archives = {
+        "a.zip": _make_plugin_zip("a", "1.0.0", deps=[_optional("opt")]),
+        "opt.zip": _make_plugin_zip("opt", "1.0.0", deps=["c"]),
+        "c.zip": _make_plugin_zip("c", "1.0.0", deps=[_optional("nested")]),
+        "nested.zip": _make_plugin_zip("nested", "1.0.0"),
+    }
+    with _make_fs_repo(archives) as repo:
+        resolution = _get_cell_closures(("a",), [LINUX_312], repo)
+
+    _, groups = _get_optional_groups(["a"], resolution.metadata[LINUX_312])
+
+    assert groups[1].chain == ("a 1.0.0", "opt 1.0.0", "c 1.0.0", "nested")
+
+
 def _make_wheel(directory: Path, name: str) -> str:
     filename = f"{name.replace('-', '_')}-1.0-py3-none-any.whl"
     dist_info = f"{name.replace('-', '_')}-1.0.dist-info"

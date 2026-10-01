@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import functools
 import hashlib
 import json
 import logging
@@ -251,8 +250,8 @@ def create(
 
         resolution = _get_cell_closures(plugin_specs, pip_targets, parent_repo, root_hosts)
 
-        get_python_exe = functools.cache(find_current_python_executable)
-        root_names = list(dict.fromkeys(resolution.root_names.values()))
+        # Download wheels before staging archives, because a cell leaves out the optional plugins
+        # whose wheels pip cannot download.
         target_manifests = []
         for target in pip_targets:
             wh_dir = deps_dir / target.id
@@ -264,16 +263,16 @@ def create(
                     console=stderr_console,
                 ):
                     closure, skipped = _download_cell_wheelhouse(
-                        get_python_exe(),
+                        find_current_python_executable(),
                         target,
                         resolution.closures[target],
                         resolution.metadata[target],
-                        root_names,
+                        resolution.root_names.values(),
                         wh_dir,
                         pip_options,
                     )
                 resolution.closures[target] = closure
-                resolution.skipped[target] = [*resolution.skipped.get(target, []), *skipped]
+                resolution.skipped[target].extend(skipped)
                 _verify_wheelhouse(wh_dir, target)
 
             target_manifests.append(to_manifest_target(target, f"dependencies/python/{target.id}"))
@@ -667,6 +666,7 @@ class _OptionalGroup:
     """The plugins that one optional requirement adds to a cell.
 
     Attributes:
+        requirement: the optional requirement.
         parent: the plugin that declares the optional requirement.
         plugins: the plugin that the requirement names, then the plugins that it reaches through
             required requirements, without the plugins that the roots require.
@@ -691,22 +691,25 @@ def _get_optional_groups(
     """
     names = {name.lower(): name for name in metadata}
 
-    def get_required_closure(starts: Iterable[str]) -> list[str]:
-        closure: list[str] = []
-        queue = deque(starts)
+    def get_label(name: str) -> str:
+        return f"{name} {metadata[name].plugin.version}"
+
+    def get_required_closure(starts: Mapping[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
+        closure: dict[str, tuple[str, ...]] = {}
+        queue = deque(starts.items())
         while queue:
-            name = queue.popleft()
+            name, chain = queue.popleft()
             if name in closure:
                 continue
-            closure.append(name)
+            closure[name] = chain
             for requirement in get_requirements(metadata[name]):
                 dependency = names.get(requirement.name.lower())
                 if requirement.required and dependency is not None:
-                    queue.append(dependency)
+                    queue.append((dependency, (*chain, get_label(dependency))))
         return closure
 
-    required = get_required_closure(roots)
-    chains: dict[str, tuple[str, ...]] = {name: (f"{name} {metadata[name].plugin.version}",) for name in required}
+    chains = get_required_closure({root: (get_label(root),) for root in roots})
+    required = list(chains)
     groups: list[_OptionalGroup] = []
     queue = deque(required)
     while queue:
@@ -715,11 +718,12 @@ def _get_optional_groups(
             dependency = names.get(requirement.name.lower())
             if requirement.required or dependency is None or dependency in required:
                 continue
-            plugins = tuple(name for name in get_required_closure([dependency]) if name not in required)
+            closure = get_required_closure({dependency: (*chains[parent], get_label(dependency))})
+            plugins = tuple(name for name in closure if name not in required)
             groups.append(_OptionalGroup(requirement, parent, plugins, (*chains[parent], str(requirement))))
             for name in plugins:
                 if name not in chains:
-                    chains[name] = (*chains[parent], f"{name} {metadata[name].plugin.version}")
+                    chains[name] = closure[name]
                     queue.append(name)
     return required, groups
 
@@ -762,6 +766,7 @@ def _download_cell_wheelhouse(
     accepted = list(required)
     failed: set[str] = set()
     skipped: list[SkippedRequirement] = []
+    # A failed pip download can leave wheels behind, so each attempt downloads into its own directory.
     with tempfile.TemporaryDirectory() as tmp:
         attempts = Path(tmp)
         current = attempts / "required"
@@ -774,6 +779,7 @@ def _download_cell_wheelhouse(
             if group.parent not in accepted or name in accepted or name in failed:
                 continue
             candidate = [*accepted, *(plugin for plugin in group.plugins if plugin not in accepted)]
+            # The wheels in `current` already satisfy these Python dependencies.
             if set(get_deps(candidate)) == set(get_deps(accepted)):
                 accepted = candidate
                 continue
