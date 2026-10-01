@@ -9,6 +9,7 @@ from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveLocati
 from hcli.lib.ida.plugin.resolve import (
     AmbiguousRequirementError,
     Cell,
+    InstalledVersion,
     Requirement,
     ResolutionError,
     StepLimitError,
@@ -549,7 +550,7 @@ def test_nested_component_dependencies_are_requirements():
 def test_installed_plugin_satisfies_bare_requirement():
     repo = ListPluginRepo(loc("a", "1.0.0", deps=["b"]), loc("b", "2.0.0", deps=["missing"]))
 
-    resolution = resolve([req("a")], repo, Cell(LINUX), installed={"b": "1.0.0"})
+    resolution = resolve([req("a")], repo, Cell(LINUX), installed={"b": InstalledVersion("1.0.0", HOST)})
 
     assert versions(resolution) == {"a": "1.0.0"}
     assert resolution.order == ["a"]
@@ -558,13 +559,15 @@ def test_installed_plugin_satisfies_bare_requirement():
 def test_installed_plugin_satisfies_bare_requirement_that_is_missing_from_the_repository():
     repo = ListPluginRepo(loc("a", "1.0.0", deps=["b"]))
 
-    assert versions(resolve([req("a")], repo, Cell(WINDOWS), installed={"B": "1.0.0"})) == {"a": "1.0.0"}
+    assert versions(resolve([req("a")], repo, Cell(WINDOWS), installed={"B": InstalledVersion("1.0.0", HOST)})) == {
+        "a": "1.0.0"
+    }
 
 
 def test_installed_plugin_at_pinned_version_needs_nothing():
     repo = ListPluginRepo(loc("a", "1.0.0", deps=["b==1.0.0"]))
 
-    resolution = resolve([req("a")], repo, Cell(LINUX), installed={"b": "1.0.0"})
+    resolution = resolve([req("a")], repo, Cell(LINUX), installed={"b": InstalledVersion("1.0.0", HOST)})
 
     assert versions(resolution) == {"a": "1.0.0"}
     assert resolution.warnings == []
@@ -573,7 +576,7 @@ def test_installed_plugin_at_pinned_version_needs_nothing():
 def test_installed_plugin_below_pin_is_upgraded():
     repo = ListPluginRepo(loc("a", "1.0.0", deps=["b==2.0.0"]), loc("b", "2.0.0"), loc("b", "1.0.0"))
 
-    resolution = resolve([req("a")], repo, Cell(LINUX), installed={"b": "1.0.0"})
+    resolution = resolve([req("a")], repo, Cell(LINUX), installed={"b": InstalledVersion("1.0.0", HOST)})
 
     assert versions(resolution) == {"a": "1.0.0", "b": "2.0.0"}
     assert resolution.order == ["b", "a"]
@@ -582,7 +585,7 @@ def test_installed_plugin_below_pin_is_upgraded():
 def test_installed_plugin_above_pin_is_kept_with_a_warning():
     repo = ListPluginRepo(loc("a", "1.0.0", deps=["b==1.0.0"]), loc("b", "1.0.0"))
 
-    resolution = resolve([req("a")], repo, Cell(LINUX), installed={"b": "2.0.0"})
+    resolution = resolve([req("a")], repo, Cell(LINUX), installed={"b": InstalledVersion("2.0.0", HOST)})
 
     assert versions(resolution) == {"a": "1.0.0"}
     assert len(resolution.warnings) == 1
@@ -597,7 +600,7 @@ def test_installed_plugin_below_pin_that_is_not_viable_fails_before_viability_of
         loc("b", "2.0.0", platforms=[LINUX]),
     )
 
-    resolution = resolve([req("a")], repo, Cell(WINDOWS), installed={"b": "1.0.0"})
+    resolution = resolve([req("a")], repo, Cell(WINDOWS), installed={"b": InstalledVersion("1.0.0", HOST)})
 
     assert versions(resolution) == {"a": "1.0.0"}
 
@@ -609,7 +612,7 @@ def test_bare_then_higher_pin_upgrades_installed_plugin():
         loc("b", "2.0.0"),
     )
 
-    resolution = resolve([req("r1"), req("r2")], repo, Cell(LINUX), installed={"b": "1.0.0"})
+    resolution = resolve([req("r1"), req("r2")], repo, Cell(LINUX), installed={"b": InstalledVersion("1.0.0", HOST)})
 
     assert versions(resolution) == {"r1": "1.0.0", "r2": "1.0.0", "b": "2.0.0"}
 
@@ -619,7 +622,49 @@ def test_range_root_on_installed_plugin_selects_from_the_repository():
 
     root = Requirement("a", ">1.0.0", None)
 
-    assert versions(resolve([root], repo, Cell(LINUX), installed={"a": "1.0.0"})) == {"a": "2.0.0"}
+    assert versions(resolve([root], repo, Cell(LINUX), installed={"a": InstalledVersion("1.0.0", HOST)})) == {
+        "a": "2.0.0"
+    }
+
+
+INSTALLED_B = {"b": InstalledVersion("1.0.0", HOST)}
+
+
+@pytest.mark.parametrize("spec", [f"b@{OTHER_HOST}", f"b==2.0.0@{OTHER_HOST}"])
+def test_requirement_on_installed_name_from_another_host_fails(spec: str):
+    repo = ListPluginRepo(loc("b", "2.0.0", host=OTHER_HOST), loc("b", "2.0.0"))
+
+    with pytest.raises(ResolutionError) as excinfo:
+        resolve([req(spec)], repo, Cell(LINUX), installed=INSTALLED_B)
+
+    assert excinfo.value.reasons == (f"b 1.0.0 from {HOST} is installed, and only one plugin named b can be installed",)
+
+
+def test_optional_requirement_on_installed_name_from_another_host_is_skipped():
+    repo = ListPluginRepo(loc("a", "1.0.0", deps=[{"plugin": f"b@{OTHER_HOST}", "required": False}]))
+
+    resolution = resolve([req("a")], repo, Cell(LINUX), installed=INSTALLED_B)
+
+    assert versions(resolution) == {"a": "1.0.0"}
+    assert "only one plugin named b can be installed" in resolution.skipped[0].reason
+
+
+def test_bare_requirement_on_installed_name_ignores_other_hosts():
+    repo = ListPluginRepo(loc("b", "2.0.0", host=OTHER_HOST))
+
+    with pytest.raises(ResolutionError) as excinfo:
+        resolve([req("b==2.0.0")], repo, Cell(LINUX), installed=INSTALLED_B)
+
+    assert excinfo.value.reasons == (f"b from {HOST} is not in the repository",)
+
+
+def test_bare_requirement_on_installed_name_selects_from_the_installed_host():
+    repo = ListPluginRepo(loc("b", "2.0.0", host=OTHER_HOST), loc("b", "2.0.0"))
+
+    resolution = resolve([req("b==2.0.0")], repo, Cell(LINUX), installed=INSTALLED_B)
+
+    assert versions(resolution) == {"b": "2.0.0"}
+    assert resolution.selected["b"].metadata.plugin.host == HOST
 
 
 def test_fixed_root_requirements_are_resolved():
@@ -790,7 +835,7 @@ def test_conflict_with_installed_plugin_names_every_constraint():
     cell = Cell(LINUX, label="linux-cell")
 
     with pytest.raises(ResolutionError) as excinfo:
-        resolve([req("a"), req("c")], repo, cell, installed={"b": "1.0.0"})
+        resolve([req("a"), req("c")], repo, cell, installed={"b": InstalledVersion("1.0.0", HOST)})
 
     message = str(excinfo.value)
     assert excinfo.value.chain == ("c 1.0.0", "b==2.0.0")
@@ -804,7 +849,7 @@ def test_conflicting_ranges_on_installed_plugin_name_every_constraint():
     repo = ListPluginRepo(loc("b", "2.0.0"), loc("b", "0.9.0"))
 
     with pytest.raises(ResolutionError) as excinfo:
-        resolve([req("b>=1.0"), req("b<=1.2")], repo, Cell(LINUX), installed={"b": "2.0.0"})
+        resolve([req("b>=1.0"), req("b<=1.2")], repo, Cell(LINUX), installed={"b": InstalledVersion("2.0.0", HOST)})
 
     message = str(excinfo.value)
     assert "b 2.0.0 is installed" in message
@@ -868,22 +913,9 @@ def test_ambiguous_name_satisfied_by_an_installed_plugin_is_not_an_error():
         loc("x", "1.0.0", host=OTHER_HOST),
     )
 
-    resolution = resolve([req("a")], repo, Cell(LINUX), installed={"x": "1.0.0"})
+    resolution = resolve([req("a")], repo, Cell(LINUX), installed={"x": InstalledVersion("1.0.0", HOST)})
 
     assert versions(resolution) == {"a": "1.0.0"}
-
-
-def test_ambiguous_name_that_needs_an_upgrade_of_an_installed_plugin_is_an_error():
-    repo = ListPluginRepo(
-        loc("a", "1.0.0", deps=["x==2.0.0"]),
-        loc("x", "2.0.0"),
-        loc("x", "2.0.0", host=OTHER_HOST),
-    )
-
-    with pytest.raises(AmbiguousRequirementError) as excinfo:
-        resolve([req("a")], repo, Cell(LINUX), installed={"x": "1.0.0"})
-
-    assert excinfo.value.chain == ("a 1.0.0", "x==2.0.0")
 
 
 def test_ambiguous_name_of_a_fixed_plugin_is_not_an_error():
@@ -956,7 +988,7 @@ def test_kept_newer_version_is_warned_once():
         loc("b", "1.0.0"),
     )
 
-    resolution = resolve([req("a"), req("c")], repo, Cell(LINUX), installed={"b": "2.0.0"})
+    resolution = resolve([req("a"), req("c")], repo, Cell(LINUX), installed={"b": InstalledVersion("2.0.0", HOST)})
 
     assert len(resolution.warnings) == 1
 
@@ -985,7 +1017,9 @@ def test_pin_below_installed_version_does_not_block_an_upgrade_in_any_root_order
         loc("b", "1.0.0"),
     )
 
-    resolution = resolve([req(root) for root in roots], repo, Cell(LINUX), installed={"b": "2.0.0"})
+    resolution = resolve(
+        [req(root) for root in roots], repo, Cell(LINUX), installed={"b": InstalledVersion("2.0.0", HOST)}
+    )
 
     assert versions(resolution) == {"r1": "1.0.0", "r2": "1.0.0", "b": "3.0.0"}
     assert len(resolution.warnings) == 1
@@ -995,7 +1029,7 @@ def test_skipped_optional_root_on_an_installed_plugin_is_not_a_root():
     repo = ListPluginRepo(loc("x", "3.0.0", platforms=[LINUX]))
     root = req("x>=3.0", required=False)
 
-    resolution = resolve([root], repo, Cell(WINDOWS), installed={"x": "2.0.0"})
+    resolution = resolve([root], repo, Cell(WINDOWS), installed={"x": InstalledVersion("2.0.0", HOST)})
 
     assert resolution.roots == {}
     assert [item.requirement for item in resolution.skipped] == [root]

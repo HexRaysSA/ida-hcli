@@ -135,6 +135,14 @@ def get_requirements(metadata: IDAMetadataDescriptor) -> list[Requirement]:
 
 
 @dataclass(frozen=True)
+class InstalledVersion:
+    """The version of an installed plugin, and the host that it came from."""
+
+    version: str
+    host: str
+
+
+@dataclass(frozen=True)
 class SkippedRequirement:
     """An optional requirement that could not be resolved.
 
@@ -322,7 +330,7 @@ class _Resolver:
         plugins: list[Plugin],
         cell: Cell,
         fixed: Mapping[str, IDAMetadataDescriptor],
-        installed: Mapping[str, str],
+        installed: Mapping[str, InstalledVersion],
         max_steps: int,
     ) -> None:
         self.plugins = plugins
@@ -332,7 +340,7 @@ class _Resolver:
             _PythonProbe(python_version) if callable(python_version) else python_version
         )
         self.fixed = {name.lower(): metadata for name, metadata in fixed.items()}
-        self.installed = {name.lower(): (name, version) for name, version in installed.items()}
+        self.installed = {name.lower(): (name, plugin) for name, plugin in installed.items()}
         self.max_steps = max_steps
         self.steps = 0
         self.lookups: dict[tuple[str, str | None], Plugin | None] = {}
@@ -343,17 +351,39 @@ class _Resolver:
     def get_plugin(self, requirement: Requirement) -> Plugin | None:
         """Find the repository plugin that a requirement names, or None when there is none.
 
+        A requirement on the name of an installed plugin finds only the plugin from the installed host,
+        because only one plugin of each name can be installed.
+
         Raises:
             AmbiguousPluginReferenceError: when a requirement without a host matches plugins from
                 several hosts. `check_reachable` finds these before the search starts.
         """
-        key = (requirement.name.lower(), requirement.host)
+        host = requirement.host
+        installed = self.installed.get(requirement.name.lower())
+        if installed is not None:
+            if host is not None and not _is_same_host(host, installed[1].host):
+                return None
+            host = installed[1].host
+        key = (requirement.name.lower(), host)
         if key not in self.lookups:
             try:
-                self.lookups[key] = get_plugin_by_name(self.plugins, requirement.name, host=requirement.host)
+                self.lookups[key] = get_plugin_by_name(self.plugins, requirement.name, host=host)
             except KeyError:
                 self.lookups[key] = None
         return self.lookups[key]
+
+    def render_missing(self, requirement: Requirement) -> str:
+        """Explain why `get_plugin` finds no plugin for a requirement."""
+        installed = self.installed.get(requirement.name.lower())
+        if installed is None:
+            return f"{requirement.name} is not in the repository"
+        name, plugin = installed
+        if requirement.host is not None and not _is_same_host(requirement.host, plugin.host):
+            return (
+                f"{name} {plugin.version} from {plugin.host} is installed, "
+                f"and only one plugin named {name} can be installed"
+            )
+        return f"{requirement.name} from {plugin.host} is not in the repository"
 
     def get_compatible(self, plugin: Plugin) -> dict[str, PluginArchiveLocation]:
         """Map each version to its first location that is compatible with the cell, newest version first."""
@@ -445,8 +475,8 @@ class _Resolver:
         )
 
     def get_installed_choice(self, requirement: Requirement, chain: tuple[str, ...]) -> _Choice:
-        name, version = self.installed[requirement.name.lower()]
-        return _Choice(name=name, version=version, host=None, source="installed", chain=chain)
+        name, plugin = self.installed[requirement.name.lower()]
+        return _Choice(name=name, version=plugin.version, host=plugin.host, source="installed", chain=chain)
 
     def satisfies(self, choice: _Choice, requirement: Requirement) -> tuple[bool, str | None]:
         """Whether a chosen plugin satisfies a requirement, and a warning when it keeps a newer installed version.
@@ -464,10 +494,12 @@ class _Resolver:
         if (
             installed is not None
             and pin is not None
-            and parse_plugin_version(pin) < parse_plugin_version(installed[1]) <= parse_plugin_version(choice.version)
+            and parse_plugin_version(pin)
+            < parse_plugin_version(installed[1].version)
+            <= parse_plugin_version(choice.version)
         ):
-            name, version = installed
-            return True, f"{name} {version} is installed, which is newer than {requirement}; not downgrading"
+            name, plugin = installed
+            return True, f"{name} {plugin.version} is installed, which is newer than {requirement}; not downgrading"
         return False, None
 
     def get_reasons(self, requirement: Requirement, visited: set[tuple[_PluginId, str]]) -> list[str]:
@@ -480,7 +512,7 @@ class _Resolver:
             return [self.get_fixed_choice(key).render()]
         plugin = self.get_plugin(requirement)
         if plugin is None:
-            return [f"{requirement.name} is not in the repository"]
+            return [self.render_missing(requirement)]
 
         plugin_id = _get_plugin_id(plugin)
         matching = [
@@ -533,7 +565,8 @@ class _Resolver:
         if node in visited:
             return f"{prefix} (see above)"
         visited.add(node)
-        if requirement.name.lower() not in self.fixed and self.get_plugin(requirement) is None:
+        key = requirement.name.lower()
+        if key not in self.fixed and key not in self.installed and self.get_plugin(requirement) is None:
             return f"{prefix}, which is not in the repository"
         return f"{prefix}: {'; '.join(self.get_reasons(requirement, visited))}"
 
@@ -592,7 +625,7 @@ class _Resolver:
 
             plugin = self.get_plugin(requirement)
             if plugin is None:
-                failure = _fail(item, skipped_list, [f"{requirement.name} is not in the repository"])
+                failure = _fail(item, skipped_list, [self.render_missing(requirement)])
                 if failure is not None:
                     return failure
                 continue
@@ -685,7 +718,7 @@ def resolve(
     cell: Cell,
     *,
     fixed: Mapping[str, IDAMetadataDescriptor] | None = None,
-    installed: Mapping[str, str] | None = None,
+    installed: Mapping[str, InstalledVersion] | None = None,
     max_steps: int = DEFAULT_MAX_STEPS,
 ) -> Resolution:
     """Select the newest version of each root, in order, whose dependency closure installs on the cell.
@@ -709,7 +742,8 @@ def resolve(
             Fixed plugins that no root names are resolved before the roots.
         installed: installed plugin versions, by name. An installed plugin satisfies a requirement
             that its version matches, and a pin lower than its version, with a warning. Other
-            requirements on its name select from the repository. The dependencies of an installed
+            requirements on its name select from the repository, only from the installed host. A
+            requirement on its name with a different host fails. The dependencies of an installed
             plugin are not resolved again.
         max_steps: number of requirement visits after which the search gives up.
 

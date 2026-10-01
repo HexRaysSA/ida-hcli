@@ -19,7 +19,15 @@ from hcli.lib.ida.plugin.install import (
     validate_python_version,
 )
 from hcli.lib.ida.plugin.repo import BasePluginRepo, PluginArchiveLocation
-from hcli.lib.ida.plugin.resolve import Cell, Requirement, Resolution, ResolutionError, get_requirements, resolve
+from hcli.lib.ida.plugin.resolve import (
+    Cell,
+    InstalledVersion,
+    Requirement,
+    Resolution,
+    ResolutionError,
+    get_requirements,
+    resolve,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +50,10 @@ def get_install_cell(ctx: InstallContext) -> Cell:
     return Cell(ctx.env.platform, ctx.env.ida_version, python_version=lambda: ctx.env.python_version)
 
 
-def get_installed_versions(*, exclude: str | None = None) -> dict[str, str]:
-    """The version of each installed plugin, by name, without the plugin named `exclude`."""
+def get_installed_versions(*, exclude: str | None = None) -> dict[str, InstalledVersion]:
+    """The version and host of each installed plugin, by name, without the plugin named `exclude`."""
     return {
-        record.name: record.version
+        record.name: InstalledVersion(record.version, record.host)
         for record in get_installed_plugin_records()
         if exclude is None or record.name.lower() != exclude.lower()
     }

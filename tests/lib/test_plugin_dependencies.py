@@ -825,6 +825,23 @@ def test_cross_repo_bare_name_ambiguous_raises(virtual_ida_environment):
     assert result.failed[0][0] == "dep-a"
 
 
+def test_installed_dep_is_not_replaced_by_a_plugin_from_another_host(virtual_ida_environment):
+    ctx = make_test_install_context()
+    install_plugin_archive(_make_plugin_zip("dep-a", "1.0.0", host=HOST), "dep-a", ctx)
+    pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a==2.0.0"], host=HOST_B)
+    dep_a_private = _make_plugin_zip("dep-a", "2.0.0", host=HOST_B)
+
+    with _make_combined_repo([{"dep-a.zip": dep_a_private}]) as combined:
+        install_plugin_archive(pack_zip, "my-pack", ctx)
+        _, metadata = _parse_metadata(pack_zip, "my-pack")
+        result = install_dependencies(metadata=metadata, plugin_repo=combined, ctx=ctx)
+
+    assert result.required_failure is not None
+    assert result.required_failure[0] == "dep-a"
+    assert not result.upgraded
+    assert _get_installed_version("dep-a") == "1.0.0"
+
+
 def test_cross_repo_unique_bare_name_resolves(virtual_ida_environment):
     ctx = make_test_install_context()
     pack_zip = _make_plugin_zip("my-pack", "1.0.0", deps=["dep-a"], host=HOST_B)
