@@ -24,13 +24,18 @@ from typing import Literal
 
 from hcli.lib.ida.python import (
     IdatProbe,
-    _is_python_executable_name,
     _is_windows_store_shim,
     has_pip,
     probe_current_python_info,
 )
 from hcli.lib.ida.python.environment import System, get_venv_python_path
-from hcli.lib.venv import find_virtual_env_python, get_python_exe_candidates, probe_python_version
+from hcli.lib.venv import (
+    find_virtual_env_python,
+    get_environment_for_python,
+    get_python_exe_candidates,
+    is_python_executable_name,
+    probe_python_version,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -233,7 +238,7 @@ def get_registered_python_exe(probe: IdatProbe | None) -> Path | None:
 
     if probe.executable and not probe.virtual_env:
         exe = Path(probe.executable)
-        if exe.is_file() and _is_python_executable_name(str(exe)) and not _is_windows_store_shim(str(exe)):
+        if exe.is_file() and is_python_executable_name(str(exe)) and not _is_windows_store_shim(str(exe)):
             return exe
 
     version = f"{probe.version_major}.{probe.version_minor}"
@@ -289,7 +294,14 @@ def create_virtual_environment(plan: VenvPlan, system: System) -> Path:
     command = plan.build_command()
     logger.debug("creating virtual environment: %s", " ".join(command))
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=600.0, check=False)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=600.0,
+            check=False,
+            env=get_environment_for_python(Path(command[0])),
+        )
     except (subprocess.SubprocessError, OSError) as e:
         raise VenvCreationError(f"failed to run {command[0]}: {e}") from e
 
@@ -300,7 +312,14 @@ def create_virtual_environment(plan: VenvPlan, system: System) -> Path:
     if plan.tool == "venv":
         python_exe = get_venv_python_path(plan.target, system)
         ensurepip = [str(python_exe), "-m", "ensurepip", "--upgrade"]
-        pip_result = subprocess.run(ensurepip, capture_output=True, text=True, timeout=600.0, check=False)
+        pip_result = subprocess.run(
+            ensurepip,
+            capture_output=True,
+            text=True,
+            timeout=600.0,
+            check=False,
+            env=get_environment_for_python(python_exe),
+        )
         if pip_result.returncode != 0:
             output = (pip_result.stderr or pip_result.stdout or "").strip()
             raise VenvCreationError(f"`{' '.join(ensurepip)}` failed with exit code {pip_result.returncode}:\n{output}")

@@ -1,13 +1,17 @@
 import os
+import sys
 import types
 from pathlib import Path
 
 import pytest
+from fixtures import temp_env_var
 
 from hcli.lib.venv import (
+    PythonVersion,
     find_candidate_virtual_envs,
     find_virtual_env_python,
     is_uv_cache_virtual_env,
+    probe_python_version_info,
     read_virtual_env_version,
     resolve_user_virtual_env,
 )
@@ -181,3 +185,11 @@ def test_read_virtual_env_version(tmp_path, cfg, expected):
 
 def test_read_virtual_env_version_returns_none_without_pyvenv_cfg(tmp_path):
     assert read_virtual_env_version(tmp_path / "missing") is None
+
+
+def test_probe_python_version_info_ignores_parent_pythonhome():
+    """Inside IDA, PYTHONHOME names the libpython IDA loaded, which breaks any other interpreter."""
+    with temp_env_var("PYTHONHOME", str(Path(sys.prefix) / "no-such-python-home")):
+        version = probe_python_version_info(Path(sys.executable))
+
+    assert version == PythonVersion(*sys.version_info[:3])

@@ -5,6 +5,7 @@ import os
 import platform
 import subprocess
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -163,6 +164,60 @@ def get_python_exe_candidates(root: Path, version: str | None = None) -> list[Pa
     return candidates
 
 
+def is_python_executable_name(path: str | None) -> bool:
+    if path is None:
+        return False
+    return "python" in os.path.basename(path).lower()
+
+
+def get_venv_root_from_python(path: str | None) -> Path | None:
+    """The virtualenv that contains the given interpreter, or None when it isn't a venv interpreter."""
+    if not path or not is_python_executable_name(path):
+        return None
+
+    exe = Path(path)
+    if exe.parent.name not in ("bin", "Scripts"):
+        return None
+
+    venv_root = exe.parent.parent
+    if (venv_root / "pyvenv.cfg").exists():
+        return venv_root
+
+    return None
+
+
+# Variables that tell an interpreter where its stdlib, site-packages, or startup
+# code live. They describe the parent process's Python, not the child's: inside
+# IDA, PYTHONHOME is the prefix of the libpython IDA loaded, and a venv built on
+# a different base Python then imports the wrong stdlib.
+PARENT_PYTHON_ENV_VARS = ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "PYTHONSTARTUP")
+
+
+def get_environment_for_python(python_exe: Path, environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Build the environment for a process run against the given Python.
+
+    HCLI may itself run inside a virtualenv (or a uv cache overlay), or inside
+    IDA, so the inherited VIRTUAL_ENV and PYTHON* variables describe HCLI's
+    interpreter, not `python_exe`.  `environ` defaults to `os.environ`.
+    """
+    env = dict(os.environ if environ is None else environ)
+
+    for key in PARENT_PYTHON_ENV_VARS:
+        env.pop(key, None)
+
+    venv_root = get_venv_root_from_python(str(python_exe))
+    if venv_root:
+        env["VIRTUAL_ENV"] = str(venv_root)
+    else:
+        env.pop("VIRTUAL_ENV", None)
+
+    scripts_dir = str(python_exe.parent)
+    path = env.get("PATH")
+    env["PATH"] = f"{scripts_dir}{os.pathsep}{path}" if path else scripts_dir
+
+    return env
+
+
 def find_virtual_env_python(virtual_env: str | Path) -> Path | None:
     """Locate the Python interpreter inside a virtual environment.
 
@@ -190,6 +245,7 @@ def probe_python_version_info(python_exe: Path) -> PythonVersion | None:
             text=True,
             check=True,
             timeout=10.0,
+            env=get_environment_for_python(python_exe),
         )
     except (subprocess.SubprocessError, OSError) as e:
         logger.debug("failed to probe version of %s: %s", python_exe, e)

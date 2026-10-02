@@ -60,7 +60,8 @@ def temp_env_var(key: str, value: str):
     os.environ[key] = value
 
     has_env_attr = hasattr(ENV, key)
-    _orig_attr = getattr(ENV, key, None)
+    # the raw class attribute, so a descriptor that reads os.environ is restored as-is
+    _orig_attr = vars(ENV).get(key)
     if has_env_attr:
         setattr(ENV, key, value)
 
