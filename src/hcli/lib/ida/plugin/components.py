@@ -14,6 +14,7 @@ from hcli.lib.ida.plugin import (
     get_python_dependencies_from_plugin_archive,
     get_python_dependencies_from_plugin_directory,
 )
+from hcli.lib.ida.plugin.exceptions import PluginAlreadyInstalledError
 
 if TYPE_CHECKING:
     from hcli.lib.ida.plugin.install import InstalledPluginRecord
@@ -253,6 +254,26 @@ def check_component_name_collisions(
     return collisions
 
 
+def validate_plugin_not_installed(plugin_name: str) -> None:
+    """Fail when a well-formed plugin named *plugin_name* is already installed.
+
+    An installed suite would otherwise collide with its own components.
+    Invalid names and broken installations are left to ``validate_for_install``.
+
+    Raises:
+        PluginAlreadyInstalledError: when the plugin is already installed.
+    """
+    from hcli.lib.ida.plugin.install import get_plugin_directory, is_valid_plugin_directory
+
+    try:
+        destination_path = get_plugin_directory(plugin_name)
+    except ValueError:
+        return
+
+    if is_valid_plugin_directory(destination_path):
+        raise PluginAlreadyInstalledError(plugin_name, destination_path)
+
+
 def validate_components_for_install(
     metadata: IDAMetadataDescriptor,
     source: bytes | Path,
@@ -270,9 +291,13 @@ def validate_components_for_install(
         Mapping of component name to metadata for all components found.
 
     Raises:
+        PluginAlreadyInstalledError: when not upgrading and the plugin is already installed.
         ValueError: when the plugin name is a component of an existing suite,
             or when component names collide with installed plugins.
     """
+    if not is_upgrade:
+        validate_plugin_not_installed(plugin_name)
+
     suite_record = find_suite_for_component(plugin_name)
     if suite_record is not None:
         raise ValueError(f"'{plugin_name}' is a component of '{suite_record.name}'; uninstall the suite first")
