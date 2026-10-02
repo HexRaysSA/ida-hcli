@@ -29,13 +29,24 @@ class Credentials(BaseModel):
 
     # Type-specific data
     token: str | None = None  # For INTERACTIVE type
+    managed: bool = False  # KEY created by `hcli login`, revoked on logout
 
     @classmethod
-    def create_credentials(cls, name: str, credential_type: str, token: str, email: str | None = None) -> "Credentials":
+    def create_credentials(
+        cls, name: str, credential_type: str, token: str, email: str | None = None, managed: bool = False
+    ) -> "Credentials":
         """Create a new API key credentials."""
         now = datetime.now(tz=timezone.utc).isoformat() + "Z"
 
-        return cls(name=name, type=credential_type, email=email or "", token=token, created_at=now, last_used=now)
+        return cls(
+            name=name,
+            type=credential_type,
+            email=email or "",
+            token=token,
+            created_at=now,
+            last_used=now,
+            managed=managed,
+        )
 
     @property
     def label(self) -> str:

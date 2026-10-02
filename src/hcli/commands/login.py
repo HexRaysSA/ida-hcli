@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import socket
+
 import questionary
 import rich_click as click
 
@@ -9,14 +11,15 @@ from hcli.lib.commands import async_command
 from hcli.lib.config import config_store
 from hcli.lib.console import console
 from hcli.lib.constants import cli
-from hcli.lib.constants.auth import CONFIG_LOGIN_EMAIL
+from hcli.lib.constants.auth import CONFIG_LOGIN_EMAIL, Credentials
 
 
 @click.command()
 @click.option("-f", "--force", is_flag=True, help="Force account selection.")
 @click.option("-n", "--name", help="Custom name for the credentials")
+@click.option("--no-key", is_flag=True, help="Do not offer to create an API key after login.")
 @async_command
-async def login(force: bool, name: str | None) -> None:
+async def login(force: bool, name: str | None, no_key: bool) -> None:
     """Log in to the Hex-Rays portal and create new credentials."""
     auth_service = get_auth_service()
     auth_service.init()
@@ -83,6 +86,9 @@ async def login(force: bool, name: str | None) -> None:
             console.print(f"[red]Login failed: {e}[/red]")
             raise click.Abort()
 
+    if source and not no_key:
+        source = await _replace_with_api_key(source)
+
     # Show results
     if source:
         sources_count_before = len(auth_service.list_credentials()) - 1  # Subtract the new source
@@ -111,3 +117,27 @@ async def login(force: bool, name: str | None) -> None:
             auth_service.show_login_info()
     else:
         console.print("[red]Login failed.[/red]")
+
+
+async def _replace_with_api_key(source: Credentials) -> Credentials:
+    """Offer to swap freshly created interactive credentials for an API key, which does not expire."""
+    create_key = await safe_ask_async(
+        questionary.confirm("Create an API key so you stay logged in on this machine?", default=True)
+    )
+    if not create_key:
+        return source
+
+    auth_service = get_auth_service()
+    try:
+        key_source = await auth_service.create_managed_api_key(f"hcli-{socket.gethostname().split('.')[0]}")
+    except Exception as e:
+        console.print(f"[yellow]Could not create an API key: {e}. Keeping the login session.[/yellow]")
+        return source
+
+    if not key_source:
+        console.print("[yellow]Could not install the API key. Keeping the login session.[/yellow]")
+        return source
+
+    auth_service.remove_credentials(source.name)
+    console.print(f"[green]API key '{key_source.name}' created and installed.[/green]")
+    return key_source

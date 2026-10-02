@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import webbrowser
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -457,32 +459,65 @@ class AuthService:
             pass
         return None
 
-    async def add_api_key_credentials(self, name: str, token: str) -> Credentials | None:
+    @contextmanager
+    def _using_credentials(self, source: Credentials) -> Iterator[None]:
+        """Temporarily make `source` the credentials sent with API requests."""
+        old_source = self._current_source
+        self._current_source = source
+        try:
+            yield
+        finally:
+            self._current_source = old_source
+
+    async def add_api_key_credentials(self, name: str, token: str, managed: bool = False) -> Credentials | None:
         """Add a new API key credentials."""
         # Get user email from API
         try:
             from hcli.lib.api.auth import auth
 
             # Temporarily set the API key to test it
-            old_source = self._current_source
             temp_source = Credentials.create_credentials("temp", CredentialType.KEY, token, "temp@example.com")
-            self._current_source = temp_source
-
-            try:
+            with self._using_credentials(temp_source):
                 user_info = await auth.whoami()
-                email = user_info.email
-                # Create and add the source with key_name for label generation
-                source = Credentials.create_credentials(name, CredentialType.KEY, token, email)
 
-                self.remove_credentials(name)
-                self.add_credentials(source)
+            # Create and add the source with key_name for label generation
+            source = Credentials.create_credentials(name, CredentialType.KEY, token, user_info.email, managed)
 
-                return source
-            finally:
-                self._current_source = old_source
+            self.remove_credentials(name)
+            self.add_credentials(source)
+
+            return source
 
         except Exception:
             return None
+
+    async def create_managed_api_key(self, base_name: str) -> Credentials | None:
+        """Create an API key with the current credentials and install it as managed credentials.
+
+        The key name is `base_name`, suffixed with -1, -2, ... when the name is already
+        taken on the server or by local credentials.
+        """
+        from hcli.lib.api.keys import keys
+
+        taken = {k.name for k in await keys.get_keys()}
+        if self._auth_config:
+            taken.update(self._auth_config.credentials.keys())
+
+        key_name = base_name
+        counter = 1
+        while key_name in taken:
+            key_name = f"{base_name}-{counter}"
+            counter += 1
+
+        token = await keys.create_key(key_name)
+        return await self.add_api_key_credentials(key_name, token, managed=True)
+
+    async def revoke_managed_api_key(self, source: Credentials) -> None:
+        """Revoke on the server the API key backing managed credentials."""
+        from hcli.lib.api.keys import keys
+
+        with self._using_credentials(source):
+            await keys.revoke_key(source.name)
 
     def logout_current(self) -> None:
         """Logout from current session (for interactive auth)."""

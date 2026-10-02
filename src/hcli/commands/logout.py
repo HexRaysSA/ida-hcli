@@ -9,6 +9,7 @@ from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
 from hcli.lib.constants import cli
+from hcli.lib.constants.auth import Credentials
 
 
 @click.command()
@@ -32,7 +33,7 @@ async def logout(name: str | None, remove_all: bool) -> None:
         if confirm:
             removed_count = 0
             for source in sources:
-                if auth_service.remove_credentials(source.name):
+                if await _remove_credentials(source):
                     removed_count += 1
             console.print(f"[green]Removed {removed_count} credentials.[/green]")
         else:
@@ -57,7 +58,7 @@ async def logout(name: str | None, remove_all: bool) -> None:
             )
         )
         if confirm:
-            if auth_service.remove_credentials(source_to_remove.name):
+            if await _remove_credentials(source_to_remove):
                 console.print(f"[green]Removed credentials '{source_to_remove.name}'.[/green]")
             else:
                 console.print(f"[red]Failed to remove credentials '{source_to_remove.name}'.[/red]")
@@ -68,7 +69,7 @@ async def logout(name: str | None, remove_all: bool) -> None:
     # Auto-logout if only one source (simplified UX)
     if len(sources) == 1:
         source = sources[0]
-        if auth_service.remove_credentials(source.name):
+        if await _remove_credentials(source):
             console.print("[green]Logged out.[/green]")
         else:
             console.print("[red]Failed to logout.[/red]")
@@ -158,7 +159,7 @@ async def logout(name: str | None, remove_all: bool) -> None:
     confirm = await safe_ask_async(questionary.confirm("Are you sure?", default=False))
 
     if confirm:
-        if auth_service.remove_credentials(source_to_remove.name):
+        if await _remove_credentials(source_to_remove):
             console.print(f"[green]Successfully removed credentials '{source_to_remove.name}'.[/green]")
 
             # Show remaining sources
@@ -176,3 +177,18 @@ async def logout(name: str | None, remove_all: bool) -> None:
             console.print(f"[red]Failed to remove credentials '{source_to_remove.name}'.[/red]")
     else:
         console.print("[yellow]Logout cancelled.[/yellow]")
+
+
+async def _remove_credentials(source: Credentials) -> bool:
+    """Remove credentials, first revoking on the server the API key that `hcli login` created for them."""
+    auth_service = get_auth_service()
+    if source.managed:
+        try:
+            await auth_service.revoke_managed_api_key(source)
+            console.print(f"[green]Revoked API key '{source.name}'.[/green]")
+        except Exception as e:
+            console.print(
+                f"[yellow]Could not revoke API key '{source.name}': {e}. "
+                f"Revoke it from another session with 'hcli auth key revoke {source.name}'.[/yellow]"
+            )
+    return auth_service.remove_credentials(source.name)
