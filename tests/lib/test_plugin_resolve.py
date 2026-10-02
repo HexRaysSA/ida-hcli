@@ -956,6 +956,31 @@ def test_incompatible_version_is_explained_by_the_location_for_the_platform():
     assert "does not support" not in message
 
 
+def test_versions_incompatible_for_one_reason_are_explained_once():
+    repo = ListPluginRepo(*(loc("a", version, ida_versions=["9.2"]) for version in ["3.0.0", "2.0.0", "1.0.0"]))
+
+    with pytest.raises(ResolutionError) as excinfo:
+        resolve([req("a")], repo, Cell(LINUX, ida_version="9.0"))
+
+    assert excinfo.value.reasons == ("a 3.0.0 and 2 older versions do not support IDA 9.0",)
+
+
+def test_versions_incompatible_for_different_reasons_are_explained_by_reason():
+    repo = ListPluginRepo(
+        loc("a", "3.0.0", ida_versions=["9.2"]),
+        loc("a", "2.0.0", platforms=[LINUX]),
+        loc("a", "1.0.0", ida_versions=["9.2"]),
+    )
+
+    with pytest.raises(ResolutionError) as excinfo:
+        resolve([req("a")], repo, Cell(WINDOWS, ida_version="9.0"))
+
+    assert excinfo.value.reasons == (
+        "a 3.0.0 and 1 older version do not support IDA 9.0",
+        f"a 2.0.0 does not support {WINDOWS}",
+    )
+
+
 def test_dependency_chain_deeper_than_the_recursion_limit_gives_a_resolution_error():
     count = 1500
     repo = ListPluginRepo(
