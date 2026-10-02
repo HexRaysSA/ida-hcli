@@ -20,15 +20,19 @@ from hcli.lib.ida import (
     find_current_idat_executable,
     generate_instance_name,
     get_ida_path,
+    get_installer_args,
+    install_ida,
     parse_instance_version,
     parse_version_from_dir_name,
     parse_version_from_ida_pro_py,
     parse_version_from_windows_registry,
     resolve_current_ida_install_directory,
     resolve_current_ida_version,
+    run_installer,
     select_default_ida_instance,
 )
 from hcli.lib.ida.version import normalize_ida_binary_version, parse_version_from_ida_binary
+from hcli.lib.util.io import get_os
 
 
 def has_idat():
@@ -335,3 +339,61 @@ def test_prepare_headless_ida_user_dir_copies_only_required_files(tmp_path):
     assert not (target_dir / "ida-config.json").exists()
     assert not (target_dir / "plugins").exists()
     assert not (target_dir / "mcp").exists()
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "ida-pro_93_x64win.exe",
+        "ida-pro_94_x64win.exe",
+        "ida-essential_94_x64win.exe",
+        "ida-home-riscv_94_x64win.exe",
+    ],
+)
+def test_installer_args_disable_install_python_on_windows(filename):
+    product = IdaProduct.from_installer_filename(filename)
+    args = get_installer_args(Path("C:/IDA"), product, "windows")
+    assert args[args.index("--install_python") + 1] == "0"
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "ida-free-pc_92_x64win.exe",
+        "ida-free-pc_93sp2_x64win.exe",
+        "ida-free-pc_94_x64win.exe",
+        "ida-free_95_x64win.exe",
+    ],
+)
+def test_installer_args_omit_install_python_for_ida_free(filename):
+    product = IdaProduct.from_installer_filename(filename)
+    assert "--install_python" not in get_installer_args(Path("C:/IDA"), product, "windows")
+
+
+@pytest.mark.parametrize("os_name", ["linux", "mac"])
+def test_installer_args_omit_install_python_off_windows(os_name):
+    product = IdaProduct.from_installer_filename("ida-pro_93_x64linux.run")
+    args = get_installer_args(Path("/opt/ida"), product, os_name)
+    assert args == ["--mode", "unattended", "--debugtrace", "debug.log", "--prefix", str(Path("/opt/ida"))]
+
+
+def test_run_installer_reports_installer_output_on_failure():
+    script = "import sys; print('Unknown option: --install_python'); sys.exit(1)"
+    with pytest.raises(RuntimeError, match="Unknown option: --install_python"):
+        run_installer([sys.executable, "-c", script])
+
+
+def test_run_installer_accepts_success():
+    run_installer([sys.executable, "-c", "pass"])
+
+
+def test_install_ida_removes_install_dir_when_installer_fails(tmp_path):
+    suffix = {"windows": "x64win.exe", "linux": "x64linux.run", "mac": "armmac.app.zip"}[get_os()]
+    installer = tmp_path / f"ida-free-pc_94_{suffix}"
+    installer.write_bytes(b"not an installer")
+    install_dir = tmp_path / "ida"
+
+    with pytest.raises((RuntimeError, OSError)):
+        install_ida(installer, install_dir)
+
+    assert not install_dir.exists()

@@ -570,6 +570,9 @@ def install_ida(installer: Path, install_dir: Path):
       installer: path to the installer downloaded from the Hex-Rays portal.
       install_dir: path to the installation directory, which should not already exist.
 
+    Raises:
+      ValueError: the installer filename does not follow the Hex-Rays naming scheme.
+
     Installation directory should look like:
       - %Program Files%\IDA Professional 9.1\
       - /Applications/IDA Professional 9.1.app/
@@ -588,22 +591,30 @@ def install_ida(installer: Path, install_dir: Path):
     installer_size = installer.stat().st_size
     check_free_space(install_dir.parent, installer_size * 3)
 
+    product = IdaProduct.from_installer_filename(installer.name)
+
     install_dir.mkdir(parents=True, exist_ok=False)
 
     try:
         current_os = get_os()
         if current_os == "mac":
-            _install_ida_mac(installer, install_dir)
+            _install_ida_mac(installer, install_dir, product)
         elif current_os == "linux":
-            _install_ida_unix(installer, install_dir)
+            _install_ida_unix(installer, install_dir, product)
         elif current_os == "windows":
-            _install_ida_windows(installer, install_dir)
+            _install_ida_windows(installer, install_dir, product)
         else:
             raise ValueError(f"unsupported OS: {current_os}")
+
+        _validate_installed_ida(install_dir)
     except Exception as e:
         logger.error(f"Installation failed: {e}")
+        # a leftover directory makes the next `hcli ida install` report "already exists" instead of installing
+        shutil.rmtree(install_dir, ignore_errors=True)
         raise
 
+
+def _validate_installed_ida(install_dir: Path) -> None:
     contents = list(install_dir.iterdir())
     logger.debug("installed contents: %s", contents)
     if not len(contents):
@@ -618,7 +629,7 @@ def install_ida(installer: Path, install_dir: Path):
         raise RuntimeError("installation failed: ida.hlp not created")
 
 
-def _install_ida_mac(installer: Path, prefix: Path) -> None:
+def _install_ida_mac(installer: Path, prefix: Path, product: IdaProduct) -> None:
     """Install IDA on macOS."""
     if not shutil.which("unzip"):
         raise RuntimeError("unzip is required to install IDA on macOS")
@@ -658,12 +669,9 @@ def _install_ida_mac(installer: Path, prefix: Path) -> None:
 
         logger.info(f"Running installer {app_name}...")
         temp_install_path = Path(temp_install_dir)
-        args = _get_installer_args(temp_install_path)
+        args = get_installer_args(temp_install_path, product, "mac")
 
-        process = subprocess.run([str(installer_path)] + args, capture_output=True, check=False)
-
-        if process.returncode != 0:
-            raise RuntimeError("Installer execution failed")
+        run_installer([str(installer_path)] + args)
 
         # Find installed folder and copy to prefix
         installed_folders = list(temp_install_path.iterdir())
@@ -675,9 +683,9 @@ def _install_ida_mac(installer: Path, prefix: Path) -> None:
         _copy_dir(install_folder, prefix)
 
 
-def _install_ida_unix(installer: Path, prefix: Path) -> None:
+def _install_ida_unix(installer: Path, prefix: Path, product: IdaProduct) -> None:
     """Install IDA on Unix/Linux."""
-    args = _get_installer_args(prefix)
+    args = get_installer_args(prefix, product, "linux")
 
     installer_path = Path(installer)
 
@@ -694,27 +702,40 @@ def _install_ida_unix(installer: Path, prefix: Path) -> None:
     share_dir = Path(home_dir) / ".local" / "share" / "applications"
     share_dir.mkdir(parents=True, exist_ok=True)
 
-    process = subprocess.run([str(installer_path)] + args, capture_output=True, check=False)
-
-    if process.returncode != 0:
-        raise RuntimeError("Installer execution failed")
+    run_installer([str(installer_path)] + args)
 
 
-def _install_ida_windows(installer: Path, prefix: Path) -> None:
+def _install_ida_windows(installer: Path, prefix: Path, product: IdaProduct) -> None:
     """Install IDA on Windows."""
-    args = _get_installer_args(prefix)
+    args = get_installer_args(prefix, product, "windows")
 
-    process = subprocess.run(["cmd", "/c", str(installer)] + args, capture_output=True, check=False)
+    run_installer(["cmd", "/c", str(installer)] + args)
 
+
+def run_installer(command: list[str]) -> None:
+    """Run an IDA installer to completion.
+
+    Raises:
+      RuntimeError: the installer exits with a non-zero status. The message
+        contains the installer output, such as "Unknown option: ...".
+    """
+    process = subprocess.run(command, capture_output=True, check=False)
     if process.returncode != 0:
-        raise RuntimeError("Installer execution failed")
+        output = (process.stdout + process.stderr).decode(errors="replace").strip()
+        raise RuntimeError(f"Installer execution failed: {output}" if output else "Installer execution failed")
 
 
-def _get_installer_args(prefix: Path) -> list[str]:
-    """Get installer arguments."""
+def get_installer_args(prefix: Path, product: IdaProduct, os_name: str) -> list[str]:
+    """Get the command line for an unattended run of the IDA installer.
+
+    On Windows, hcli passes `--install_python 0` so the installer does not
+    install its bundled Python. The IDA Free installers do not have this
+    option and fail with "Unknown option: --install_python", so hcli does
+    not pass it to them.
+    """
     args = ["--mode", "unattended", "--debugtrace", "debug.log"]
 
-    if get_os() == "windows":
+    if os_name == "windows" and product.product != "IDA Free":
         args.extend(["--install_python", "0"])
 
     if prefix:
