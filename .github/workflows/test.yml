@@ -197,29 +197,107 @@ jobs:
               default_path: "/Applications/IDA Professional 9.4.app"
               supports_idalib: true
 
+          # IDA Free on every platform for each supported release: the Free
+          # installers take different options than the Essential ones above.
+          # IDA Free doesn't include idat or idalib.
           - python-version: "3.13"
             os_ida:
-              name: IDA Free 9.3 on macOS (ARM)
-              arch: arm
-              os: macos-latest
-              ida_version: "9.3"
-              slug: "release/9.3/ida-free/ida-free-pc_93_armmac.app.zip"
+              name: IDA Free 9.4 on Linux
+              arch: intel
+              os: ubuntu-latest
+              ida_version: "9.4"
+              slug: "release/ida-free/9.4/ida-free-pc_94_x64linux.run"
               idat_path: ""
-              default_path: "/Applications/IDA Free 9.3.app"
-              supports_idalib: false  # IDA Free doesn't include idalib
+              default_path: "/home/runner/.local/share/applications/IDA Free 9.4"
+              supports_idalib: false
 
-          # the IDA Free Windows installers take different options than the
-          # Essential ones in the main matrix
           - python-version: "3.13"
             os_ida:
               name: IDA Free 9.4 on Windows
               arch: intel
               os: windows-latest
               ida_version: "9.4"
-              slug: "release/9.4/ida-free/ida-free-pc_94_x64win.exe"
+              slug: "release/ida-free/9.4/ida-free-pc_94_x64win.exe"
               idat_path: ""
               default_path: "C:\\Program Files\\IDA Free 9.4"
-              supports_idalib: false  # IDA Free doesn't include idalib
+              supports_idalib: false
+
+          - python-version: "3.13"
+            os_ida:
+              name: IDA Free 9.4 on macOS (ARM)
+              arch: arm
+              os: macos-latest
+              ida_version: "9.4"
+              slug: "release/ida-free/9.4/ida-free-pc_94_armmac.app.zip"
+              idat_path: ""
+              default_path: "/Applications/IDA Free 9.4.app"
+              supports_idalib: false
+
+          - python-version: "3.13"
+            os_ida:
+              name: IDA Free 9.3 on Linux
+              arch: intel
+              os: ubuntu-latest
+              ida_version: "9.3"
+              slug: "release/ida-free/9.3/ida-free-pc_93_x64linux.run"
+              idat_path: ""
+              default_path: "/home/runner/.local/share/applications/IDA Free 9.3"
+              supports_idalib: false
+
+          - python-version: "3.13"
+            os_ida:
+              name: IDA Free 9.3 on Windows
+              arch: intel
+              os: windows-latest
+              ida_version: "9.3"
+              slug: "release/ida-free/9.3/ida-free-pc_93_x64win.exe"
+              idat_path: ""
+              default_path: "C:\\Program Files\\IDA Free 9.3"
+              supports_idalib: false
+
+          - python-version: "3.13"
+            os_ida:
+              name: IDA Free 9.3 on macOS (ARM)
+              arch: arm
+              os: macos-latest
+              ida_version: "9.3"
+              slug: "release/ida-free/9.3/ida-free-pc_93_armmac.app.zip"
+              idat_path: ""
+              default_path: "/Applications/IDA Free 9.3.app"
+              supports_idalib: false
+
+          - python-version: "3.13"
+            os_ida:
+              name: IDA Free 9.2 on Linux
+              arch: intel
+              os: ubuntu-latest
+              ida_version: "9.2"
+              slug: "release/ida-free/9.2/ida-free-pc_92_x64linux.run"
+              idat_path: ""
+              default_path: "/home/runner/.local/share/applications/IDA-Free-9.2"
+              supports_idalib: false
+
+          - python-version: "3.13"
+            os_ida:
+              name: IDA Free 9.2 on Windows
+              arch: intel
+              os: windows-latest
+              ida_version: "9.2"
+              slug: "release/ida-free/9.2/ida-free-pc_92_x64win.exe"
+              idat_path: ""
+              default_path: "C:\\Program Files\\IDA Free 9.2"
+              supports_idalib: false
+
+          - python-version: "3.13"
+            os_ida:
+              name: IDA Free 9.2 on macOS (ARM)
+              arch: arm
+              os: macos-latest
+              ida_version: "9.2"
+              slug: "release/ida-free/9.2/ida-free-pc_92_armmac.app.zip"
+              idat_path: ""
+              default_path: "/Applications/IDA Free 9.2.app"
+              supports_idalib: false
 
           - python-version: "3.13"
             os_ida:
