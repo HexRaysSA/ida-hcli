@@ -19,11 +19,11 @@ import pytest
 from hcli.lib.ida.python import (
     ProbeError,
     ScriptNotFoundError,
-    get_environment_for_python,
     get_script_info,
     run_in_python_environment,
     run_script,
 )
+from hcli.lib.venv import get_environment_for_python
 
 MODULE_PY = """
 import sys
@@ -216,21 +216,28 @@ def test_run_in_python_environment_returns_status(python_env: PythonEnv):
     assert run_in_python_environment(python_env.python_exe, argv) == 7
 
 
-def test_get_environment_for_python_venv(python_env: PythonEnv, monkeypatch):
-    monkeypatch.setenv("VIRTUAL_ENV", str(Path(sys.prefix)))
-    monkeypatch.setenv("PYTHONHOME", "/nonsense")
+def test_get_environment_for_python_venv(python_env: PythonEnv):
+    parent = {
+        "PATH": "/usr/bin",
+        "VIRTUAL_ENV": str(Path(sys.prefix)),
+        "PYTHONHOME": "/ida/libpython/prefix",
+        "PYTHONPATH": "/ida/python",
+        "PYTHONEXECUTABLE": "/ida/ida",
+        "PYTHONSTARTUP": "/ida/startup.py",
+        "PYTHONUTF8": "1",
+    }
 
-    env = get_environment_for_python(python_env.python_exe)
+    env = get_environment_for_python(python_env.python_exe, parent)
 
     assert env["VIRTUAL_ENV"] == str(python_env.root / "venv")
-    assert "PYTHONHOME" not in env
-    assert env["PATH"].split(os.pathsep)[0] == str(python_env.python_exe.parent)
+    assert env["PATH"] == f"{python_env.python_exe.parent}{os.pathsep}/usr/bin"
+    assert env["PYTHONUTF8"] == "1"
+    for key in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "PYTHONSTARTUP"):
+        assert key not in env
 
 
-def test_get_environment_for_python_not_a_venv(tmp_path: Path, monkeypatch):
+def test_get_environment_for_python_not_a_venv(tmp_path: Path):
     """hcli's own virtualenv must not leak into a system interpreter."""
-    monkeypatch.setenv("VIRTUAL_ENV", str(Path(sys.prefix)))
-
-    env = get_environment_for_python(tmp_path / "bin" / "python")
+    env = get_environment_for_python(tmp_path / "bin" / "python", {"VIRTUAL_ENV": str(Path(sys.prefix))})
 
     assert "VIRTUAL_ENV" not in env

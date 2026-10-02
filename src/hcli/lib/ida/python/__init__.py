@@ -15,10 +15,13 @@ from rich.markup import escape
 from hcli.env import ENV
 from hcli.lib.console import stderr_console as stderr_console
 from hcli.lib.ida import run_py_in_current_idapython
+from hcli.lib.ida.running import RUNNING_IDA_SOURCE, is_running_in_ida
 from hcli.lib.util.io import get_hcli_display_command
 from hcli.lib.venv import (
     PythonVersion,
+    get_environment_for_python,
     get_python_exe_candidates,
+    get_venv_root_from_python,
     get_virtual_env_version,
     probe_python_version,
     probe_python_version_info,
@@ -27,42 +30,57 @@ from hcli.lib.venv import (
 logger = logging.getLogger(__name__)
 
 
+# Defines `get_python_info()`, which reports enough sys/env info about the
+# running interpreter to detect the Python executable on the HCLI side.
+# It is source text because it runs in two places: inside idat, as part of
+# GET_PYTHON_INFO_PY, and in hcli's own process when hcli runs inside IDA.
+# Keep it compatible with every Python version IDA may embed.
+PYTHON_INFO_FUNCTION_PY = """
+def get_python_info():
+    import os
+    import sys
+    import sysconfig
+
+    # PEP 668: distributors mark a Python installation as externally managed by
+    # dropping this file next to the stdlib. pip refuses to install into such an
+    # interpreter unless it's a venv, so check for it here rather than shelling
+    # out to pip just to learn the same thing.
+    try:
+        stdlib = sysconfig.get_path("stdlib")
+        externally_managed = bool(stdlib) and os.path.exists(os.path.join(stdlib, "EXTERNALLY-MANAGED"))
+    except Exception:
+        externally_managed = False
+
+    return {
+        "frozen": getattr(sys, "frozen", False),
+        "prefix": sys.prefix,
+        "base_prefix": sys.base_prefix,
+        "executable": sys.executable,
+        "virtual_env": os.environ.get("VIRTUAL_ENV"),
+        "idapython_venv_executable": os.environ.get("IDAPYTHON_VENV_EXECUTABLE"),
+        "version_major": sys.version_info.major,
+        "version_minor": sys.version_info.minor,
+        "externally_managed": externally_managed,
+    }
+"""
+
+
 # Script run inside IDA's embedded Python via idat.
-# Returns enough sys/env info to detect the Python executable on the HCLI side.
-GET_PYTHON_INFO_PY = """
-import sys
+GET_PYTHON_INFO_PY = (
+    PYTHON_INFO_FUNCTION_PY
+    + """
 import io
 import json
-import os
-import sysconfig
+import sys
 
 # ensure UTF-8 output for unicode install paths
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
-# PEP 668: distributors mark a Python installation as externally managed by
-# dropping this file next to the stdlib. pip refuses to install into such an
-# interpreter unless it's a venv, so check for it here rather than shelling
-# out to pip just to learn the same thing.
-try:
-    stdlib = sysconfig.get_path("stdlib")
-    externally_managed = bool(stdlib) and os.path.exists(os.path.join(stdlib, "EXTERNALLY-MANAGED"))
-except Exception:
-    externally_managed = False
-
-print("__hcli__:" + json.dumps({
-    "frozen": getattr(sys, "frozen", False),
-    "prefix": sys.prefix,
-    "base_prefix": sys.base_prefix,
-    "executable": sys.executable,
-    "virtual_env": os.environ.get("VIRTUAL_ENV"),
-    "idapython_venv_executable": os.environ.get("IDAPYTHON_VENV_EXECUTABLE"),
-    "version_major": sys.version_info.major,
-    "version_minor": sys.version_info.minor,
-    "externally_managed": externally_managed,
-}))
+print("__hcli__:" + json.dumps(get_python_info()))
 sys.exit()
 """
+)
 
 
 class PythonNotFoundError(RuntimeError):
@@ -70,7 +88,10 @@ class PythonNotFoundError(RuntimeError):
 
 
 class IdatProbe(BaseModel):
-    """What IDA's embedded Python reports about itself, via GET_PYTHON_INFO_PY."""
+    """What IDA's embedded Python reports about itself, via PYTHON_INFO_FUNCTION_PY.
+
+    Collected by launching idat, or read from hcli's own process when hcli runs inside IDA.
+    """
 
     frozen: bool = False
     prefix: str
@@ -96,27 +117,6 @@ def _is_windows_store_shim(path: str | None) -> bool:
     return "microsoft\\windowsapps" in lowered or "microsoft/windowsapps" in lowered
 
 
-def _is_python_executable_name(path: str | None) -> bool:
-    if path is None:
-        return False
-    return "python" in os.path.basename(path).lower()
-
-
-def _get_venv_root_from_python(path: str | None) -> Path | None:
-    if not path or not _is_python_executable_name(path):
-        return None
-
-    exe = Path(path)
-    if exe.parent.name not in ("bin", "Scripts"):
-        return None
-
-    venv_root = exe.parent.parent
-    if (venv_root / "pyvenv.cfg").exists():
-        return venv_root
-
-    return None
-
-
 def _derive_python_exe(info: IdatProbe) -> Path:
     """Derive the Python executable path from IDA's embedded Python sys/env info.
 
@@ -128,9 +128,9 @@ def _derive_python_exe(info: IdatProbe) -> Path:
 
     version = f"{info.version_major}.{info.version_minor}"
     sys_executable = info.executable
-    sys_executable_venv = _get_venv_root_from_python(sys_executable)
+    sys_executable_venv = get_venv_root_from_python(sys_executable)
     requested_venv_executable = info.idapython_venv_executable
-    requested_venv_root = _get_venv_root_from_python(requested_venv_executable)
+    requested_venv_root = get_venv_root_from_python(requested_venv_executable)
     virtual_env = info.virtual_env
     normalized_virtual_env = _normalize_path(virtual_env)
 
@@ -149,7 +149,7 @@ def _derive_python_exe(info: IdatProbe) -> Path:
     # The preferred path: sys.prefix/sys.base_prefix identify the interpreter layout.
     for candidate in prefix_candidates:
         if os.path.exists(candidate):
-            candidate_venv = _get_venv_root_from_python(candidate)
+            candidate_venv = get_venv_root_from_python(candidate)
             if requested_venv_root and candidate_venv == requested_venv_root:
                 return Path(candidate)
             if normalized_virtual_env and _normalize_path(str(candidate_venv)) == normalized_virtual_env:
@@ -184,7 +184,7 @@ def _derive_python_exe(info: IdatProbe) -> Path:
         requested_venv_root
         and requested_venv_executable
         and os.path.exists(requested_venv_executable)
-        and _get_venv_root_from_python(requested_venv_executable) == requested_venv_root
+        and get_venv_root_from_python(requested_venv_executable) == requested_venv_root
     ):
         logger.debug("using IDAPYTHON_VENV_EXECUTABLE directly: %s", requested_venv_executable)
         return Path(requested_venv_executable)
@@ -206,18 +206,31 @@ def _derive_python_exe(info: IdatProbe) -> Path:
     )
 
 
+def get_running_python_info() -> IdatProbe:
+    """Report on hcli's own interpreter, using the same code that runs inside idat.
+
+    Inside IDA, hcli's interpreter is IDA's embedded Python.
+    """
+    namespace: dict = {}
+    exec(PYTHON_INFO_FUNCTION_PY, namespace)
+    return IdatProbe.model_validate(namespace["get_python_info"]())
+
+
 @functools.cache
 def probe_current_python_info() -> IdatProbe:
-    """Run GET_PYTHON_INFO_PY inside IDA's embedded Python, once per process.
+    """Run PYTHON_INFO_FUNCTION_PY inside IDA's embedded Python, once per process.
 
-    The probe launches IDA in batch mode via idat, which takes seconds, and its
-    inputs (the IDA installation and process environment) don't change within a
-    single HCLI invocation, so the result is cached.  Failures are not cached:
-    an exception propagates and the next call retries.
+    Inside IDA, this reads hcli's own process.  Otherwise the probe launches
+    IDA in batch mode via idat, which takes seconds, and its inputs (the IDA
+    installation and process environment) don't change within a single HCLI
+    invocation, so the result is cached.  Failures are not cached: an
+    exception propagates and the next call retries.
 
     Raises:
         RuntimeError: if idat can't be run or emits no result.
     """
+    if is_running_in_ida():
+        return get_running_python_info()
     return IdatProbe.model_validate(run_py_in_current_idapython(GET_PYTHON_INFO_PY))
 
 
@@ -248,13 +261,14 @@ def is_externally_managed(resolved: ResolvedPython) -> bool:
     """
     if resolved.probe is None or not resolved.probe.externally_managed:
         return False
-    return _get_venv_root_from_python(str(resolved.exe)) is None
+    return get_venv_root_from_python(str(resolved.exe)) is None
 
 
 def resolve_current_python() -> ResolvedPython:
     """Find IDA's Python executable, along with the probe info used to find it.
 
-    Precedence: $HCLI_CURRENT_IDA_PYTHON_EXE, then $IDAPYTHON_VENV_EXECUTABLE
+    Precedence: $HCLI_CURRENT_IDA_PYTHON_EXE, then derivation from hcli's own
+    interpreter (when hcli runs inside IDA), then $IDAPYTHON_VENV_EXECUTABLE
     (when it exists on disk), then derivation from probing IDA's embedded
     Python via idat.
 
@@ -264,6 +278,11 @@ def resolve_current_python() -> ResolvedPython:
     """
     if ENV.HCLI_CURRENT_IDA_PYTHON_EXE is not None:
         return ResolvedPython(Path(ENV.HCLI_CURRENT_IDA_PYTHON_EXE), "$HCLI_CURRENT_IDA_PYTHON_EXE")
+
+    if is_running_in_ida():
+        info = get_running_python_info()
+        logger.debug("IDA Python info from the running process: %s", info)
+        return ResolvedPython(_derive_python_exe(info), RUNNING_IDA_SOURCE, info)
 
     venv_exe = ENV.IDAPYTHON_VENV_EXECUTABLE
     if venv_exe and Path(venv_exe).is_file():
@@ -295,7 +314,11 @@ def has_pip(python_exe: Path, timeout=10.0) -> bool:
     """Check if pip is available in the given Python executable."""
     try:
         process = subprocess.run(
-            [str(python_exe), "-c", "import pip"], capture_output=True, timeout=timeout, check=False
+            [str(python_exe), "-c", "import pip"],
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+            env=get_environment_for_python(python_exe),
         )
         return process.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
@@ -403,6 +426,7 @@ def verify_pip_can_install_packages(
         [str(python_exe), "-m", "pip", "install", "--dry-run"] + pip_options.build_args() + packages,
         capture_output=True,
         check=False,
+        env=get_environment_for_python(python_exe),
     )
     stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
@@ -429,6 +453,7 @@ def pip_install_packages(
         [str(python_exe), "-m", "pip", "install"] + pip_options.build_args() + packages,
         capture_output=True,
         check=False,
+        env=get_environment_for_python(python_exe),
     )
     stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
@@ -504,7 +529,7 @@ def find_python_version_mismatches(info: IdatProbe, python_exe: Path | None) -> 
     candidate_venvs = [
         (info.virtual_env, "the virtualenv activated inside IDA ($VIRTUAL_ENV)"),
         (
-            _get_venv_root_from_python(info.idapython_venv_executable),
+            get_venv_root_from_python(info.idapython_venv_executable),
             "the virtualenv requested by $IDAPYTHON_VENV_EXECUTABLE",
         ),
     ]
@@ -535,7 +560,7 @@ def find_python_version_mismatches(info: IdatProbe, python_exe: Path | None) -> 
     if python_exe is None:
         return mismatches
 
-    exe_venv = _get_venv_root_from_python(str(python_exe))
+    exe_venv = get_venv_root_from_python(str(python_exe))
     if exe_venv is None or _normalize_path(str(exe_venv)) not in seen_venvs:
         version = probe_python_version(python_exe)
         if version is not None and version != ida_version:
@@ -791,29 +816,6 @@ class ScriptInfo:
             scripts_dirs=tuple(Path(p) for p in doc.get("scripts_dirs", ())),
             entry_point=EntryPoint.from_probe(entry_point) if entry_point else None,
         )
-
-
-def get_environment_for_python(python_exe: Path) -> dict[str, str]:
-    """Build the environment for a process run against the given Python.
-
-    HCLI may itself run inside a virtualenv (or a uv cache overlay), so the
-    inherited VIRTUAL_ENV/PYTHONHOME describe HCLI's environment, not IDA's.
-    """
-    env = os.environ.copy()
-
-    env.pop("PYTHONHOME", None)
-
-    venv_root = _get_venv_root_from_python(str(python_exe))
-    if venv_root:
-        env["VIRTUAL_ENV"] = str(venv_root)
-    else:
-        env.pop("VIRTUAL_ENV", None)
-
-    scripts_dir = str(python_exe.parent)
-    path = env.get("PATH")
-    env["PATH"] = f"{scripts_dir}{os.pathsep}{path}" if path else scripts_dir
-
-    return env
 
 
 def _run_probe(python_exe: Path, src: str, args: Sequence[str]) -> dict:

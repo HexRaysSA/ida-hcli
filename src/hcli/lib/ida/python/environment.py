@@ -48,7 +48,6 @@ from hcli.lib.ida.python import (
     IdatProbe,
     PythonNotFoundError,
     ResolvedPython,
-    _get_venv_root_from_python,
     _is_windows_store_shim,
     _normalize_path,
     find_current_python_executable,
@@ -61,6 +60,7 @@ from hcli.lib.ida.python import (
 from hcli.lib.util.io import get_hcli_display_command, get_os
 from hcli.lib.venv import (
     find_candidate_virtual_envs,
+    get_venv_root_from_python,
     get_virtual_env_version,
     is_uv_cache_virtual_env,
     parse_pyvenv_cfg,
@@ -250,7 +250,7 @@ def collect_python_environment_state(
     except ValueError:
         idausr = None
 
-    venv_root = _get_venv_root_from_python(str(python_exe))
+    venv_root = get_venv_root_from_python(str(python_exe))
     externally_managed = is_externally_managed(resolved)
 
     # pip can't be used in an externally-managed base interpreter regardless,
@@ -310,7 +310,7 @@ def venv_executable_points_at(state: PythonEnvironmentState) -> bool:
     """Whether $IDAPYTHON_VENV_EXECUTABLE names an interpreter inside `state.venv_root`."""
     if state.idapython_venv_executable is None or state.venv_root is None:
         return False
-    requested_root = _get_venv_root_from_python(str(state.idapython_venv_executable))
+    requested_root = get_venv_root_from_python(str(state.idapython_venv_executable))
     if requested_root is None:
         # the variable may name a python that doesn't exist yet; compare by layout instead
         requested_root = state.idapython_venv_executable.parent.parent
@@ -973,7 +973,7 @@ def collect_python_environment() -> PythonEnvironmentReport:
         if not is_uv_cache_virtual_env(candidate.path)
     ]
 
-    idapython_venv_exe = os.environ.get("IDAPYTHON_VENV_EXECUTABLE") or ENV.IDAPYTHON_VENV_EXECUTABLE
+    idapython_venv_exe = ENV.IDAPYTHON_VENV_EXECUTABLE
     idapython_venv_executable = str(idapython_venv_exe) if idapython_venv_exe else None
     idapython_venv_executable_exists = Path(idapython_venv_exe).is_file() if idapython_venv_exe else None
 
