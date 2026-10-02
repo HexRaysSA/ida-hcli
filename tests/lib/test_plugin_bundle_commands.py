@@ -7,7 +7,7 @@ import re
 import sys
 import tempfile
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -152,7 +152,7 @@ def _make_suite_zip_with_inline_component(
 
 
 @contextlib.contextmanager
-def _make_fs_repo(archives: dict[str, bytes]) -> Iterator[FileSystemPluginRepo]:
+def _make_fs_repo(archives: dict[str, bytes]) -> Generator[FileSystemPluginRepo, None, None]:
     with tempfile.TemporaryDirectory() as tmp:
         repo_dir = Path(tmp)
         for filename, data in archives.items():
@@ -316,7 +316,7 @@ WINDOWS_312 = PipTarget.parse("windows-x86_64-cp312")
 
 
 @contextlib.contextmanager
-def _local_zip(buf: bytes) -> Iterator[str]:
+def _local_zip(buf: bytes) -> Generator[str, None, None]:
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "local.zip"
         path.write_bytes(buf)
