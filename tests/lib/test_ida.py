@@ -27,6 +27,7 @@ from hcli.lib.ida import (
     parse_version_from_windows_registry,
     resolve_current_ida_install_directory,
     resolve_current_ida_version,
+    run_installer,
     select_default_ida_instance,
 )
 from hcli.lib.ida.version import normalize_ida_binary_version, parse_version_from_ida_binary
@@ -367,3 +368,13 @@ def test_installer_args_omit_install_python_off_windows(os_name):
     product = IdaProduct.from_installer_filename("ida-pro_93_x64linux.run")
     args = get_installer_args(Path("/opt/ida"), product, os_name)
     assert args == ["--mode", "unattended", "--debugtrace", "debug.log", "--prefix", str(Path("/opt/ida"))]
+
+
+def test_run_installer_reports_installer_output_on_failure():
+    script = "import sys; print('Unknown option: --install_python'); sys.exit(1)"
+    with pytest.raises(RuntimeError, match="Unknown option: --install_python"):
+        run_installer([sys.executable, "-c", script])
+
+
+def test_run_installer_accepts_success():
+    run_installer([sys.executable, "-c", "pass"])

@@ -665,10 +665,7 @@ def _install_ida_mac(installer: Path, prefix: Path, product: IdaProduct) -> None
         temp_install_path = Path(temp_install_dir)
         args = get_installer_args(temp_install_path, product, "mac")
 
-        process = subprocess.run([str(installer_path)] + args, capture_output=True, check=False)
-
-        if process.returncode != 0:
-            raise RuntimeError("Installer execution failed")
+        run_installer([str(installer_path)] + args)
 
         # Find installed folder and copy to prefix
         installed_folders = list(temp_install_path.iterdir())
@@ -697,18 +694,25 @@ def _install_ida_unix(installer: Path, args: list[str]) -> None:
     share_dir = Path(home_dir) / ".local" / "share" / "applications"
     share_dir.mkdir(parents=True, exist_ok=True)
 
-    process = subprocess.run([str(installer_path)] + args, capture_output=True, check=False)
-
-    if process.returncode != 0:
-        raise RuntimeError("Installer execution failed")
+    run_installer([str(installer_path)] + args)
 
 
 def _install_ida_windows(installer: Path, args: list[str]) -> None:
     """Install IDA on Windows."""
-    process = subprocess.run(["cmd", "/c", str(installer)] + args, capture_output=True, check=False)
+    run_installer(["cmd", "/c", str(installer)] + args)
 
+
+def run_installer(command: list[str]) -> None:
+    """Run an IDA installer to completion.
+
+    Raises:
+      RuntimeError: the installer exits with a non-zero status. The message
+        contains the installer output, such as "Unknown option: ...".
+    """
+    process = subprocess.run(command, capture_output=True, check=False)
     if process.returncode != 0:
-        raise RuntimeError("Installer execution failed")
+        output = (process.stdout + process.stderr).decode(errors="replace").strip()
+        raise RuntimeError(f"Installer execution failed: {output}" if output else "Installer execution failed")
 
 
 def get_installer_args(prefix: Path, product: IdaProduct, os_name: str) -> list[str]:
