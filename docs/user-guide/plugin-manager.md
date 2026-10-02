@@ -43,16 +43,18 @@ Legacy plugins are old, single-file plugins.
 They aren't managed by HCLI. Try finding an updated version in the plugin repository.
 ```
 
+HCLI installs the newest plugin version that supports your platform, your IDA version, and IDA's Python. When no version supports them, the install stops and gives the reason. Versions with the same reason are shown together:
+
+```console
+❯ hcli plugin install ida-mcp@https://github.com/HexRaysSA/ida-mcp
+Error: cannot resolve ida-mcp@https://github.com/hexrayssa/ida-mcp for macos-aarch64 IDA 9.0: ida-mcp 20260930.0.1 and 24 older versions do not support IDA 9.0
+```
+
 !!! note "Coming Soon"
 
       We plan to provide an IDA-native GUI for listing, installing, upgrading, and removing plugins in a future release.
 
-HCLI installs the newest plugin version that supports your platform, your IDA version, and IDA's Python. When no version supports them, the install stops and gives the reason. Versions with the same reason are shown together:
 
-```
-❯ hcli plugin install ida-mcp@https://github.com/HexRaysSA/ida-mcp
-Error: cannot resolve ida-mcp@https://github.com/hexrayssa/ida-mcp for macos-aarch64 IDA 9.0: ida-mcp 20260930.0.1 and 24 older versions do not support IDA 9.0
-```
 
 ## Python environment
 

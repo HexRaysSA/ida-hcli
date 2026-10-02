@@ -529,6 +529,7 @@ class _Resolver:
             if version not in self.compatible.get(plugin_id, {}):
                 reason = self.render_incompatibility(plugin.versions[version])
                 if reason not in incompatible:
+                    # the group keeps the position of its newest version among the other reasons
                     incompatible[reason] = []
                     reasons.append(incompatible[reason])
                 incompatible[reason].append(version)
