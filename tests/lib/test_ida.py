@@ -340,19 +340,24 @@ def test_prepare_headless_ida_user_dir_copies_only_required_files(tmp_path):
 
 @pytest.mark.parametrize(
     "filename",
-    ["ida-pro_93_x64win.exe", "ida-free-pc_93sp2_x64win.exe", "ida-pro_92_x64win.exe"],
+    [
+        "ida-pro_93_x64win.exe",
+        "ida-pro_94_x64win.exe",
+        "ida-essential_94_x64win.exe",
+        "ida-home-riscv_94_x64win.exe",
+        "ida-free-pc_93sp2_x64win.exe",
+    ],
 )
-def test_installer_args_skip_bundled_python_before_9_4_on_windows(filename):
+def test_installer_args_skip_bundled_python_on_windows(filename):
     product = IdaProduct.from_installer_filename(filename)
     args = get_installer_args(Path("C:/IDA"), product, "windows")
     assert args[args.index("--install_python") + 1] == "0"
 
 
 @pytest.mark.parametrize(
-    "filename",
-    ["ida-free-pc_94_x64win.exe", "ida-pro_94_x64win.exe", "ida-home-riscv_94_x64win.exe", "ida-pro_95_armwin.exe"],
+    "filename", ["ida-free-pc_94_x64win.exe", "ida-free-pc_94sp1_armwin.exe", "ida-free_95_x64win.exe"]
 )
-def test_installer_args_omit_install_python_from_9_4_on_windows(filename):
+def test_installer_args_omit_install_python_for_ida_free_from_9_4(filename):
     product = IdaProduct.from_installer_filename(filename)
     assert "--install_python" not in get_installer_args(Path("C:/IDA"), product, "windows")
 

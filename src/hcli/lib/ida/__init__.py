@@ -714,12 +714,14 @@ def _install_ida_windows(installer: Path, args: list[str]) -> None:
 def get_installer_args(prefix: Path, product: IdaProduct, os_name: str) -> list[str]:
     """Get the command line for an unattended run of the IDA installer.
 
-    Windows installers before IDA 9.4 can install a bundled Python, which hcli
-    disables. From IDA 9.4 the installers reject the `--install_python` option.
+    Windows installers can install a bundled Python, which hcli disables.
+    The IDA Free installers from 9.4 do not bundle Python and reject the
+    `--install_python` option.
     """
     args = ["--mode", "unattended", "--debugtrace", "debug.log"]
 
-    if os_name == "windows" and (product.major, product.minor) < (9, 4):
+    bundles_python = product.product != "IDA Free" or (product.major, product.minor) < (9, 4)
+    if os_name == "windows" and bundles_python:
         args.extend(["--install_python", "0"])
 
     if prefix:
