@@ -21,6 +21,7 @@ from hcli.lib.ida import (
     generate_instance_name,
     get_ida_path,
     get_installer_args,
+    install_ida,
     parse_instance_version,
     parse_version_from_dir_name,
     parse_version_from_ida_pro_py,
@@ -31,6 +32,7 @@ from hcli.lib.ida import (
     select_default_ida_instance,
 )
 from hcli.lib.ida.version import normalize_ida_binary_version, parse_version_from_ida_binary
+from hcli.lib.util.io import get_os
 
 
 def has_idat():
@@ -346,7 +348,6 @@ def test_prepare_headless_ida_user_dir_copies_only_required_files(tmp_path):
         "ida-pro_94_x64win.exe",
         "ida-essential_94_x64win.exe",
         "ida-home-riscv_94_x64win.exe",
-        "ida-free-pc_93sp2_x64win.exe",
     ],
 )
 def test_installer_args_skip_bundled_python_on_windows(filename):
@@ -356,9 +357,15 @@ def test_installer_args_skip_bundled_python_on_windows(filename):
 
 
 @pytest.mark.parametrize(
-    "filename", ["ida-free-pc_94_x64win.exe", "ida-free-pc_94sp1_armwin.exe", "ida-free_95_x64win.exe"]
+    "filename",
+    [
+        "ida-free-pc_92_x64win.exe",
+        "ida-free-pc_93sp2_x64win.exe",
+        "ida-free-pc_94_x64win.exe",
+        "ida-free_95_x64win.exe",
+    ],
 )
-def test_installer_args_omit_install_python_for_ida_free_from_9_4(filename):
+def test_installer_args_omit_install_python_for_ida_free(filename):
     product = IdaProduct.from_installer_filename(filename)
     assert "--install_python" not in get_installer_args(Path("C:/IDA"), product, "windows")
 
@@ -378,3 +385,15 @@ def test_run_installer_reports_installer_output_on_failure():
 
 def test_run_installer_accepts_success():
     run_installer([sys.executable, "-c", "pass"])
+
+
+def test_install_ida_removes_install_dir_when_installer_fails(tmp_path):
+    suffix = {"windows": "x64win.exe", "linux": "x64linux.run", "mac": "armmac.app.zip"}[get_os()]
+    installer = tmp_path / f"ida-free-pc_94_{suffix}"
+    installer.write_bytes(b"not an installer")
+    install_dir = tmp_path / "ida"
+
+    with pytest.raises((RuntimeError, OSError)):
+        install_ida(installer, install_dir)
+
+    assert not install_dir.exists()

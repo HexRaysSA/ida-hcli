@@ -605,10 +605,16 @@ def install_ida(installer: Path, install_dir: Path):
             _install_ida_windows(installer, get_installer_args(install_dir, product, current_os))
         else:
             raise ValueError(f"unsupported OS: {current_os}")
+
+        _validate_installed_ida(install_dir)
     except Exception as e:
         logger.error(f"Installation failed: {e}")
+        # a leftover directory makes the next `ida install` report "already exists" instead of installing
+        shutil.rmtree(install_dir, ignore_errors=True)
         raise
 
+
+def _validate_installed_ida(install_dir: Path) -> None:
     contents = list(install_dir.iterdir())
     logger.debug("installed contents: %s", contents)
     if not len(contents):
@@ -719,14 +725,13 @@ def get_installer_args(prefix: Path, product: IdaProduct, os_name: str) -> list[
     """Get the command line for an unattended run of the IDA installer.
 
     On Windows, hcli passes `--install_python 0` so the installer does not
-    install its bundled Python. The IDA Free installers starting with 9.4 do
-    not have this option and fail with "Unknown option: --install_python",
-    so hcli does not pass it to them. The other 9.4 installers still accept it.
+    install its bundled Python. The IDA Free installers do not have this
+    option and fail with "Unknown option: --install_python", so hcli does
+    not pass it to them.
     """
     args = ["--mode", "unattended", "--debugtrace", "debug.log"]
 
-    is_ida_free_9_4_or_later = product.product == "IDA Free" and (product.major, product.minor) >= (9, 4)
-    if os_name == "windows" and not is_ida_free_9_4_or_later:
+    if os_name == "windows" and product.product != "IDA Free":
         args.extend(["--install_python", "0"])
 
     if prefix:
