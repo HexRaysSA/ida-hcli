@@ -350,7 +350,7 @@ def test_prepare_headless_ida_user_dir_copies_only_required_files(tmp_path):
         "ida-home-riscv_94_x64win.exe",
     ],
 )
-def test_installer_args_skip_bundled_python_on_windows(filename):
+def test_installer_args_disable_install_python_on_windows(filename):
     product = IdaProduct.from_installer_filename(filename)
     args = get_installer_args(Path("C:/IDA"), product, "windows")
     assert args[args.index("--install_python") + 1] == "0"

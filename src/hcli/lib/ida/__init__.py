@@ -600,16 +600,16 @@ def install_ida(installer: Path, install_dir: Path):
         if current_os == "mac":
             _install_ida_mac(installer, install_dir, product)
         elif current_os == "linux":
-            _install_ida_unix(installer, get_installer_args(install_dir, product, current_os))
+            _install_ida_unix(installer, install_dir, product)
         elif current_os == "windows":
-            _install_ida_windows(installer, get_installer_args(install_dir, product, current_os))
+            _install_ida_windows(installer, install_dir, product)
         else:
             raise ValueError(f"unsupported OS: {current_os}")
 
         _validate_installed_ida(install_dir)
     except Exception as e:
         logger.error(f"Installation failed: {e}")
-        # a leftover directory makes the next `ida install` report "already exists" instead of installing
+        # a leftover directory makes the next `hcli ida install` report "already exists" instead of installing
         shutil.rmtree(install_dir, ignore_errors=True)
         raise
 
@@ -683,8 +683,10 @@ def _install_ida_mac(installer: Path, prefix: Path, product: IdaProduct) -> None
         _copy_dir(install_folder, prefix)
 
 
-def _install_ida_unix(installer: Path, args: list[str]) -> None:
+def _install_ida_unix(installer: Path, prefix: Path, product: IdaProduct) -> None:
     """Install IDA on Unix/Linux."""
+    args = get_installer_args(prefix, product, "linux")
+
     installer_path = Path(installer)
 
     # If installer is not absolute and has no directory component, prefix with './'
@@ -703,8 +705,10 @@ def _install_ida_unix(installer: Path, args: list[str]) -> None:
     run_installer([str(installer_path)] + args)
 
 
-def _install_ida_windows(installer: Path, args: list[str]) -> None:
+def _install_ida_windows(installer: Path, prefix: Path, product: IdaProduct) -> None:
     """Install IDA on Windows."""
+    args = get_installer_args(prefix, product, "windows")
+
     run_installer(["cmd", "/c", str(installer)] + args)
 
 
