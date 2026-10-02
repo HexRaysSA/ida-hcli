@@ -257,7 +257,6 @@ def check_component_name_collisions(
 def validate_plugin_not_installed(plugin_name: str) -> None:
     """Fail when a well-formed plugin named *plugin_name* is already installed.
 
-    An installed suite would otherwise collide with its own components.
     Invalid names and broken installations are left to ``validate_for_install``.
 
     Raises:
@@ -295,6 +294,8 @@ def validate_components_for_install(
         ValueError: when the plugin name is a component of an existing suite,
             or when component names collide with installed plugins.
     """
+    # Check before the collision check: an installed suite would otherwise
+    # collide with its own components.
     if not is_upgrade:
         validate_plugin_not_installed(plugin_name)
 
