@@ -4,7 +4,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -105,7 +105,7 @@ IDALIB_SCRIPT = textwrap.dedent(
 
 
 @pytest.fixture
-def isolated_ida_user_dir() -> Iterator[Path]:
+def isolated_ida_user_dir() -> Generator[Path, None, None]:
     """An IDAUSR with the license files but no plugins, so idalib starts quickly and predictably."""
     with tempfile.TemporaryDirectory() as temp_dir:
         idausr = Path(temp_dir) / "idausr"

@@ -300,7 +300,7 @@ def create_virtual_environment(plan: VenvPlan, system: System) -> Path:
             text=True,
             timeout=600.0,
             check=False,
-            env=get_environment_for_python(Path(command[0])),
+            env=get_environment_for_python(plan.tool_exe),
         )
     except (subprocess.SubprocessError, OSError) as e:
         raise VenvCreationError(f"failed to run {command[0]}: {e}") from e

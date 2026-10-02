@@ -20,7 +20,7 @@ The last two sources answer different questions. The HCLI default instance is HC
 
 ## Platform
 
-`$HCLI_CURRENT_IDA_PLATFORM` comes first. The running process supplies `sys.platform` and `platform.machine()` when HCLI is inside IDA. Otherwise HCLI reads the architecture from the header of the IDA executable.
+`$HCLI_CURRENT_IDA_PLATFORM` comes first. Inside IDA, HCLI uses `sys.platform` and `platform.machine()` of the running process. Otherwise HCLI reads the architecture from the header of the IDA executable.
 
 ## User directory
 
@@ -28,8 +28,8 @@ The last two sources answer different questions. The HCLI default instance is HC
 
 ## Python interpreter
 
-`$HCLI_CURRENT_IDA_PYTHON_EXE` overrides everything. In an IDA process, HCLI derives the interpreter from its own `sys.prefix`, `sys.executable`, and environment, with the same code that the `idat` probe runs. Next comes `$IDAPYTHON_VENV_EXECUTABLE` when it points at an existing file. Otherwise HCLI probes IDA itself: it runs `idat` in batch mode, asks the embedded Python for its `sys.prefix`, `sys.executable`, and environment, and derives the interpreter path from that. The probe runs at most once per HCLI invocation.
+`$HCLI_CURRENT_IDA_PYTHON_EXE` overrides everything. Inside IDA, HCLI derives the interpreter from its own `sys.prefix`, `sys.executable`, and environment, with the same code that the `idat` probe runs. Next comes `$IDAPYTHON_VENV_EXECUTABLE` when it points at an existing file. Otherwise HCLI probes IDA itself: it runs `idat` in batch mode, asks the embedded Python for its `sys.prefix`, `sys.executable`, and environment, and derives the interpreter path from that. The probe runs at most once per HCLI invocation.
 
-The probe honors a virtualenv activated by `idapythonrc.py`, so the interpreter HCLI installs plugin dependencies into is the one IDA actually imports from.
+The probe honors a virtualenv activated by `idapythonrc.py`, so the interpreter HCLI installs plugin dependencies into is the one IDA actually imports from. See [IDA's Python Environment](../user-guide/ida-python-environment.md) for working with that interpreter directly.
 
-HCLI removes `PYTHONHOME`, `PYTHONPATH`, `PYTHONEXECUTABLE`, and `PYTHONSTARTUP` from the environment of every Python interpreter it starts, and of `idat`. These variables describe the Python of HCLI's own process. Inside IDA, `PYTHONHOME` names the prefix of the libpython that IDA loaded, and a virtualenv built on a different base Python fails to import its standard library when it inherits that value. See [IDA's Python Environment](../user-guide/ida-python-environment.md) for working with that interpreter directly.
+HCLI removes `PYTHONHOME`, `PYTHONPATH`, `PYTHONEXECUTABLE`, and `PYTHONSTARTUP` from the environment of every Python interpreter it starts, and of `idat`. These variables describe the Python of HCLI's own process. Inside IDA, `PYTHONHOME` names the prefix of the libpython that IDA loaded, and a virtualenv built on a different base Python fails to import its standard library when it inherits that value.
