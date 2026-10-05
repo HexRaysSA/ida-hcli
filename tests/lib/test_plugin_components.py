@@ -23,6 +23,7 @@ from hcli.lib.ida.plugin.components import (
     walk_component_tree_from_archive,
     walk_component_tree_from_directory,
 )
+from hcli.lib.ida.plugin.exceptions import PluginAlreadyInstalledError
 from hcli.lib.ida.plugin.install import (
     get_installed_plugin_records,
     install_plugin_archive,
@@ -383,6 +384,28 @@ def test_install_suite_components_on_disk(virtual_ida_environment):
     suite_dir = get_plugin_directory("my-suite")
     assert (suite_dir / "comp-a" / "ida-plugin.json").exists()
     assert (suite_dir / "comp-b" / "ida-plugin.json").exists()
+
+
+def test_install_suite_already_installed(virtual_ida_environment):
+    zip_data = _make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0"), ("comp-b", "2.0.0")])
+    install_plugin_archive(zip_data, "my-suite", make_test_install_context())
+
+    with pytest.raises(PluginAlreadyInstalledError):
+        install_plugin_archive(zip_data, "my-suite", make_test_install_context())
+
+
+def test_install_suite_already_installed_via_cli(virtual_ida_environment, tmp_path):
+    zip_path = tmp_path / "my-suite.zip"
+    zip_path.write_bytes(_make_suite_zip("my-suite", "1.0.0", [("comp-a", "1.0.0"), ("comp-b", "2.0.0")]))
+    install_plugin_archive(zip_path.read_bytes(), "my-suite", make_test_install_context())
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["install", str(zip_path)])
+
+    assert result.exit_code != 0
+    output = " ".join(result.output.split())
+    assert "Plugin 'my-suite' is already installed" in output
+    assert "collision" not in output
 
 
 def test_walk_installed_suite_components(virtual_ida_environment):

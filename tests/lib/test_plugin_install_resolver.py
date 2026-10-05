@@ -333,3 +333,19 @@ def test_install_upgrade_without_newer_version_reports_only_the_installed_versio
     assert result.exit_code == 0, _get_output(result)
     assert "Already installed plugin: a==1.0.0" in _get_output(result)
     assert "newer versions" not in _get_output(result)
+
+
+def test_install_explains_that_no_version_of_the_root_supports_the_environment(windows_ida_environment, tmp_path):
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {
+            "a2.zip": _make_plugin_zip("a", "2.0.0", platforms=["linux-x86_64"]),
+            "a1.zip": _make_plugin_zip("a", "1.0.0", platforms=["linux-x86_64"]),
+        },
+    )
+
+    result = _install(repo_dir, "a")
+
+    assert result.exit_code != 0
+    assert "a 2.0.0 and 1 older version do not support windows-x86_64" in _get_output(result)
+    assert "not found" not in _get_output(result)
