@@ -4,7 +4,7 @@ Most HCLI commands need to know which IDA installation to operate on, what versi
 
 When HCLI runs inside IDA, the running process answers most of these questions. This happens when an IDA plugin imports HCLI as a library, or when an idalib script does so after `import idapro`. HCLI checks for this case by looking for the `ida_kernwin` module, which IDAPython loads before any plugin. It then reads the version, installation directory, user directory, platform, and Python interpreter from the process, so it never launches a second IDA through `idat`. The explicit `HCLI_*` overrides still take precedence.
 
-HCLI reads the IDA-related environment variables (`HCLI_IDAUSR`, `HCLI_CURRENT_IDA_*`, `IDAUSR`, `IDADIR`, and `IDAPYTHON_VENV_EXECUTABLE`) each time it needs them. A host plugin can set them at any time, even after another plugin imported HCLI first.
+HCLI reads the IDA-related environment variables (`HCLI_IDAUSR`, `HCLI_CURRENT_IDA_*`, `IDAUSR`, `IDADIR`, and `IDAPYTHON_VENV_EXECUTABLE`) each time it needs them.
 
 ## Installation directory
 

@@ -39,8 +39,7 @@ def _env_int(name: str, default: int) -> int:
 class _LiveEnvOptional:
     """An optional environment variable read on every access.
 
-    A host process (such as an IDA plugin that imports hcli as a library) can
-    set these after another plugin imported hcli first, so a value captured at
+    The environment can change after hcli is imported, so a value captured at
     import time would be stale.
     """
 
