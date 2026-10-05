@@ -36,6 +36,20 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+class _LiveEnvOptional:
+    """An optional environment variable read on every access.
+
+    The environment can change after hcli is imported, so a value captured at
+    import time would be stale.
+    """
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        self.name = name
+
+    def __get__(self, obj: object, owner: type | None = None) -> str | None:
+        return _env_optional(self.name)
+
+
 class ENV:
     """Environment configuration mirroring the Deno version."""
 
@@ -67,16 +81,15 @@ class ENV:
 
     HCLI_DISABLE_UPDATES: bool = _env_bool("HCLI_DISABLE_UPDATES")
 
-    IDAUSR: str | None = _env_optional("IDAUSR")
-    IDADIR: str | None = _env_optional("IDADIR")
-
     # IDA-specific environment variables
-    HCLI_IDAUSR: str | None = _env_optional("HCLI_IDAUSR")
-    HCLI_CURRENT_IDA_INSTALL_DIR: str | None = _env_optional("HCLI_CURRENT_IDA_INSTALL_DIR")
-    HCLI_CURRENT_IDA_PLATFORM: str | None = _env_optional("HCLI_CURRENT_IDA_PLATFORM")
-    HCLI_CURRENT_IDA_VERSION: str | None = _env_optional("HCLI_CURRENT_IDA_VERSION")
-    HCLI_CURRENT_IDA_PYTHON_EXE: str | None = _env_optional("HCLI_CURRENT_IDA_PYTHON_EXE")
-    IDAPYTHON_VENV_EXECUTABLE: str | None = _env_optional("IDAPYTHON_VENV_EXECUTABLE")
+    IDAUSR = _LiveEnvOptional()
+    IDADIR = _LiveEnvOptional()
+    HCLI_IDAUSR = _LiveEnvOptional()
+    HCLI_CURRENT_IDA_INSTALL_DIR = _LiveEnvOptional()
+    HCLI_CURRENT_IDA_PLATFORM = _LiveEnvOptional()
+    HCLI_CURRENT_IDA_VERSION = _LiveEnvOptional()
+    HCLI_CURRENT_IDA_PYTHON_EXE = _LiveEnvOptional()
+    IDAPYTHON_VENV_EXECUTABLE = _LiveEnvOptional()
 
     # KE download settings
     HCLI_KE_DOWNLOADS_DIR: str | None = _env_optional("HCLI_KE_DOWNLOADS_DIR")

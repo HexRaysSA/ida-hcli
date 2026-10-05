@@ -73,6 +73,8 @@ In particular, if you haven't registered a default IDA installation, such as wit
 
 then you may need to set `HCLI_CURRENT_IDA_INSTALL_DIR` when using the plugin manager, so that HCLI can find IDA and its resources.
 
+HCLI reads these variables, and `IDAUSR`, `IDADIR`, and `IDAPYTHON_VENV_EXECUTABLE`, each time it needs them. When HCLI runs inside IDA and no override is set, HCLI uses the values of the running IDA process.
+
 See [How HCLI Finds IDA](ida-detection.md) for the full resolution order these overrides participate in.
 
 

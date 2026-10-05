@@ -144,19 +144,13 @@ def no_ida(tmp_path: Path):
     Uses os.environ directly (no monkeypatch) so it works alongside
     virtual_ida_environment's context-manager-based env vars.
     """
-    from hcli.env import ENV
-
     fake = tmp_path / "ida"
     fake.mkdir()
     old_install_dir = os.environ.get("HCLI_CURRENT_IDA_INSTALL_DIR")
     old_venv_exe = os.environ.get("IDAPYTHON_VENV_EXECUTABLE")
-    old_env_install_dir = getattr(ENV, "HCLI_CURRENT_IDA_INSTALL_DIR", None)
-    old_env_venv_exe = getattr(ENV, "IDAPYTHON_VENV_EXECUTABLE", None)
 
     os.environ["HCLI_CURRENT_IDA_INSTALL_DIR"] = str(fake)
     os.environ.pop("IDAPYTHON_VENV_EXECUTABLE", None)
-    ENV.HCLI_CURRENT_IDA_INSTALL_DIR = str(fake)
-    ENV.IDAPYTHON_VENV_EXECUTABLE = None
 
     yield
 
@@ -168,8 +162,6 @@ def no_ida(tmp_path: Path):
         os.environ["IDAPYTHON_VENV_EXECUTABLE"] = old_venv_exe
     else:
         os.environ.pop("IDAPYTHON_VENV_EXECUTABLE", None)
-    ENV.HCLI_CURRENT_IDA_INSTALL_DIR = old_env_install_dir
-    ENV.IDAPYTHON_VENV_EXECUTABLE = old_env_venv_exe
 
 
 def test_create_environment_no_migration_needed(virtual_ida_environment, no_ida):

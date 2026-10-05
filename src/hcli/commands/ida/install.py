@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -10,7 +11,6 @@ from rich.prompt import Confirm
 
 from hcli.commands.download import download
 from hcli.commands.license.get import get_license
-from hcli.env import ENV
 from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command, enforce_login
 from hcli.lib.config import config_store
@@ -287,8 +287,8 @@ def create_python_environment_for_install(install_dir_path: Path, *, interactive
 
     console.print("[yellow]Creating Python environment for IDA...[/yellow]")
 
-    previous = ENV.HCLI_CURRENT_IDA_INSTALL_DIR
-    ENV.HCLI_CURRENT_IDA_INSTALL_DIR = str(install_dir_path)
+    previous = os.environ.get("HCLI_CURRENT_IDA_INSTALL_DIR")
+    os.environ["HCLI_CURRENT_IDA_INSTALL_DIR"] = str(install_dir_path)
     probe_current_python_info.cache_clear()
     try:
         run_create_environment(
@@ -307,5 +307,8 @@ def create_python_environment_for_install(install_dir_path: Path, *, interactive
         )
         raise click.exceptions.Exit(1)
     finally:
-        ENV.HCLI_CURRENT_IDA_INSTALL_DIR = previous
+        if previous is None:
+            os.environ.pop("HCLI_CURRENT_IDA_INSTALL_DIR", None)
+        else:
+            os.environ["HCLI_CURRENT_IDA_INSTALL_DIR"] = previous
         probe_current_python_info.cache_clear()

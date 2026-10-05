@@ -52,6 +52,7 @@ from hcli.lib.ida.plugin.resolve import (
     resolve,
 )
 from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, find_current_python_executable
+from hcli.lib.venv import get_environment_for_python
 
 logger = logging.getLogger(__name__)
 
@@ -654,7 +655,7 @@ def _download_wheelhouse(
     cmd.extend(deps)
 
     logger.debug("pip download: %s", " ".join(cmd))
-    result = subprocess.run(cmd, capture_output=True, check=False)
+    result = subprocess.run(cmd, capture_output=True, check=False, env=get_environment_for_python(python_exe))
     if result.returncode != 0:
         stderr_text = result.stderr.decode("utf-8", errors="replace")
         stdout_text = result.stdout.decode("utf-8", errors="replace")

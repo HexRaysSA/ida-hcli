@@ -24,9 +24,17 @@ from rich.markup import escape
 
 from hcli.env import ENV
 from hcli.lib.console import stderr_console
+from hcli.lib.ida.running import (
+    RUNNING_IDA_SOURCE,
+    get_running_ida_install_dir,
+    get_running_ida_platform,
+    get_running_ida_user_dir,
+    get_running_ida_version,
+    is_running_in_ida,
+)
 from hcli.lib.ida.version import parse_version_from_ida_binary
 from hcli.lib.util.io import NoSpaceError, check_free_space, get_hcli_display_command, get_os
-from hcli.lib.venv import resolve_user_virtual_env
+from hcli.lib.venv import PARENT_PYTHON_ENV_VARS, resolve_user_virtual_env
 
 logger = logging.getLogger(__name__)
 
@@ -107,9 +115,16 @@ class IdaProduct:
 
 
 def get_ida_user_dir() -> Path:
-    """Get the IDA Pro user directory."""
+    """Get the IDA Pro user directory.
+
+    Precedence: $HCLI_IDAUSR, then the running IDA process (when hcli runs
+    inside IDA), then the first entry of $IDAUSR, then the platform default.
+    """
     if ENV.HCLI_IDAUSR is not None:
         return Path(ENV.HCLI_IDAUSR)
+
+    if is_running_in_ida():
+        return get_running_ida_user_dir()
 
     if ENV.IDAUSR is not None:
         return Path(ENV.IDAUSR.split(os.pathsep)[0])
@@ -1067,8 +1082,9 @@ def find_hcli_default_ida_instance() -> tuple[str, Path] | None:
 def resolve_current_ida_install_directory() -> ResolvedInstallDir:
     """Find the current IDA installation directory and what selected it.
 
-    Precedence: $HCLI_CURRENT_IDA_INSTALL_DIR, then $IDADIR, then hcli's
-    default instance (`hcli ida set-default`), then $IDAUSR/ida-config.json.
+    Precedence: $HCLI_CURRENT_IDA_INSTALL_DIR, then the running IDA process
+    (when hcli runs inside IDA), then $IDADIR, then hcli's default instance
+    (`hcli ida set-default`), then $IDAUSR/ida-config.json.
 
     Raises:
         MissingCurrentInstallationDirectory: when nothing configures a directory.
@@ -1077,6 +1093,9 @@ def resolve_current_ida_install_directory() -> ResolvedInstallDir:
         return ResolvedInstallDir(
             _normalize_install_dir(Path(ENV.HCLI_CURRENT_IDA_INSTALL_DIR)), "$HCLI_CURRENT_IDA_INSTALL_DIR"
         )
+
+    if is_running_in_ida():
+        return ResolvedInstallDir(_normalize_install_dir(get_running_ida_install_dir()), RUNNING_IDA_SOURCE)
 
     if ENV.IDADIR is not None:
         return ResolvedInstallDir(_normalize_install_dir(Path(ENV.IDADIR)), "$IDADIR")
@@ -1187,7 +1206,11 @@ def _prepare_headless_ida_user_dir(source_dir: Path, target_dir: Path) -> None:
 
 
 def _log_idat_env(env: dict[str, str] | None) -> None:
-    """Log the curated set of env vars that affect idat's Python environment."""
+    """Log the curated set of env vars that affect idat's Python environment.
+
+    When idat's value differs from hcli's own, both are logged, so a variable
+    removed for idat still shows up as present in hcli's process.
+    """
     keys = (
         "IDAUSR",
         "IDADIR",
@@ -1211,7 +1234,11 @@ def _log_idat_env(env: dict[str, str] | None) -> None:
 
     for key in keys:
         value = effective.get(key)
-        logger.debug(f"idat env: {key}={value if value is not None else '<not set>'}")
+        parent = os.environ.get(key)
+        line = f"idat env: {key}={value if value is not None else '<not set>'}"
+        if parent != value:
+            line += f" (hcli: {parent if parent is not None else '<not set>'})"
+        logger.debug(line)
 
 
 def _run_ida_batch_script(idat_path: Path, src: str, env: dict[str, str] | None = None) -> dict:
@@ -1286,7 +1313,7 @@ def _clean_env_for_idat() -> dict[str, str]:
     user_venv = resolve_user_virtual_env()
 
     env = os.environ.copy()
-    for key in ("VIRTUAL_ENV", "PYTHONHOME", "PYTHONPATH", "PATH"):
+    for key in ("VIRTUAL_ENV", "PATH", *PARENT_PYTHON_ENV_VARS):
         env.pop(key, None)
 
     if user_venv is not None:
@@ -1384,9 +1411,16 @@ def detect_binary_arch(path: Path) -> str | None:
 
 
 def find_current_ida_platform() -> str:
-    """find the platform associated with the current IDA installation"""
+    """find the platform associated with the current IDA installation
+
+    Precedence: $HCLI_CURRENT_IDA_PLATFORM, then the running IDA process (when
+    hcli runs inside IDA), then the architecture of the IDA binary.
+    """
     if ENV.HCLI_CURRENT_IDA_PLATFORM is not None:
         return ENV.HCLI_CURRENT_IDA_PLATFORM
+
+    if is_running_in_ida():
+        return get_running_ida_platform()
 
     os_ = get_os()
     if os_ == "windows":
@@ -1555,9 +1589,10 @@ class ResolvedIdaVersion:
 def resolve_current_ida_version() -> ResolvedIdaVersion:
     """Find the version of the current IDA installation and where it was read from.
 
-    Precedence: $HCLI_CURRENT_IDA_VERSION, then the Windows uninstall
-    registry, then the python/ida_pro.py SDK docstring, then version metadata
-    in the IDA binary, then the installation directory name.
+    Precedence: $HCLI_CURRENT_IDA_VERSION, then the running IDA kernel (when
+    hcli runs inside IDA), then the Windows uninstall registry, then the
+    python/ida_pro.py SDK docstring, then version metadata in the IDA binary,
+    then the installation directory name.
 
     Raises:
         FailedToDetectIDAVersion: when no source yields a version.
@@ -1565,6 +1600,12 @@ def resolve_current_ida_version() -> ResolvedIdaVersion:
     """
     if ENV.HCLI_CURRENT_IDA_VERSION is not None:
         return ResolvedIdaVersion(ENV.HCLI_CURRENT_IDA_VERSION, "$HCLI_CURRENT_IDA_VERSION")
+
+    if is_running_in_ida():
+        try:
+            return ResolvedIdaVersion(get_running_ida_version(), RUNNING_IDA_SOURCE)
+        except ValueError as e:
+            raise FailedToDetectIDAVersion(str(e)) from e
 
     ida_dir = find_current_ida_install_directory()
 

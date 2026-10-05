@@ -67,6 +67,7 @@ from hcli.lib.ida.python import (
 )
 from hcli.lib.ida.python.environment import PythonEnvironmentError, validate_python_environment
 from hcli.lib.util.io import NoSpaceError
+from hcli.lib.venv import get_environment_for_python
 
 logger = logging.getLogger(__name__)
 
@@ -951,6 +952,7 @@ def _get_ida_site_packages_dir() -> Path:
         capture_output=True,
         check=True,
         text=True,
+        env=get_environment_for_python(python_exe),
     )
     return Path(result.stdout.strip())
 
