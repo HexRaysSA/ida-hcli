@@ -18,6 +18,8 @@
 - Add `hcli extension` as an alias for `hcli plugin`, so `hcli extension install <plugin>` uses the plugin manager
 
 ### Fixed
+- `hcli ida install` installs IDA Free on Windows. hcli does not pass `--install_python 0` to the IDA Free installers, because they do not support this option
+- When the IDA installer fails, `hcli ida install` shows the installer output and removes the install directory, so that the next `hcli ida install` does not stop with "Directory already exists"
 - When no plugin version can install, `hcli plugin install`, `hcli plugin upgrade`, and `hcli plugin bundle create` name the versions rejected for the same reason together, newest first, for example `a 2.0.0 and 24 older versions do not support IDA 9.0` (#377)
 - Check `requiresPython` of a plugin dependency before installing its Python packages
 - `hcli plugin install` and `hcli plugin upgrade` resolve the plugin and all of its plugin dependencies before they write any file, and fail without writing when a required plugin dependency cannot be resolved
@@ -27,6 +29,7 @@
 - `hcli plugin bundle create` skips an optional plugin dependency for a target cell when pip cannot download its Python dependencies for that cell, with a warning, instead of failing the bundle
 - `hcli plugin upgrade` fetches the plugin and its dependencies from a plugin bundle that is a configured plugin repository
 - `hcli plugin upgrade` does not probe IDA's Python when the repository has no version newer than the installed one
+- `hcli plugin install` of an installed suite reports that the plugin is already installed, instead of reporting each component as a collision with the suite
 - `hcli plugin bundle create`, `hcli plugin install`, and `hcli plugin upgrade` fail when a plugin dependency name without `@host` matches plugins from more than one host, in any version that can install on the target, instead of treating the dependency as missing
 - Plugin dependency installation selects a dependency on the name of an installed plugin only from the host of the installed plugin, and fails when the dependency names a different `@host`, instead of replacing the installed plugin with a plugin from another host
 - `hcli plugin bundle create` fails with an error when a local plugin requires a plugin dependency and no plugin repository is available, instead of leaving the dependency out
