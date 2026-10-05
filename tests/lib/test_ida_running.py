@@ -58,8 +58,8 @@ def test_env_reads_ida_variables_when_accessed():
             os.environ["HCLI_CURRENT_IDA_VERSION"] = original
 
 
-# Imports hcli before IDA, as a plugin that loads early might, then initializes
-# idalib in the same process and reports what hcli resolves.
+# Imports hcli before idapro, so a value that hcli captured at import time would
+# predate IDA, then initializes idalib in the same process and reports what hcli resolves.
 IDALIB_SCRIPT = textwrap.dedent(
     """
     import json

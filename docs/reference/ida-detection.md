@@ -2,13 +2,13 @@
 
 Most HCLI commands need to know which IDA installation to operate on, what version it is, and which Python interpreter it loads. Each of these is resolved by checking a fixed list of sources in order and taking the first answer. `hcli ida python explain-environment` shows every resolution along with the source that produced it, so run that first when detection does something surprising. `hcli ida python doctor` builds on the same data and reports whether the resolved Python matches the recommended setup.
 
-When HCLI runs inside IDA, the running process answers most of these questions. This happens when an IDA plugin imports HCLI as a library, or when an idalib script does so after `import idapro`. HCLI checks for this case by looking for the `ida_kernwin` module, which IDAPython loads before any plugin. It then reads the version, installation directory, user directory, platform, and Python interpreter from the process, so it never launches a second IDA through `idat`. The explicit `HCLI_*` overrides still take precedence.
+When HCLI runs inside IDA, the running process answers most of these questions. This happens when an IDA plugin imports HCLI as a library, or when an idalib script does so after `import idapro`. HCLI checks for this case by looking for the `ida_kernwin` module, which IDAPython loads before any plugin and `import idapro` loads for idalib. It then reads the version, installation directory, user directory, platform, and Python interpreter from the process, so it never launches a second IDA through `idat`. The explicit `HCLI_*` overrides still take precedence.
 
 HCLI reads the IDA-related environment variables (`HCLI_IDAUSR`, `HCLI_CURRENT_IDA_*`, `IDAUSR`, `IDADIR`, and `IDAPYTHON_VENV_EXECUTABLE`) each time it needs them.
 
 ## Installation directory
 
-HCLI checks `$HCLI_CURRENT_IDA_INSTALL_DIR` first, which exists as an explicit override for automation. Inside IDA, the directory of the running IDA (`ida_diskio.idadir()`) comes next. Next comes `$IDADIR`, which is set when HCLI runs inside an IDA execution context. After that, HCLI uses its own default instance, registered with `hcli ida set-default /path/to/ida` or `hcli ida install ... --set-default`. Finally it falls back to the `ida-install-dir` entry in `$IDAUSR/ida-config.json`.
+HCLI checks `$HCLI_CURRENT_IDA_INSTALL_DIR` first, which exists as an explicit override for automation. Inside IDA, the directory of the running IDA (`ida_diskio.idadir()`) comes next, then `$IDADIR`, which is set when HCLI runs inside an IDA execution context. After that, HCLI uses its own default instance, registered with `hcli ida set-default /path/to/ida` or `hcli ida install ... --set-default`. Finally it falls back to the `ida-install-dir` entry in `$IDAUSR/ida-config.json`.
 
 On macOS a configured path may be either the `.app` bundle or its inner `Contents/MacOS` directory; both are normalized to the bundle root.
 
