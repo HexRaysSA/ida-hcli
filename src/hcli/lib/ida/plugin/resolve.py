@@ -523,13 +523,30 @@ class _Resolver:
         if not matching:
             return [f"no {plugin.name} version matches {requirement.version_spec}"]
 
-        reasons: list[str] = []
+        reasons: list[str | list[str]] = []
+        incompatible: dict[str, list[str]] = {}
         for version in matching:
             if version not in self.compatible.get(plugin_id, {}):
-                reasons.append(f"{plugin.name} {version} {self.render_incompatibility(plugin.versions[version])}")
+                reason = self.render_incompatibility(plugin.versions[version])
+                if reason not in incompatible:
+                    # the group keeps the position of its newest version among the other reasons
+                    incompatible[reason] = []
+                    reasons.append(incompatible[reason])
+                incompatible[reason].append(version)
             elif (plugin_id, version) in self.removed:
                 reasons.append(self.render_removal(plugin, version, visited))
-        return reasons
+        return [
+            reason if isinstance(reason, str) else self.render_incompatible_versions(plugin, reason)
+            for reason in reasons
+        ]
+
+    def render_incompatible_versions(self, plugin: Plugin, versions: list[str]) -> str:
+        """Explain why versions that share one incompatibility cannot install on the cell, newest version first."""
+        if len(versions) == 1:
+            return f"{plugin.name} {versions[0]} {self.render_incompatibility(plugin.versions[versions[0]])}"
+        older = len(versions) - 1
+        reason = self.render_incompatibility(plugin.versions[versions[0]], plural=True)
+        return f"{plugin.name} {versions[0]} and {older} older version{'s' if older > 1 else ''} {reason}"
 
     def get_conflict_reasons(self, existing: _Choice | None, constraints: tuple[_Pending, ...], name: str) -> list[str]:
         """Explain why no viable version satisfies every constraint on one plugin."""
@@ -538,8 +555,13 @@ class _Resolver:
         reasons.append(f"no viable {name} version satisfies all of: {chains}")
         return reasons
 
-    def render_incompatibility(self, locations: list[PluginArchiveLocation]) -> str:
-        """Explain why the locations of one version cannot install on the cell, from the location closest to it."""
+    def render_incompatibility(self, locations: list[PluginArchiveLocation], *, plural: bool = False) -> str:
+        """Explain why the locations of one version cannot install on the cell, from the location closest to it.
+
+        Args:
+            plural: conjugate the verb for a subject of several versions.
+        """
+        does, requires = ("do", "require") if plural else ("does", "requires")
         location = max(
             locations,
             key=lambda location: (
@@ -549,14 +571,14 @@ class _Resolver:
         )
         plugin = location.metadata.plugin
         if not is_compatible_location(location, self.cell.platform):
-            return f"does not support {self.cell.platform}"
+            return f"{does} not support {self.cell.platform}"
         if not is_compatible_location(location, None, self.cell.ida_version):
-            return f"does not support IDA {self.cell.ida_version}"
+            return f"{does} not support IDA {self.cell.ida_version}"
         try:
             python_version = self.python_version() if callable(self.python_version) else self.python_version
         except _PythonProbeError as e:
-            return f"requires Python {plugin.requires_python}, and IDA's Python cannot be detected: {e}"
-        return f"requires Python {plugin.requires_python}, and {self.cell} has Python {python_version}"
+            return f"{requires} Python {plugin.requires_python}, and IDA's Python cannot be detected: {e}"
+        return f"{requires} Python {plugin.requires_python}, and {self.cell} has Python {python_version}"
 
     def render_removal(self, plugin: Plugin, version: str, visited: set[tuple[_PluginId, str]]) -> str:
         node = (_get_plugin_id(plugin), version)

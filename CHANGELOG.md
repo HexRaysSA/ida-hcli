@@ -20,6 +20,7 @@
 ### Fixed
 - `hcli ida install` installs IDA Free on Windows. hcli does not pass `--install_python 0` to the IDA Free installers, because they do not support this option
 - When the IDA installer fails, `hcli ida install` shows the installer output and removes the install directory, so that the next `hcli ida install` does not stop with "Directory already exists"
+- When no plugin version can install, `hcli plugin install`, `hcli plugin upgrade`, and `hcli plugin bundle create` name the versions rejected for the same reason together, newest first, for example `a 2.0.0 and 24 older versions do not support IDA 9.0` (#377)
 - Check `requiresPython` of a plugin dependency before installing its Python packages
 - `hcli plugin install` and `hcli plugin upgrade` resolve the plugin and all of its plugin dependencies before they write any file, and fail without writing when a required plugin dependency cannot be resolved
 - `hcli plugin install` installs the plugin dependencies of the components of a plugin
