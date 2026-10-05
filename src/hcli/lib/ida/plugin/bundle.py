@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -192,7 +192,7 @@ def bundle_dependency_source(
     repo: PluginBundleRepo,
     ida_platform: str,
     python_version: str,
-) -> Iterator[PipOptions | None]:
+) -> Generator[PipOptions | None, None, None]:
     target = repo.find_target_for_platform(ida_platform, python_version)
     if target is None:
         yield None

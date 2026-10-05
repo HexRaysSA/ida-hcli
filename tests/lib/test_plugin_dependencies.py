@@ -8,7 +8,7 @@ import json
 import logging
 import tempfile
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -72,7 +72,7 @@ def _make_plugin_zip(
 
 
 @contextlib.contextmanager
-def _make_fs_repo(archives: dict[str, bytes]) -> Iterator[FileSystemPluginRepo]:
+def _make_fs_repo(archives: dict[str, bytes]) -> Generator[FileSystemPluginRepo, None, None]:
     with tempfile.TemporaryDirectory() as tmp:
         repo_dir = Path(tmp)
         for filename, data in archives.items():
@@ -755,7 +755,7 @@ class _CombinedRepo(BasePluginRepo):
 
 
 @contextlib.contextmanager
-def _make_combined_repo(repo_specs: list[dict[str, bytes]]) -> Iterator[_CombinedRepo]:
+def _make_combined_repo(repo_specs: list[dict[str, bytes]]) -> Generator[_CombinedRepo, None, None]:
     with contextlib.ExitStack() as stack:
         repos = []
         for archives in repo_specs:

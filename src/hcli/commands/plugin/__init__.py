@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import copy
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 
 import httpx
@@ -258,7 +258,7 @@ def resolve_bundle_install_context(
     install_ctx: InstallContext,
     plugin_name: str,
     host: str | None = None,
-) -> Iterator[InstallContext]:
+) -> Generator[InstallContext, None, None]:
     """Yield an InstallContext with bundle pip sources merged in, if applicable.
 
     Must be used as a context manager because the bundle's wheelhouse is
