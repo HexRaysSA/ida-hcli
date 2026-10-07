@@ -22,6 +22,7 @@
 - HCLI removes `PYTHONHOME`, `PYTHONPATH`, `PYTHONEXECUTABLE`, and `PYTHONSTARTUP` from the environment of the Python interpreters it starts, so pip and version probes work when HCLI runs inside IDA
 - HCLI reads `HCLI_CURRENT_IDA_*`, `HCLI_IDAUSR`, `IDAUSR`, `IDADIR`, and `IDAPYTHON_VENV_EXECUTABLE` each time it needs them, so a host process can set them after HCLI was imported
 - `hcli ida install` installs IDA Free on Windows. hcli does not pass `--install_python 0` to the IDA Free installers, because they do not support this option
+- `hcli ida install` no longer writes the installer's debug trace to `debug.log` in the current directory, which replaced any existing file of that name (#401)
 - When the IDA installer fails, `hcli ida install` shows the installer output and removes the install directory, so that the next `hcli ida install` does not stop with "Directory already exists"
 - When no plugin version can install, `hcli plugin install`, `hcli plugin upgrade`, and `hcli plugin bundle create` name the versions rejected for the same reason together, newest first, for example `a 2.0.0 and 24 older versions do not support IDA 9.0` (#377)
 - Check `requiresPython` of a plugin dependency before installing its Python packages
