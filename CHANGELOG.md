@@ -18,6 +18,7 @@
 - Add `hcli extension` as an alias for `hcli plugin`, so `hcli extension install <plugin>` uses the plugin manager
 
 ### Fixed
+- `hcli plugin bundle create` no longer requires an IDA installation when a bundled plugin has Python dependencies. It requires uv instead, and downloads the wheels of each target cell with pip on a Python of the cell's version, so dependencies behind Python version markers, such as `tomli; python_version < "3.11"`, are included for the cells that need them (#392)
 - `hcli ida install --dry-run` lists the `ida-config.json` update and EULA acceptance as conditional on the installation including idalib, lists setting the hcli default IDA instance, and numbers its actions consecutively (#399)
 - When input is not a terminal, `hcli license install FILE IDA_DIR` creates a missing `IDA_DIR` instead of ending at an unanswerable prompt with `Aborted.`, and `hcli license install FILE` without `IDA_DIR` exits with an error that asks for it (#393)
 - An empty, whitespace-only, or relative `ida-install-dir` in `ida-config.json` no longer selects the working directory as the IDA installation, which let a directory's contents supply the IDA executable that HCLI ran (#400)

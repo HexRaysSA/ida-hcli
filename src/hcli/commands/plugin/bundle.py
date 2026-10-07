@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -51,8 +52,8 @@ from hcli.lib.ida.plugin.resolve import (
     get_requirements,
     resolve,
 )
-from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions, find_current_python_executable
-from hcli.lib.venv import get_environment_for_python
+from hcli.lib.ida.python import PIP_OPTIONS_DEFAULT, PipOptions
+from hcli.lib.venv import PARENT_PYTHON_ENV_VARS
 
 logger = logging.getLogger(__name__)
 
@@ -264,7 +265,7 @@ def create(
                     console=stderr_console,
                 ):
                     closure, skipped = _download_cell_wheelhouse(
-                        find_current_python_executable(),
+                        _find_uv(),
                         target,
                         resolution.closures[target],
                         resolution.metadata[target],
@@ -621,8 +622,20 @@ class _PipDownloadError(RuntimeError):
         return "pip download failed"
 
 
+def _find_uv() -> Path:
+    """Find uv, which runs pip with a Python of each target cell's version.
+
+    Raises:
+        RuntimeError: when uv is not on PATH.
+    """
+    uv = shutil.which("uv")
+    if uv is None:
+        raise RuntimeError("creating a plugin bundle with Python dependencies requires uv: https://docs.astral.sh/uv/")
+    return Path(uv)
+
+
 def _download_wheelhouse(
-    python_exe: Path,
+    uv: Path,
     deps: list[str],
     target: PipTarget,
     dest: Path,
@@ -630,12 +643,18 @@ def _download_wheelhouse(
 ) -> None:
     """Download wheels of `deps` and of their dependencies for the target cell into `dest`.
 
+    pip runs on a Python of the cell's version, because pip evaluates the environment markers of
+    dependencies, such as `python_version < "3.11"`, against the interpreter that runs it.
+
     Raises:
         _PipDownloadError: when pip fails.
     """
     cmd = [
-        str(python_exe),
-        "-m",
+        str(uv),
+        "tool",
+        "run",
+        "--python",
+        target.python_version,
         "pip",
         "download",
         *target.pip_download_args(),
@@ -655,7 +674,9 @@ def _download_wheelhouse(
     cmd.extend(deps)
 
     logger.debug("pip download: %s", " ".join(cmd))
-    result = subprocess.run(cmd, capture_output=True, check=False, env=get_environment_for_python(python_exe))
+    # Inside IDA, these describe IDA's Python, not the one that uv runs.
+    env = {key: value for key, value in os.environ.items() if key not in PARENT_PYTHON_ENV_VARS}
+    result = subprocess.run(cmd, capture_output=True, check=False, env=env)
     if result.returncode != 0:
         stderr_text = result.stderr.decode("utf-8", errors="replace")
         stdout_text = result.stdout.decode("utf-8", errors="replace")
@@ -730,7 +751,7 @@ def _get_optional_groups(
 
 
 def _download_cell_wheelhouse(
-    python_exe: Path,
+    uv: Path,
     target: PipTarget,
     closure: dict[str, bytes],
     metadata: Mapping[str, IDAMetadataDescriptor],
@@ -757,7 +778,7 @@ def _download_cell_wheelhouse(
 
     required, groups = _get_optional_groups(roots, metadata)
     try:
-        _download_wheelhouse(python_exe, get_deps(closure), target, dest, pip_options)
+        _download_wheelhouse(uv, get_deps(closure), target, dest, pip_options)
         return closure, []
     except _PipDownloadError as e:
         if not groups:
@@ -773,7 +794,7 @@ def _download_cell_wheelhouse(
         current = attempts / "required"
         current.mkdir()
         if get_deps(accepted):
-            _download_wheelhouse(python_exe, get_deps(accepted), target, current, pip_options)
+            _download_wheelhouse(uv, get_deps(accepted), target, current, pip_options)
 
         for index, group in enumerate(groups):
             name = group.plugins[0]
@@ -787,7 +808,7 @@ def _download_cell_wheelhouse(
             attempt = attempts / str(index)
             attempt.mkdir()
             try:
-                _download_wheelhouse(python_exe, get_deps(candidate), target, attempt, pip_options)
+                _download_wheelhouse(uv, get_deps(candidate), target, attempt, pip_options)
             except _PipDownloadError as e:
                 logger.debug("leaving out %s for %s: %s", name, target.id, e)
                 failed.add(name)

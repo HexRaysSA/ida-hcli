@@ -13,15 +13,18 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+import hcli.lib.ida
 from hcli.commands.plugin.bundle import (
     _collect_all_python_deps,
     _download_cell_wheelhouse,
+    _find_uv,
     _get_cell_closures,
     _get_optional_groups,
     _get_python_deps,
     _render_versions_by_target,
     bundle,
 )
+from hcli.lib.ida import MissingCurrentInstallationDirectory
 from hcli.lib.ida.plugin.bundle import PipTarget
 from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo
 from hcli.lib.ida.plugin.repo.fs import FileSystemPluginRepo
@@ -1239,7 +1242,7 @@ def _download_for(archives: dict[str, bytes], dest: Path, pip_options: PipOption
         resolution = _get_cell_closures(("a",), [LINUX_312], repo)
     dest.mkdir()
     closure, skipped = _download_cell_wheelhouse(
-        Path(sys.executable),
+        _find_uv(),
         LINUX_312,
         resolution.closures[LINUX_312],
         resolution.metadata[LINUX_312],
@@ -1295,3 +1298,23 @@ def test_download_cell_wheelhouse_fails_for_required_python_dependency_without_w
 
     with pytest.raises(RuntimeError, match="pip download failed for target linux-x86_64-cp312"):
         _download_for(archives, tmp_path / "wh", pip_options)
+
+
+def test_bundle_create_downloads_wheels_without_ida(tmp_path, local_wheels, monkeypatch):
+    """Explicit targets need no IDA installation, also for a plugin with Python dependencies (#392)."""
+
+    def no_ida_install_directory():
+        raise MissingCurrentInstallationDirectory("directory doesn't exist")
+
+    monkeypatch.setattr(hcli.lib.ida, "resolve_current_ida_install_directory", no_ida_install_directory)
+    pip_options, filenames = local_wheels
+    local = tmp_path / "a.zip"
+    local.write_bytes(_make_plugin_zip("a", "1.0.0", python_deps=["present-pkg"]))
+    out = tmp_path / "output.zip"
+
+    argv = ["create", "--path", str(out), "--platform", "linux", "--python", "3.12", str(local)]
+    result = CliRunner().invoke(bundle, argv, obj={"pip_options": pip_options})
+
+    assert result.exit_code == 0, result.output
+    with zipfile.ZipFile(out) as zf:
+        assert f"dependencies/python/linux-x86_64-cp312/{filenames['present-pkg']}" in zf.namelist()
