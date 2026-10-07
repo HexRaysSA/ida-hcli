@@ -43,6 +43,14 @@ Furthermore, HCLI reads the following IDA Pro-related environment variables:
 | HCLI_PORTAL_URL  | "https://my.hex-rays.com"        | Portal/Dashboard URL for user authentication and file sharing |
 | HCLI_RELEASE_URL | "https://hcli.docs.hex-rays.com" | URL for release documentation and version information         |
 
+### TLS Certificates
+
+| Variable              | Default Value | Purpose                                                                                                         |
+|-----------------------|---------------|-----------------------------------------------------------------------------------------------------------------|
+| HCLI_USE_SYSTEM_CERTS | true          | Verify HTTPS certificates against the operating system certificate store. Set to "false" to use the bundled certifi store instead. |
+
+HCLI uses the operating system certificate store by default, so a root certificate that your company installs for a TLS-inspecting proxy is trusted automatically.
+
 ## GitHub Integration
 
 HCLI interacts with GitHub during self-updates and reading from the plugin repository.

@@ -25,6 +25,7 @@ dependencies = [
     "pip>=25.2",
     "tomli>=1.2.0; python_version<'3.11'",
     "tenacity>=8.0.0",
+    "truststore>=0.10.4",
 ]
 
 [project.urls]

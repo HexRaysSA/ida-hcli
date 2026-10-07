@@ -161,6 +161,7 @@ class MainGroup(click.RichGroup):
                 AuthenticationError,
                 NotFoundError,
                 RateLimitError,
+                describe_tls_verification_error,
             )
             from hcli.lib.util.io import NoSpaceError
 
@@ -192,6 +193,8 @@ class MainGroup(click.RichGroup):
                 console.print(f"[red]API Error: {e}[/red]")
             elif isinstance(e, KeyboardInterrupt):
                 console.print("\n[yellow]Operation cancelled by user[/yellow]")
+            elif tls_message := describe_tls_verification_error(e):
+                console.print(f"[red]{tls_message}[/red]")
             else:
                 console.print(f"[red]Unexpected error: {e}[/red]")
                 # Optionally include debug info in debug mode
@@ -220,6 +223,11 @@ def handle_command_completion(_ctx, _result, **_kwargs):
 @click.pass_context
 def cli(_ctx, auth, auth_credentials, disable_updates: bool):
     """Main CLI entry point with background update checking."""
+
+    if ENV.HCLI_USE_SYSTEM_CERTS:
+        import truststore
+
+        truststore.inject_into_ssl()
 
     if is_binary() and not (disable_updates or ENV.HCLI_DISABLE_UPDATES):
         global update_checker

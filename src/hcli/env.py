@@ -80,6 +80,9 @@ class ENV:
     HCLI_VERSION_EXTRA: str = os.getenv("HCLI_VERSION_EXTRA", "")
 
     HCLI_DISABLE_UPDATES: bool = _env_bool("HCLI_DISABLE_UPDATES")
+    # Verify TLS against the OS certificate store (Windows, macOS keychain, Linux CA
+    # bundle) instead of certifi, so corporate TLS-inspection roots are trusted.
+    HCLI_USE_SYSTEM_CERTS: bool = _env_bool("HCLI_USE_SYSTEM_CERTS", default=True)
 
     # IDA-specific environment variables
     IDAUSR = _LiveEnvOptional()
