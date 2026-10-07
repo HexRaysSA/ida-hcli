@@ -18,7 +18,7 @@ hcli plugin bundle create \
   hint-calls==0.1.3
 ```
 
-Both `--platform` and `--python` are always required. The special value `current` resolves to the current machine's platform or Python version. The special value `all` resolves to all supported platforms (linux, windows, macos-arm64, macos-intel) or all supported Python versions (3.10–3.14). Otherwise, pass a specific name like `linux` or version like `3.12`.
+Both `--platform` and `--python` are always required. The special value `current` resolves to the current machine's platform or Python version. The special value `all` resolves to all supported platforms (linux, linux-arm64, windows, windows-arm64, macos-arm64, macos-intel) or all supported Python versions (3.10–3.14). Otherwise, pass a specific name like `linux` or version like `3.12`.
 
 Create a plugin bundle for all platforms at specific Python versions:
 
@@ -41,7 +41,7 @@ hcli plugin bundle create \
   hint-calls==0.1.3
 ```
 
-`--platform` and `--python` are both repeatable. HCLI builds the cross product of all specified platforms and Python versions. Platform accepts short aliases: `linux`, `windows`, `macos-arm64`, `macos-intel`, `win`, etc. Duplicate targets from overlapping aliases (e.g. `--platform all --platform linux`) are deduplicated.
+`--platform` and `--python` are both repeatable. HCLI builds the cross product of all specified platforms and Python versions. Platform accepts short aliases: `linux`, `linux-arm64`, `windows`, `windows-arm64`, `macos-arm64`, `macos-intel`, `win`, etc. Duplicate targets from overlapping aliases (e.g. `--platform all --platform linux`) are deduplicated.
 
 Create a plugin bundle that includes local/private plugin archives:
 
@@ -212,7 +212,7 @@ A repository plugin reference can be a bare name (`oplog`), an exact pin (`oplog
 
 Each target cell (one platform and one Python version) is a separate resolution. A plugin version is compatible with a cell when it supports the cell's platform and its `requiresPython` allows the cell's Python version. HCLI tests `requiresPython` against `major.minor.0` of the cell, so a specifier such as `>=3.12.1` excludes the whole 3.12 cell. A compatible version is viable for a cell when every required plugin dependency has a viable version for that cell. For each cell, HCLI selects the newest viable version that matches each reference, in command-line order. Thus a bare name gives the newest version whose dependencies also install on each target, and one bundle can contain different versions of a plugin for different platforms or Python versions. The archive filenames then get a platform suffix, for example `oplog-0.2.0-linux-x86_64.zip`. When two different archives of one version would get the same platform suffix, their filenames get target IDs instead, for example `oplog-0.2.0-linux-x86_64-cp311.zip`. To get the same version on all platforms, use an exact pin. HCLI writes each resolution of a reference that is not an exact pin to stderr, for example `resolved oplog: 0.2.0 (linux-x86_64), 0.1.3 (windows-x86_64)`, so you can see which versions went into the bundle. Each distinct archive has its own entry in this output. A platform name in this output stands for all cells of that platform; a target ID such as `linux-x86_64-cp312` names one cell.
 
-Targeting uses `--platform` and `--python`, both required and repeatable. Each accepts `current` (auto-detect this machine), `all` (all supported values), or a specific value. `--platform` accepts the canonical IDA platform name (e.g. `linux-x86_64`) or short aliases (`linux`, `windows`, `macos-arm64`, `macos-intel`). `--python` accepts a `major.minor` version string (e.g. `3.12`). HCLI builds the cross product of all resolved platforms and Python versions. Duplicate targets are deduplicated.
+Targeting uses `--platform` and `--python`, both required and repeatable. Each accepts `current` (auto-detect this machine), `all` (all supported values), or a specific value. `--platform` accepts the canonical IDA platform name (e.g. `linux-x86_64`) or short aliases (`linux`, `linux-arm64`, `windows`, `windows-arm64`, `macos-arm64`, `macos-intel`). `--python` accepts a `major.minor` version string (e.g. `3.12`). HCLI builds the cross product of all resolved platforms and Python versions. Duplicate targets are deduplicated.
 
 The supported Python versions for `--python all` are maintained as a hardcoded constant (`SUPPORTED_PYTHON_VERSIONS`): 3.10, 3.11, 3.12, 3.13, 3.14. This is updated when new Python versions release (annually in October). This matches the approach used by cibuildwheel and other ecosystem tools — no package provides this list dynamically.
 
