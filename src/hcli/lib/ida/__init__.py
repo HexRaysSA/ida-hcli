@@ -747,10 +747,6 @@ def get_installer_args(prefix: Path, product: IdaProduct, os_name: str) -> list[
     install its bundled Python. The IDA Free installers do not have this
     option and fail with "Unknown option: --install_python", so hcli does
     not pass it to them.
-
-    hcli does not pass `--debugtrace`: the installer writes the trace to a
-    relative path in the current directory, which replaces any user file of
-    that name, and the trace is an encoded dump that users cannot read.
     """
     args = ["--mode", "unattended"]
 
