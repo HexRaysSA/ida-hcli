@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import questionary
@@ -38,9 +39,15 @@ async def install_license(file: Path, ida_dir: str | None) -> None:
 
     options.append(f"{len(options) + 1}. Other (specify custom path)")
 
+    interactive = sys.stdin.isatty()
+
     # Select target directory
     if ida_dir:
         target = Path(ida_dir)
+    elif not interactive:
+        console.print("[red]No target directory given and input is not a terminal.[/red]")
+        console.print("Pass the target directory: hcli license install FILE IDA_DIR")
+        raise SystemExit(1)
     else:
         console.print("\n[bold]Where do you want to install the license?[/bold]")
         for option in options:
@@ -78,16 +85,21 @@ async def install_license(file: Path, ida_dir: str | None) -> None:
     target_path = Path(target).expanduser().resolve()
     console.print(f"==> {target_path}")
     if not target_path.exists():
-        console.print(f"[red]Target directory does not exist: {target_path}[/red]")
-        create = await safe_ask_async(
-            questionary.select(
-                "Create directory?", choices=["y. Yes", "n. No"], default="y. Yes", style=cli.SELECT_STYLE
-            )
-        )
-        if create.startswith("y"):
+        if not interactive:
+            # The directory was named explicitly and nobody can answer the prompt, so create it.
+            console.print(f"Creating target directory: {target_path}")
             target_path.mkdir(parents=True, exist_ok=True)
         else:
-            return
+            console.print(f"[red]Target directory does not exist: {target_path}[/red]")
+            create = await safe_ask_async(
+                questionary.select(
+                    "Create directory?", choices=["y. Yes", "n. No"], default="y. Yes", style=cli.SELECT_STYLE
+                )
+            )
+            if create.startswith("y"):
+                target_path.mkdir(parents=True, exist_ok=True)
+            else:
+                return
 
     try:
         # Install the license
