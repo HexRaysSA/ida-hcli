@@ -39,9 +39,11 @@ class TLSVerificationError(NetworkError):
         )
 
 
-def _convert_transport_error(error: httpx.TransportError, request: httpx.Request) -> NetworkError | None:
+def _convert_transport_error(error: httpx.TransportError) -> NetworkError | None:
     """The domain exception for a request that got no response, or None to keep *error* as is."""
-    host = request.url.host
+    # error.request, not the request passed to send(): with follow_redirects the
+    # failing hop can be another host (e.g. GitHub redirecting to its download host).
+    host = error.request.url.host
     if isinstance(error, httpx.ConnectError):
         # httpx.ConnectError <- httpcore.ConnectError <- ssl.SSLCertVerificationError;
         # httpcore links the ssl error only as __context__, not __cause__.
@@ -62,7 +64,7 @@ class _SyncClient(httpx.Client):
         try:
             return super().send(request, **kwargs)
         except httpx.TransportError as e:
-            converted = _convert_transport_error(e, request)
+            converted = _convert_transport_error(e)
             if converted is None:
                 raise
             raise converted from e
@@ -73,7 +75,7 @@ class _AsyncClient(httpx.AsyncClient):
         try:
             return await super().send(request, **kwargs)
         except httpx.TransportError as e:
-            converted = _convert_transport_error(e, request)
+            converted = _convert_transport_error(e)
             if converted is None:
                 raise
             raise converted from e
