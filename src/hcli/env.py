@@ -4,9 +4,12 @@ from . import __version__
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
-    """Parse a boolean environment variable using one consistent truthy set."""
+    """Parse a boolean environment variable using one consistent truthy set.
+
+    Set-but-empty counts as unset, so `export HCLI_USE_SYSTEM_CERTS=` keeps the default.
+    """
     raw = os.getenv(name)
-    if raw is None:
+    if raw is None or not raw.strip():
         return default
     return raw.strip().lower() in ("true", "yes", "on", "1")
 
