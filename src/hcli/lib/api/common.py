@@ -1,6 +1,7 @@
 import errno
 import os
 import shutil
+import ssl
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -44,6 +45,31 @@ class NotFoundError(APIError):
 
 class RateLimitError(APIError):
     """429 rate limit exceeded."""
+
+
+def describe_tls_verification_error(error: BaseException) -> str | None:
+    """Explain a TLS certificate verification failure behind *error*, or return None if there is none."""
+    cause: BaseException | None = error
+    while cause is not None and not isinstance(cause, ssl.SSLCertVerificationError):
+        cause = cause.__cause__ or cause.__context__
+    if cause is None:
+        return None
+
+    host = "the server"
+    if isinstance(error, httpx.RequestError):
+        try:
+            host = error.request.url.host
+        except RuntimeError:
+            pass
+
+    if ENV.HCLI_USE_SYSTEM_CERTS:
+        fix = "install its root certificate in the operating system certificate store, or set SSL_CERT_FILE to it"
+    else:
+        fix = "unset HCLI_USE_SYSTEM_CERTS to use the operating system certificate store, or set SSL_CERT_FILE"
+    return (
+        f"Cannot verify the TLS certificate of {host}: {cause.verify_message or cause}.\n"
+        f"If your network uses a proxy that inspects HTTPS traffic, {fix}."
+    )
 
 
 class APIClient:

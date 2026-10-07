@@ -460,6 +460,8 @@ class AuthService:
     async def add_api_key_credentials(self, name: str, token: str) -> Credentials | None:
         """Add a new API key credentials."""
         # Get user email from API
+        from hcli.lib.api.common import APIError
+
         try:
             from hcli.lib.api.auth import auth
 
@@ -481,7 +483,8 @@ class AuthService:
             finally:
                 self._current_source = old_source
 
-        except Exception:
+        # Only a rejected key means "invalid"; network and TLS errors must reach the caller.
+        except APIError:
             return None
 
     def logout_current(self) -> None:

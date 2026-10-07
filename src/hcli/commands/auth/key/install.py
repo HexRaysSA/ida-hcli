@@ -4,6 +4,7 @@ import questionary
 import rich_click as click
 
 from hcli.commands.common import safe_ask_async
+from hcli.lib.api.common import describe_tls_verification_error
 from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
@@ -77,5 +78,5 @@ async def install_key(key: str | None, name: str | None, key_name: str | None, s
         auth_service.show_login_info()
 
     except Exception as e:
-        console.print(f"[red]Failed to install API key: {e}[/red]")
+        console.print(f"[red]Failed to install API key: {describe_tls_verification_error(e) or e}[/red]")
         raise click.Abort()
