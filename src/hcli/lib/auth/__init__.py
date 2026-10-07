@@ -482,8 +482,10 @@ class AuthService:
             finally:
                 self._current_source = old_source
 
-        # Only a rejected key means "invalid"; network and TLS errors must reach the caller.
-        except APIError:
+        # A rejected key or an unreadable answer (e.g. a captive portal's HTML page;
+        # JSONDecodeError and pydantic's ValidationError are ValueErrors) means "invalid".
+        # Network and TLS errors must reach the caller.
+        except (APIError, ValueError):
             return None
 
     def logout_current(self) -> None:
