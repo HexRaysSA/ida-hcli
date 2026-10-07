@@ -18,6 +18,7 @@
 - Add `hcli extension` as an alias for `hcli plugin`, so `hcli extension install <plugin>` uses the plugin manager
 
 ### Fixed
+- `hcli ida install --dry-run` lists the `ida-config.json` update and EULA acceptance as conditional on the installation including idalib, lists setting the hcli default IDA instance, and numbers its actions consecutively (#399)
 - When HCLI runs inside IDA, as a library of a plugin or an idalib script, it reads the IDA version, installation directory, user directory, platform, and Python interpreter from the running process, and does not launch `idat` to probe them
 - HCLI removes `PYTHONHOME`, `PYTHONPATH`, `PYTHONEXECUTABLE`, and `PYTHONSTARTUP` from the environment of the Python interpreters it starts, so pip and version probes work when HCLI runs inside IDA
 - HCLI reads `HCLI_CURRENT_IDA_*`, `HCLI_IDAUSR`, `IDAUSR`, `IDADIR`, and `IDAPYTHON_VENV_EXECUTABLE` each time it needs them, so a host process can set them after HCLI was imported
