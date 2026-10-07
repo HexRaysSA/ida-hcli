@@ -15,6 +15,7 @@ import hcli.lib.ida.plugin.repo.file
 import hcli.lib.ida.plugin.repo.fs
 import hcli.lib.ida.plugin.repo.github
 from hcli.commands.ida.python.explain_environment import explain_environment
+from hcli.lib.api.http import NetworkError
 from hcli.lib.console import console, stderr_console
 from hcli.lib.ida import get_default_plugin_repository_name, get_ida_config, get_plugin_repositories
 from hcli.lib.ida.plugin.bundle import bundle_dependency_source
@@ -223,7 +224,12 @@ def repo_for_reference(ctx: click.Context, ref: PluginReference) -> hcli.lib.ida
 
     # A named scope is a request for THAT repository: if it cannot be reached,
     # that is the answer, not a quietly smaller search.
-    return aggregate.get_child_repo(name)
+    try:
+        return aggregate.get_child_repo(name)
+    except NetworkError:
+        # The error names only the host; say which configured repository it was.
+        console.print(f"[red]Cannot use plugin repository '{name}' ({aggregate.repositories[name].url}).[/red]")
+        raise
 
 
 @contextlib.contextmanager
