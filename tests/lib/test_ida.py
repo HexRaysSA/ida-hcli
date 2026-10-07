@@ -65,7 +65,7 @@ def test_resolve_current_ida_install_directory_precedence(tmp_path, monkeypatch)
 
 @pytest.mark.parametrize("configured", ["", "   ", "ida", "./ida"])
 def test_resolve_current_ida_install_directory_rejects_cwd_relative_config(tmp_path, monkeypatch, configured):
-    # #400: idapro writes an empty ida-install-dir, which must not select the working directory.
+    # #400: IDA writes an empty ida-install-dir, which must not select the working directory.
     unset_env_var(monkeypatch, "HCLI_CURRENT_IDA_INSTALL_DIR")
     unset_env_var(monkeypatch, "IDADIR")
     monkeypatch.setattr("hcli.lib.ida.is_running_in_ida", lambda: False)
