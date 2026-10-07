@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from hcli.lib.api.http import NetworkError, TLSVerificationError
 from hcli.lib.ida import HEXRAYS_REPO_NAME, PluginRepository
 from hcli.lib.ida.plugin.exceptions import PluginAccessDeniedError
 from hcli.lib.ida.plugin.repo import PLUGIN_REPO_HOST, BasePluginRepo, Plugin, repo_from_url
@@ -28,7 +29,9 @@ def render_repository_failure(error: Exception) -> str:
         if error.status_code == 401:
             return f"credentials rejected. Run '{get_hcli_display_command()} login' again, or check HCLI_API_KEY."
         return "not entitled"
-    if isinstance(error, (httpx.ConnectError, httpx.TimeoutException)):
+    if isinstance(error, TLSVerificationError):
+        return str(error)
+    if isinstance(error, NetworkError):
         return "unreachable"
     if isinstance(error, httpx.HTTPStatusError):
         return f"HTTP {error.response.status_code}"

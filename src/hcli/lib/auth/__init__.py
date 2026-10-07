@@ -7,9 +7,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import urlencode
 
-import httpx
-
 from hcli.env import ENV, OAUTH_REDIRECT_URL, OAUTH_SERVER_PORT
+from hcli.lib.api.http import HTTPClient
 from hcli.lib.config import config_store
 from hcli.lib.constants.auth import (
     CONFIG_CREDENTIALS,
@@ -53,6 +52,8 @@ class GoTrueClient:
     base_url: str
     anon_key: str
     _session: GoTrueSession | None = field(default=None, repr=False)
+    # 5s matches the httpx default these calls used before.
+    _http: HTTPClient = field(default_factory=lambda: HTTPClient(timeout=5.0), repr=False)
 
     def _headers(self, token: str | None = None) -> dict[str, str]:
         bearer = token or (self._session.access_token if self._session else None) or self.anon_key
@@ -63,7 +64,7 @@ class GoTrueClient:
         }
 
     def get_user(self, token: str | None = None) -> GoTrueUserResponse:
-        resp = httpx.get(f"{self.base_url}/user", headers=self._headers(token))
+        resp = self._http.sync_client.get(f"{self.base_url}/user", headers=self._headers(token))
         resp.raise_for_status()
         data = resp.json()
         if data and data.get("email"):
@@ -91,11 +92,11 @@ class GoTrueClient:
         return GoTrueOAuthResponse(url=f"{self.base_url}/authorize?{urlencode(qs)}")
 
     def sign_in_with_otp(self, params: dict) -> None:
-        resp = httpx.post(f"{self.base_url}/otp", json=params, headers=self._headers())
+        resp = self._http.sync_client.post(f"{self.base_url}/otp", json=params, headers=self._headers())
         resp.raise_for_status()
 
     def verify_otp(self, params: dict) -> None:
-        resp = httpx.post(f"{self.base_url}/verify", json=params, headers=self._headers())
+        resp = self._http.sync_client.post(f"{self.base_url}/verify", json=params, headers=self._headers())
         resp.raise_for_status()
         data = resp.json()
         if data.get("access_token"):
@@ -104,7 +105,7 @@ class GoTrueClient:
     def sign_out(self) -> None:
         if self._session:
             try:
-                httpx.post(f"{self.base_url}/logout", headers=self._headers())
+                self._http.sync_client.post(f"{self.base_url}/logout", headers=self._headers())
             except Exception:
                 pass
         self._session = None

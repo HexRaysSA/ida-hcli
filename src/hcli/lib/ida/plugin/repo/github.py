@@ -9,12 +9,12 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-import httpx
 import rich.progress
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import RetryCallState, retry, retry_if_exception, stop_after_attempt, wait_exponential
 from tenacity.wait import wait_base
 
+from hcli.lib.api.http import HTTPClient
 from hcli.lib.console import stderr_console
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveIndex
 from hcli.lib.util.cache import get_cache_directory
@@ -75,55 +75,57 @@ def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None
 
     Raises:
         ValueError: If no .zip asset or multiple .zip assets found.
-        httpx.HTTPError: If API request fails.
+        httpx.HTTPStatusError: If the server answers with an error status.
+        NetworkError: If the request gets no response.
     """
     headers = {"Accept": "application/vnd.github.v3+json"}
 
-    # Fetch release metadata
-    if tag:
-        release_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/tags/{tag}"
-    else:
-        release_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/latest"
+    with HTTPClient() as http:
+        # Fetch release metadata
+        if tag:
+            release_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/tags/{tag}"
+        else:
+            release_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/latest"
 
-    logger.info(f"fetching release from {release_url}")
-    release_url_scheme = urllib.parse.urlparse(release_url).scheme
-    release_response = httpx.get(release_url, timeout=30.0, headers=headers, follow_redirects=True)
-    release_response.raise_for_status()
-    if release_url_scheme == "https" and release_response.url.scheme != "https":
-        raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {release_response.url}")
-    release_data = json.loads(release_response.content)
+        logger.info(f"fetching release from {release_url}")
+        release_url_scheme = urllib.parse.urlparse(release_url).scheme
+        release_response = http.sync_client.get(release_url, timeout=30.0, headers=headers, follow_redirects=True)
+        release_response.raise_for_status()
+        if release_url_scheme == "https" and release_response.url.scheme != "https":
+            raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {release_response.url}")
+        release_data = json.loads(release_response.content)
 
-    # Find .zip assets
-    assets = release_data.get("assets", [])
-    zip_assets = [a for a in assets if a.get("name", "").lower().endswith(".zip")]
+        # Find .zip assets
+        assets = release_data.get("assets", [])
+        zip_assets = [a for a in assets if a.get("name", "").lower().endswith(".zip")]
 
-    if not zip_assets:
-        tag_info = f" ({tag})" if tag else " (latest)"
-        raise ValueError(f"No .zip asset found in release{tag_info} for {owner}/{repo}")
+        if not zip_assets:
+            tag_info = f" ({tag})" if tag else " (latest)"
+            raise ValueError(f"No .zip asset found in release{tag_info} for {owner}/{repo}")
 
-    if len(zip_assets) > 1:
-        asset_names = [a["name"] for a in zip_assets]
-        raise ValueError(
-            f"Multiple .zip assets found in release: {', '.join(asset_names)}. Cannot determine which to install."
-        )
+        if len(zip_assets) > 1:
+            asset_names = [a["name"] for a in zip_assets]
+            raise ValueError(
+                f"Multiple .zip assets found in release: {', '.join(asset_names)}. Cannot determine which to install."
+            )
 
-    asset = zip_assets[0]
-    asset_name = asset["name"]
-    asset_size = asset.get("size", 0)
-    download_url = asset["browser_download_url"]
+        asset = zip_assets[0]
+        asset_name = asset["name"]
+        asset_size = asset.get("size", 0)
+        download_url = asset["browser_download_url"]
 
-    if asset_size > MAX_DOWNLOAD_SIZE:
-        raise ValueError(
-            f"Asset {asset_name} ({asset_size} bytes) exceeds maximum size limit ({MAX_DOWNLOAD_SIZE} bytes)"
-        )
+        if asset_size > MAX_DOWNLOAD_SIZE:
+            raise ValueError(
+                f"Asset {asset_name} ({asset_size} bytes) exceeds maximum size limit ({MAX_DOWNLOAD_SIZE} bytes)"
+            )
 
-    logger.info(f"downloading asset: {asset_name} ({asset_size} bytes) from {download_url}")
-    download_url_scheme = urllib.parse.urlparse(download_url).scheme
-    asset_response = httpx.get(download_url, timeout=60.0, follow_redirects=True)
-    asset_response.raise_for_status()
-    if download_url_scheme == "https" and asset_response.url.scheme != "https":
-        raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {asset_response.url}")
-    return asset_response.content
+        logger.info(f"downloading asset: {asset_name} ({asset_size} bytes) from {download_url}")
+        download_url_scheme = urllib.parse.urlparse(download_url).scheme
+        asset_response = http.sync_client.get(download_url, timeout=60.0, follow_redirects=True)
+        asset_response.raise_for_status()
+        if download_url_scheme == "https" and asset_response.url.scheme != "https":
+            raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {asset_response.url}")
+        return asset_response.content
 
 
 class WaitGitHubRateLimit(wait_base):

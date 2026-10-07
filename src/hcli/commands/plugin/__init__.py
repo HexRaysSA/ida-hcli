@@ -6,7 +6,6 @@ import os
 from collections.abc import Generator
 from pathlib import Path
 
-import httpx
 import rich_click as click
 from rich.console import Console
 from rich.markup import escape
@@ -120,81 +119,68 @@ def plugin(
         return
 
     plugin_repo: hcli.lib.ida.plugin.repo.BasePluginRepo
-    try:
-        if repo is None:
-            # One read of ida-config.json for both the map and the default.
-            ida_config = get_ida_config()
-            repositories = get_plugin_repositories(ida_config)
-            if not repositories:
-                if ctx.invoked_subcommand != "repo":
-                    console.print(
-                        "[red]No plugin repositories configured[/red]. "
-                        "Provide these in ida-config.json (.Settings.plugin-repositories)"
-                    )
-                    raise click.Abort()
-                return
-
-            # Repositories are fetched lazily, so building the aggregate costs
-            # nothing until a command actually looks something up.
-            aggregate = AggregatePluginRepo(repositories)
-            ctx.call_on_close(lambda: output_repository_warnings(aggregate, stderr_console))
-            ctx.obj["plugin_repos"] = aggregate
-            ctx.obj["default_plugin_repo"] = get_default_plugin_repository_name(ida_config)
-            plugin_repo = aggregate
-
-        elif repo == "github":
-            try:
-                token = os.environ["GITHUB_TOKEN"]
-            except KeyError:
-                console.print("[red]GitHub token required[/red]. Set GITHUB_TOKEN environment variable.")
-                raise click.Abort()
-
-            extra_repos = []
-            if with_repos_list is not None:
-                repos_list_path = Path(with_repos_list)
-                try:
-                    extra_repos = read_repos_file(repos_list_path)
-                except ValueError as e:
-                    console.print(f"[red]failed to read repos list file[/red]: {e!s}.")
-                    raise click.Abort()
-
-            ignored_repos = []
-            if with_ignored_repos_list is not None:
-                ignored_repos_list_path = Path(with_ignored_repos_list)
-                try:
-                    ignored_repos = read_repos_file(ignored_repos_list_path)
-                except ValueError as e:
-                    console.print(f"[red]failed to read ignored repos list file[/red]: {e!s}.")
-                    raise click.Abort()
-
-            plugin_repo = hcli.lib.ida.plugin.repo.github.GithubPluginRepo(
-                token, extra_repos=extra_repos, ignored_repos=ignored_repos
-            )
-
-        else:
-            path = Path(repo)
-            if not path.exists():
+    if repo is None:
+        # One read of ida-config.json for both the map and the default.
+        ida_config = get_ida_config()
+        repositories = get_plugin_repositories(ida_config)
+        if not repositories:
+            if ctx.invoked_subcommand != "repo":
                 console.print(
-                    "[red]Repository doesn't exist[/red]. Provide `--repo github` or `--repo /path/to/plugins/`."
+                    "[red]No plugin repositories configured[/red]. "
+                    "Provide these in ida-config.json (.Settings.plugin-repositories)"
                 )
                 raise click.Abort()
+            return
 
-            if path.is_dir():
-                plugin_repo = hcli.lib.ida.plugin.repo.fs.FileSystemPluginRepo(path)
-            elif is_plugin_bundle_zip(path):
-                plugin_repo = PluginBundleRepo(path)
-            else:
-                plugin_repo = hcli.lib.ida.plugin.repo.file.JSONFilePluginRepo.from_file(path)
+        # Repositories are fetched lazily, so building the aggregate costs
+        # nothing until a command actually looks something up.
+        aggregate = AggregatePluginRepo(repositories)
+        ctx.call_on_close(lambda: output_repository_warnings(aggregate, stderr_console))
+        ctx.obj["plugin_repos"] = aggregate
+        ctx.obj["default_plugin_repo"] = get_default_plugin_repository_name(ida_config)
+        plugin_repo = aggregate
 
-    except (httpx.ConnectError, httpx.TimeoutException):
-        if repo == "github":
-            console.print("[red]Cannot connect to GitHub - network unavailable.[/red]")
-        elif repo is None:
-            console.print("[red]Cannot connect to the plugin repositories - network unavailable.[/red]")
+    elif repo == "github":
+        try:
+            token = os.environ["GITHUB_TOKEN"]
+        except KeyError:
+            console.print("[red]GitHub token required[/red]. Set GITHUB_TOKEN environment variable.")
+            raise click.Abort()
+
+        extra_repos = []
+        if with_repos_list is not None:
+            repos_list_path = Path(with_repos_list)
+            try:
+                extra_repos = read_repos_file(repos_list_path)
+            except ValueError as e:
+                console.print(f"[red]failed to read repos list file[/red]: {e!s}.")
+                raise click.Abort()
+
+        ignored_repos = []
+        if with_ignored_repos_list is not None:
+            ignored_repos_list_path = Path(with_ignored_repos_list)
+            try:
+                ignored_repos = read_repos_file(ignored_repos_list_path)
+            except ValueError as e:
+                console.print(f"[red]failed to read ignored repos list file[/red]: {e!s}.")
+                raise click.Abort()
+
+        plugin_repo = hcli.lib.ida.plugin.repo.github.GithubPluginRepo(
+            token, extra_repos=extra_repos, ignored_repos=ignored_repos
+        )
+
+    else:
+        path = Path(repo)
+        if not path.exists():
+            console.print("[red]Repository doesn't exist[/red]. Provide `--repo github` or `--repo /path/to/plugins/`.")
+            raise click.Abort()
+
+        if path.is_dir():
+            plugin_repo = hcli.lib.ida.plugin.repo.fs.FileSystemPluginRepo(path)
+        elif is_plugin_bundle_zip(path):
+            plugin_repo = PluginBundleRepo(path)
         else:
-            console.print("[red]Cannot connect to plugin repository - network unavailable.[/red]")
-        console.print("Please check your internet connection.")
-        raise click.Abort()
+            plugin_repo = hcli.lib.ida.plugin.repo.file.JSONFilePluginRepo.from_file(path)
 
     ctx.obj["plugin_repo"] = plugin_repo
     ctx.obj.setdefault("plugin_repos", None)
@@ -237,19 +223,7 @@ def repo_for_reference(ctx: click.Context, ref: PluginReference) -> hcli.lib.ida
 
     # A named scope is a request for THAT repository: if it cannot be reached,
     # that is the answer, not a quietly smaller search.
-    try:
-        child = aggregate.get_child_repo(name)
-    except (httpx.ConnectError, httpx.TimeoutException):
-        # httpx connection errors often stringify to "", so without this the
-        # user gets a bare "Error:".
-        console.print(
-            f"[red]Cannot connect to plugin repository '{name}' at "
-            f"{aggregate.repositories[name].url} - network unavailable.[/red]"
-        )
-        console.print("Please check your internet connection.")
-        raise click.Abort()
-
-    return child
+    return aggregate.get_child_repo(name)
 
 
 @contextlib.contextmanager
