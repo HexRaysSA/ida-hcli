@@ -233,6 +233,17 @@ def _check_and_handle_proactive_rate_limit(response) -> None:
                 time.sleep(wait_time)
 
 
+# Shared by every GitHub request so that index builds and retries reuse connections.
+_github_http: HTTPClient | None = None
+
+
+def _get_github_http() -> HTTPClient:
+    global _github_http
+    if _github_http is None:
+        _github_http = HTTPClient()
+    return _github_http
+
+
 @retry(
     retry=retry_if_exception(_is_transient_error),
     wait=wait_exponential(multiplier=2, min=2, max=30),
@@ -260,8 +271,7 @@ def _request_with_retry(method: str, url: str, **kwargs: Any) -> httpx.Response:
     The outer retry handles 5xx server errors and connection-level errors with
     short exponential backoff.
     """
-    with HTTPClient() as http:
-        response = http.sync_client.request(method, url, follow_redirects=True, **kwargs)
+    response = _get_github_http().sync_client.request(method, url, follow_redirects=True, **kwargs)
     response.raise_for_status()
     _check_and_handle_proactive_rate_limit(response)
     return response

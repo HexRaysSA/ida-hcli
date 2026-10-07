@@ -151,24 +151,24 @@ def get_available_versions(repo: GitHubRepo, process_tag: Callable[[str], Versio
     logging.info(f"Searching for releases in 'https://github.com/{repo.user}/{repo.repo}/'...")
     request_url = f"{ENV.HCLI_GITHUB_API_URL}/repos/{repo.user}/{repo.repo}/releases"
     page_size = 100
-    for i in itertools.count(1):
-        with HTTPClient(timeout=_TIMEOUT) as http:
+    with HTTPClient(timeout=_TIMEOUT) as http:
+        for i in itertools.count(1):
             data = json.loads(http.sync_client.get(request_url, params={"page": i, "per_page": page_size}).text)
-        if "message" in data or not isinstance(data, list):
-            break
-        for release in data:
-            tag_name = release.get("tag_name")
-            if tag_name is None:
-                continue
-            version = process_tag(tag_name)
-            if version is None:
-                continue
-            version._origin_tag_name = tag_name
-            yield version
-        logging.info(f"Version's page#{i} loaded")
-        if len(data) < page_size:
-            logging.info("No more pages")
-            break
+            if "message" in data or not isinstance(data, list):
+                break
+            for release in data:
+                tag_name = release.get("tag_name")
+                if tag_name is None:
+                    continue
+                version = process_tag(tag_name)
+                if version is None:
+                    continue
+                version._origin_tag_name = tag_name
+                yield version
+            logging.info(f"Version's page#{i} loaded")
+            if len(data) < page_size:
+                logging.info("No more pages")
+                break
 
 
 def parse_tag(tag_name: str) -> Version | None:
