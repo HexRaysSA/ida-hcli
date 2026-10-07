@@ -204,9 +204,30 @@ def test_search_qualified_exact_name_resolves(tmp_path, virtual_ida_environment)
 
 
 @pytest.mark.parametrize(
+    "query",
+    ["shared@https://github.com/org-b/shared", "shared==2.0.0@https://github.com/org-b/shared"],
+)
+def test_search_install_hint_installs_colliding_plugin(tmp_path, virtual_ida_environment, query):
+    """The install hint for a colliding name is a command that installs the plugin search showed."""
+    from hcli.lib.ida.plugin.install import get_installed_plugin_records
+
+    repo_dir = _build_colliding_repo_dir(tmp_path)
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "search", query])
+    assert result.exit_code == 0, result.output
+    hint = result.output.rpartition("install with: hcli plugin install ")[2].strip()
+
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "install", hint])
+    assert result.exit_code == 0, result.output
+    [record] = get_installed_plugin_records()
+    assert record.version == "2.0.0"
+
+
+@pytest.mark.parametrize(
     "query,expected",
     [
-        # "shar" is a substring of "shared" but not an exact name, so this is a keyword query,
+        # "shar"is a substring of "shared" but not an exact name, so this is a keyword query,
         # and both colliding plugins should show up as separate rows.
         ("shar", ["org-a", "org-b"]),
         ("does-not-match-anything", ["No plugins found"]),
