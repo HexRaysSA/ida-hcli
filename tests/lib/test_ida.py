@@ -397,3 +397,20 @@ def test_install_ida_removes_install_dir_when_installer_fails(tmp_path):
         install_ida(installer, install_dir)
 
     assert not install_dir.exists()
+
+
+@pytest.mark.skipif(get_os() != "linux", reason="Linux .run installer")
+def test_install_ida_runs_non_executable_installer_without_modifying_it(tmp_path):
+    # portal downloads have no execute bit, and the user may not be allowed to add one (#397)
+    installer = tmp_path / "ida-free-pc_94_x64linux.run"
+    installer.write_text('#!/bin/sh\nwhile [ "$1" != "--prefix" ]; do shift; done\ntouch "$2/ida.hlp"\n')
+    installer.chmod(0o444)
+    contents = installer.read_bytes()
+    install_dir = tmp_path / "ida"
+
+    install_ida(installer, install_dir)
+
+    assert (install_dir / "ida.hlp").exists()
+    assert installer.stat().st_mode & 0o777 == 0o444
+    assert installer.read_bytes() == contents
+    assert set(tmp_path.iterdir()) == {installer, install_dir}
