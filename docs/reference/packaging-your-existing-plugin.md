@@ -134,7 +134,7 @@ and new optional fields:
 
   - `.plugin.pythonDependencies` is a list of packages on PyPI that will be installed
   - `.plugin.keywords` is a list of terms to help users searching for plugins
-  - `.plugin.platforms` is recommended, defaults to all platforms. The possible values are: `windows-x86_64`, `linux-x86_64`, `macos-x86_64`, and `macos-aarch64`.
+  - `.plugin.platforms` is recommended, defaults to all platforms. The possible values are: `windows-x86_64`, `windows-aarch64`, `linux-x86_64`, `linux-aarch64`, `macos-x86_64`, and `macos-aarch64`.
   - `.plugin.license` for the code license of your project
   - `.plugin.settings` is a list of descriptors of settings
   - `.plugin.dependencies` declares companion plugins to install alongside this one (e.g., `["dep-a", "dep-b==1.0.0"]`)

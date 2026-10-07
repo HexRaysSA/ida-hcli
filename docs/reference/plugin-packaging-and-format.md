@@ -92,7 +92,7 @@ And there are new optional fields:
   - `.plugin.requiresPython` is an optional [PEP 440](https://peps.python.org/pep-0440/) version specifier, such as `">=3.11"`. When HCLI selects a version to install, upgrade, or bundle, it skips versions whose `requiresPython` excludes the target Python version, so an older compatible version can install instead. HCLI also checks the active IDA Python environment before installing and stops with guidance if it is incompatible. When HCLI installs from a plugin repository that is not a plugin bundle, it detects IDA's Python version only when a candidate version declares `requiresPython`.
   - `.plugin.pythonDependencies` is a list of packages on PyPI that will be installed
   - `.plugin.keywords` is a list of terms to help users searching for plugins
-  - `.plugin.platforms` is recommended, defaults to all platforms. The possible values are: `windows-x86_64`, `linux-x86_64`, `macos-x86_64`, and `macos-aarch64`.
+  - `.plugin.platforms` is recommended, defaults to all platforms. The possible values are: `windows-x86_64`, `windows-aarch64`, `linux-x86_64`, `linux-aarch64`, `macos-x86_64`, and `macos-aarch64`.
   - `.plugin.license` for the code license of your project
   - `.plugin.settings` is a list of descriptors of settings
   - `.plugin.dependencies` declares companion plugins to install alongside this one; entries can be strings (`"dep-a"`) or objects (`{"plugin": "dep-a", "required": false}`) to mark optional dependencies
