@@ -7,7 +7,8 @@ itself, can build on it.
 from __future__ import annotations
 
 import ssl
-from typing import Any
+from collections.abc import AsyncIterator, Iterator
+from typing import Any, NoReturn
 
 import httpx
 
@@ -39,11 +40,8 @@ class TLSVerificationError(NetworkError):
         )
 
 
-def _convert_transport_error(error: httpx.TransportError) -> NetworkError | None:
+def _convert_transport_error(error: httpx.TransportError, host: str) -> NetworkError | None:
     """The domain exception for a request that got no response, or None to keep *error* as is."""
-    # error.request, not the request passed to send(): with follow_redirects the
-    # failing hop can be another host (e.g. GitHub redirecting to its download host).
-    host = error.request.url.host
     if isinstance(error, httpx.ConnectError):
         # httpx.ConnectError <- httpcore.ConnectError <- ssl.SSLCertVerificationError;
         # httpcore links the ssl error only as __context__, not __cause__.
@@ -64,26 +62,73 @@ def _convert_transport_error(error: httpx.TransportError) -> NetworkError | None
     return None
 
 
+def _raise_converted(error: httpx.TransportError, host: str) -> NoReturn:
+    converted = _convert_transport_error(error, host)
+    if converted is None:
+        raise error
+    raise converted from error
+
+
+class _SyncStream(httpx.SyncByteStream):
+    """A streamed response body that raises NetworkError when the connection fails mid-read."""
+
+    def __init__(self, stream: httpx.SyncByteStream, host: str):
+        self._stream = stream
+        self._host = host
+
+    def __iter__(self) -> Iterator[bytes]:
+        try:
+            yield from self._stream
+        except httpx.TransportError as e:
+            _raise_converted(e, self._host)
+
+    def close(self) -> None:
+        self._stream.close()
+
+
+class _AsyncStream(httpx.AsyncByteStream):
+    """A streamed response body that raises NetworkError when the connection fails mid-read."""
+
+    def __init__(self, stream: httpx.AsyncByteStream, host: str):
+        self._stream = stream
+        self._host = host
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        try:
+            async for chunk in self._stream:
+                yield chunk
+        except httpx.TransportError as e:
+            _raise_converted(e, self._host)
+
+    async def aclose(self) -> None:
+        await self._stream.aclose()
+
+
 class _SyncClient(httpx.Client):
     def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
         try:
-            return super().send(request, **kwargs)
+            response = super().send(request, **kwargs)
         except httpx.TransportError as e:
-            converted = _convert_transport_error(e)
-            if converted is None:
-                raise
-            raise converted from e
+            # e.request, not request: with follow_redirects the failing hop can be
+            # another host (e.g. GitHub redirecting to its download host).
+            _raise_converted(e, e.request.url.host)
+        # With stream=True the body is read after send() returns.
+        if isinstance(response.stream, httpx.SyncByteStream):
+            response.stream = _SyncStream(response.stream, response.request.url.host)
+        return response
 
 
 class _AsyncClient(httpx.AsyncClient):
     async def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
         try:
-            return await super().send(request, **kwargs)
+            response = await super().send(request, **kwargs)
         except httpx.TransportError as e:
-            converted = _convert_transport_error(e)
-            if converted is None:
-                raise
-            raise converted from e
+            # e.request, not request: see _SyncClient.send.
+            _raise_converted(e, e.request.url.host)
+        # With stream=True the body is read after send() returns.
+        if isinstance(response.stream, httpx.AsyncByteStream):
+            response.stream = _AsyncStream(response.stream, response.request.url.host)
+        return response
 
 
 class HTTPClient:
