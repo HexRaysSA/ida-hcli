@@ -56,6 +56,11 @@ def _convert_transport_error(error: httpx.TransportError) -> NetworkError | None
         return NetworkError(f"Cannot connect to {host}" + (f": {error}" if str(error) else "."), host)
     if isinstance(error, httpx.TimeoutException):
         return NetworkError(f"The request to {host} timed out.", host)
+    # The connection dropped mid-request (reset, closed, "Server disconnected").
+    # Left out: ProxyError, LocalProtocolError and UnsupportedProtocol, which are
+    # configuration or programming errors rather than network failures.
+    if isinstance(error, (httpx.NetworkError, httpx.RemoteProtocolError)):
+        return NetworkError(f"The connection to {host} failed" + (f": {error}" if str(error) else "."), host)
     return None
 
 

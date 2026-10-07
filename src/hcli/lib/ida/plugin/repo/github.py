@@ -205,13 +205,12 @@ def _is_transient_error(exception: BaseException) -> bool:
     connection-level errors (DNS, connection reset, timeout). Rate limit
     errors (403/429) are intentionally excluded — they're handled by a separate
     retry layer with rate-limit-aware backoff. An untrusted certificate is not
-    transient: retrying cannot fix it.
+    transient, nor are the httpx errors HTTPClient leaves unconverted (proxy
+    authentication, malformed URL): retrying cannot fix them.
     """
     if isinstance(exception, httpx.HTTPStatusError):
         return exception.response.status_code in (500, 502, 503, 504)
-    if isinstance(exception, TLSVerificationError):
-        return False
-    return isinstance(exception, (NetworkError, httpx.TransportError))
+    return isinstance(exception, NetworkError) and not isinstance(exception, TLSVerificationError)
 
 
 def _check_and_handle_proactive_rate_limit(response) -> None:
