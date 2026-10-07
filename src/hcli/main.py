@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import platform
+import sys
 import tempfile
 
 # Ensure all Python subprocesses (pip, idat scripts, etc.) use UTF-8 on Windows,
@@ -161,8 +162,8 @@ class MainGroup(click.RichGroup):
                 AuthenticationError,
                 NotFoundError,
                 RateLimitError,
-                TLSVerificationError,
             )
+            from hcli.lib.api.http import NetworkError
             from hcli.lib.util.io import NoSpaceError
 
             if isinstance(e, NoSpaceError):
@@ -193,7 +194,7 @@ class MainGroup(click.RichGroup):
                 console.print(f"[red]API Error: {e}[/red]")
             elif isinstance(e, KeyboardInterrupt):
                 console.print("\n[yellow]Operation cancelled by user[/yellow]")
-            elif isinstance(e, TLSVerificationError):
+            elif isinstance(e, NetworkError):
                 console.print(f"[red]{e}[/red]")
             else:
                 console.print(f"[red]Unexpected error: {e}[/red]")
@@ -203,7 +204,9 @@ class MainGroup(click.RichGroup):
 
                     console.print(f"[dim]{traceback.format_exc()}[/dim]")
 
-            raise click.Abort()
+            # Not click.Abort: raised here, outside click's own handling, it would
+            # escape as an uncaught exception and print a traceback.
+            sys.exit(1)
 
 
 @click.pass_context

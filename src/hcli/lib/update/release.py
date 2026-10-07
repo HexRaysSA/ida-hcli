@@ -10,10 +10,10 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
-import httpx
 from semantic_version import SimpleSpec, Version
 
 from hcli.env import ENV
+from hcli.lib.api.http import HTTPClient
 from hcli.lib.util.io import NoSpaceError, check_free_space
 
 
@@ -67,6 +67,11 @@ class ReleaseAsset:
         )
 
 
+# The httpx default these requests used before moving to HTTPClient; the background
+# update check depends on failing fast.
+_TIMEOUT = 5.0
+
+
 def get_compatible_version(repo: GitHubRepo, compatibility_spec: SimpleSpec, include_dev: bool = False):
     all_versions = get_available_versions(repo)
 
@@ -116,7 +121,8 @@ def download_asset(
     out_path = out_dir.joinpath(asset.name)
     try:
         with (
-            httpx.stream("GET", asset_url, headers=headers, follow_redirects=True) as response,
+            HTTPClient(timeout=_TIMEOUT) as http,
+            http.sync_client.stream("GET", asset_url, headers=headers, follow_redirects=True) as response,
             open(out_path, "wb") as file,
         ):
             if response.status_code != 200:
@@ -145,23 +151,24 @@ def get_available_versions(repo: GitHubRepo, process_tag: Callable[[str], Versio
     logging.info(f"Searching for releases in 'https://github.com/{repo.user}/{repo.repo}/'...")
     request_url = f"{ENV.HCLI_GITHUB_API_URL}/repos/{repo.user}/{repo.repo}/releases"
     page_size = 100
-    for i in itertools.count(1):
-        data = json.loads(httpx.get(request_url, params={"page": i, "per_page": page_size}).text)
-        if "message" in data or not isinstance(data, list):
-            break
-        for release in data:
-            tag_name = release.get("tag_name")
-            if tag_name is None:
-                continue
-            version = process_tag(tag_name)
-            if version is None:
-                continue
-            version._origin_tag_name = tag_name
-            yield version
-        logging.info(f"Version's page#{i} loaded")
-        if len(data) < page_size:
-            logging.info("No more pages")
-            break
+    with HTTPClient(timeout=_TIMEOUT) as http:
+        for i in itertools.count(1):
+            data = json.loads(http.sync_client.get(request_url, params={"page": i, "per_page": page_size}).text)
+            if "message" in data or not isinstance(data, list):
+                break
+            for release in data:
+                tag_name = release.get("tag_name")
+                if tag_name is None:
+                    continue
+                version = process_tag(tag_name)
+                if version is None:
+                    continue
+                version._origin_tag_name = tag_name
+                yield version
+            logging.info(f"Version's page#{i} loaded")
+            if len(data) < page_size:
+                logging.info("No more pages")
+                break
 
 
 def parse_tag(tag_name: str) -> Version | None:
@@ -174,7 +181,8 @@ def parse_tag(tag_name: str) -> Version | None:
 def get_assets(repo: GitHubRepo, tag_name: str, assets_mask=re.compile(".*")):
     logging.info(f"Searching for assets by tag '{tag_name}' and mask: '{assets_mask.pattern}'")
     request_url = f"{ENV.HCLI_GITHUB_API_URL}/repos/{repo.user}/{repo.repo}/releases/tags/{tag_name}"
-    data = json.loads(httpx.get(request_url).text)
+    with HTTPClient(timeout=_TIMEOUT) as http:
+        data = json.loads(http.sync_client.get(request_url).text)
     if "message" in data:
         return []
     assets = data.get("assets")

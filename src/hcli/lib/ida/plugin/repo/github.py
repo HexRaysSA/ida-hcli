@@ -1,11 +1,8 @@
 import functools
 import json
 import logging
-import socket
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from tenacity import RetryCallState, retry, retry_if_exception, stop_after_attempt, wait_exponential
 from tenacity.wait import wait_base
 
+from hcli.lib.api.http import HTTPClient, NetworkError, TLSVerificationError
 from hcli.lib.console import stderr_console
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveIndex
 from hcli.lib.util.cache import get_cache_directory
@@ -75,55 +73,57 @@ def fetch_github_release_zip_asset(owner: str, repo: str, tag: str | None = None
 
     Raises:
         ValueError: If no .zip asset or multiple .zip assets found.
-        httpx.HTTPError: If API request fails.
+        httpx.HTTPStatusError: If the server answers with an error status.
+        NetworkError: If the request gets no response.
     """
     headers = {"Accept": "application/vnd.github.v3+json"}
 
-    # Fetch release metadata
-    if tag:
-        release_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/tags/{tag}"
-    else:
-        release_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/latest"
+    with HTTPClient() as http:
+        # Fetch release metadata
+        if tag:
+            release_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/tags/{tag}"
+        else:
+            release_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/releases/latest"
 
-    logger.info(f"fetching release from {release_url}")
-    release_url_scheme = urllib.parse.urlparse(release_url).scheme
-    release_response = httpx.get(release_url, timeout=30.0, headers=headers, follow_redirects=True)
-    release_response.raise_for_status()
-    if release_url_scheme == "https" and release_response.url.scheme != "https":
-        raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {release_response.url}")
-    release_data = json.loads(release_response.content)
+        logger.info(f"fetching release from {release_url}")
+        release_url_scheme = urllib.parse.urlparse(release_url).scheme
+        release_response = http.sync_client.get(release_url, timeout=30.0, headers=headers, follow_redirects=True)
+        release_response.raise_for_status()
+        if release_url_scheme == "https" and release_response.url.scheme != "https":
+            raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {release_response.url}")
+        release_data = json.loads(release_response.content)
 
-    # Find .zip assets
-    assets = release_data.get("assets", [])
-    zip_assets = [a for a in assets if a.get("name", "").lower().endswith(".zip")]
+        # Find .zip assets
+        assets = release_data.get("assets", [])
+        zip_assets = [a for a in assets if a.get("name", "").lower().endswith(".zip")]
 
-    if not zip_assets:
-        tag_info = f" ({tag})" if tag else " (latest)"
-        raise ValueError(f"No .zip asset found in release{tag_info} for {owner}/{repo}")
+        if not zip_assets:
+            tag_info = f" ({tag})" if tag else " (latest)"
+            raise ValueError(f"No .zip asset found in release{tag_info} for {owner}/{repo}")
 
-    if len(zip_assets) > 1:
-        asset_names = [a["name"] for a in zip_assets]
-        raise ValueError(
-            f"Multiple .zip assets found in release: {', '.join(asset_names)}. Cannot determine which to install."
-        )
+        if len(zip_assets) > 1:
+            asset_names = [a["name"] for a in zip_assets]
+            raise ValueError(
+                f"Multiple .zip assets found in release: {', '.join(asset_names)}. Cannot determine which to install."
+            )
 
-    asset = zip_assets[0]
-    asset_name = asset["name"]
-    asset_size = asset.get("size", 0)
-    download_url = asset["browser_download_url"]
+        asset = zip_assets[0]
+        asset_name = asset["name"]
+        asset_size = asset.get("size", 0)
+        download_url = asset["browser_download_url"]
 
-    if asset_size > MAX_DOWNLOAD_SIZE:
-        raise ValueError(
-            f"Asset {asset_name} ({asset_size} bytes) exceeds maximum size limit ({MAX_DOWNLOAD_SIZE} bytes)"
-        )
+        if asset_size > MAX_DOWNLOAD_SIZE:
+            raise ValueError(
+                f"Asset {asset_name} ({asset_size} bytes) exceeds maximum size limit ({MAX_DOWNLOAD_SIZE} bytes)"
+            )
 
-    logger.info(f"downloading asset: {asset_name} ({asset_size} bytes) from {download_url}")
-    download_url_scheme = urllib.parse.urlparse(download_url).scheme
-    asset_response = httpx.get(download_url, timeout=60.0, follow_redirects=True)
-    asset_response.raise_for_status()
-    if download_url_scheme == "https" and asset_response.url.scheme != "https":
-        raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {asset_response.url}")
-    return asset_response.content
+        logger.info(f"downloading asset: {asset_name} ({asset_size} bytes) from {download_url}")
+        download_url_scheme = urllib.parse.urlparse(download_url).scheme
+        asset_response = http.sync_client.get(download_url, timeout=60.0, follow_redirects=True)
+        asset_response.raise_for_status()
+        if download_url_scheme == "https" and asset_response.url.scheme != "https":
+            raise ValueError(f"HTTPS request was redirected to insecure HTTP URL: {asset_response.url}")
+        return asset_response.content
 
 
 class WaitGitHubRateLimit(wait_base):
@@ -146,21 +146,18 @@ class WaitGitHubRateLimit(wait_base):
     def __call__(self, retry_state: RetryCallState) -> float:
         if retry_state.outcome and retry_state.outcome.failed:
             exception = retry_state.outcome.exception()
-            if isinstance(exception, urllib.error.HTTPError):
-                logger.debug(f"Rate limit headers received: {dict(exception.headers)}")
+            if isinstance(exception, httpx.HTTPStatusError):
+                headers = exception.response.headers
+                logger.debug(f"Rate limit headers received: {dict(headers)}")
 
-                retry_after = exception.headers.get("retry-after") or exception.headers.get("Retry-After")
+                retry_after = headers.get("retry-after")
                 if retry_after:
                     retry_after_seconds = max(int(retry_after), self.min_wait)
                     logger.info(f"GitHub rate limit hit, respecting retry-after: {retry_after_seconds}s")
                     return min(retry_after_seconds, self.max_wait)
 
-                remaining_str = exception.headers.get("x-ratelimit-remaining") or exception.headers.get(
-                    "X-RateLimit-Remaining"
-                )
-                reset_time_str = exception.headers.get("x-ratelimit-reset") or exception.headers.get(
-                    "X-RateLimit-Reset"
-                )
+                remaining_str = headers.get("x-ratelimit-remaining")
+                reset_time_str = headers.get("x-ratelimit-reset")
 
                 if reset_time_str:
                     reset_time = int(reset_time_str)
@@ -198,24 +195,22 @@ class WaitGitHubRateLimit(wait_base):
 
 def _is_rate_limit_error(exception: BaseException) -> bool:
     """Check if exception is a GitHub rate limit error (403 or 429)."""
-    return isinstance(exception, urllib.error.HTTPError) and exception.code in (403, 429)
+    return isinstance(exception, httpx.HTTPStatusError) and exception.response.status_code in (403, 429)
 
 
 def _is_transient_error(exception: BaseException) -> bool:
     """Check if exception is a transient server-side or network error worth retrying.
 
     Covers 5xx server errors (e.g. GitHub gateway timeouts during incidents) and
-    connection-level errors (DNS, connection reset, socket timeout). Rate limit
+    connection-level errors (DNS, connection reset, timeout). Rate limit
     errors (403/429) are intentionally excluded — they're handled by a separate
-    retry layer with rate-limit-aware backoff.
+    retry layer with rate-limit-aware backoff. An untrusted certificate is not
+    transient, nor are the httpx errors HTTPClient leaves unconverted (proxy
+    authentication, malformed URL): retrying cannot fix them.
     """
-    if isinstance(exception, urllib.error.HTTPError):
-        return exception.code in (500, 502, 503, 504)
-    # urllib.error.HTTPError is a subclass of URLError, so reaching this branch
-    # means the error is a non-HTTP URLError (e.g. connection refused, DNS).
-    if isinstance(exception, urllib.error.URLError):
-        return True
-    return isinstance(exception, (TimeoutError, socket.timeout))
+    if isinstance(exception, httpx.HTTPStatusError):
+        return exception.response.status_code in (500, 502, 503, 504)
+    return isinstance(exception, NetworkError) and not isinstance(exception, TLSVerificationError)
 
 
 def _check_and_handle_proactive_rate_limit(response) -> None:
@@ -238,6 +233,17 @@ def _check_and_handle_proactive_rate_limit(response) -> None:
                 time.sleep(wait_time)
 
 
+# Shared by every GitHub request so that index builds and retries reuse connections.
+_github_http: HTTPClient | None = None
+
+
+def _get_github_http() -> HTTPClient:
+    global _github_http
+    if _github_http is None:
+        _github_http = HTTPClient()
+    return _github_http
+
+
 @retry(
     retry=retry_if_exception(_is_transient_error),
     wait=wait_exponential(multiplier=2, min=2, max=30),
@@ -248,7 +254,7 @@ def _check_and_handle_proactive_rate_limit(response) -> None:
             f"transient GitHub error ({rs.outcome.exception()!r}), retrying in {rs.next_action.sleep:.0f}s "
             f"(attempt {rs.attempt_number})"
         )
-        if rs.outcome
+        if rs.outcome and rs.next_action
         else None
     ),
 )
@@ -258,14 +264,15 @@ def _check_and_handle_proactive_rate_limit(response) -> None:
     stop=stop_after_attempt(5),
     reraise=True,
 )
-def _urlopen_with_retry(req: urllib.request.Request):
-    """Wrapper around urllib.request.urlopen with GitHub rate-limit and transient-error retry logic.
+def _request_with_retry(method: str, url: str, **kwargs: Any) -> httpx.Response:
+    """A GitHub request with rate-limit and transient-error retry logic.
 
     The inner retry handles 403/429 rate limits with rate-limit-aware backoff.
     The outer retry handles 5xx server errors and connection-level errors with
     short exponential backoff.
     """
-    response = urllib.request.urlopen(req)
+    response = _get_github_http().sync_client.request(method, url, follow_redirects=True, **kwargs)
+    response.raise_for_status()
     _check_and_handle_proactive_rate_limit(response)
     return response
 
@@ -383,21 +390,19 @@ class GitHubGraphQLClient:
         """Execute a GraphQL query"""
         data = {"query": query, "variables": variables or {}}
 
-        req = urllib.request.Request(self.api_url, data=json.dumps(data).encode("utf-8"), headers=self.headers)
-
         try:
-            with _urlopen_with_retry(req) as response:
-                result = json.loads(response.read().decode("utf-8"))
-                errors = result.get("errors", [])
-                if any(e.get("type") != "NOT_FOUND" for e in errors):
-                    raise RuntimeError(f"GraphQL errors: {[e for e in errors if e.get('type') != 'NOT_FOUND']}")
-                # GitHub returns partial data alongside NOT_FOUND errors for deleted/renamed repos, skip them.
-                for e in errors:
-                    logger.warning("GitHub GraphQL NOT_FOUND (repo deleted/renamed): %s", e.get("message"))
-                return result["data"]
-        except urllib.error.HTTPError as e:
-            error_body = e.read().decode("utf-8")
-            raise RuntimeError(f"HTTP {e.code}: {error_body}")
+            response = _request_with_retry("POST", self.api_url, content=json.dumps(data), headers=self.headers)
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(f"HTTP {exc.response.status_code}: {exc.response.text}")
+
+        result = response.json()
+        errors = result.get("errors", [])
+        if any(e.get("type") != "NOT_FOUND" for e in errors):
+            raise RuntimeError(f"GraphQL errors: {[e for e in errors if e.get('type') != 'NOT_FOUND']}")
+        # GitHub returns partial data alongside NOT_FOUND errors for deleted/renamed repos, skip them.
+        for e in errors:
+            logger.warning("GitHub GraphQL NOT_FOUND (repo deleted/renamed): %s", e.get("message"))
+        return result["data"]
 
     def get_many_releases(self, repos: list[tuple[str, str]], count: int = 10) -> dict[tuple[str, str], GitHubReleases]:
         """Fetch releases for multiple repositories in a single query
@@ -628,9 +633,7 @@ def download_release_asset(owner: str, repo: str, release_id: str, asset: GitHub
         raise ValueError(f"asset {asset.name} exceeds {MAX_DOWNLOAD_SIZE} limit")
 
     logger.info(f"downloading asset: {asset.name} ({asset.size}) from {asset.download_url}")
-    req = urllib.request.Request(asset.download_url)
-    with _urlopen_with_retry(req) as response:
-        asset_data = response.read()
+    asset_data = _request_with_retry("GET", asset.download_url).content
 
     logger.debug(f"downloaded {len(asset_data)} bytes for asset {asset.name}")
     return asset_data
@@ -666,9 +669,7 @@ def get_source_archive_cache(owner: str, repo: str, commit_hash: str) -> bytes:
 
 def download_source_archive(zip_url: str) -> bytes:
     logger.info(f"downloading source archive from {zip_url}")
-    req = urllib.request.Request(zip_url)
-    with _urlopen_with_retry(req) as response:
-        buf = response.read()
+    buf = _request_with_retry("GET", zip_url).content
 
     logger.debug(f"downloaded {len(buf)} bytes from {zip_url}")
     return buf
@@ -739,31 +740,29 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
             params = f"q={urllib.parse.quote(query)}&per_page={BATCH_SIZE}&page={page}"
             url = f"{search_url}?{params}"
 
-            req = urllib.request.Request(url, headers=headers)
-            with _urlopen_with_retry(req) as response:
-                result = json.loads(response.read().decode("utf-8"))
+            result = _request_with_retry("GET", url, headers=headers).json()
 
-                items = result.get("items", [])
-                if not items:
-                    break
+            items = result.get("items", [])
+            if not items:
+                break
 
-                for item in items:
-                    repo_full_name = item["repository"]["full_name"]
-                    repos.add(repo_full_name)
-                    logger.debug(
-                        m(
-                            "found repository via GitHub search: %s",
-                            repo_full_name,
-                            query=query,
-                            page=page,
-                            name=repo_full_name,
-                        )
+            for item in items:
+                repo_full_name = item["repository"]["full_name"]
+                repos.add(repo_full_name)
+                logger.debug(
+                    m(
+                        "found repository via GitHub search: %s",
+                        repo_full_name,
+                        query=query,
+                        page=page,
+                        name=repo_full_name,
                     )
+                )
 
-                if len(items) < BATCH_SIZE:
-                    break
+            if len(items) < BATCH_SIZE:
+                break
 
-                page += 1
+            page += 1
 
     return sorted(repos)
 

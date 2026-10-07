@@ -174,9 +174,9 @@ def test_repo_from_url_directory(tmp_path):
 
 
 def test_repo_from_url_https_treated_as_json():
-    import httpx
+    from hcli.lib.api.http import NetworkError
 
-    with pytest.raises((httpx.ConnectError, httpx.TimeoutException)):
+    with pytest.raises(NetworkError):
         repo_from_url("https://nonexistent.invalid/plugin-repository.json")
 
 

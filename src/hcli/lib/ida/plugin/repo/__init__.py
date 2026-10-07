@@ -11,7 +11,7 @@ import httpx
 import semantic_version
 from pydantic import BaseModel, ConfigDict
 
-from hcli import USER_AGENT
+from hcli.lib.api.http import HTTPClient
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
     IdaVersion,
@@ -77,7 +77,8 @@ def fetch_plugin_repo_bytes(url: str, repo_name: str | None = None) -> bytes:
     # whether to attach what was already resolved.
     auth_headers: dict[str, str] | None = None
 
-    with httpx.Client(timeout=30.0, follow_redirects=False) as client:
+    with HTTPClient(timeout=30.0) as http:
+        client = http.sync_client
         current_url = url
         # +1 because the initial request consumes an iteration; MAX_REDIRECTS
         # counts redirects actually followed.
@@ -89,10 +90,7 @@ def fetch_plugin_repo_bytes(url: str, repo_name: str | None = None) -> bytes:
 
                 auth_headers = get_optional_auth_headers()
 
-            headers = {"User-Agent": USER_AGENT}
-            if credentialed and auth_headers:
-                headers.update(auth_headers)
-
+            headers = auth_headers if credentialed and auth_headers else {}
             response = client.get(current_url, headers=headers)
 
             # has_redirect_location, not is_redirect: is_redirect matches any

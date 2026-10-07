@@ -3,7 +3,6 @@ from __future__ import annotations
 import dataclasses
 import logging
 
-import httpx
 import rich.status
 import rich_click as click
 
@@ -112,46 +111,41 @@ def upgrade_plugin(ctx, plugin: str, no_build_isolation: bool) -> None:
         # user supplied it. This is what makes bare-name upgrades work even
         # when the repository has a colliding name.
         requirement = Requirement(ref.name, ref.version_spec, installed.host)
-        try:
-            newer_repo = NewerVersionsRepo(source_repo, installed.name, installed.host, installed.version)
-            # Fail with KeyError when no repository lists the installed plugin,
-            # before "no newer version" can report it as up to date.
-            newer_repo.get_plugin_by_name(installed.name, host=installed.host)
-            # Nothing newer to install is success, not an error, when the installed
-            # version matches the spec. Checked on the index metadata, so no archive
-            # is downloaded and IDA's Python is not probed.
-            is_installed_match = requirement.matches(installed.version)
-            if not newer_repo.has_newer_versions(requirement.version_spec):
-                if is_installed_match:
-                    console.print(f"[blue]{installed.name}[/blue] is already up to date ({installed.version})")
-                    return
-                older_version = newer_repo.get_older_version(requirement.version_spec)
-                if older_version is not None:
-                    raise PluginVersionDowngradeError(installed.name, installed.version, older_version)
-
-            try:
-                resolution = resolve(
-                    [requirement],
-                    newer_repo,
-                    get_install_cell(install_ctx),
-                    installed=get_installed_versions(exclude=installed.name),
-                )
-            except (AmbiguousRequirementError, StepLimitError):
-                raise
-            except ResolutionError as e:
-                if not is_installed_match:
-                    raise
-                logger.debug("no viable upgrade: %s", e)
+        newer_repo = NewerVersionsRepo(source_repo, installed.name, installed.host, installed.version)
+        # Fail with KeyError when no repository lists the installed plugin,
+        # before "no newer version" can report it as up to date.
+        newer_repo.get_plugin_by_name(installed.name, host=installed.host)
+        # Nothing newer to install is success, not an error, when the installed
+        # version matches the spec. Checked on the index metadata, so no archive
+        # is downloaded and IDA's Python is not probed.
+        is_installed_match = requirement.matches(installed.version)
+        if not newer_repo.has_newer_versions(requirement.version_spec):
+            if is_installed_match:
                 console.print(f"[blue]{installed.name}[/blue] is already up to date ({installed.version})")
-                console.print(f"  newer versions cannot be installed here: {'; '.join(e.reasons)}")
                 return
+            older_version = newer_repo.get_older_version(requirement.version_spec)
+            if older_version is not None:
+                raise PluginVersionDowngradeError(installed.name, installed.version, older_version)
 
-            location = resolution.selected[resolution.roots[requirement]]
-            plugin_name, buf = source_repo.fetch_plugin_location(location)
-        except (httpx.ConnectError, httpx.TimeoutException):
-            console.print("[red]Cannot connect to plugin repository - network unavailable.[/red]")
-            console.print("Please check your internet connection.")
-            raise click.Abort()
+        try:
+            resolution = resolve(
+                [requirement],
+                newer_repo,
+                get_install_cell(install_ctx),
+                installed=get_installed_versions(exclude=installed.name),
+            )
+        except (AmbiguousRequirementError, StepLimitError):
+            raise
+        except ResolutionError as e:
+            if not is_installed_match:
+                raise
+            logger.debug("no viable upgrade: %s", e)
+            console.print(f"[blue]{installed.name}[/blue] is already up to date ({installed.version})")
+            console.print(f"  newer versions cannot be installed here: {'; '.join(e.reasons)}")
+            return
+
+        location = resolution.selected[resolution.roots[requirement]]
+        plugin_name, buf = source_repo.fetch_plugin_location(location)
 
         _, metadata = get_metadata_from_plugin_archive(buf, plugin_name)
 

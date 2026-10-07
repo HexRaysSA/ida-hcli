@@ -6,7 +6,6 @@ import dataclasses
 import logging
 from pathlib import Path
 
-import httpx
 import rich.status
 import rich_click as click
 
@@ -309,28 +308,16 @@ def install_plugin(
 
         elif is_github_direct_install_url(plugin_spec):
             logger.info("installing from GitHub repository")
-            try:
-                owner, repo, tag = parse_github_url(plugin_spec)
-                tag_info = f"@{tag}" if tag else " (latest release)"
-                with rich.status.Status(
-                    f"fetching plugin from GitHub: {owner}/{repo}{tag_info}", console=stderr_console
-                ):
-                    buf = fetch_github_release_zip_asset(owner, repo, tag)
-            except (httpx.ConnectError, httpx.TimeoutException):
-                console.print("[red]Cannot connect to GitHub - network unavailable.[/red]")
-                console.print("Please check your internet connection.")
-                raise click.Abort()
+            owner, repo, tag = parse_github_url(plugin_spec)
+            tag_info = f"@{tag}" if tag else " (latest release)"
+            with rich.status.Status(f"fetching plugin from GitHub: {owner}/{repo}{tag_info}", console=stderr_console):
+                buf = fetch_github_release_zip_asset(owner, repo, tag)
             plugin_name = _resolve_plugin_name_from_archive(buf)
 
         elif plugin_spec.startswith("https://"):
             logger.info("installing from HTTP URL")
-            try:
-                with rich.status.Status("fetching plugin", console=stderr_console):
-                    buf = fetch_plugin_archive(plugin_spec)
-            except (httpx.ConnectError, httpx.TimeoutException):
-                console.print(f"[red]Cannot connect to {plugin_spec} - network unavailable.[/red]")
-                console.print("Please check your internet connection.")
-                raise click.Abort()
+            with rich.status.Status("fetching plugin", console=stderr_console):
+                buf = fetch_plugin_archive(plugin_spec)
             plugin_name = _resolve_plugin_name_from_archive(buf)
 
         else:
