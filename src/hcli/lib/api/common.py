@@ -47,36 +47,48 @@ class RateLimitError(APIError):
     """429 rate limit exceeded."""
 
 
-def describe_tls_verification_error(error: BaseException) -> str | None:
-    """Explain a TLS certificate verification failure behind *error*, or return None if there is none."""
-    cause: BaseException | None = error
-    while cause is not None and not isinstance(cause, ssl.SSLCertVerificationError):
-        cause = cause.__cause__ or cause.__context__
-    if cause is None:
-        return None
+class TLSVerificationError(Exception):
+    """The server's TLS certificate could not be verified.
 
-    host = "the server"
-    if isinstance(error, httpx.RequestError):
+    Not an APIError: no response was received, so callers that treat APIError as
+    "the server rejected the request" must not swallow it.
+    """
+
+    def __init__(self, host: str, cause: ssl.SSLCertVerificationError):
+        if ENV.HCLI_USE_SYSTEM_CERTS:
+            fix = "install its root certificate in the operating system certificate store, or set SSL_CERT_FILE to it"
+        else:
+            fix = "unset HCLI_USE_SYSTEM_CERTS to use the operating system certificate store, or set SSL_CERT_FILE"
+        reason = getattr(cause, "verify_message", None) or cause
+        super().__init__(
+            f"Cannot verify the TLS certificate of {host}: {reason}.\n"
+            f"If your network uses a proxy that inspects HTTPS traffic, {fix}."
+        )
+        self.host = host
+
+
+class _AsyncClient(httpx.AsyncClient):
+    """httpx client that raises TLSVerificationError for certificate verification failures."""
+
+    async def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
         try:
-            host = error.request.url.host
-        except RuntimeError:
-            pass
-
-    if ENV.HCLI_USE_SYSTEM_CERTS:
-        fix = "install its root certificate in the operating system certificate store, or set SSL_CERT_FILE to it"
-    else:
-        fix = "unset HCLI_USE_SYSTEM_CERTS to use the operating system certificate store, or set SSL_CERT_FILE"
-    return (
-        f"Cannot verify the TLS certificate of {host}: {cause.verify_message or cause}.\n"
-        f"If your network uses a proxy that inspects HTTPS traffic, {fix}."
-    )
+            return await super().send(request, **kwargs)
+        except httpx.ConnectError as e:
+            # httpx.ConnectError <- httpcore.ConnectError <- ssl.SSLCertVerificationError;
+            # httpcore links the ssl error only as __context__, not __cause__.
+            cause: BaseException | None = e
+            while cause is not None and not isinstance(cause, ssl.SSLCertVerificationError):
+                cause = cause.__cause__ or cause.__context__
+            if cause is None:
+                raise
+            raise TLSVerificationError(request.url.host, cause) from e
 
 
 class APIClient:
     """HTTP client with automatic authentication header injection."""
 
     def __init__(self):
-        self.client = httpx.AsyncClient(
+        self.client = _AsyncClient(
             base_url=ENV.HCLI_API_URL,
             timeout=httpx.Timeout(60.0, write=None),  # No timeout for uploads
             headers={"User-Agent": USER_AGENT},
