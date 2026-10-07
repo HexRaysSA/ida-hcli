@@ -799,8 +799,8 @@ class PathsConfig(BaseModel):
     def _blank_is_unset(cls, value: Any) -> Any:
         """Treat an empty or whitespace-only value as unset.
 
-        idapro writes `"ida-install-dir": ""` when it creates the file, and
-        Path("") is Path("."), which would silently select the working directory.
+        IDA writes `"ida-install-dir": ""` when it creates the file.
+        Path("") is Path("."), and we don't want that to select the working directory.
         """
         if isinstance(value, str) and not value.strip():
             return None
