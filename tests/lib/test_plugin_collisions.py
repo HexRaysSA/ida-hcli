@@ -227,7 +227,7 @@ def test_search_install_hint_installs_colliding_plugin(tmp_path, virtual_ida_env
 @pytest.mark.parametrize(
     "query,expected",
     [
-        # "shar"is a substring of "shared" but not an exact name, so this is a keyword query,
+        # "shar" is a substring of "shared" but not an exact name, so this is a keyword query,
         # and both colliding plugins should show up as separate rows.
         ("shar", ["org-a", "org-b"]),
         ("does-not-match-anything", ["No plugins found"]),
