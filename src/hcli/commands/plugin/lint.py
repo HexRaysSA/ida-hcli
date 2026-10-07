@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import logging
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
@@ -23,24 +24,18 @@ from hcli.lib.util.logging import m
 
 logger = logging.getLogger(__name__)
 
-# number of errors reported by the current lint run; any error fails the command.
-_error_count = 0
+
+@dataclass
+class LintResult:
+    recommendations: int = 0
+    # any error fails the lint command
+    errors: int = 0
 
 
-def _print_error(message: str) -> None:
-    global _error_count
-    _error_count += 1
-    console.print(message)
-
-
-def _lint_readme_in_directory(plugin_path: Path, source_name: str) -> int:
-    """Check for README.md file in plugin directory.
-
-    returns: number of recommendations made
-    """
+def _lint_readme_in_directory(plugin_path: Path, source_name: str, result: LintResult) -> None:
+    """Check for README.md file in plugin directory."""
     found_files = []
     has_exact_match = False
-    recommendation_count = 0
 
     for item in plugin_path.iterdir():
         if item.is_file() and item.name == "README.md":
@@ -50,29 +45,23 @@ def _lint_readme_in_directory(plugin_path: Path, source_name: str) -> int:
             found_files.append(item.name)
 
     if has_exact_match:
-        return 0
+        return
 
     if found_files:
         console.print(
             f"[yellow]Recommendation[/yellow] ({source_name}): rename {found_files[0]} to README.md (exact casing)"
         )
         console.print("  Use 'README.md' with exact casing for consistency and discoverability")
-        recommendation_count += 1
+        result.recommendations += 1
     else:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): add a README.md file")
         console.print("  A README helps users understand what your plugin does and how to use it")
-        recommendation_count += 1
-
-    return recommendation_count
+        result.recommendations += 1
 
 
-def _lint_readme_in_archive(zip_data: bytes, metadata_path: Path, source_name: str) -> int:
-    """Check for README.md file in plugin archive.
-
-    returns: number of recommendations made
-    """
+def _lint_readme_in_archive(zip_data: bytes, metadata_path: Path, source_name: str, result: LintResult) -> None:
+    """Check for README.md file in plugin archive."""
     plugin_dir = metadata_path.parent
-    recommendation_count = 0
 
     with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
         namelist = zip_file.namelist()
@@ -90,86 +79,74 @@ def _lint_readme_in_archive(zip_data: bytes, metadata_path: Path, source_name: s
                     found_files.append(path_obj.name)
 
         if has_exact_match:
-            return 0
+            return
 
         if found_files:
             console.print(
                 f"[yellow]Recommendation[/yellow] ({source_name}): rename {found_files[0]} to README.md (exact casing)"
             )
             console.print("  Use 'README.md' with exact casing for consistency and discoverability")
-            recommendation_count += 1
+            result.recommendations += 1
         else:
             console.print(f"[yellow]Recommendation[/yellow] ({source_name}): add a README.md file")
             console.print("  A README helps users understand what your plugin does and how to use it")
-            recommendation_count += 1
-
-        return recommendation_count
+            result.recommendations += 1
 
 
-def _check_unexpected_keys(metadata: IDAMetadataDescriptor, source_name: str) -> int:
-    """Check for unexpected keys in the plugin metadata.
-
-    returns: number of recommendations made
-    """
-    recommendation_count = 0
-
+def _check_unexpected_keys(metadata: IDAMetadataDescriptor, source_name: str, result: LintResult) -> None:
+    """Check for unexpected keys in the plugin metadata."""
     if hasattr(metadata.plugin, "__pydantic_extra__") and metadata.plugin.__pydantic_extra__:
         extra_keys = sorted(metadata.plugin.__pydantic_extra__.keys())
         for key in extra_keys:
             console.print(f"[yellow]Warning[/yellow] ({source_name}): unexpected key in plugin metadata: '{key}'")
             console.print("  This key is not part of the ida-plugin.json schema and will be ignored")
-            recommendation_count += 1
-
-    return recommendation_count
+            result.recommendations += 1
 
 
-def _lint_metadata(metadata: IDAMetadataDescriptor, source_name: str) -> int:
-    """Validate a single plugin metadata and show lint recommendations.
-
-    returns: number of recommendations made
-    """
-    recommendation_count = 0
-
-    recommendation_count += _check_unexpected_keys(metadata, source_name)
+def _lint_metadata(metadata: IDAMetadataDescriptor, source_name: str, result: LintResult) -> None:
+    """Validate a single plugin metadata and show lint recommendations."""
+    _check_unexpected_keys(metadata, source_name, result)
 
     if not parse_plugin_version(metadata.plugin.version):
-        _print_error(f"[red]Error[/red] ({source_name}): plugin version should look like 'X.Y.Z'")
-        recommendation_count += 1
+        console.print(f"[red]Error[/red] ({source_name}): plugin version should look like 'X.Y.Z'")
+        result.errors += 1
 
     if not metadata.plugin.ida_versions:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.idaVersions")
         console.print("  Specify which IDA versions your plugin supports (e.g., ['9.0', '9.1'])")
-        recommendation_count += 1
+        result.recommendations += 1
 
     if not metadata.plugin.description:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.description")
         console.print("  A one-line description improves discoverability in the plugin repository")
-        recommendation_count += 1
+        result.recommendations += 1
 
     if not metadata.plugin.categories:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.categories")
         console.print("  Categories help users find your plugin (e.g., 'malware-analysis', 'decompilation')")
-        recommendation_count += 1
+        result.recommendations += 1
 
     if not metadata.plugin.logo_path:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.logoPath")
         console.print("  A logo image (16:9 aspect ratio) makes your plugin more visually appealing")
-        recommendation_count += 1
+        result.recommendations += 1
 
     if not metadata.plugin.keywords:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.keywords")
         console.print("  Keywords improve search discoverability in the plugin repository")
-        recommendation_count += 1
+        result.recommendations += 1
 
     if not metadata.plugin.license:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.license")
         console.print("  Specify the license (e.g., 'MIT', 'Apache 2.0') to clarify usage rights")
-        recommendation_count += 1
+        result.recommendations += 1
 
     if not metadata.plugin.authors and not metadata.plugin.maintainers:
-        _print_error(f"[red]Error[/red] ({source_name}): ida-plugin.json: provide plugin.authors or plugin.maintainers")
+        console.print(
+            f"[red]Error[/red] ({source_name}): ida-plugin.json: provide plugin.authors or plugin.maintainers"
+        )
         console.print("  Contact information is required for authors or maintainers")
-        recommendation_count += 1
+        result.errors += 1
     else:
         # Check if contacts have both name and email for better completeness
         for i, author in enumerate(metadata.plugin.authors):
@@ -177,18 +154,16 @@ def _lint_metadata(metadata: IDAMetadataDescriptor, source_name: str) -> int:
                 console.print(
                     f"[yellow]Recommendation[/yellow] ({source_name}): plugin.authors[{i}]: provide an author name"
                 )
-                recommendation_count += 1
+                result.recommendations += 1
         for i, maintainer in enumerate(metadata.plugin.maintainers):
             if not maintainer.name:
                 console.print(
                     f"[yellow]Recommendation[/yellow] ({source_name}): plugin.maintainers[{i}]: provide a maintainer name"
                 )
-                recommendation_count += 1
+                result.recommendations += 1
 
-    recommendation_count += _check_dependency_specs(metadata, source_name)
-    recommendation_count += _check_expanded_components(metadata, source_name)
-
-    return recommendation_count
+    _check_dependency_specs(metadata, source_name, result)
+    _check_expanded_components(metadata, source_name, result)
 
 
 def _is_github_host(url: str) -> bool:
@@ -197,17 +172,16 @@ def _is_github_host(url: str) -> bool:
     return (urlparse(url).hostname or "").lower() in ("github.com", "www.github.com")
 
 
-def _check_dependency_specs(metadata: IDAMetadataDescriptor, source_name: str) -> int:
+def _check_dependency_specs(metadata: IDAMetadataDescriptor, source_name: str, result: LintResult) -> None:
     from hcli.lib.ida.plugin.reference import DependencyEntry
 
-    recommendation_count = 0
     warn_bare = not _is_github_host(metadata.plugin.host)
     for i, entry in enumerate(metadata.plugin.dependencies):
         if not isinstance(entry, DependencyEntry):
-            _print_error(
+            console.print(
                 f"[red]Error[/red] ({source_name}): plugin.dependencies[{i}]: unexpected type {type(entry).__name__}"
             )
-            recommendation_count += 1
+            result.errors += 1
             continue
         ref = entry.reference
         if warn_bare and ref.host is None:
@@ -215,30 +189,27 @@ def _check_dependency_specs(metadata: IDAMetadataDescriptor, source_name: str) -
                 f"[yellow]Recommendation[/yellow] ({source_name}): plugin.dependencies[{i}]: "
                 f"use name@host format ('{ref.name}@<host>') to avoid ambiguity across repositories"
             )
-            recommendation_count += 1
-    return recommendation_count
+            result.recommendations += 1
 
 
-def _check_expanded_components(metadata: IDAMetadataDescriptor, source_name: str) -> int:
-    recommendation_count = 0
+def _check_expanded_components(metadata: IDAMetadataDescriptor, source_name: str, result: LintResult) -> None:
     for i, entry in enumerate(metadata.plugin.components):
         if isinstance(entry, IDAMetadataDescriptor):
-            _print_error(
+            console.print(
                 f"[red]Error[/red] ({source_name}): plugin.components[{i}]: "
                 f"contains expanded metadata object for '{entry.plugin.name}'; "
                 f"use the string form in authored archives"
             )
-            recommendation_count += 1
-    return recommendation_count
+            result.errors += 1
 
 
-def _check_components_in_directory(plugin_path: Path, metadata: IDAMetadataDescriptor, source_name: str) -> int:
+def _check_components_in_directory(
+    plugin_path: Path, metadata: IDAMetadataDescriptor, source_name: str, result: LintResult
+) -> None:
     from hcli.lib.ida.plugin.components import (
         find_undeclared_plugins_in_directory,
         walk_component_tree_from_directory,
     )
-
-    recommendation_count = 0
 
     undeclared = find_undeclared_plugins_in_directory(plugin_path)
     for ud_path, ud_meta in undeclared:
@@ -247,38 +218,35 @@ def _check_components_in_directory(plugin_path: Path, metadata: IDAMetadataDescr
             f"subdirectory '{ud_path.name}' contains ida-plugin.json "
             f"(plugin '{ud_meta.plugin.name}') but is not declared as a component"
         )
-        recommendation_count += 1
+        result.recommendations += 1
 
     if not metadata.plugin.components:
-        return recommendation_count
+        return
 
     try:
         tree = walk_component_tree_from_directory(plugin_path)
     except ValueError as e:
-        _print_error(f"[red]Error[/red] ({source_name}): component validation failed: {e}")
-        return recommendation_count + 1
+        console.print(f"[red]Error[/red] ({source_name}): component validation failed: {e}")
+        result.errors += 1
+        return
 
     seen_names: set[str] = {metadata.plugin.name}
     for _, comp_meta in tree:
         comp_source = f"{source_name}:{comp_meta.plugin.name}"
         if comp_meta.plugin.name in seen_names:
-            _print_error(f"[red]Error[/red] ({comp_source}): duplicate component name '{comp_meta.plugin.name}'")
-            recommendation_count += 1
+            console.print(f"[red]Error[/red] ({comp_source}): duplicate component name '{comp_meta.plugin.name}'")
+            result.errors += 1
         seen_names.add(comp_meta.plugin.name)
-        recommendation_count += _lint_metadata(comp_meta, comp_source)
-
-    return recommendation_count
+        _lint_metadata(comp_meta, comp_source, result)
 
 
 def _check_components_in_archive(
-    zip_data: bytes, metadata_path: Path, metadata: IDAMetadataDescriptor, source_name: str
-) -> int:
+    zip_data: bytes, metadata_path: Path, metadata: IDAMetadataDescriptor, source_name: str, result: LintResult
+) -> None:
     from hcli.lib.ida.plugin.components import (
         find_undeclared_plugins_in_archive,
         walk_component_tree_from_archive,
     )
-
-    recommendation_count = 0
 
     undeclared = find_undeclared_plugins_in_archive(zip_data, metadata_path, metadata)
     for ud_path, ud_meta in undeclared:
@@ -287,46 +255,41 @@ def _check_components_in_archive(
             f"archive contains plugin '{ud_meta.plugin.name}' "
             f"that is not declared as a component"
         )
-        recommendation_count += 1
+        result.recommendations += 1
 
     if not metadata.plugin.components:
-        return recommendation_count
+        return
 
     try:
         tree = walk_component_tree_from_archive(zip_data, metadata_path, metadata)
     except ValueError as e:
-        _print_error(f"[red]Error[/red] ({source_name}): component validation failed: {e}")
-        return recommendation_count + 1
+        console.print(f"[red]Error[/red] ({source_name}): component validation failed: {e}")
+        result.errors += 1
+        return
 
     seen_names: set[str] = {metadata.plugin.name}
     for _, comp_meta in tree:
         comp_source = f"{source_name}:{comp_meta.plugin.name}"
         if comp_meta.plugin.name in seen_names:
-            _print_error(f"[red]Error[/red] ({comp_source}): duplicate component name '{comp_meta.plugin.name}'")
-            recommendation_count += 1
+            console.print(f"[red]Error[/red] ({comp_source}): duplicate component name '{comp_meta.plugin.name}'")
+            result.errors += 1
         seen_names.add(comp_meta.plugin.name)
-        recommendation_count += _lint_metadata(comp_meta, comp_source)
-
-    return recommendation_count
+        _lint_metadata(comp_meta, comp_source, result)
 
 
-def _lint_plugin_directory(plugin_path: Path) -> int:
-    """Lint a plugin in a directory.
-
-    returns: number of recommendations made
-    """
-    recommendation_count = 0
-
+def _lint_plugin_directory(plugin_path: Path, result: LintResult) -> None:
+    """Lint a plugin in a directory."""
     metadata_file = plugin_path / "ida-plugin.json"
     if not metadata_file.exists():
-        _print_error(f"[red]Error[/red]: ida-plugin.json not found in {plugin_path}")
-        return 1
+        console.print(f"[red]Error[/red]: ida-plugin.json not found in {plugin_path}")
+        result.errors += 1
+        return
 
     content = metadata_file.read_text(encoding="utf-8")
     try:
         metadata = IDAMetadataDescriptor.model_validate_json(content)
     except ValidationError as e:
-        _print_error("[red]Error[/red]: ida-plugin.json validation failed")
+        console.print("[red]Error[/red]: ida-plugin.json validation failed")
         for error in e.errors():
             field_path = ".".join(str(loc) for loc in error["loc"])
             error_msg = error["msg"]
@@ -337,30 +300,29 @@ def _lint_plugin_directory(plugin_path: Path) -> int:
             else:
                 console.print(f"  [red]Invalid value[/red] for {field_path}: {error_msg}")
 
-            recommendation_count += 1
+            result.errors += 1
 
-        return recommendation_count
+        return
 
     try:
         validate_metadata_in_plugin_directory(plugin_path)
     except Exception as e:
-        _print_error(f"[red]Error[/red]: ida-plugin.json validation failed: {e}")
-        recommendation_count += 1
-        return recommendation_count
+        console.print(f"[red]Error[/red]: ida-plugin.json validation failed: {e}")
+        result.errors += 1
+        return
 
-    recommendation_count += _lint_metadata(metadata, str(plugin_path))
-    recommendation_count += _lint_readme_in_directory(plugin_path, str(plugin_path))
-    recommendation_count += _check_components_in_directory(plugin_path, metadata, str(plugin_path))
-
-    return recommendation_count
+    _lint_metadata(metadata, str(plugin_path), result)
+    _lint_readme_in_directory(plugin_path, str(plugin_path), result)
+    _check_components_in_directory(plugin_path, metadata, str(plugin_path), result)
 
 
 def _check_root_manifest_at_top_level(
     plugins_found: list[tuple[Path, IDAMetadataDescriptor]],
     source_name: str,
-) -> int:
+    result: LintResult,
+) -> None:
     if len(plugins_found) <= 1:
-        return 0
+        return
 
     from hcli.lib.ida.plugin import get_component_name
 
@@ -369,26 +331,19 @@ def _check_root_manifest_at_top_level(
         referenced_as_component.update(get_component_name(e) for e in meta.plugin.components)
 
     roots = [(path, meta) for path, meta in plugins_found if meta.plugin.name not in referenced_as_component]
-    recommendation_count = 0
     for root_path, root_meta in roots:
         parts = root_path.parts
         if len(parts) != 2:
-            _print_error(
+            console.print(
                 f"[red]Error[/red] ({source_name}): root manifest for '{root_meta.plugin.name}' "
                 f"is at '{root_path}' but should be at the archive's top level "
                 f"(e.g., '{root_meta.plugin.name}/ida-plugin.json')"
             )
-            recommendation_count += 1
-    return recommendation_count
+            result.errors += 1
 
 
-def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
-    """Lint plugins in a .zip archive from bytes.
-
-    returns: number of recommendations made
-    """
-    recommendation_count = 0
-
+def _lint_plugin_archive(zip_data: bytes, source_name: str, result: LintResult) -> None:
+    """Lint plugins in a .zip archive from bytes."""
     plugins_found = []
     with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
         for file_path in zip_file.namelist():
@@ -401,7 +356,7 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
                     metadata = IDAMetadataDescriptor.model_validate_json(f.read().decode("utf-8"))
                 except ValidationError as e:
                     logger.debug(m("failed to validate metadata: %s", file_path, path=file_path, error=str(e)))
-                    _print_error(f"[red]Error[/red] ({source_name}): {file_path}: ida-plugin.json validation failed")
+                    console.print(f"[red]Error[/red] ({source_name}): {file_path}: ida-plugin.json validation failed")
                     for error in e.errors():
                         field_path = ".".join(str(loc) for loc in error["loc"])
                         error_msg = error["msg"]
@@ -411,7 +366,7 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
                             console.print(f"  [red]Missing required field[/red]: {field_path}")
                         else:
                             console.print(f"  [red]Invalid value[/red] for {field_path}: {error_msg}")
-                        recommendation_count += 1
+                        result.errors += 1
                     continue
                 else:
                     logger.debug(m("found valid metadata: %s", file_path))
@@ -421,11 +376,11 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
         logger.debug("found plugin %s at %s", meta.plugin.name, path)
 
     if not plugins_found:
-        _print_error(f"[red]Error[/red]: No valid plugins found in archive {source_name}")
-        recommendation_count += 1
-        return recommendation_count
+        console.print(f"[red]Error[/red]: No valid plugins found in archive {source_name}")
+        result.errors += 1
+        return
 
-    recommendation_count += _check_root_manifest_at_top_level(plugins_found, source_name)
+    _check_root_manifest_at_top_level(plugins_found, source_name, result)
 
     for metadata_path, metadata in plugins_found:
         plugin_source_name = f"{source_name}:{metadata_path}"
@@ -433,7 +388,9 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
         try:
             validate_metadata_in_plugin_archive(zip_data, metadata_path, metadata)
         except ValidationError as e:
-            _print_error(f"[red]Error[/red] ({plugin_source_name}): {metadata_path}: ida-plugin.json validation failed")
+            console.print(
+                f"[red]Error[/red] ({plugin_source_name}): {metadata_path}: ida-plugin.json validation failed"
+            )
             for error in e.errors():
                 field_path = ".".join(str(loc) for loc in error["loc"])
                 error_msg = error["msg"]
@@ -443,20 +400,18 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
                     console.print(f"  [red]Missing required field[/red]: {field_path}")
                 else:
                     console.print(f"  [red]Invalid value[/red] for {field_path}: {error_msg}")
-                recommendation_count += 1
+                result.errors += 1
 
             continue
 
         except Exception as e:
-            _print_error(f"[red]Error[/red]: {metadata_path}: ida-plugin.json validation failed: {e}")
-            recommendation_count += 1
+            console.print(f"[red]Error[/red]: {metadata_path}: ida-plugin.json validation failed: {e}")
+            result.errors += 1
             continue
 
-        recommendation_count += _lint_metadata(metadata, plugin_source_name)
-        recommendation_count += _lint_readme_in_archive(zip_data, metadata_path, plugin_source_name)
-        recommendation_count += _check_components_in_archive(zip_data, metadata_path, metadata, plugin_source_name)
-
-    return recommendation_count
+        _lint_metadata(metadata, plugin_source_name, result)
+        _lint_readme_in_archive(zip_data, metadata_path, plugin_source_name, result)
+        _check_components_in_archive(zip_data, metadata_path, metadata, plugin_source_name, result)
 
 
 @click.command()
@@ -466,10 +421,8 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str) -> int:
 )
 def lint_plugin_directory(path: str) -> None:
     """Lint an IDA plugin directory, archive (.zip file), or HTTPS URL."""
-    global _error_count
-    _error_count = 0
+    result = LintResult()
 
-    recommendation_count = 0
     if path.startswith("https://"):
         logger.info("linting from HTTP URL")
         try:
@@ -482,7 +435,7 @@ def lint_plugin_directory(path: str) -> None:
             console.print(f"[red]Error[/red]: Failed to fetch archive from {path}: {e}")
             raise click.Abort()
 
-        recommendation_count = _lint_plugin_archive(buf, path)
+        _lint_plugin_archive(buf, path, result)
 
     else:
         plugin_path = Path(path).expanduser().resolve()
@@ -496,15 +449,15 @@ def lint_plugin_directory(path: str) -> None:
                 raise click.Abort()
 
             zip_data = plugin_path.read_bytes()
-            recommendation_count = _lint_plugin_archive(zip_data, str(plugin_path))
+            _lint_plugin_archive(zip_data, str(plugin_path), result)
         elif plugin_path.is_dir():
-            recommendation_count = _lint_plugin_directory(plugin_path)
+            _lint_plugin_directory(plugin_path, result)
         else:
             console.print(f"[red]Error[/red]: Path must be a directory or .zip file: {plugin_path}")
             raise click.Abort()
 
-    if not recommendation_count:
+    if not result.recommendations and not result.errors:
         console.print("[green]no recommendations[/green]")
 
-    if _error_count:
+    if result.errors:
         raise click.Abort()

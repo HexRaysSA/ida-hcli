@@ -18,7 +18,7 @@ from fixtures import make_test_install_context
 from pydantic import ValidationError
 
 from hcli.commands.plugin import plugin as plugin_group
-from hcli.commands.plugin.lint import _check_dependency_specs
+from hcli.commands.plugin.lint import LintResult, _check_dependency_specs
 from hcli.lib.ida.plugin import IDAMetadataDescriptor
 from hcli.lib.ida.plugin.dependencies import install_dependencies
 from hcli.lib.ida.plugin.install import (
@@ -893,8 +893,9 @@ def test_cross_repo_transitive_dep_resolves(virtual_ida_environment):
 def test_lint_valid_dependencies(capsys):
     data = _metadata_with_deps(["dep-a", "dep-b==1.0.0"])
     descriptor = IDAMetadataDescriptor.model_validate(data)
-    count = _check_dependency_specs(descriptor, "test")
-    assert count == 0
+    result = LintResult()
+    _check_dependency_specs(descriptor, "test", result)
+    assert result == LintResult(recommendations=0)
 
 
 def test_lint_valid_mixed_dependencies(capsys):
@@ -905,15 +906,17 @@ def test_lint_valid_mixed_dependencies(capsys):
         ]
     )
     descriptor = IDAMetadataDescriptor.model_validate(data)
-    count = _check_dependency_specs(descriptor, "test")
-    assert count == 0
+    result = LintResult()
+    _check_dependency_specs(descriptor, "test", result)
+    assert result == LintResult(recommendations=0)
 
 
 def test_lint_bare_dep_warns_for_non_community_plugin(capsys):
     data = _make_plugin_metadata("my-pack", "1.0.0", deps=["dep-a"], host=HOST_B)
     descriptor = IDAMetadataDescriptor.model_validate(data)
-    count = _check_dependency_specs(descriptor, "test")
-    assert count == 1
+    result = LintResult()
+    _check_dependency_specs(descriptor, "test", result)
+    assert result == LintResult(recommendations=1)
     captured = capsys.readouterr()
     assert "name@host" in captured.out
 
@@ -921,15 +924,17 @@ def test_lint_bare_dep_warns_for_non_community_plugin(capsys):
 def test_lint_qualified_dep_no_warning_for_non_community_plugin(capsys):
     data = _make_plugin_metadata("my-pack", "1.0.0", deps=[f"dep-a@{HOST}"], host=HOST_B)
     descriptor = IDAMetadataDescriptor.model_validate(data)
-    count = _check_dependency_specs(descriptor, "test")
-    assert count == 0
+    result = LintResult()
+    _check_dependency_specs(descriptor, "test", result)
+    assert result == LintResult(recommendations=0)
 
 
 def test_lint_bare_dep_no_warning_for_community_plugin(capsys):
     data = _make_plugin_metadata("my-pack", "1.0.0", deps=["dep-a"], host=HOST)
     descriptor = IDAMetadataDescriptor.model_validate(data)
-    count = _check_dependency_specs(descriptor, "test")
-    assert count == 0
+    result = LintResult()
+    _check_dependency_specs(descriptor, "test", result)
+    assert result == LintResult(recommendations=0)
 
 
 # ---------------------------------------------------------------------------
