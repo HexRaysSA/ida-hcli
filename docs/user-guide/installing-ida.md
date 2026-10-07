@@ -112,8 +112,9 @@ Dry run mode - no changes will be made
 Would perform the following actions:
   1. Extract installer to: /Applications/IDA Professional 9.2.app
   2. Install license to: /Applications/IDA Professional 9.2.app/Contents/MacOS
-  3. Update default IDA path in: /Users/user/.idapro/ida-config.json
-  4. Accept EULA
+  3. Set as hcli default IDA instance
+  4. Update default IDA path in: /Users/user/.idapro/ida-config.json (only if the installation includes idalib)
+  5. Accept EULA (only if the installation includes idalib)
 ```
 
 Now, if you know exactly which version of IDA you want, you can download and install it in a single command.
@@ -143,8 +144,9 @@ Dry run mode - no changes will be made
 Would perform the following actions:
   1. Extract installer to: /Applications/IDA Professional 9.2.app
   2. Install license to: /Applications/IDA Professional 9.2.app/Contents/MacOS
-  3. Update default IDA path in: /Users/user/.idapro/ida-config.json
-  4. Accept EULA
+  3. Set as hcli default IDA instance
+  4. Update default IDA path in: /Users/user/.idapro/ida-config.json (only if the installation includes idalib)
+  5. Accept EULA (only if the installation includes idalib)
 ```
 
 `--download-id` also accepts a tag instead of a full asset key, so you do not have to look the key up. A tag is `category:version`, which resolves the OS automatically, or `category:version:os` to pin it:

@@ -169,16 +169,24 @@ async def install(
 
             if dry_run:
                 console.print("\n[bold cyan]Dry run mode - no changes will be made[/bold cyan]")
-                console.print("\n[bold]Would perform the following actions:[/bold]")
-                console.print(f"  1. Extract installer to: {install_dir_path}")
+                # whether the installation includes idalib is only known after extraction,
+                # and the idalib configuration and EULA acceptance depend on it.
+                actions = [f"Extract installer to: {install_dir_path}"]
                 if license_id:
-                    license_dir_path = get_license_dir(install_dir_path)
-                    console.print(f"  2. Install license to: {license_dir_path}")
+                    actions.append(f"Install license to: {get_license_dir(install_dir_path)}")
                 if set_default:
-                    config_path = get_ida_config_path()
-                    console.print(f"  3. Update default IDA path in: {config_path}")
+                    actions.extend(
+                        [
+                            "Set as hcli default IDA instance",
+                            f"Update default IDA path in: {get_ida_config_path()} (only if the installation includes idalib)",
+                        ]
+                    )
                 if eula:
-                    console.print("  4. Accept EULA")
+                    actions.append("Accept EULA (only if the installation includes idalib)")
+
+                console.print("\n[bold]Would perform the following actions:[/bold]")
+                for i, action in enumerate(actions, start=1):
+                    console.print(f"  {i}. {action}")
                 return
 
             if not auto_confirm and not Confirm.ask("\n[bold yellow]Proceed with installation?[/bold yellow]"):
