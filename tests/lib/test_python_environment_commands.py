@@ -83,6 +83,22 @@ def no_ida(tmp_path: Path, monkeypatch):
     yield
 
 
+def test_diagnostics_report_a_missing_idat(virtual_ida_environment, no_ida, monkeypatch):
+    """IDA Free has no idat: the diagnostic commands must still print their reports."""
+    unset_env_var(monkeypatch, "HCLI_CURRENT_IDA_PYTHON_EXE")
+
+    result = _run(["doctor", "--json"])
+    assert result.exit_code == 1, result.output
+    report = json.loads(result.stdout)
+    assert report["ok"] is False
+    assert "can't find idat" in report["python_exe_error"]
+    assert "python-not-found" in [f["id"] for f in report["findings"]]
+
+    result = _run(["explain-environment", "--json"])
+    assert result.exit_code == 0, result.output
+    assert "can't find idat" in json.loads(result.stdout)["python_environment"]["python_exe_error"]
+
+
 def test_create_environment_creates_venv_at_idausr_and_is_idempotent(virtual_ida_environment, no_ida):
     idausr = Path(os.environ["HCLI_IDAUSR"])
 

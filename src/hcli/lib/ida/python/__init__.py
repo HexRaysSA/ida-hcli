@@ -228,6 +228,7 @@ def probe_current_python_info() -> IdatProbe:
 
     Raises:
         RuntimeError: if idat can't be run or emits no result.
+        ValueError: if there's no current IDA installation, or it has no idat.
     """
     if is_running_in_ida():
         return get_running_python_info()
@@ -291,9 +292,11 @@ def resolve_current_python() -> ResolvedPython:
 
     try:
         info = probe_current_python_info()
-    except RuntimeError as e:
+    except (RuntimeError, ValueError) as e:
+        # ValueError covers a missing installation directory and a missing idat
+        # (IDA Free has none), which diagnostics like `doctor` must report too.
         raise PythonNotFoundError(
-            "failed to run idat to detect IDA's Python interpreter. "
+            f"failed to run idat to detect IDA's Python interpreter: {str(e).partition(chr(10))[0]}. "
             "If you know the interpreter path, set HCLI_CURRENT_IDA_PYTHON_EXE=/path/to/python and try again."
         ) from e
 
