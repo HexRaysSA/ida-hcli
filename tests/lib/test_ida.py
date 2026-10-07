@@ -374,7 +374,7 @@ def test_installer_args_omit_install_python_for_ida_free(filename):
 def test_installer_args_omit_install_python_off_windows(os_name):
     product = IdaProduct.from_installer_filename("ida-pro_93_x64linux.run")
     args = get_installer_args(Path("/opt/ida"), product, os_name)
-    assert args == ["--mode", "unattended", "--debugtrace", "debug.log", "--prefix", str(Path("/opt/ida"))]
+    assert args == ["--mode", "unattended", "--prefix", str(Path("/opt/ida"))]
 
 
 def test_run_installer_reports_installer_output_on_failure():
