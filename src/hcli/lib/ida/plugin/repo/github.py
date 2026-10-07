@@ -254,7 +254,7 @@ def _get_github_http() -> HTTPClient:
             f"transient GitHub error ({rs.outcome.exception()!r}), retrying in {rs.next_action.sleep:.0f}s "
             f"(attempt {rs.attempt_number})"
         )
-        if rs.outcome
+        if rs.outcome and rs.next_action
         else None
     ),
 )
