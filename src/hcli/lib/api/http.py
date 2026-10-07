@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import ssl
 from collections.abc import AsyncIterator, Iterator
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import httpx
 
 from hcli import USER_AGENT
 from hcli.env import ENV
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
 
 
 class NetworkError(Exception):
@@ -172,14 +175,14 @@ class HTTPClient:
             await self._client.aclose()
             self._client = None
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, *exc_info: object) -> None:
         await self.aclose()
