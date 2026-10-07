@@ -460,9 +460,10 @@ class AuthService:
     async def add_api_key_credentials(self, name: str, token: str) -> Credentials | None:
         """Add a new API key credentials."""
         # Get user email from API
-        try:
-            from hcli.lib.api.auth import auth
+        from hcli.lib.api.auth import auth
+        from hcli.lib.api.common import APIError
 
+        try:
             # Temporarily set the API key to test it
             old_source = self._current_source
             temp_source = Credentials.create_credentials("temp", CredentialType.KEY, token, "temp@example.com")
@@ -481,7 +482,10 @@ class AuthService:
             finally:
                 self._current_source = old_source
 
-        except Exception:
+        # A rejected key or an unreadable answer (e.g. a captive portal's HTML page;
+        # JSONDecodeError and pydantic's ValidationError are ValueErrors) means "invalid".
+        # Network and TLS errors must reach the caller.
+        except (APIError, ValueError):
             return None
 
     def logout_current(self) -> None:

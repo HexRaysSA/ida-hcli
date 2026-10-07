@@ -4,9 +4,12 @@ from . import __version__
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
-    """Parse a boolean environment variable using one consistent truthy set."""
+    """Parse a boolean environment variable using one consistent truthy set.
+
+    Set-but-empty counts as unset, so `export HCLI_USE_SYSTEM_CERTS=` keeps the default.
+    """
     raw = os.getenv(name)
-    if raw is None:
+    if raw is None or not raw.strip():
         return default
     return raw.strip().lower() in ("true", "yes", "on", "1")
 
@@ -80,6 +83,9 @@ class ENV:
     HCLI_VERSION_EXTRA: str = os.getenv("HCLI_VERSION_EXTRA", "")
 
     HCLI_DISABLE_UPDATES: bool = _env_bool("HCLI_DISABLE_UPDATES")
+    # Verify TLS against the OS certificate store (Windows, macOS keychain, Linux CA
+    # bundle) instead of certifi, so corporate TLS-inspection roots are trusted.
+    HCLI_USE_SYSTEM_CERTS: bool = _env_bool("HCLI_USE_SYSTEM_CERTS", default=True)
 
     # IDA-specific environment variables
     IDAUSR = _LiveEnvOptional()
