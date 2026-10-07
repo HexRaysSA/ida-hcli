@@ -644,8 +644,42 @@ def test_lint_suite_missing_component_dir(virtual_ida_environment, tmp_path):
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["lint", str(suite_dir)])
+    assert result.exit_code != 0, result.output
     assert "comp-missing" in result.output
     assert "not found" in result.output.lower() or "error" in result.output.lower()
+
+
+@pytest.mark.parametrize("as_archive", [False, True])
+@pytest.mark.parametrize(
+    "breakage",
+    ["invalid-platform", "missing-version", "missing-entry-point"],
+)
+def test_lint_fails_on_invalid_metadata(virtual_ida_environment, tmp_path, breakage, as_archive):
+    meta = _make_plugin_metadata("my-plugin", "1.0.0")
+    files = {"my-plugin/my-plugin.py": "# plugin"}
+    if breakage == "invalid-platform":
+        meta["plugin"]["platforms"] = ["windows-arm32"]
+    elif breakage == "missing-version":
+        del meta["plugin"]["version"]
+    elif breakage == "missing-entry-point":
+        files = {}
+    files["my-plugin/ida-plugin.json"] = json.dumps(meta)
+
+    if as_archive:
+        target = tmp_path / "my-plugin.zip"
+        with zipfile.ZipFile(target, "w") as zf:
+            for name, content in files.items():
+                zf.writestr(name, content)
+    else:
+        for name, content in files.items():
+            (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / name).write_text(content)
+        target = tmp_path / "my-plugin"
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(plugin_group, ["lint", str(target)])
+    assert "validation failed" in result.output
+    assert result.exit_code != 0, result.output
 
 
 # ---------------------------------------------------------------------------
@@ -1426,6 +1460,7 @@ def test_lint_errors_on_expanded_component_objects(virtual_ida_environment, tmp_
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["lint", str(suite_dir)])
+    assert result.exit_code != 0, result.output
     output = result.output.replace("\n", " ").lower()
     assert "expanded metadata" in output or "string form" in output
 
@@ -1467,6 +1502,7 @@ def test_lint_errors_on_root_manifest_not_at_top_level(virtual_ida_environment, 
 
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(plugin_group, ["lint", str(zip_path)])
+    assert result.exit_code != 0, result.output
     output = result.output.replace("\n", " ").lower()
     assert "root manifest" in output
 
