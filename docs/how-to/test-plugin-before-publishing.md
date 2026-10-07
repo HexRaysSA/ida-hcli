@@ -62,42 +62,42 @@ hcli plugin lint https://github.com/username/plugin/releases/download/v1.0.0/plu
 
 **Success output:**
 
+When lint finds nothing to report, it prints:
+
 ```
-✓ Plugin validation successful!
+no recommendations
+```
 
-Plugin: my-awesome-plugin
-Version: 1.0.0
-Entry Point: plugin_entry.py
-IDA Versions: 9.1, 9.2
-Platforms: windows-x86_64, linux-x86_64, macos-aarch64
+If optional metadata is missing, lint prints a recommendation for each field instead. These don't block publishing, but address them to make your plugin easier to find:
 
-Warnings:
-  - Consider adding keywords to improve discoverability
-  - No description provided
-
-Suggestions:
-  - Add a logo (logoPath) for better visibility in the plugin browser
+```
+Recommendation (/path/to/your-plugin): ida-plugin.json: provide plugin.description
+  A one-line description improves discoverability in the plugin repository
+Recommendation (/path/to/your-plugin): ida-plugin.json: provide plugin.logoPath
+  A logo image (16:9 aspect ratio) makes your plugin more visually appealing
+Recommendation (/path/to/your-plugin): ida-plugin.json: provide plugin.keywords
+  Keywords improve search discoverability in the plugin repository
 ```
 
 **Error output:**
 
+When `ida-plugin.json` can't be loaded, lint prints the error and stops, so fix it and run lint again to find the next one. For example, a manifest without `plugin.version`:
+
 ```
-✗ Plugin validation failed!
-
-Errors:
-  - Missing required field: plugin.version
-  - Invalid JSON: Unexpected token '}' at line 15
-  - Entry point file 'plugin.py' not found
-  - Python dependency 'requets' not found on PyPI (did you mean 'requests'?)
-
-Fix these errors before publishing.
+Error: ida-plugin.json validation failed
+  Missing required field: plugin.version
 ```
 
 ### Step 3: Fix Common Validation Errors
 
-#### Error: "Invalid JSON syntax"
+#### Error: "Invalid JSON"
 
 **Cause:** Trailing commas or syntax errors in `ida-plugin.json`.
+
+```
+Error: ida-plugin.json validation failed
+  Invalid value for : Invalid JSON: trailing comma at line 15 column 3
+```
 
 **Solution:** Use a JSON validator or `jq`:
 
@@ -118,7 +118,7 @@ Fix trailing commas:
 
 #### Error: "Missing required field: plugin.version"
 
-**Cause:** Version field is missing or empty.
+**Cause:** Version field is missing.
 
 **Solution:** Add semantic version:
 
@@ -134,6 +134,10 @@ Fix trailing commas:
 
 **Cause:** File specified in `entryPoint` doesn't exist.
 
+```
+Error: ida-plugin.json validation failed: Entry point file not found in directory: 'plugin_entry.py'
+```
+
 **Solution:** Verify the file exists and path is correct. This path is relative to `ida-plugin.json`:
 
 ```bash
@@ -148,46 +152,28 @@ ls -l plugin_entry.py
 }
 ```
 
-#### Error: "Python dependency not found on PyPI"
+#### Error: "failed to parse version"
 
-**Cause:** Typo in dependency name or package doesn't exist.
+**Cause:** The version can't be parsed, most often because of a leading `v`.
 
-**Solution:** Verify package exists:
-
-```bash
-pip search requests  # or check pypi.org
+```
+Error: ida-plugin.json validation failed
+  Invalid value for plugin.version: Value error, failed to parse version: Version string lacks a numerical component: 'v1.0.0'
 ```
 
-Fix in `ida-plugin.json`:
-
-```json
-{
-  "plugin": {
-    "pythonDependencies": [
-      "requests>=2.28.0",  // ← Fixed typo from "requets"
-      "pydantic>=2.0"
-    ]
-  }
-}
-```
-
-#### Error: "Invalid version specifier"
-
-**Cause:** Version doesn't follow semantic versioning.
-
-**Solution:** Use format `MAJOR.MINOR.PATCH`:
+**Solution:** Use format `MAJOR.MINOR.PATCH`, without a leading `v`:
 
 ```json
 // ✗ Wrong
-{"version": "1.0"}
 {"version": "v1.0.0"}
-{"version": "1.01.0"}
-{"version": "1.0.0-beta"}  // Pre-release tags not fully supported yet
 
 // ✓ Correct
 {"version": "1.0.0"}
 {"version": "2.1.3"}
 ```
+
+!!! note
+    Lint does not check `pythonDependencies` against PyPI, so it won't catch a misspelled package name. Check names on [pypi.org](https://pypi.org) and test installation (Step 4).
 
 ### Step 4: Test Local Installation
 
