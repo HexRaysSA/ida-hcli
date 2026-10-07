@@ -131,6 +131,7 @@ async def install(
                         f"\n[red]Directory already exists: {install_dir_path}[/red]\n"
                         "Please remove it first or choose a different location with [bold]--install-dir[/bold].\n"
                     )
+                    raise click.exceptions.Exit(1)
                 return
 
             # prominent warning for #99: idat from IDA 9.2 on Linux fails to start if the path contains a space.
@@ -270,6 +271,8 @@ async def install(
 
             console.print("[green]Installation complete![/green]")
 
+    except click.exceptions.Exit:
+        raise
     except Exception as e:
         console.print(f"[red]Install failed: {e}[/red]")
         raise
