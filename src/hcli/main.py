@@ -101,7 +101,7 @@ def _get_status_section() -> str:
         try:
             ida_config = get_ida_config()
             idalib_dir = ida_config.paths.installation_directory
-            if idalib_dir:
+            if idalib_dir is not None and idalib_dir.is_absolute():
                 idalib_path = _normalize_install_dir(idalib_dir)
                 if idalib_path.exists() and is_idalib_capable_installation(idalib_path):
                     # Only show the path when it differs from the hcli default

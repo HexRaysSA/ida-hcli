@@ -1,3 +1,4 @@
+import json
 import os
 import platform
 import re
@@ -11,6 +12,7 @@ from fixtures import set_env_var, unset_env_var
 
 from hcli.lib.ida import (
     IdaProduct,
+    MissingCurrentInstallationDirectory,
     _is_ida_install_dir_name,
     _prepare_headless_ida_user_dir,
     detect_binary_arch,
@@ -59,6 +61,26 @@ def test_resolve_current_ida_install_directory_precedence(tmp_path, monkeypatch)
 
     resolved = resolve_current_ida_install_directory()
     assert (resolved.path, resolved.source) == (idadir, "$IDADIR")
+
+
+@pytest.mark.parametrize("configured", ["", "   ", "ida", "./ida"])
+def test_resolve_current_ida_install_directory_rejects_cwd_relative_config(tmp_path, monkeypatch, configured):
+    # #400: idapro writes an empty ida-install-dir, which must not select the working directory.
+    unset_env_var(monkeypatch, "HCLI_CURRENT_IDA_INSTALL_DIR")
+    unset_env_var(monkeypatch, "IDADIR")
+    monkeypatch.setattr("hcli.lib.ida.is_running_in_ida", lambda: False)
+    monkeypatch.setattr("hcli.lib.ida.find_hcli_default_ida_instance", lambda: None)
+    config_path = tmp_path / "ida-config.json"
+    monkeypatch.setattr("hcli.lib.ida.get_ida_config_path", lambda: config_path)
+    (tmp_path / "ida").mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    config_path.write_text(json.dumps({"Paths": {"ida-install-dir": configured}}), encoding="utf-8")
+    with pytest.raises(MissingCurrentInstallationDirectory):
+        resolve_current_ida_install_directory()
+
+    config_path.write_text(json.dumps({"Paths": {"ida-install-dir": str(tmp_path / "ida")}}), encoding="utf-8")
+    assert resolve_current_ida_install_directory().path == tmp_path / "ida"
 
 
 def test_resolve_current_ida_version_prefers_env(monkeypatch):

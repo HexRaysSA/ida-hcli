@@ -19,7 +19,7 @@ from typing import Any, Literal, NamedTuple
 
 import rich.console
 from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, ConfigDict, Field, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 from rich.markup import escape
 
 from hcli.env import ENV
@@ -798,6 +798,18 @@ class PathsConfig(BaseModel):
     # callers normalize via _normalize_install_dir().
     installation_directory: Path | None = Field(alias="ida-install-dir", default=None)
 
+    @field_validator("installation_directory", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: Any) -> Any:
+        """Treat an empty or whitespace-only value as unset.
+
+        idapro writes `"ida-install-dir": ""` when it creates the file, and
+        Path("") is Path("."), which would silently select the working directory.
+        """
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
 
 # The single-repository setting written by hcli <= 0.22, kept only so the
 # migration can recognise and replace it.
@@ -1107,8 +1119,13 @@ def resolve_current_ida_install_directory() -> ResolvedInstallDir:
         return ResolvedInstallDir(install_dir, f"hcli default instance '{name}'")
 
     config = get_ida_config()
-    if not config.paths.installation_directory:
+    if config.paths.installation_directory is None:
         raise MissingCurrentInstallationDirectory("directory doesn't exist")
+
+    # A relative path would resolve against the working directory, so whatever
+    # directory hcli runs in could supply the IDA binaries it executes.
+    if not config.paths.installation_directory.is_absolute():
+        raise MissingCurrentInstallationDirectory("ida-config.json invalid: ida-install-dir is not an absolute path")
 
     install_dir = _normalize_install_dir(config.paths.installation_directory)
 
