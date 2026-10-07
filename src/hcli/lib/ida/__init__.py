@@ -7,7 +7,6 @@ import ntpath
 import os
 import re
 import shutil
-import stat
 import struct
 import subprocess
 import tempfile
@@ -702,22 +701,19 @@ def _install_ida_unix(installer: Path, prefix: Path, product: IdaProduct) -> Non
     """Install IDA on Unix/Linux."""
     args = get_installer_args(prefix, product, "linux")
 
-    installer_path = Path(installer)
-
-    # If installer is not absolute and has no directory component, prefix with './'
-    if not installer_path.is_absolute() and installer_path.parent == Path("."):
-        installer_path = Path(f"./{installer_path}")
-
-    if not os.access(installer_path, os.X_OK):
-        logger.info(f"Setting executable permission on {installer_path}")
-        current_mode = os.stat(installer_path).st_mode
-        os.chmod(installer_path, current_mode | stat.S_IXUSR)
-
     home_dir = get_user_home_dir()
     share_dir = Path(home_dir) / ".local" / "share" / "applications"
     share_dir.mkdir(parents=True, exist_ok=True)
 
-    run_installer([str(installer_path)] + args)
+    # Portal downloads arrive without the execute bit, and the user may not be able to add it
+    # (read-only mount, file owned by someone else), so run a private executable copy instead.
+    # The copy goes next to the install directory, which is writable and must allow execution anyway.
+    with tempfile.TemporaryDirectory(prefix="hcli_", dir=prefix.parent) as temp_dir:
+        installer_copy = Path(temp_dir) / installer.name
+        shutil.copyfile(installer, installer_copy)
+        installer_copy.chmod(0o700)
+
+        run_installer([str(installer_copy)] + args)
 
 
 def _install_ida_windows(installer: Path, prefix: Path, product: IdaProduct) -> None:
