@@ -116,6 +116,10 @@ Give the target directory directly to skip the prompt:
 hcli license install idapro_96-0000-0000-01.hexlic ~/.idapro
 ```
 
+When input is not a terminal, such as in a script or CI, give the target directory.
+HCLI then creates it if it does not exist, and exits with an error if no target
+directory is given.
+
 `hcli license install` only copies the file. It does not download anything, so it
 works without logging in, and it does not change any IDA configuration.
 
