@@ -72,12 +72,15 @@ class PluginNameQueryResult(BaseModel):
     versions: list[VersionEntry]
     # Which configured repository served this plugin; see KeywordMatchEntry.repo.
     repo: str | None = None
+    # See get_disambiguating_host. Only shapes the install hint, so not reported.
+    install_host: str | None = Field(default=None, exclude=True)
 
 
 class PluginExactVersionQueryResult(BaseModel):
     plugin: dict[str, Any]
     download_locations: list[DownloadLocationEntry]
     repo: str | None = None
+    install_host: str | None = Field(default=None, exclude=True)
 
 
 class PluginVersionRangeQueryResult(BaseModel):
@@ -85,6 +88,7 @@ class PluginVersionRangeQueryResult(BaseModel):
     installed_version: str | None
     versions: list[VersionEntry]
     repo: str | None = None
+    install_host: str | None = Field(default=None, exclude=True)
 
 
 class KeywordMatchEntry(BaseModel):
@@ -268,9 +272,37 @@ def render_plugin_versions_text(entries: list[VersionEntry], installed_version: 
     console.print(table)
 
 
-def render_install_hint(name: str, repo: str | None, default_repo: str | None, version_spec: str = "") -> None:
-    """Show the exact install command, since a plugin outside the default repository needs its "repo/" prefix."""
+def get_disambiguating_host(
+    plugins: list[Plugin],
+    plugin: Plugin,
+    repo_of: Callable[[Plugin], str | None],
+) -> str | None:
+    """The host an install reference needs to select `plugin`, or None if its bare name is enough.
+
+    `plugin install` resolves a bare name within one repository and rejects it
+    when several plugins there share that name, so only those collisions count.
+    """
+    repo = repo_of(plugin)
+    wanted = plugin.name.lower()
+    namesakes = [p for p in plugins if p.name.lower() == wanted and repo_of(p) == repo]
+    return plugin.host if len(namesakes) > 1 else None
+
+
+def render_install_hint(
+    name: str,
+    repo: str | None,
+    default_repo: str | None,
+    version_spec: str = "",
+    host: str | None = None,
+) -> None:
+    """Show the exact install command.
+
+    A plugin outside the default repository needs its "repo/" prefix, and one
+    whose bare name collides needs its "@host" suffix.
+    """
     reference = format_install_reference(name, repo, default_repo) + version_spec
+    if host:
+        reference += f"@{host}"
     console.print()
     console.print(f"[grey69]install with:[/grey69] hcli plugin install {reference}", highlight=False)
 
@@ -312,6 +344,7 @@ def collect_plugin_name_query_result(
         installed_version=installed_version,
         versions=entries,
         repo=repo_of(plugin),
+        install_host=get_disambiguating_host(plugins, plugin, repo_of),
     )
 
 
@@ -323,7 +356,7 @@ def render_versions_query_text(
     render_plugin_metadata_text(result.plugin)
     render_plugin_versions_text(result.versions, result.installed_version, title)
     if any(entry.compatible for entry in result.versions):
-        render_install_hint(result.plugin["name"], result.repo, default_repo)
+        render_install_hint(result.plugin["name"], result.repo, default_repo, host=result.install_host)
 
 
 def render_plugin_name_query_text(result: PluginNameQueryResult, default_repo: str | None = None) -> None:
@@ -365,6 +398,7 @@ def collect_plugin_exact_version_query_result(
     plugin: Plugin,
     version: str,
     repo: str | None = None,
+    install_host: str | None = None,
 ) -> PluginExactVersionQueryResult:
     if version not in plugin.versions:
         raise KeyError(f"version {version} not found for plugin {plugin.name}")
@@ -375,6 +409,7 @@ def collect_plugin_exact_version_query_result(
         plugin=collect_plugin_metadata(metadata),
         download_locations=collect_download_locations(locations),
         repo=repo,
+        install_host=install_host,
     )
 
 
@@ -398,7 +433,13 @@ def render_plugin_exact_version_query_text(
 
     console.print("download locations:")
     console.print(table)
-    render_install_hint(result.plugin["name"], result.repo, default_repo, "==" + result.plugin["version"])
+    render_install_hint(
+        result.plugin["name"],
+        result.repo,
+        default_repo,
+        "==" + result.plugin["version"],
+        host=result.install_host,
+    )
 
 
 def collect_plugin_version_range_query_result(
@@ -408,6 +449,7 @@ def collect_plugin_version_range_query_result(
     current_platform: str,
     installed_records: list[InstalledPluginRecord],
     repo: str | None = None,
+    install_host: str | None = None,
 ) -> PluginVersionRangeQueryResult:
     matching_versions = get_matching_versions(plugin, ref.version_spec)
     if not matching_versions:
@@ -425,6 +467,7 @@ def collect_plugin_version_range_query_result(
         installed_version=installed_version,
         versions=entries,
         repo=repo,
+        install_host=install_host,
     )
 
 
@@ -445,12 +488,13 @@ def collect_plugin_spec_query_result(
 ) -> PluginExactVersionQueryResult | PluginVersionRangeQueryResult:
     plugin = get_plugin_by_name(plugins, ref.name, host=ref.host)
     repo = repo_of(plugin)
+    install_host = get_disambiguating_host(plugins, plugin, repo_of)
 
     if ref.version_spec.startswith("=="):
         version = ref.version_spec[2:]
         if not version:
             raise ValueError(f"invalid plugin version: {ref.version_spec!r}")
-        return collect_plugin_exact_version_query_result(plugin, version, repo=repo)
+        return collect_plugin_exact_version_query_result(plugin, version, repo=repo, install_host=install_host)
 
     return collect_plugin_version_range_query_result(
         plugin,
@@ -459,6 +503,7 @@ def collect_plugin_spec_query_result(
         current_platform,
         installed_records,
         repo=repo,
+        install_host=install_host,
     )
 
 
