@@ -161,7 +161,7 @@ class MainGroup(click.RichGroup):
                 AuthenticationError,
                 NotFoundError,
                 RateLimitError,
-                describe_tls_verification_error,
+                TLSVerificationError,
             )
             from hcli.lib.util.io import NoSpaceError
 
@@ -193,8 +193,8 @@ class MainGroup(click.RichGroup):
                 console.print(f"[red]API Error: {e}[/red]")
             elif isinstance(e, KeyboardInterrupt):
                 console.print("\n[yellow]Operation cancelled by user[/yellow]")
-            elif tls_message := describe_tls_verification_error(e):
-                console.print(f"[red]{tls_message}[/red]")
+            elif isinstance(e, TLSVerificationError):
+                console.print(f"[red]{e}[/red]")
             else:
                 console.print(f"[red]Unexpected error: {e}[/red]")
                 # Optionally include debug info in debug mode

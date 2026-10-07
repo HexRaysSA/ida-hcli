@@ -460,11 +460,10 @@ class AuthService:
     async def add_api_key_credentials(self, name: str, token: str) -> Credentials | None:
         """Add a new API key credentials."""
         # Get user email from API
+        from hcli.lib.api.auth import auth
         from hcli.lib.api.common import APIError
 
         try:
-            from hcli.lib.api.auth import auth
-
             # Temporarily set the API key to test it
             old_source = self._current_source
             temp_source = Credentials.create_credentials("temp", CredentialType.KEY, token, "temp@example.com")
