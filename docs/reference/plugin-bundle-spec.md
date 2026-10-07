@@ -227,7 +227,7 @@ A required dependency that cannot be resolved for a cell causes bundle creation 
 The preferred wheelhouse materialization path is one `pip download` invocation per target. For cross-target downloads HCLI must pass all compatibility options together:
 
 ```console
-python -m pip download \
+uv tool run --python <major.minor> pip download \
   --only-binary=:all: \
   --implementation cp \
   --python-version <major.minor> \
@@ -238,6 +238,8 @@ python -m pip download \
 ```
 
 `--platform` is repeatable. Linux targets should list every manylinux tag HCLI accepts, for example `manylinux_2_28_x86_64`, `manylinux_2_17_x86_64`, and `manylinux2014_x86_64`. macOS x86_64 targets should include the supported deployment baseline. Optional targets such as Windows ARM64 or musllinux should be explicit presets rather than inferred from x86_64 targets. Over-listing compatible tags is safer than under-listing them.
+
+Creating a bundle with Python dependencies requires [uv](https://docs.astral.sh/uv/), but not an IDA installation, unless `--platform current` or `--python current` asks for the current machine's target. pip evaluates the environment markers of dependencies, such as `python_version < "3.11"`, against the interpreter that runs it, so HCLI uses uv to run pip on a Python of each target cell's version. uv uses an installed Python of that version or downloads one.
 
 `uv pip compile --universal` may be used to produce one cross-platform lock or constraints file before materializing target wheelhouses. `uv pip install --python-platform ... --python ... --target ...` is also valid for producing an unpacked per-target site-packages tree; because the version 1 plugin bundle format stores wheel files, `pip download` remains the direct path for wheelhouse plugin bundles unless HCLI later adds an unpacked dependency tree format.
 
