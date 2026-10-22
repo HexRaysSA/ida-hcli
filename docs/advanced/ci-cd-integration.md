@@ -115,7 +115,7 @@ jobs:
             --download-id release/9.2/ida-pro/ida-pro_92_x64linux.run
 ```
 
-`--create-python-environment` creates a virtualenv at `$IDAUSR/venv` and sets `IDAPYTHON_VENV_EXECUTABLE`. Without it, plugins that depend on Python packages will fail to install. See [IDA's Python Environment](../user-guide/ida-python-environment.md).
+`--create-python-environment` creates a virtualenv at `$IDAUSR/venv` and sets `IDAPYTHON_VENV_EXECUTABLE`. HCLI also writes the variable to `$GITHUB_ENV`, so the later steps of the job use the virtualenv. Without it, plugins that depend on Python packages will fail to install. See [IDA's Python Environment](../user-guide/ida-python-environment.md).
 
 #### GitHub Actions Secrets
 

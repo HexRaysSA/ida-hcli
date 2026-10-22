@@ -445,6 +445,8 @@ def create_environment(
     HCLI shows a plan of the changes it will make. In an interactive
     terminal it asks for confirmation; in scripts and CI it applies
     them automatically. Pass --no-configure-env-var to skip this step.
+    In a GitHub Actions job, HCLI also adds the variable to $GITHUB_ENV,
+    so the later steps of the job use the environment.
     """
     result = run_create_environment(
         path=path,

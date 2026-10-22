@@ -74,6 +74,8 @@ Shell profiles (`.zshrc`, `.bashrc`) only affect processes started from that she
 
 **Linux** creates `~/.config/environment.d/50-hexrays-idapython-venv-executable.conf` for graphical desktop sessions (GNOME, KDE, and other systemd-based desktops). It also adds an export to the shell login profile (`~/.profile`, `~/.bash_profile`, or `~/.zprofile`) for terminal and SSH sessions. Log out and back in for the changes to take effect. On non-systemd systems, only the shell profile is written.
 
+**GitHub Actions**: later steps of a job don't inherit any of the mechanisms above. When `GITHUB_ACTIONS` is `true`, HCLI also appends `IDAPYTHON_VENV_EXECUTABLE` to the `$GITHUB_ENV` file, so the later steps of the job use the virtualenv.
+
 In Docker containers, the system Python is not writable (PEP 668 externally-managed), so you still need a venv. Use `--create-python-environment` when installing IDA and set `IDAPYTHON_VENV_EXECUTABLE` in the Dockerfile. See [Docker](../advanced/docker/README.md) for a working example.
 
 ## Checking the setup
