@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import rich.status
+from packaging.requirements import InvalidRequirement, Requirement
+from rich.markup import escape
 
 if TYPE_CHECKING:
     from hcli.lib.ida.plugin.repo import BasePluginRepo
@@ -404,13 +406,25 @@ def get_installed_plugin_paths() -> list[Path]:
     return [r.path for r in get_installed_plugin_records()]
 
 
-def collect_all_python_dependencies(
-    new_plugin_deps: list[str],
+def _warn_about_dependency(plugin_name: str, dependency: str, problem: str) -> None:
+    stderr_console.print(
+        f"[bold yellow]Warning:[/bold yellow] plugin {escape(plugin_name)} depends on {escape(dependency)}. {problem}",
+        soft_wrap=True,
+    )
+
+
+def collect_python_dependency_constraints(
     installed_records: list[InstalledPluginRecord],
     exclude_names: set[str] | None = None,
 ) -> list[str]:
-    """Collect Python dependencies from all installed plugins plus a new plugin's deps."""
-    all_deps: list[str] = []
+    """Collect the Python dependencies of installed plugins as pip constraints.
+
+    A constraint stops pip from selecting a version that an installed plugin rejects,
+    but pip does not install it. Thus a missing dependency of an installed plugin
+    cannot block the install of a different plugin. Pip rejects extras in constraints,
+    so they are removed, with a warning.
+    """
+    constraints: list[str] = []
     for record in installed_records:
         if exclude_names and record.name in exclude_names:
             continue
@@ -419,9 +433,21 @@ def collect_all_python_dependencies(
         except Exception as e:
             logger.debug("skipping unreadable plugin dependencies at %s: %s", record.path, e)
             continue
-        all_deps.extend(deps)
-    all_deps.extend(new_plugin_deps)
-    return all_deps
+        for dep in deps:
+            try:
+                requirement = Requirement(dep)
+            except InvalidRequirement:
+                _warn_about_dependency(record.name, dep, "This is not a valid requirement, so HCLI ignores it.")
+                continue
+            if requirement.extras:
+                requirement.extras = set()
+                _warn_about_dependency(
+                    record.name,
+                    dep,
+                    f"HCLI makes sure that this install keeps {escape(str(requirement))}, but not the packages of the extras.",
+                )
+            constraints.append(str(requirement))
+    return constraints
 
 
 @dataclass
@@ -650,7 +676,7 @@ def install_python_dependencies(
     *,
     excluded_plugins: set[str] | None = None,
 ) -> None:
-    """Validate and install Python dependencies, merging with existing plugins' deps.
+    """Validate and install Python dependencies, constrained by the dependencies of installed plugins.
 
     Raises:
         PipNotAvailableError: If pip is not available.
@@ -661,16 +687,18 @@ def install_python_dependencies(
         return
 
     with rich.status.Status("collecting existing Python dependencies", console=stderr_console):
-        all_deps = collect_all_python_dependencies(
-            python_deps, get_installed_plugin_records(), exclude_names=excluded_plugins
+        constraints = collect_python_dependency_constraints(
+            get_installed_plugin_records(), exclude_names=excluded_plugins
         )
 
     python_exe = resolve_python_for_dependencies(python_deps, check_environment=ctx.options.check_environment)
 
-    verify_pip_can_install_packages(python_exe, all_deps, pip_options=ctx.options.pip_options)
+    verify_pip_can_install_packages(
+        python_exe, python_deps, pip_options=ctx.options.pip_options, constraints=constraints
+    )
 
     with rich.status.Status(f"installing Python dependencies: {', '.join(python_deps)}", console=stderr_console):
-        pip_install_packages(python_exe, all_deps, pip_options=ctx.options.pip_options)
+        pip_install_packages(python_exe, python_deps, pip_options=ctx.options.pip_options, constraints=constraints)
 
 
 def validate_archive_entry(file_info: zipfile.ZipInfo, relative_path: pathlib.PurePosixPath) -> None:

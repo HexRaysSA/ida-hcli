@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import functools
 import json
 import logging
 import os
 import subprocess
-from collections.abc import Sequence
+import tempfile
+from collections.abc import Generator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -415,22 +417,40 @@ def _raise_for_known_pip_errors(error_text: str, python_exe: Path) -> None:
         )
 
 
+@contextlib.contextmanager
+def _get_constraint_args(constraints: Sequence[str]) -> Generator[list[str], None, None]:
+    if not constraints:
+        yield []
+        return
+    with tempfile.TemporaryDirectory(prefix="hcli-pip-") as directory:
+        path = Path(directory) / "constraints.txt"
+        path.write_text("\n".join(constraints) + "\n", encoding="utf-8")
+        yield ["--constraint", str(path)]
+
+
 def verify_pip_can_install_packages(
     python_exe: Path,
     packages: list[str],
     pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    constraints: Sequence[str] = (),
 ):
     """Check if the given Python packages (e.g., "foo>=v1.0,<3") can be installed.
+
+    Constraints limit the versions pip may select, but pip does not install them.
 
     Raises:
         CantInstallPackagesError: if pip dry-run fails.
     """
-    process = subprocess.run(
-        [str(python_exe), "-m", "pip", "install", "--dry-run"] + pip_options.build_args() + packages,
-        capture_output=True,
-        check=False,
-        env=get_environment_for_python(python_exe),
-    )
+    with _get_constraint_args(constraints) as constraint_args:
+        process = subprocess.run(
+            [str(python_exe), "-m", "pip", "install", "--dry-run"]
+            + pip_options.build_args()
+            + constraint_args
+            + packages,
+            capture_output=True,
+            check=False,
+            env=get_environment_for_python(python_exe),
+        )
     stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
         logger.debug("can't install packages")
@@ -446,18 +466,22 @@ def pip_install_packages(
     python_exe: Path,
     packages: list[str],
     pip_options: PipOptions = PIP_OPTIONS_DEFAULT,
+    constraints: Sequence[str] = (),
 ):
     """Install the given Python packages (e.g., "foo>=v1.0,<3").
+
+    Constraints limit the versions pip may select, but pip does not install them.
 
     Raises:
         CantInstallPackagesError: if pip install fails.
     """
-    process = subprocess.run(
-        [str(python_exe), "-m", "pip", "install"] + pip_options.build_args() + packages,
-        capture_output=True,
-        check=False,
-        env=get_environment_for_python(python_exe),
-    )
+    with _get_constraint_args(constraints) as constraint_args:
+        process = subprocess.run(
+            [str(python_exe), "-m", "pip", "install"] + pip_options.build_args() + constraint_args + packages,
+            capture_output=True,
+            check=False,
+            env=get_environment_for_python(python_exe),
+        )
     stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
         logger.debug("can't install packages")
