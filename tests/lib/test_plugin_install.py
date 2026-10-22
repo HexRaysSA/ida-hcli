@@ -19,6 +19,7 @@ from fixtures import (
     run_hcli,
     temp_env_var,
 )
+from test_plugin_bundle_commands import _make_wheel
 
 from hcli.commands.plugin import plugin as plugin_group
 from hcli.lib.console import stderr_console
@@ -43,7 +44,7 @@ from hcli.lib.ida.plugin.install import (
     upgrade_plugin_archive,
     validate_archive_entry,
 )
-from hcli.lib.ida.python import IdatProbe, ResolvedPython
+from hcli.lib.ida.python import CantInstallPackagesError, IdatProbe, PipOptions, ResolvedPython
 from hcli.lib.venv import PythonVersion
 
 logger = logging.getLogger(__name__)
@@ -229,6 +230,71 @@ def test_plugin_python_dependencies(virtual_ida_environment_with_venv):
 
     freeze = pip_freeze(Path(os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"]))
     assert "packaging==25.0" in freeze
+
+
+def _write_installed_plugin(name: str, python_dependencies: list[str]) -> None:
+    plugin_dir = get_plugin_directory(name)
+    plugin_dir.mkdir(parents=True)
+    metadata = {
+        "IDAMetadataDescriptorVersion": 1,
+        "plugin": {
+            "name": name,
+            "version": "1.0.0",
+            "entryPoint": "main.py",
+            "pythonDependencies": python_dependencies,
+            "urls": {"repository": f"https://github.com/example/{name}"},
+            "authors": [{"name": "x", "email": "x@example.com"}],
+        },
+    }
+    (plugin_dir / "ida-plugin.json").write_text(json.dumps(metadata), encoding="utf-8")
+    (plugin_dir / "main.py").write_text("def PLUGIN_ENTRY(): pass\n", encoding="utf-8")
+
+
+@pytest.fixture
+def offline_install_context(tmp_path):
+    """InstallContext whose only package source holds `present-pkg` 1.0."""
+    wheels_dir = tmp_path / "wheels"
+    wheels_dir.mkdir()
+    _make_wheel(wheels_dir, "present-pkg")
+    pip_options = PipOptions(offline=True, find_links=(wheels_dir,), disable_pip_version_check=True)
+    return make_test_install_context(pip_options=pip_options)
+
+
+def test_plugin_python_dependencies_ignore_missing_dependencies_of_other_plugins(
+    virtual_ida_environment_with_venv, offline_install_context
+):
+    from hcli.lib.ida.plugin.install import install_python_dependencies
+
+    _write_installed_plugin("other-plugin", ["missing-pkg"])
+
+    install_python_dependencies(["present-pkg"], offline_install_context)
+
+    freeze = pip_freeze(Path(os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"]))
+    assert "present-pkg==1.0" in freeze
+    assert "missing-pkg" not in freeze
+
+
+def test_plugin_python_dependencies_conflict_with_other_plugins(
+    virtual_ida_environment_with_venv, offline_install_context
+):
+    from hcli.lib.ida.plugin.install import install_python_dependencies
+
+    _write_installed_plugin("other-plugin", ["present-pkg<1"])
+
+    with pytest.raises(CantInstallPackagesError):
+        install_python_dependencies(["present-pkg"], offline_install_context)
+
+
+def test_plugin_python_dependencies_warn_about_extras_of_other_plugins(
+    virtual_ida_environment_with_venv, offline_install_context, capsys
+):
+    from hcli.lib.ida.plugin.install import install_python_dependencies
+
+    _write_installed_plugin("other-plugin", ["missing-pkg[extra]>=1"])
+
+    install_python_dependencies(["present-pkg"], offline_install_context)
+
+    assert "plugin other-plugin depends on missing-pkg[extra]>=1" in capsys.readouterr().err
 
 
 def test_plugin_python_dependencies_rejects_externally_managed_python_without_running_pip(

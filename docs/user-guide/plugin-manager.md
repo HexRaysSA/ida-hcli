@@ -58,7 +58,7 @@ Error: cannot resolve ida-mcp@https://github.com/hexrayssa/ida-mcp for macos-aar
 
 ## Python environment
 
-Plugins that declare Python dependencies need a working Python environment. HCLI checks this before installing dependencies. If something is wrong, the install stops and points you to `hcli ida python doctor` for details. See [IDA's Python Environment](ida-python-environment.md) for setup.
+Plugins that declare Python dependencies need a working Python environment. HCLI checks this before installing dependencies. If something is wrong, the install stops and points you to `hcli ida python doctor` for details. See [IDA's Python Environment](ida-python-environment.md) for setup. HCLI installs only the Python dependencies of the plugin that you install. It makes sure that their versions agree with the Python dependencies of the plugins that are already installed, but it does not install a dependency of those plugins that is missing.
 
 If your Python setup works but does not match the recommended configuration, pass `--no-python-environment-check` to skip the check:
 
