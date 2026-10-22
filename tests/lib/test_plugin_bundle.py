@@ -108,6 +108,8 @@ def test_bundle_path_relative_ok():
         ("/etc/passwd", "absolute"),
         ("plugins/../../../etc/passwd", "traversal"),
         ("plugins\\foo.zip", "backslash"),
+        ("wheelhouse/D:/evil.whl", "drive letter"),
+        ("wheelhouse/D:evil.whl", "drive letter"),
     ],
 )
 def test_bundle_path_rejected(member_path, message):

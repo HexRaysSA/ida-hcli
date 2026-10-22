@@ -414,6 +414,10 @@ def test_extract_zip_subdirectory_to_posix_paths():
         # 0xA in the high nibble of external_attr marks a Unix symlink
         ("plugin/evil_symlink", "evil_symlink", 0xA0000000, "Symlinks not allowed"),
         ("/etc/passwd", "/etc/passwd", 0, "Absolute path"),
+        ("D:/idausr/ida-config.json", "D:/idausr/ida-config.json", 0, "Drive letter"),
+        ("plugin/D:/idausr/ida-config.json", "D:/idausr/ida-config.json", 0, "Drive letter"),
+        ("plugin/d:evil.py", "d:evil.py", 0, "Drive letter"),
+        ("plugin/main.py:stream", "main.py:stream", 0, "Drive letter"),
     ],
 )
 def test_validate_archive_entry_rejects_unsafe_entries(
@@ -602,6 +606,72 @@ def test_failed_extraction_leaves_no_partial_destination():
 
         assert not destination.exists()
         assert list(get_trash_directory(destination.parent).iterdir()) == []
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="drive letters are Windows-specific")
+def test_extraction_rejects_drive_letter_entry():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        outside = Path(temp_dir) / "outside" / "evil.py"
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("plugin/ida-plugin.json", '{"test": true}')
+            zf.writestr("plugin/" + outside.as_posix(), "malicious content")
+        zip_data = buf.getvalue()
+
+        destination = Path(temp_dir) / "plugins" / "myplugin"
+        destination.parent.mkdir()
+        with pytest.raises(ValueError):
+            extract_zip_subdirectory_to(zip_data, Path("plugin"), destination)
+
+        assert not destination.exists()
+        assert not outside.exists()
+
+
+windows_only = pytest.mark.skipif(sys.platform != "win32", reason="zipfile converts backslashes only on Windows")
+
+
+@pytest.mark.parametrize(
+    "member",
+    [
+        "//server/share/x.py",
+        pytest.param("\\\\server\\share\\x.py", marks=windows_only),
+        pytest.param("\\\\?\\C:\\x.py", marks=windows_only),
+    ],
+)
+def test_extraction_rejects_unc_entry_at_root(member: str):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("ida-plugin.json", '{"test": true}')
+        zf.writestr(member, "malicious content")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        destination = Path(temp_dir) / "plugins" / "myplugin"
+        destination.parent.mkdir()
+        with pytest.raises(ValueError):
+            extract_zip_subdirectory_to(buf.getvalue(), Path("."), destination)
+
+        assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    "member",
+    [
+        "plugin//server/share/x.py",
+        pytest.param("plugin/\\\\server\\share\\x.py", marks=windows_only),
+    ],
+)
+def test_extraction_keeps_unc_entry_in_subdirectory_inside(member: str):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("plugin/ida-plugin.json", '{"test": true}')
+        zf.writestr(member, "content")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        destination = Path(temp_dir) / "plugins" / "myplugin"
+        destination.parent.mkdir()
+        extract_zip_subdirectory_to(buf.getvalue(), Path("plugin"), destination)
+
+        assert (destination / "server" / "share" / "x.py").read_text() == "content"
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="file locking semantics are Windows-specific")

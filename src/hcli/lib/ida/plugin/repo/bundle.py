@@ -68,6 +68,8 @@ def _validate_bundle_path(member_path: str) -> None:
         raise ValueError(f"path traversal in bundle: {member_path}")
     if "\\" in member_path:
         raise ValueError(f"backslash in bundle path: {member_path}")
+    if ":" in member_path:
+        raise ValueError(f"drive letter or stream in bundle path: {member_path}")
 
 
 def is_plugin_bundle_zip(path: Path) -> bool:
@@ -194,6 +196,8 @@ class PluginBundleRepo(BasePluginRepo):
             seen.add(relative.name)
 
             target_file = dest / relative.name
+            if target_file.resolve().parent != dest.resolve():
+                raise ValueError(f"path traversal in wheelhouse: {info.filename}")
             with self._zf.open(info.filename) as src, target_file.open("wb") as dst:
                 import shutil
 

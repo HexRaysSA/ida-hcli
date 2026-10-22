@@ -680,6 +680,7 @@ def validate_archive_entry(file_info: zipfile.ZipInfo, relative_path: pathlib.Pu
     - Symlinks (which can point outside the extraction directory)
     - Absolute paths
     - Paths containing '..' (parent directory references)
+    - Paths containing ':' (Windows drive letters and alternate data streams)
 
     Raises:
         ValueError: If the entry is unsafe to extract
@@ -699,6 +700,11 @@ def validate_archive_entry(file_info: zipfile.ZipInfo, relative_path: pathlib.Pu
     if ".." in relative_path.parts:
         logger.warning("Rejecting path traversal in archive: %s", file_info.filename)
         raise ValueError(f"Path traversal in archive: {file_info.filename}")
+
+    # Reject drive letters: on Windows, joining "D:/x" or "D:x" onto a path discards the base
+    if ":" in str(relative_path):
+        logger.warning("Rejecting drive or stream path in archive: %s", file_info.filename)
+        raise ValueError(f"Drive letter or stream in archive path: {file_info.filename}")
 
 
 def should_extract_plugin_archive_path(plugin_dir_prefix: str, file_info: zipfile.ZipInfo) -> bool:
@@ -763,6 +769,8 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
 
                 relative_path = pathlib.PurePosixPath(file_info.filename).relative_to(plugin_dir_prefix.rstrip("/"))
                 target_path = temp_path / relative_path
+                if not target_path.resolve().is_relative_to(temp_path.resolve()):
+                    raise ValueError(f"Path traversal in archive: {file_info.filename}")
 
                 if file_info.is_dir():
                     logger.debug("creating directory: %s", relative_path)
