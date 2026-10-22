@@ -14,6 +14,7 @@ Three layers:
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 import platform
@@ -87,6 +88,14 @@ def get_login_profile_path(shell: ShellKind, home: Path) -> Path | None:
     return None
 
 
+def get_github_env_file() -> Path | None:
+    """The file through which a GitHub Actions step sets variables for the later steps of its job."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return None
+    github_env = os.environ.get("GITHUB_ENV")
+    return Path(github_env) if github_env else None
+
+
 def render_shell_export(name: str, value: str, shell: ShellKind) -> str:
     if shell == "fish":
         return f'set -gx {name} "{value}"'
@@ -103,6 +112,7 @@ StepKind = Literal[
     "macos-launchctl-setenv",
     "linux-environment-d",
     "shell-profile",
+    "github-actions-env",
 ]
 
 
@@ -359,6 +369,23 @@ def _build_linux_plan(name: str, value: str, home: Path) -> ConfigurationPlan:
     )
 
 
+def _add_github_actions_step(plan: ConfigurationPlan, github_env: Path) -> ConfigurationPlan:
+    # later steps of a GitHub Actions job inherit none of the login session
+    # mechanisms above, only the variables that a step writes to $GITHUB_ENV.
+    name, value = plan.env_var_name, plan.env_var_value
+    step = ConfigurationStep(
+        kind="github-actions-env",
+        description=f"Add {name} to $GITHUB_ENV for the later steps of this GitHub Actions job",
+        file_path=github_env,
+        file_content=f"{name}={value}",
+        command=None,
+        needs_logout=False,
+        env_var_name=name,
+    )
+    manual = f"{plan.manual_instructions}\n\nFor the later steps of this GitHub Actions job, add to $GITHUB_ENV:\n  {name}={value}"
+    return dataclasses.replace(plan, steps=[*plan.steps, step], manual_instructions=manual)
+
+
 def build_configuration_plan(
     name: str,
     value: str,
@@ -369,10 +396,16 @@ def build_configuration_plan(
         home = Path.home()
 
     if is_windows():
-        return _build_windows_plan(name, value)
-    if is_macos():
-        return _build_macos_plan(name, value, home)
-    return _build_linux_plan(name, value, home)
+        plan = _build_windows_plan(name, value)
+    elif is_macos():
+        plan = _build_macos_plan(name, value, home)
+    else:
+        plan = _build_linux_plan(name, value, home)
+
+    github_env = get_github_env_file()
+    if github_env is not None:
+        plan = _add_github_actions_step(plan, github_env)
+    return plan
 
 
 # ---------------------------------------------------------------------------
@@ -401,6 +434,8 @@ def _write_file_step(step: ConfigurationStep) -> StepResult:
 
     if step.kind == "shell-profile":
         return _append_to_profile(step)
+    if step.kind == "github-actions-env":
+        return _append_to_github_env(step)
 
     if _file_already_has_content(step.file_path, step.file_content):
         return StepResult(step, success=True, skipped=True, message=f"{step.file_path} already configured")
@@ -468,6 +503,21 @@ def _append_to_profile(step: ConfigurationStep) -> StepResult:
             f.write("\n")
         f.write(line + "\n")
     return StepResult(step, success=True, skipped=False, message=f"Added to {step.file_path}")
+
+
+def _append_to_github_env(step: ConfigurationStep) -> StepResult:
+    assert step.file_path is not None
+    assert step.file_content is not None
+
+    # each line of $GITHUB_ENV is NAME=value, so a line break would start another variable.
+    if "\n" in step.file_content or "\r" in step.file_content:
+        return StepResult(
+            step, success=False, skipped=False, message="Cannot add a value with a line break to $GITHUB_ENV"
+        )
+
+    with step.file_path.open("a", encoding="utf-8") as f:
+        f.write(step.file_content + "\n")
+    return StepResult(step, success=True, skipped=False, message=f"Added {step.env_var_name} to $GITHUB_ENV")
 
 
 def _run_command_step(step: ConfigurationStep) -> StepResult:
