@@ -60,17 +60,36 @@ def test_doctor_passes_a_properly_configured_environment(virtual_ida_environment
     assert report["ok"] is True
 
 
-def test_doctor_fails_for_a_base_interpreter(virtual_ida_environment, monkeypatch):
+def test_doctor_warns_about_a_writable_base_interpreter(virtual_ida_environment, monkeypatch):
     set_env_var(monkeypatch, "HCLI_CURRENT_IDA_PYTHON_EXE", str(get_base_python_exe()))
     unset_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE")
+    monkeypatch.setattr("hcli.lib.ida.python.environment.is_site_packages_writable", lambda exe: True)
+
+    result = _run(["doctor", "--json"])
+    assert result.exit_code == 0, result.output
+
+    report = json.loads(result.stdout)
+    assert report["ok"] is True
+    assert report["site_packages_writable"] is True
+    no_venv = [f for f in report["findings"] if f["id"] == "no-venv"]
+    assert [f["severity"] for f in no_venv] == ["warning"]
+    assert "create-environment" in no_venv[0]["fix_hint"]
+
+
+def test_doctor_fails_for_an_unwritable_base_interpreter(virtual_ida_environment, monkeypatch):
+    set_env_var(monkeypatch, "HCLI_CURRENT_IDA_PYTHON_EXE", str(get_base_python_exe()))
+    unset_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE")
+    monkeypatch.setattr("hcli.lib.ida.python.environment.is_site_packages_writable", lambda exe: False)
 
     result = _run(["doctor", "--json"])
     assert result.exit_code == 1, result.output
 
     report = json.loads(result.stdout)
     assert report["ok"] is False
-    assert "no-venv" in [f["id"] for f in report["findings"]]
-    assert any("create-environment" in f["fix_hint"] for f in report["findings"])
+    assert report["site_packages_writable"] is False
+    ids = [f["id"] for f in report["findings"]]
+    assert "no-venv" in ids
+    assert "site-packages-not-writable" in ids
 
 
 @pytest.fixture

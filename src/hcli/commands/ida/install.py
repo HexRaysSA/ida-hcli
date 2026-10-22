@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import tempfile
 from pathlib import Path
 
+import rich.status
 import rich_click as click
 from rich.prompt import Confirm
 
@@ -14,7 +16,7 @@ from hcli.commands.license.get import get_license
 from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command, enforce_login
 from hcli.lib.config import config_store
-from hcli.lib.console import console
+from hcli.lib.console import console, stderr_console
 from hcli.lib.ida import (
     IdaProduct,
     accept_eula,
@@ -30,6 +32,8 @@ from hcli.lib.ida import (
     is_idalib_capable_installation,
 )
 from hcli.lib.util.io import get_hcli_display_command, get_os
+
+logger = logging.getLogger(__name__)
 
 
 @click.option(
@@ -279,6 +283,46 @@ async def install(
 
     if create_python_environment and not dry_run:
         create_python_environment_for_install(install_dir_path, interactive=not auto_confirm)
+    elif not dry_run:
+        warn_python_environment_for_install(install_dir_path)
+
+
+def warn_python_environment_for_install(install_dir_path: Path) -> None:
+    """Warn when the IDA that was just installed uses a global Python or another non-recommended setup.
+
+    A fresh IDA uses a global Python unless $IDAPYTHON_VENV_EXECUTABLE selects
+    a virtual environment, so this tells the user before a plugin install
+    fails or mixes its dependencies with other programs' packages.  It never
+    fails the command: IDA itself is already installed.
+    """
+    from hcli.lib.ida.python import probe_current_python_info, resolve_current_python
+    from hcli.lib.ida.python.environment import warn_python_environment
+
+    previous = os.environ.get("HCLI_CURRENT_IDA_INSTALL_DIR")
+    os.environ["HCLI_CURRENT_IDA_INSTALL_DIR"] = str(install_dir_path)
+    probe_current_python_info.cache_clear()
+    try:
+        with rich.status.Status("checking IDA's Python environment", console=stderr_console):
+            resolved = resolve_current_python()
+        findings = warn_python_environment(resolved, show_skip_hint=False)
+    except Exception as e:
+        # IDA Free has no idat to probe, for example
+        logger.debug("python environment check skipped: %s", e)
+        return
+    finally:
+        if previous is None:
+            os.environ.pop("HCLI_CURRENT_IDA_INSTALL_DIR", None)
+        else:
+            os.environ["HCLI_CURRENT_IDA_INSTALL_DIR"] = previous
+        probe_current_python_info.cache_clear()
+
+    if findings:
+        stderr_console.print(
+            f"To create a virtual environment for IDA's Python and configure IDA to use it, run "
+            f"`{get_hcli_display_command()} ida python create-environment`, or pass "
+            f"--create-python-environment to `{get_hcli_display_command()} ida install`.",
+            highlight=False,
+        )
 
 
 def create_python_environment_for_install(install_dir_path: Path, *, interactive: bool) -> None:

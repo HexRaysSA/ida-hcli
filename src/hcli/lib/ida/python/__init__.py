@@ -332,6 +332,44 @@ def has_pip(python_exe: Path, timeout=10.0) -> bool:
         return False
 
 
+# Creates a file in the interpreter's site-packages, which is where pip installs.
+# Trying is the only reliable check: os.access() ignores Windows ACLs.
+SITE_PACKAGES_WRITABLE_PY = """
+import sysconfig, tempfile
+path = sysconfig.get_paths()["purelib"]
+try:
+    with tempfile.TemporaryFile(dir=path):
+        pass
+except FileNotFoundError:
+    print("missing")
+except OSError:
+    print("no")
+else:
+    print("yes")
+"""
+
+
+def is_site_packages_writable(python_exe: Path, timeout=10.0) -> bool | None:
+    """Whether the current user can write to the site-packages directory of `python_exe`.
+
+    Returns None when it can't be determined, for example when the directory does not exist.
+    """
+    try:
+        process = subprocess.run(
+            [str(python_exe), "-c", SITE_PACKAGES_WRITABLE_PY],
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+            env=get_environment_for_python(python_exe),
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+    answer = process.stdout.decode("utf-8", errors="replace").strip()
+    if process.returncode != 0 or answer not in ("yes", "no"):
+        return None
+    return answer == "yes"
+
+
 class CantInstallPackagesError(ValueError): ...
 
 

@@ -75,6 +75,7 @@ class DoctorReport(BaseModel):
     ida_python_version: str | None
     venv_root: str | None
     pip_available: bool | None
+    site_packages_writable: bool | None
     externally_managed: bool | None
     idapython_venv_executable: str | None
     hcli_current_ida_python_exe: str | None
@@ -186,6 +187,7 @@ def build_doctor_report() -> DoctorReport:
             ida_python_version=None,
             venv_root=None,
             pip_available=None,
+            site_packages_writable=None,
             externally_managed=None,
             idapython_venv_executable=ENV.IDAPYTHON_VENV_EXECUTABLE,
             hcli_current_ida_python_exe=ENV.HCLI_CURRENT_IDA_PYTHON_EXE,
@@ -213,6 +215,7 @@ def build_doctor_report() -> DoctorReport:
         ida_python_version=state.ida_python_version,
         venv_root=str(state.venv_root) if state.venv_root else None,
         pip_available=state.pip_available,
+        site_packages_writable=state.site_packages_writable,
         externally_managed=state.externally_managed,
         idapython_venv_executable=str(state.idapython_venv_executable) if state.idapython_venv_executable else None,
         hcli_current_ida_python_exe=ENV.HCLI_CURRENT_IDA_PYTHON_EXE,
@@ -254,6 +257,8 @@ def render_doctor_report_text(report: DoctorReport) -> None:
     _kv("virtual environment", report.venv_root or ("none" if report.python_exe else None))
     if report.pip_available is not None:
         _kv("pip", "available" if report.pip_available else "missing")
+    if report.site_packages_writable is not None:
+        _kv("site-packages", "writable" if report.site_packages_writable else "not writable")
     if report.externally_managed:
         _kv("externally managed (PEP 668)", "yes")
     _kv("$IDAPYTHON_VENV_EXECUTABLE", report.idapython_venv_executable or ("not set" if report.python_exe else None))
@@ -283,14 +288,20 @@ def render_doctor_report_text(report: DoctorReport) -> None:
             for finding in warnings:
                 _render_finding(finding, "yellow")
 
-        console.print(
-            "To install plugins despite these findings, pass `--no-python-environment-check`:",
-            highlight=False,
-        )
-        console.print(
-            f"  {get_hcli_display_command()} plugin --no-python-environment-check install <name>",
-            highlight=False,
-        )
+        if errors:
+            console.print(
+                "To install plugins despite these errors, pass `--no-python-environment-check`:",
+                highlight=False,
+            )
+            console.print(
+                f"  {get_hcli_display_command()} plugin --no-python-environment-check install <name>",
+                highlight=False,
+            )
+        else:
+            console.print(
+                f"Warnings do not stop `{get_hcli_display_command()} plugin install`, but fix them to avoid problems.",
+                highlight=False,
+            )
         console.print()
 
     if report.notes:
