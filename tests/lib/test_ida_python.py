@@ -20,6 +20,7 @@ from hcli.lib.ida.python import (
     get_pip_error_summary,
     has_pip,
     is_externally_managed,
+    is_site_packages_writable,
     merge_bundle_pip_options,
     pip_install_packages,
     probe_current_python_info,
@@ -704,3 +705,39 @@ def test_probe_python_version_returns_none_for_unrunnable_interpreter(tmp_path):
 
 def test_format_python_version_mismatch_warning_is_empty_without_mismatches():
     assert format_python_version_mismatch_warning([]) == ""
+
+
+def _make_venv(root: Path) -> Path:
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(root)], check=True, capture_output=True)
+    return root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def _site_packages(python_exe: Path) -> Path:
+    out = subprocess.run(
+        [str(python_exe), "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return Path(out.stdout.strip())
+
+
+def test_is_site_packages_writable_for_own_venv(tmp_path: Path):
+    python_exe = _make_venv(tmp_path / "venv")
+    assert is_site_packages_writable(python_exe) is True
+    assert list(_site_packages(python_exe).iterdir()) == []
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions that bind the user")
+def test_is_site_packages_not_writable_for_read_only_site_packages(tmp_path: Path):
+    python_exe = _make_venv(tmp_path / "venv")
+    site_packages = _site_packages(python_exe)
+    site_packages.chmod(0o555)
+    try:
+        assert is_site_packages_writable(python_exe) is False
+    finally:
+        site_packages.chmod(0o755)
+
+
+def test_is_site_packages_writable_unknown_for_missing_interpreter(tmp_path: Path):
+    assert is_site_packages_writable(tmp_path / "missing" / "python") is None

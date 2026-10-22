@@ -3,6 +3,8 @@
 ## unreleased
 
 ### Added
+- `hcli ida install` without `--create-python-environment` checks IDA's Python environment after it installs IDA, and warns when IDA uses a global Python or another setup that `hcli ida python doctor` reports
+- `hcli ida python doctor`, `hcli plugin install`, and `hcli plugin upgrade` report an error when the current user cannot write to the site-packages directory of IDA's Python
 - `hcli plugin bundle create` accepts bare and range plugin specs, and resolves them and unpinned plugin dependencies to the newest version for each target platform
 - Support an optional `requiresPython` field in `ida-plugin.json` and check it against IDA's Python environment before installation
 - `hcli plugin install`, `hcli plugin upgrade`, plugin dependency installation, and `hcli plugin bundle create` skip plugin versions whose `requiresPython` excludes the target Python version, and select the newest version that is compatible. When IDA's Python cannot be detected, `hcli plugin install` and `hcli plugin upgrade` skip only the versions that declare `requiresPython`
@@ -70,6 +72,7 @@
 ### Changed
 - Move the hcli extension commands from `hcli extension create` and `hcli extension list` to `hcli hcli-extensions create` and `hcli hcli-extensions list`
 - Log the Python-relevant environment variables (`VIRTUAL_ENV`, `PYTHONHOME`, `PATH`, ...) passed to `idat` at debug level
+- A global Python without a virtual environment is a warning, not an error, in `hcli ida python doctor`, `hcli plugin install`, and `hcli plugin upgrade`, as long as the current user can write to its site-packages directory. `hcli plugin install` installs plugin dependencies there and prints the warning
 
 ## [0.15.13] - 2026-01-27
 

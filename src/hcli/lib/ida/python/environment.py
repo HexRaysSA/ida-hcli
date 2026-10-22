@@ -54,6 +54,7 @@ from hcli.lib.ida.python import (
     find_python_version_mismatches,
     has_pip,
     is_externally_managed,
+    is_site_packages_writable,
     probe_current_python_info,
     resolve_current_python,
 )
@@ -116,6 +117,8 @@ class PythonEnvironmentState:
     venv_root: Path | None
     # whether `import pip` works in python_exe; None when not probed
     pip_available: bool | None
+    # whether the current user can write to python_exe's site-packages; None when not probed
+    site_packages_writable: bool | None
     # major.minor of python_exe
     python_version: str | None
     # major.minor of IDA's embedded Python, from the idat probe (what idapyswitch registered)
@@ -254,10 +257,12 @@ def collect_python_environment_state(
     externally_managed = is_externally_managed(resolved)
 
     # pip can't be used in an externally-managed base interpreter regardless,
-    # so don't spend a process launch learning whether it's importable.
+    # so don't spend process launches learning whether it's importable or could write.
     pip_available: bool | None = None
+    site_packages_writable: bool | None = None
     if not externally_managed:
         pip_available = has_pip(python_exe)
+        site_packages_writable = is_site_packages_writable(python_exe)
 
     python_version = probe_python_version(python_exe)
 
@@ -286,6 +291,7 @@ def collect_python_environment_state(
         idausr=idausr,
         venv_root=venv_root,
         pip_available=pip_available,
+        site_packages_writable=site_packages_writable,
         python_version=python_version,
         ida_python_version=ida_python_version,
         externally_managed=externally_managed,
@@ -416,9 +422,10 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
     if state.venv_root is None and state.python_exe_exists:
         summary = f"IDA's Python is not a virtual environment: {exe}"
         detail = (
-            "IDA loads a global Python (system, Homebrew, python.org, or Windows Store). Plugin dependencies "
-            "installed there mix with OS packages and may need administrator rights. Debian, Ubuntu 24.04+, and "
-            "Homebrew refuse such installs (PEP 668). A dedicated virtual environment avoids these problems."
+            "IDA loads a global Python (system, Homebrew, python.org, or Windows Store). HCLI can install plugin "
+            "dependencies there while you can write to it, but they mix with the packages of other programs, and "
+            "an upgrade of that Python can remove or break them. Debian, Ubuntu 24.04+, and Homebrew refuse such "
+            "installs (PEP 668). A dedicated virtual environment avoids these problems."
         )
         if state.conda:
             detail += (
@@ -428,7 +435,7 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
         findings.append(
             EnvironmentFinding(
                 id="no-venv",
-                severity="error",
+                severity="warning",
                 summary=summary,
                 detail=detail,
                 fix_hint=_render_create_environment_hint(state),
@@ -447,6 +454,33 @@ def check_python_environment(state: PythonEnvironmentState) -> list[EnvironmentF
                     "installs there."
                 ),
                 fix_hint=_render_create_environment_hint(state),
+            )
+        )
+
+    if state.site_packages_writable is False and state.python_exe_exists:
+        if state.venv_root is not None:
+            detail = (
+                "pip installs packages into the site-packages directory of this virtual environment, and your user "
+                "account cannot write to it. It may belong to another user, or be on a read-only file system."
+            )
+            fix_hint = (
+                f"Give your user account write access to {state.venv_root}, or create a virtual environment that you "
+                f"own:\n{_render_create_environment_hint(state)}"
+            )
+        else:
+            detail = (
+                "pip installs packages into the site-packages directory of this Python, and your user account cannot "
+                "write to it without administrator rights. Do not install plugin dependencies there as administrator: "
+                "they would mix with the packages of every user and program that uses this Python."
+            )
+            fix_hint = _render_create_environment_hint(state)
+        findings.append(
+            EnvironmentFinding(
+                id="site-packages-not-writable",
+                severity="error",
+                summary=f"You cannot write to the site-packages directory of IDA's Python: {exe}",
+                detail=detail,
+                fix_hint=fix_hint,
             )
         )
 
@@ -553,8 +587,11 @@ def has_errors(findings: list[EnvironmentFinding]) -> bool:
     return any(finding.severity == "error" for finding in findings)
 
 
-def format_environment_warnings(findings: list[EnvironmentFinding]) -> str:
-    """Render findings as a compact rich-markup block for stderr, or "" when there are none."""
+def format_environment_warnings(findings: list[EnvironmentFinding], *, show_skip_hint: bool = True) -> str:
+    """Render findings as a compact rich-markup block for stderr, or "" when there are none.
+
+    `show_skip_hint` adds how to skip the check, for commands that run it before installing packages.
+    """
     if not findings:
         return ""
 
@@ -569,12 +606,11 @@ def format_environment_warnings(findings: list[EnvironmentFinding]) -> str:
         tag = "[red]error[/red]  " if finding.severity == "error" else "[yellow]warning[/yellow]"
         lines.append(f"  {tag} {escape(finding.summary)}")
 
-    lines.extend(
-        [
-            f"Run `{get_hcli_display_command()} ida python doctor` for details and fixes.",
-            f"To skip this check: `{get_hcli_display_command()} plugin --no-python-environment-check install <name>`",
-        ]
-    )
+    lines.append(f"Run `{get_hcli_display_command()} ida python doctor` for details and fixes.")
+    if show_skip_hint:
+        lines.append(
+            f"To skip this check: `{get_hcli_display_command()} plugin --no-python-environment-check install <name>`"
+        )
     return "\n".join(lines)
 
 
@@ -626,22 +662,25 @@ def validate_python_environment(resolved: ResolvedPython) -> None:
         raise PythonEnvironmentError(findings)
 
 
-def warn_python_environment(resolved: ResolvedPython) -> None:
+def warn_python_environment(resolved: ResolvedPython, *, show_skip_hint: bool = True) -> list[EnvironmentFinding]:
     """Warn on stderr about a non-recommended environment, without ever blocking.
 
     Does not launch idat: this runs on every `hcli ida python exec`, where a
     multi-second probe is not acceptable.
+
+    Returns the findings that it printed.
     """
     try:
         state = collect_python_environment_state(resolved, probe_ida=False)
         findings = check_python_environment(state)
     except Exception as e:
         logger.debug("python environment check skipped: %s", e)
-        return
+        return []
 
-    warning = format_environment_warnings(findings)
+    warning = format_environment_warnings(findings, show_skip_hint=show_skip_hint)
     if warning:
         stderr_console.print(warning, highlight=False)
+    return findings
 
 
 @dataclass(frozen=True)

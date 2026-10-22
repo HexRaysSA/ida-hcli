@@ -37,6 +37,7 @@ RECOMMENDED_STATE = PythonEnvironmentState(
     idausr=IDAUSR,
     venv_root=VENV,
     pip_available=True,
+    site_packages_writable=True,
     python_version="3.12",
     ida_python_version="3.12",
     externally_managed=False,
@@ -65,7 +66,7 @@ def test_recommended_setup_has_no_findings():
     assert identify_setup_pattern(make_state()).id == "properly-configured"
 
 
-def test_default_setup_reports_no_venv_error():
+def test_default_setup_reports_no_venv_warning():
     state = make_state(
         python_exe=Path("/usr/bin/python3"),
         source="derived from idat probe",
@@ -74,7 +75,8 @@ def test_default_setup_reports_no_venv_error():
     )
     findings = check_python_environment(state)
     assert finding_ids(findings) == ["no-venv"]
-    assert has_errors(findings)
+    assert findings[0].severity == "warning"
+    assert not has_errors(findings)
     assert identify_setup_pattern(state).id == "default"
 
     hint = findings[0].fix_hint
@@ -224,6 +226,32 @@ def test_unknown_pip_state_is_not_reported():
     assert check_python_environment(make_state(pip_available=None)) == []
 
 
+def test_global_python_with_unwritable_site_packages_is_an_error():
+    state = make_state(
+        python_exe=Path("/usr/bin/python3"),
+        source="derived from idat probe",
+        venv_root=None,
+        site_packages_writable=False,
+        idapython_venv_executable=None,
+    )
+    findings = check_python_environment(state)
+    assert finding_ids(findings) == ["no-venv", "site-packages-not-writable"]
+    assert [f.severity for f in findings] == ["warning", "error"]
+    assert "administrator" in findings[1].detail
+    assert "create-environment" in findings[1].fix_hint
+
+
+def test_venv_with_unwritable_site_packages_is_an_error():
+    findings = check_python_environment(make_state(site_packages_writable=False))
+    assert finding_ids(findings) == ["site-packages-not-writable"]
+    assert findings[0].severity == "error"
+    assert str(VENV) in findings[0].fix_hint
+
+
+def test_unknown_site_packages_writability_is_not_reported():
+    assert check_python_environment(make_state(site_packages_writable=None)) == []
+
+
 def test_externally_managed_base_python_reports_both_errors():
     state = make_state(
         python_exe=Path("/opt/homebrew/bin/python3.12"),
@@ -265,7 +293,7 @@ def test_idapythonrc_activation_is_a_warning_and_recognized_pattern():
     )
     findings = check_python_environment(state)
     assert finding_ids(findings) == ["no-venv", "idapythonrc-venv"]
-    assert [f.severity for f in findings] == ["error", "warning"]
+    assert [f.severity for f in findings] == ["warning", "warning"]
     assert identify_setup_pattern(state).id == "idapythonrc-venv"
 
 
@@ -350,6 +378,13 @@ def test_format_environment_warnings_distinguishes_errors_from_warnings():
     assert "IDAPYTHON_VENV_EXECUTABLE is not set" in text
 
 
+def test_format_environment_warnings_can_omit_the_skip_hint():
+    findings = check_python_environment(make_state(idapython_venv_executable=None))
+    text = format_environment_warnings(findings, show_skip_hint=False)
+    assert "ida python doctor" in text
+    assert "--no-python-environment-check" not in text
+
+
 def test_does_idapythonrc_activate_venv(tmp_path: Path):
     rc = tmp_path / "idapythonrc.py"
     rc.write_text("import idaapi\nprint('hello')\n")
@@ -391,6 +426,7 @@ def test_collect_state_from_a_real_venv_via_venv_executable_var(real_venv: Path,
     assert state.venv_root is not None
     assert state.venv_root.resolve() == real_venv.resolve()
     assert state.pip_available is True
+    assert state.site_packages_writable is True
     assert state.python_version == f"{sys.version_info.major}.{sys.version_info.minor}"
     assert state.ida_python_version is None
     assert not state.externally_managed
@@ -419,14 +455,31 @@ def test_collect_state_flags_missing_var_for_hcli_override(real_venv: Path, monk
     validate_python_environment(resolved)
 
 
-def test_validate_python_environment_rejects_base_interpreter_without_venv(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def _use_base_interpreter(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, writable: bool) -> ResolvedPython:
     set_env_var(monkeypatch, "HCLI_IDAUSR", str(tmp_path))
     unset_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE")
     unset_env_var(monkeypatch, "VIRTUAL_ENV")
+    # whether the test interpreter's site-packages is writable depends on the machine
+    monkeypatch.setattr("hcli.lib.ida.python.environment.is_site_packages_writable", lambda exe: writable)
+    return ResolvedPython(get_base_python_exe(), "$HCLI_CURRENT_IDA_PYTHON_EXE")
 
-    resolved = ResolvedPython(get_base_python_exe(), "$HCLI_CURRENT_IDA_PYTHON_EXE")
+
+def test_validate_python_environment_warns_about_writable_base_interpreter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    resolved = _use_base_interpreter(tmp_path, monkeypatch, writable=True)
+
+    validate_python_environment(resolved)
+
+    err = capsys.readouterr().err
+    assert "Warning:" in err
+    assert "not a virtual environment" in err
+
+
+def test_validate_python_environment_rejects_unwritable_base_interpreter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    resolved = _use_base_interpreter(tmp_path, monkeypatch, writable=False)
 
     with pytest.raises(PythonEnvironmentError) as excinfo:
         validate_python_environment(resolved)
@@ -434,4 +487,5 @@ def test_validate_python_environment_rejects_base_interpreter_without_venv(
     ids = [f.id for f in excinfo.value.findings]
     assert "hcli-override-active" in ids
     assert "no-venv" in ids
+    assert "site-packages-not-writable" in ids
     assert "ida python doctor" in str(excinfo.value)

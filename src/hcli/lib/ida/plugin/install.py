@@ -554,8 +554,9 @@ def resolve_python_for_dependencies(python_dependencies: list[str], *, check_env
     """Find IDA's Python and, unless disabled, refuse environments where installing into it is pointless.
 
     The environment check prints warnings to stderr for non-recommended but
-    workable setups and raises for setups where the packages would never reach
-    IDA (no venv, wrong Python version, PEP 668, uv overlay, no pip).
+    workable setups, such as a global Python, and raises for setups where pip
+    can't install or the packages would never reach IDA (site-packages not
+    writable, wrong Python version, PEP 668, uv overlay, no pip).
 
     Raises:
         PythonNotFoundError: when IDA's Python can't be determined.
