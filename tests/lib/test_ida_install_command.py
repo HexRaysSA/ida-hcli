@@ -1,3 +1,4 @@
+import importlib
 import os
 
 from click.testing import CliRunner
@@ -5,6 +6,9 @@ from fixtures import get_base_python_exe, set_env_var, unset_env_var
 
 from hcli.commands.ida.install import install, warn_python_environment_for_install
 from hcli.lib.ida.python import PythonNotFoundError, ResolvedPython
+
+# `hcli.commands.ida` re-exports the `install` command under the module's name.
+install_module = importlib.import_module("hcli.commands.ida.install")
 
 
 def test_install_into_existing_non_ida_directory_fails(tmp_path):
@@ -35,7 +39,7 @@ def test_install_warns_when_ida_uses_a_global_python(tmp_path, monkeypatch, caps
         probed.append(os.environ["HCLI_CURRENT_IDA_INSTALL_DIR"])
         return ResolvedPython(get_base_python_exe(), "derived from idat probe")
 
-    monkeypatch.setattr("hcli.lib.ida.python.resolve_current_python", resolve)
+    monkeypatch.setattr(install_module, "resolve_current_python", resolve)
     monkeypatch.setattr("hcli.lib.ida.python.environment.is_site_packages_writable", lambda exe: True)
 
     warn_python_environment_for_install(install_dir)
@@ -55,7 +59,7 @@ def test_install_skips_the_python_check_when_ida_cannot_be_probed(tmp_path, monk
     def resolve() -> ResolvedPython:
         raise PythonNotFoundError("no idat")
 
-    monkeypatch.setattr("hcli.lib.ida.python.resolve_current_python", resolve)
+    monkeypatch.setattr(install_module, "resolve_current_python", resolve)
 
     warn_python_environment_for_install(tmp_path / "ida")
 
