@@ -196,7 +196,7 @@ HCLI supports installing plugins to be loaded by IDA 9.0 and newer.
 
 ### Plugin repositories
 
-HCLI ships with two built-in repositories (`hexrays` and `community`) that provide the public plugin index. You can add your own named repositories that point to a JSON index file, a local directory of plugin archives, or a [plugin bundle](../reference/plugin-bundle-spec.md) zip.
+HCLI ships with two built-in repositories (`hexrays` and `community`) that provide the public plugin index. You can add your own named repositories that point to a JSON index file, a local directory of plugin archives, or a [plugin bundle](../reference/plugin-bundle-spec.md) zip or its extracted directory.
 
 ```
 ❯ hcli plugin repo list
@@ -205,7 +205,7 @@ HCLI ships with two built-in repositories (`hexrays` and `community`) that provi
 ❯ hcli plugin repo set-default <name>
 ```
 
-Repository URLs use the `https://` scheme for remote JSON indexes or `file://` for local paths. HCLI infers the repository type from what the path points to: a directory becomes a filesystem repository, a zip file containing `plugin-bundle.json` becomes a bundle repository, and anything else is treated as a JSON index.
+Repository URLs use the `https://` scheme for remote JSON indexes or `file://` for local paths. HCLI infers the repository type from what the path points to: a zip file or a directory containing `plugin-bundle.json` becomes a bundle repository, another directory becomes a filesystem repository, and anything else is treated as a JSON index.
 
 You can scope plugin references to a specific repository with a `repo/` prefix (e.g., `hcli plugin install myrepo/plugin-name`). Unprefixed references resolve against the default repository.
 

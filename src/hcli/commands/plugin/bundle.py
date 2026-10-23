@@ -219,7 +219,11 @@ def create(
     plugin_specs: tuple[str, ...],
 ) -> None:
     """Create a plugin bundle from plugin specs, local directories, and/or ZIPs."""
+    from hcli.commands.plugin import validate_offline_sources
+
     pip_options: PipOptions = ctx.obj.get("pip_options", PIP_OPTIONS_DEFAULT)
+    # The plugin group defers this check for configured repositories to install and upgrade.
+    validate_offline_sources(pip_options)
     parent_repo = ctx.obj.get("plugin_repo")
     root_hosts = _get_root_hosts(ctx, plugin_specs, bundle_repo)
 

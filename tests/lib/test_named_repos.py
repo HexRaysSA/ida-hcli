@@ -626,3 +626,15 @@ def test_offline_install_from_named_online_repository_is_refused(virtual_ida_env
 
     assert result.exit_code != 0
     assert "--offline requires --pip-find-links or a plugin bundle repository" in result.output
+
+
+def test_offline_bundle_create_without_find_links_is_refused(virtual_ida_environment, tmp_path):
+    json_path = _make_json_repo_file(tmp_path, PLUGIN1_V1)
+    runner = CliRunner(mix_stderr=False)
+    assert _invoke(runner, "repo", "add", "local-index", json_path.as_uri()).exit_code == 0
+
+    result = _invoke(runner, "--offline", "bundle", "create", "--path", str(tmp_path / "out.zip"), "plugin1")
+
+    assert result.exit_code != 0
+    assert "--offline requires --pip-find-links or a plugin bundle repository" in result.output
+    assert not (tmp_path / "out.zip").exists()
