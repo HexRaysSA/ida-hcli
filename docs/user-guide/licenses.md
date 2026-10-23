@@ -74,6 +74,12 @@ The options are:
 License files are named after the license, for example
 `idapro_96-0000-0000-01.hexlic`.
 
+HCLI downloads only the current license file format. The portal also offers an
+IDA 9.0 format of some licenses (`idapro_v90_96-0000-0000-01.hexlic`), which
+HCLI skips: with both files installed, IDA can load the 9.0 file and miss add-ons
+that only the current file lists. If you need the 9.0 format, download it from
+the [customer portal](https://my.hex-rays.com).
+
 ## Installing Licenses
 
 ### Automatic: during IDA installation

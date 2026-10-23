@@ -9,9 +9,15 @@ from pathlib import Path
 import questionary
 
 from hcli.commands.common import safe_ask_async
+from hcli.env import ENV
 from hcli.lib.api.license import License, license
 from hcli.lib.console import console
 from hcli.lib.constants import cli
+
+# License files in the IDA 9.0 format. Next to the current `hexlic` file, IDA can
+# load one of these instead and miss the add-ons that only the current file lists,
+# so HCLI does not download them. Users who need one get it from the portal.
+LEGACY_ASSET_TYPES = frozenset({"hexlic_v90"})
 
 
 async def select_licenses(customer_id: str, predicate: Callable[[License], bool] | None = None) -> list[License]:
@@ -94,7 +100,14 @@ async def download_license(
         List of downloaded file paths
     """
     results: list[str] = []
-    asset_types = lic.asset_types
+    asset_types = [asset for asset in (lic.asset_types or []) if asset not in LEGACY_ASSET_TYPES]
+
+    for asset in lic.asset_types or []:
+        if asset in LEGACY_ASSET_TYPES:
+            console.print(
+                f"[grey69]Skipped {asset} for {lic.pubhash}: the IDA 9.0 license format. "
+                f"Download it from {ENV.HCLI_PORTAL_URL} if you need it.[/grey69]"
+            )
 
     if not asset_types:
         console.print("[yellow]This license has no assets to download.[/yellow]")
