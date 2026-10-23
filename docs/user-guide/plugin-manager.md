@@ -114,7 +114,7 @@ removed plugin repository 'my-team'
 
 The `community` and `hexrays` names are reserved and always point to their Hex-Rays URLs. Custom repositories can be added, renamed, or removed freely.
 
-For offline or air-gapped environments like FLARE-VM, you can point HCLI at a local [plugin bundle](../reference/plugin-bundle-spec.md) instead of the online repositories. Pass `--repo` with a path to the bundle archive, and `search`, `install`, and `upgrade` all resolve from that local file without network access.
+For offline or air-gapped environments like FLARE-VM, you can point HCLI at a local [plugin bundle](../reference/plugin-bundle-spec.md) instead of the online repositories. Pass `--repo` with a path to the bundle archive, or to the directory that extracting it gives, and `search`, `install`, and `upgrade` all resolve from the bundle without network access. pip installs Python dependencies only from the bundle.
 
 ```console
 ❯ hcli plugin --repo ./malware-vm-tools.hcli-plugin-bundle.zip search

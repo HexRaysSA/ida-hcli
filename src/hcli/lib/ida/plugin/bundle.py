@@ -206,4 +206,5 @@ def bundle_dependency_source(
             no_cache_dir=True,
             disable_pip_version_check=True,
             find_links=(wh_path,),
+            offline=True,
         )
