@@ -198,6 +198,40 @@ def test_install_installs_dependency_of_a_component(virtual_ida_environment, tmp
     assert _get_installed() == {"suite": "1.0.0", "b": "1.0.0"}
 
 
+def test_install_ends_with_success_when_all_dependencies_install(virtual_ida_environment, tmp_path):
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {
+            "a1.zip": _make_plugin_zip("a", "1.0.0", deps=["b"]),
+            "b1.zip": _make_plugin_zip("b", "1.0.0"),
+        },
+    )
+
+    result = _install(repo_dir, "a")
+
+    assert result.exit_code == 0, _get_output(result)
+    assert result.output.splitlines()[-1] == "Success: a 1.0.0 and its dependencies are installed."
+
+
+def test_install_ends_with_success_when_an_optional_dependency_is_not_installed(windows_ida_environment, tmp_path):
+    repo_dir = _make_repo_dir(
+        tmp_path,
+        {
+            "a1.zip": _make_plugin_zip("a", "1.0.0", deps=["b", {"plugin": "opt", "required": False}]),
+            "b1.zip": _make_plugin_zip("b", "1.0.0"),
+            "opt1.zip": _make_plugin_zip("opt", "1.0.0", platforms=["linux-x86_64"]),
+        },
+    )
+
+    result = _install(repo_dir, "a")
+
+    assert result.exit_code == 0, _get_output(result)
+    assert _get_installed() == {"a": "1.0.0", "b": "1.0.0"}
+    lines = result.output.splitlines()
+    assert any(line.startswith("  Optional dependency not installed: opt: ") for line in lines)
+    assert lines[-1] == "Success: a 1.0.0 is installed. 1 optional dependency is not installed."
+
+
 def test_install_reports_already_installed_root_without_upgrade(virtual_ida_environment, tmp_path):
     repo_dir = _make_repo_dir(tmp_path, {"a1.zip": _make_plugin_zip("a", "1.0.0")})
     assert _install(repo_dir, "a").exit_code == 0
