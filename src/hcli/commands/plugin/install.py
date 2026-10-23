@@ -183,6 +183,26 @@ def render_install_result(result: InstallResult, *, editable: bool = False, is_u
     for dep in result.dependencies:
         _render_dependency_result(dep)
 
+    if result.status == InstallStatus.SUCCESS and result.dependencies:
+        console.print(_render_install_summary(result, is_upgrade=is_upgrade))
+
+
+def _render_install_summary(result: InstallResult, *, is_upgrade: bool = False) -> str:
+    """Render the closing line of a successful install that has dependencies, so the outcome is the last line."""
+    optional = sum(1 for dep in result.dependencies if dep.status == InstallStatus.SKIPPED_OPTIONAL)
+    failed = sum(1 for dep in result.dependencies if dep.status == InstallStatus.FAILED)
+    if is_upgrade:
+        line = f"[green]Success:[/green] {result.plugin} is upgraded to {result.version}."
+    elif optional or failed:
+        line = f"[green]Success:[/green] {result.plugin} {result.version} is installed."
+    else:
+        line = f"[green]Success:[/green] {result.plugin} {result.version} and its dependencies are installed."
+    for count, kind in ((optional, "optional "), (failed, "")):
+        if count:
+            noun = "dependency is" if count == 1 else "dependencies are"
+            line += f" [yellow]{count} {kind}{noun} not installed.[/yellow]"
+    return line
+
 
 def _render_dependency_result(dep: InstallResult) -> None:
     if dep.status == InstallStatus.SUCCESS:
@@ -198,7 +218,7 @@ def _render_dependency_result(dep: InstallResult) -> None:
     elif dep.status == InstallStatus.ROLLED_BACK:
         console.print(f"  [red]Removed[/red] dependency: {dep.plugin}: {dep.reason}")
     elif dep.status == InstallStatus.SKIPPED_OPTIONAL:
-        console.print(f"  [dim]Skipped[/dim] optional dependency: {dep.plugin}: {dep.reason}")
+        console.print(f"  [yellow]Optional dependency not installed[/yellow]: {dep.plugin}: {dep.reason}")
     elif dep.status == InstallStatus.FAILED:
         if dep.reason and "cannot auto-install" in dep.reason:
             console.print(f"  [yellow]Warning[/yellow]: {dep.plugin}: {dep.reason}")

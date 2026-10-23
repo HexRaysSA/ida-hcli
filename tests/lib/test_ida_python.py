@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from fixtures import *
 from fixtures import set_env_var, unset_env_var
 
 from hcli.lib.ida import find_current_ida_install_directory, get_ida_user_dir
@@ -16,6 +17,7 @@ from hcli.lib.ida.python import (
     find_current_python_executable,
     find_python_version_mismatches,
     format_python_version_mismatch_warning,
+    get_pip_error_summary,
     has_pip,
     is_externally_managed,
     merge_bundle_pip_options,
@@ -388,6 +390,76 @@ def test_pip_install_packages_explains_externally_managed_environment(tmp_path, 
         pip_install_packages(python_exe, ["ida-domain"])
 
     assert "PEP 668" in str(exc_info.value)
+
+
+PIP_WHEEL_BUILD_FAILURE = """\
+Looking in links: wheels
+Processing ./wheels/badpkg-1.0.tar.gz
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: badpkg
+  Building wheel for badpkg (pyproject.toml): finished with status 'error'
+Failed to build badpkg
+  error: subprocess-exited-with-error
+
+  × Building wheel for badpkg (pyproject.toml) did not run successfully.
+  │ exit code: 1
+  ╰─> [1 lines of output]
+      npm is required
+      [end of output]
+
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+  ERROR: Failed building wheel for badpkg
+error: failed-wheel-build-for-install
+
+× Failed to build installable wheels for some pyproject.toml based projects
+╰─> badpkg
+"""
+
+PIP_NO_MATCHING_DISTRIBUTION = """\
+Looking in links: wheels
+ERROR: Could not find a version that satisfies the requirement missing-pkg (from versions: none)
+ERROR: No matching distribution found for missing-pkg
+"""
+
+PIP_CONFLICT = """\
+Looking in links: wheels
+ERROR: Cannot install badpkg because these package versions have conflicting dependencies.
+
+The conflict is caused by:
+    The user requested badpkg
+    The user requested (constraint) badpkg<1
+
+ERROR: ResolutionImpossible: for help visit https://pip.pypa.io/en/latest/topics/dependency-resolution/
+"""
+
+
+@pytest.mark.parametrize(
+    "output,expected",
+    [
+        (PIP_WHEEL_BUILD_FAILURE, "pip could not build badpkg"),
+        (PIP_NO_MATCHING_DISTRIBUTION, "pip failed: No matching distribution found for missing-pkg"),
+        (
+            PIP_CONFLICT,
+            "pip failed: Cannot install badpkg because these package versions have conflicting dependencies",
+        ),
+        ("Traceback (most recent call last):\nKeyboardInterrupt\n", "pip failed"),
+    ],
+)
+def test_get_pip_error_summary(output, expected):
+    assert get_pip_error_summary(output) == expected
+
+
+def test_pip_install_packages_reports_a_one_line_summary(virtual_ida_environment_with_venv, tmp_path):
+    python_exe = Path(os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"])
+    options = PipOptions(offline=True, find_links=(tmp_path,), disable_pip_version_check=True)
+
+    with pytest.raises(CantInstallPackagesError) as exc_info:
+        pip_install_packages(python_exe, ["hcli-missing-test-package"], pip_options=options)
+
+    message = str(exc_info.value)
+    assert "\n" not in message
+    assert "No matching distribution found for hcli-missing-test-package" in message
+    assert "HCLI_DEBUG=1" in message
 
 
 @pytest.mark.parametrize(

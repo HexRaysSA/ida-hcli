@@ -5,11 +5,13 @@ import functools
 import json
 import logging
 import os
+import re
 import subprocess
 import tempfile
 from collections.abc import Generator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NoReturn
 
 from pydantic import BaseModel
 from rich.markup import escape
@@ -398,6 +400,36 @@ def _format_pip_error(stdout: bytes, stderr: bytes) -> str:
     return "\n".join(parts) if parts else stdout_text
 
 
+def get_pip_error_summary(output: str) -> str:
+    """Summarize the output of a failed pip install in one line.
+
+    pip reports a failed wheel build with the build log of the package, so the
+    summary names only the package. Otherwise it is pip's last `ERROR:` line,
+    except for the line that only links to pip's help on dependency conflicts.
+    """
+    unbuilt = re.findall(r"Failed building wheel for (\S+)", output)
+    if unbuilt:
+        return f"pip could not build {', '.join(dict.fromkeys(unbuilt))}"
+
+    errors = [
+        line.strip().removeprefix("ERROR:").strip()
+        for line in output.splitlines()
+        if line.strip().startswith("ERROR:") and "ResolutionImpossible" not in line
+    ]
+    if errors:
+        return f"pip failed: {errors[-1].rstrip('.')}"
+    return "pip failed"
+
+
+def _raise_for_pip_failure(stdout: bytes, stderr: bytes, python_exe: Path) -> NoReturn:
+    logger.debug("can't install packages")
+    logger.debug(stdout.decode("utf-8", errors="replace"))
+    logger.debug(stderr.decode("utf-8", errors="replace"))
+    error_text = _format_pip_error(stdout, stderr)
+    _raise_for_known_pip_errors(error_text, python_exe)
+    raise CantInstallPackagesError(f"{get_pip_error_summary(error_text)}. Set HCLI_DEBUG=1 to see the output of pip.")
+
+
 def externally_managed_environment_message(python_exe: Path) -> str:
     return (
         f"{python_exe} is an externally managed Python (PEP 668), so pip refuses to install into it. "
@@ -451,15 +483,8 @@ def verify_pip_can_install_packages(
             check=False,
             env=get_environment_for_python(python_exe),
         )
-    stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
-        logger.debug("can't install packages")
-        logger.debug(stdout.decode("utf-8", errors="replace"))
-        logger.debug(stderr.decode("utf-8", errors="replace"))
-
-        error_text = _format_pip_error(stdout, stderr)
-        _raise_for_known_pip_errors(error_text, python_exe)
-        raise CantInstallPackagesError(error_text)
+        _raise_for_pip_failure(process.stdout, process.stderr, python_exe)
 
 
 def pip_install_packages(
@@ -482,14 +507,8 @@ def pip_install_packages(
             check=False,
             env=get_environment_for_python(python_exe),
         )
-    stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
-        logger.debug("can't install packages")
-        logger.debug(stdout.decode("utf-8", errors="replace"))
-        logger.debug(stderr.decode("utf-8", errors="replace"))
-        error_text = _format_pip_error(stdout, stderr)
-        _raise_for_known_pip_errors(error_text, python_exe)
-        raise CantInstallPackagesError(error_text)
+        _raise_for_pip_failure(process.stdout, process.stderr, python_exe)
 
 
 def detect_current_python_version() -> PythonVersion:
