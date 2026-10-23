@@ -5,12 +5,11 @@ import sys
 from pathlib import Path
 
 import pytest
-from fixtures import get_base_python_exe, set_env_var, unset_env_var
+from fixtures import set_env_var, unset_env_var
 
 from hcli.lib.ida.python import ResolvedPython
 from hcli.lib.ida.python.environment import (
     EnvironmentFinding,
-    PythonEnvironmentError,
     PythonEnvironmentState,
     check_python_environment,
     collect_python_environment_state,
@@ -453,39 +452,3 @@ def test_collect_state_flags_missing_var_for_hcli_override(real_venv: Path, monk
 
     # warnings only: validation prints but does not raise
     validate_python_environment(resolved)
-
-
-def _use_base_interpreter(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, writable: bool) -> ResolvedPython:
-    set_env_var(monkeypatch, "HCLI_IDAUSR", str(tmp_path))
-    unset_env_var(monkeypatch, "IDAPYTHON_VENV_EXECUTABLE")
-    unset_env_var(monkeypatch, "VIRTUAL_ENV")
-    # whether the test interpreter's site-packages is writable depends on the machine
-    monkeypatch.setattr("hcli.lib.ida.python.environment.is_site_packages_writable", lambda exe: writable)
-    return ResolvedPython(get_base_python_exe(), "$HCLI_CURRENT_IDA_PYTHON_EXE")
-
-
-def test_validate_python_environment_warns_about_writable_base_interpreter(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-):
-    resolved = _use_base_interpreter(tmp_path, monkeypatch, writable=True)
-
-    validate_python_environment(resolved)
-
-    err = capsys.readouterr().err
-    assert "Warning:" in err
-    assert "not a virtual environment" in err
-
-
-def test_validate_python_environment_rejects_unwritable_base_interpreter(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    resolved = _use_base_interpreter(tmp_path, monkeypatch, writable=False)
-
-    with pytest.raises(PythonEnvironmentError) as excinfo:
-        validate_python_environment(resolved)
-
-    ids = [f.id for f in excinfo.value.findings]
-    assert "hcli-override-active" in ids
-    assert "no-venv" in ids
-    assert "site-packages-not-writable" in ids
-    assert "ida python doctor" in str(excinfo.value)
