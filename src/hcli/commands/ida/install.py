@@ -31,6 +31,8 @@ from hcli.lib.ida import (
     is_ida_dir,
     is_idalib_capable_installation,
 )
+from hcli.lib.ida.python import probe_current_python_info, resolve_current_python
+from hcli.lib.ida.python.environment import warn_python_environment
 from hcli.lib.util.io import get_hcli_display_command, get_os
 
 logger = logging.getLogger(__name__)
@@ -295,9 +297,6 @@ def warn_python_environment_for_install(install_dir_path: Path) -> None:
     fails or mixes its dependencies with other programs' packages.  It never
     fails the command: IDA itself is already installed.
     """
-    from hcli.lib.ida.python import probe_current_python_info, resolve_current_python
-    from hcli.lib.ida.python.environment import warn_python_environment
-
     previous = os.environ.get("HCLI_CURRENT_IDA_INSTALL_DIR")
     os.environ["HCLI_CURRENT_IDA_INSTALL_DIR"] = str(install_dir_path)
     probe_current_python_info.cache_clear()
