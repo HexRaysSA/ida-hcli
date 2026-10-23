@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import pathlib
+import shutil
 import zipfile
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import IO, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -84,26 +87,98 @@ def is_plugin_bundle_zip(path: Path) -> bool:
         return False
 
 
-def _load_manifest_from_zip(zf: zipfile.ZipFile) -> PluginBundleManifest:
-    raw = zf.read("plugin-bundle.json").decode("utf-8")
+def is_plugin_bundle_dir(path: Path) -> bool:
+    """Whether `path` is an extracted plugin bundle: a directory with a top-level `plugin-bundle.json`."""
+    return path.is_dir() and (path / "plugin-bundle.json").is_file()
+
+
+def is_plugin_bundle(path: Path) -> bool:
+    return is_plugin_bundle_zip(path) or is_plugin_bundle_dir(path)
+
+
+class _BundleFiles(Protocol):
+    """Read access to the files of a bundle, by bundle-relative POSIX path."""
+
+    def names(self) -> Iterator[str]: ...
+
+    def read(self, name: str) -> bytes: ...
+
+    def open(self, name: str) -> IO[bytes]: ...
+
+    def is_symlink(self, name: str) -> bool: ...
+
+    def close(self) -> None: ...
+
+
+class _ZipBundleFiles:
+    def __init__(self, path: Path):
+        self._zf = zipfile.ZipFile(path, "r")
+
+    def names(self) -> Iterator[str]:
+        return (info.filename for info in self._zf.infolist() if not info.is_dir())
+
+    def read(self, name: str) -> bytes:
+        return self._zf.read(name)
+
+    def open(self, name: str) -> IO[bytes]:
+        return self._zf.open(name)
+
+    def is_symlink(self, name: str) -> bool:
+        return (self._zf.getinfo(name).external_attr >> 28) == 0xA
+
+    def close(self) -> None:
+        self._zf.close()
+
+
+class _DirBundleFiles:
+    def __init__(self, path: Path):
+        self._root = path
+
+    def names(self) -> Iterator[str]:
+        for dirpath, _, filenames in os.walk(self._root):
+            for filename in filenames:
+                yield (Path(dirpath) / filename).relative_to(self._root).as_posix()
+
+    def _path(self, name: str) -> Path:
+        _validate_bundle_path(name)
+        return self._root / name
+
+    def read(self, name: str) -> bytes:
+        return self._path(name).read_bytes()
+
+    def open(self, name: str) -> IO[bytes]:
+        return self._path(name).open("rb")
+
+    def is_symlink(self, name: str) -> bool:
+        return self._path(name).is_symlink()
+
+    def close(self) -> None:
+        pass
+
+
+def _load_manifest(files: _BundleFiles) -> PluginBundleManifest:
+    raw = files.read("plugin-bundle.json").decode("utf-8")
     manifest = PluginBundleManifest.model_validate_json(raw)
 
+    names = list(files.names())
     for target in manifest.target_platform_tags:
         _validate_bundle_path(target.wheelhouse)
         wh_prefix = target.wheelhouse.rstrip("/") + "/"
-        if not any(name.startswith(wh_prefix) or name == target.wheelhouse + "/" for name in zf.namelist()):
-            logger.debug("wheelhouse path not found in archive: %s", target.wheelhouse)
+        if not any(name.startswith(wh_prefix) for name in names):
+            logger.debug("wheelhouse path not found in bundle: %s", target.wheelhouse)
 
     return manifest
 
 
 class PluginBundleRepo(BasePluginRepo):
+    """Plugins and wheelhouses of a plugin bundle, from the bundle zip or from the directory that extracting it gives."""
+
     def __init__(self, path: Path):
-        self._zf = zipfile.ZipFile(path, "r")
+        self._files: _BundleFiles = _DirBundleFiles(path) if path.is_dir() else _ZipBundleFiles(path)
         try:
-            self._manifest = _load_manifest_from_zip(self._zf)
+            self._manifest = _load_manifest(self._files)
         except Exception:
-            self._zf.close()
+            self._files.close()
             raise
 
     @property
@@ -119,14 +194,14 @@ class PluginBundleRepo(BasePluginRepo):
         return [t.id for t in self._manifest.target_platform_tags]
 
     def close(self):
-        self._zf.close()
+        self._files.close()
 
     def get_plugins(self) -> list[Plugin]:
         return self._load_plugins_by_walking()
 
     def _load_plugins_by_walking(self) -> list[Plugin]:
         index = PluginArchiveIndex()
-        for name in self._zf.namelist():
+        for name in sorted(self._files.names()):
             if not name.startswith("plugins/"):
                 continue
             if not name.endswith(".zip"):
@@ -134,8 +209,8 @@ class PluginBundleRepo(BasePluginRepo):
             _validate_bundle_path(name)
 
             try:
-                plugin_zip_data = self._zf.read(name)
-            except (KeyError, zipfile.BadZipFile) as e:
+                plugin_zip_data = self._files.read(name)
+            except (KeyError, OSError, zipfile.BadZipFile) as e:
                 logger.debug("skipping unreadable plugin archive %s: %s", name, e)
                 continue
 
@@ -150,7 +225,7 @@ class PluginBundleRepo(BasePluginRepo):
 
         if url.startswith("hcli-bundle:"):
             member_path = url[len("hcli-bundle:") :]
-            buf = self._zf.read(member_path)
+            buf = self._files.read(member_path)
         else:
             from hcli.lib.ida.plugin.repo import fetch_plugin_archive
 
@@ -172,33 +247,34 @@ class PluginBundleRepo(BasePluginRepo):
         return None
 
     def extract_wheelhouse(self, target: PluginBundleTargetPlatformTag, dest: Path) -> None:
+        """Copy the wheels of `target` into `dest`, flattened.
+
+        Raises:
+            ValueError: when a wheelhouse path escapes the bundle, is a symlink, or two wheels have the same filename.
+        """
         dest.mkdir(parents=True, exist_ok=True)
         wh_prefix = target.wheelhouse.rstrip("/") + "/"
         seen: set[str] = set()
 
-        for info in self._zf.infolist():
-            if not info.filename.startswith(wh_prefix):
-                continue
-            if info.is_dir():
+        for name in sorted(self._files.names()):
+            if not name.startswith(wh_prefix):
                 continue
 
-            _validate_bundle_path(info.filename)
+            _validate_bundle_path(name)
 
-            relative = pathlib.PurePosixPath(info.filename).relative_to(wh_prefix.rstrip("/"))
+            relative = pathlib.PurePosixPath(name).relative_to(wh_prefix.rstrip("/"))
             if ".." in relative.parts:
-                raise ValueError(f"path traversal in wheelhouse: {info.filename}")
+                raise ValueError(f"path traversal in wheelhouse: {name}")
 
-            if (info.external_attr >> 28) == 0xA:
-                raise ValueError(f"symlink in wheelhouse: {info.filename}")
+            if self._files.is_symlink(name):
+                raise ValueError(f"symlink in wheelhouse: {name}")
 
             if relative.name in seen:
-                raise ValueError(f"duplicate filename in wheelhouse: {relative.name} (from {info.filename})")
+                raise ValueError(f"duplicate filename in wheelhouse: {relative.name} (from {name})")
             seen.add(relative.name)
 
             target_file = dest / relative.name
             if target_file.resolve().parent != dest.resolve():
-                raise ValueError(f"path traversal in wheelhouse: {info.filename}")
-            with self._zf.open(info.filename) as src, target_file.open("wb") as dst:
-                import shutil
-
+                raise ValueError(f"path traversal in wheelhouse: {name}")
+            with self._files.open(name) as src, target_file.open("wb") as dst:
                 shutil.copyfileobj(src, dst)

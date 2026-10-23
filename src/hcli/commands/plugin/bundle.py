@@ -41,7 +41,7 @@ from hcli.lib.ida.plugin.reference import format_qualified_plugin_reference, par
 from hcli.lib.ida.plugin.repo import BasePluginRepo, PluginArchiveIndex
 from hcli.lib.ida.plugin.repo.bundle import (
     PluginBundleRepo,
-    is_plugin_bundle_zip,
+    is_plugin_bundle,
 )
 from hcli.lib.ida.plugin.repo.scoped import ScopedPluginRepo
 from hcli.lib.ida.plugin.resolve import (
@@ -68,7 +68,7 @@ def bundle() -> None:
 def info(bundle_path: str) -> None:
     """Show plugin bundle metadata."""
     path = Path(bundle_path)
-    if not is_plugin_bundle_zip(path):
+    if not is_plugin_bundle(path):
         console.print(f"[red]Error[/red]: {path} is not a plugin bundle")
         raise click.Abort()
 

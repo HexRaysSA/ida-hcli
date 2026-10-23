@@ -21,6 +21,7 @@ from hcli.lib.ida.plugin.repo.bundle import (
     PluginBundleManifest,
     PluginBundleRepo,
     _validate_bundle_path,
+    is_plugin_bundle,
     is_plugin_bundle_zip,
 )
 from hcli.lib.venv import PythonVersion
@@ -76,13 +77,26 @@ def _build_bundle_zip(
     return buf.getvalue()
 
 
-def _write_bundle(tmp_path, manifest=None, plugin_zips=None, **kwargs):
+def _write_bundle(tmp_path, manifest=None, plugin_zips=None, *, form="zip", **kwargs):
+    """Write a bundle as a zip, or as the directory that extracting the zip gives when `form` is "dir"."""
     if manifest is None:
         manifest = _make_manifest()
     data = _build_bundle_zip(manifest, plugin_zips=plugin_zips, **kwargs)
+    tmp_path.mkdir(parents=True, exist_ok=True)
     p = tmp_path / "bundle.zip"
     p.write_bytes(data)
-    return p
+    if form == "zip":
+        return p
+    d = tmp_path / "bundle"
+    with zipfile.ZipFile(p) as zf:
+        zf.extractall(d)
+    p.unlink()
+    return d
+
+
+@pytest.fixture(params=["zip", "dir"])
+def bundle_form(request) -> str:
+    return request.param
 
 
 @pytest.mark.parametrize(
@@ -140,9 +154,24 @@ def test_is_plugin_bundle_zip_rejects_non_bundles(tmp_path):
     assert not is_plugin_bundle_zip(tmp_path)
 
 
-def test_plugin_bundle_repo_get_plugins_by_walking(tmp_path):
+def test_is_plugin_bundle_accepts_zip_and_extracted_directory(tmp_path):
+    zip_path = _write_bundle(tmp_path / "z")
+    dir_path = _write_bundle(tmp_path / "d", form="dir")
+    assert is_plugin_bundle(zip_path)
+    assert is_plugin_bundle(dir_path)
+    assert not is_plugin_bundle_zip(dir_path)
+
+
+def test_is_plugin_bundle_rejects_plugin_directory(tmp_path):
+    (tmp_path / "plugin1-v1.0.0.zip").write_bytes(PLUGIN1_V1.read_bytes())
+    assert not is_plugin_bundle(tmp_path)
+    assert not is_plugin_bundle(tmp_path / "missing")
+
+
+def test_plugin_bundle_repo_get_plugins_by_walking(tmp_path, bundle_form):
     p = _write_bundle(
         tmp_path,
+        form=bundle_form,
         plugin_zips={
             "plugin1-v1.0.0.zip": PLUGIN1_V1.read_bytes(),
             "plugin1-v2.0.0.zip": PLUGIN1_V2.read_bytes(),
@@ -158,9 +187,9 @@ def test_plugin_bundle_repo_get_plugins_by_walking(tmp_path):
         repo.close()
 
 
-def test_plugin_bundle_repo_fetch_plugin_from_bundle(tmp_path):
+def test_plugin_bundle_repo_fetch_plugin_from_bundle(tmp_path, bundle_form):
     plugin_data = PLUGIN1_V1.read_bytes()
-    p = _write_bundle(tmp_path, plugin_zips={"plugin1-v1.0.0.zip": plugin_data})
+    p = _write_bundle(tmp_path, form=bundle_form, plugin_zips={"plugin1-v1.0.0.zip": plugin_data})
     repo = PluginBundleRepo(p)
     try:
         name, buf = repo.fetch_compatible_plugin_from_spec("plugin1==1.0.0", "macos-aarch64", "9.1")
@@ -170,8 +199,8 @@ def test_plugin_bundle_repo_fetch_plugin_from_bundle(tmp_path):
         repo.close()
 
 
-def test_plugin_bundle_repo_find_target_for_platform(tmp_path):
-    p = _write_bundle(tmp_path)
+def test_plugin_bundle_repo_find_target_for_platform(tmp_path, bundle_form):
+    p = _write_bundle(tmp_path, form=bundle_form)
     repo = PluginBundleRepo(p)
     try:
         assert repo.target_ids == ["linux-x86_64-cp312"]
@@ -187,11 +216,11 @@ def test_plugin_bundle_repo_find_target_for_platform(tmp_path):
         repo.close()
 
 
-def test_plugin_bundle_repo_extract_wheelhouse(tmp_path):
+def test_plugin_bundle_repo_extract_wheelhouse(tmp_path, bundle_form):
     wh_files = {
         "dependencies/python/linux-x86_64-cp312/some_pkg-1.0-py3-none-any.whl": b"wheel-bytes",
     }
-    p = _write_bundle(tmp_path, wheelhouse_files=wh_files)
+    p = _write_bundle(tmp_path, form=bundle_form, wheelhouse_files=wh_files)
     repo = PluginBundleRepo(p)
     try:
         target = repo.find_target_for_platform("linux-x86_64", "3.12")
@@ -203,17 +232,35 @@ def test_plugin_bundle_repo_extract_wheelhouse(tmp_path):
         repo.close()
 
 
-def test_plugin_bundle_repo_extract_wheelhouse_rejects_duplicate_names(tmp_path):
+def test_plugin_bundle_repo_extract_wheelhouse_rejects_duplicate_names(tmp_path, bundle_form):
     wh_files = {
         "dependencies/python/linux-x86_64-cp312/pkg-1.0-py3-none-any.whl": b"a",
         "dependencies/python/linux-x86_64-cp312/nested/pkg-1.0-py3-none-any.whl": b"b",
     }
-    p = _write_bundle(tmp_path, wheelhouse_files=wh_files)
+    p = _write_bundle(tmp_path, form=bundle_form, wheelhouse_files=wh_files)
     repo = PluginBundleRepo(p)
     try:
         target = repo.find_target_for_platform("linux-x86_64", "3.12")
         assert target is not None
         with pytest.raises(ValueError, match="duplicate filename"):
+            repo.extract_wheelhouse(target, tmp_path / "extracted_wh")
+    finally:
+        repo.close()
+
+
+def test_plugin_bundle_repo_extract_wheelhouse_rejects_symlink_in_directory(tmp_path):
+    p = _write_bundle(tmp_path, form="dir")
+    outside = tmp_path / "outside.whl"
+    outside.write_bytes(b"outside")
+    try:
+        (p / "dependencies/python/linux-x86_64-cp312/link.whl").symlink_to(outside)
+    except OSError:
+        pytest.skip("creating symlinks is not permitted")
+    repo = PluginBundleRepo(p)
+    try:
+        target = repo.find_target_for_platform("linux-x86_64", "3.12")
+        assert target is not None
+        with pytest.raises(ValueError, match="symlink in wheelhouse"):
             repo.extract_wheelhouse(target, tmp_path / "extracted_wh")
     finally:
         repo.close()
@@ -280,25 +327,27 @@ def test_pip_target_pip_download_args_format():
     assert platforms == list(target.pip_platform_tags)
 
 
-def test_bundle_dependency_source_matching_target_yields_wheelhouse(tmp_path):
+def test_bundle_dependency_source_matching_target_yields_wheelhouse(tmp_path, bundle_form):
     wheel = "some_pkg-1.0-py3-none-any.whl"
     p = _write_bundle(
         tmp_path,
+        form=bundle_form,
         wheelhouse_files={f"dependencies/python/linux-x86_64-cp312/{wheel}": b"wheel"},
     )
     repo = PluginBundleRepo(p)
     try:
         with bundle_dependency_source(repo, "linux-x86_64", "3.12") as opts:
             assert opts is not None
-            assert opts.offline is False
+            assert opts.offline is True
+            assert "--no-index" in opts.build_args()
             assert len(opts.find_links) == 1
             assert (Path(opts.find_links[0]) / wheel).read_bytes() == b"wheel"
     finally:
         repo.close()
 
 
-def test_bundle_dependency_source_no_matching_target_returns_none(tmp_path):
-    p = _write_bundle(tmp_path)
+def test_bundle_dependency_source_no_matching_target_returns_none(tmp_path, bundle_form):
+    p = _write_bundle(tmp_path, form=bundle_form)
     repo = PluginBundleRepo(p)
     try:
         with bundle_dependency_source(repo, "windows-x86_64", "3.12") as opts:

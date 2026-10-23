@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import shutil
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -517,3 +519,110 @@ def test_aggregate_notes_only_repositories_that_get_plugins_skipped(tmp_path):
     assert agg.get_plugins() == []
     assert len(agg.notes()) == 1
     assert agg.notes()[0].startswith('Skipping plugins from "broken" repository: ')
+
+
+# --- CLI integration: bundle with Python dependencies, network blocked ---
+
+
+def _get_venv_python_version() -> tuple[int, int]:
+    out = subprocess.run(
+        [os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"], "-c", "import sys; print(*sys.version_info[:2])"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    major, minor = out.split()
+    return int(major), int(minor)
+
+
+def _write_wheel(directory: Path, name: str) -> None:
+    dist = name.replace("-", "_")
+    with zipfile.ZipFile(directory / f"{dist}-1.0-py3-none-any.whl", "w") as zf:
+        zf.writestr(f"{dist}/__init__.py", "")
+        zf.writestr(f"{dist}-1.0.dist-info/METADATA", f"Metadata-Version: 2.1\nName: {name}\nVersion: 1.0\n")
+        zf.writestr(f"{dist}-1.0.dist-info/WHEEL", "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n")
+        zf.writestr(f"{dist}-1.0.dist-info/RECORD", "")
+
+
+def _write_bundle_dir_with_python_dependency(tmp_path: Path) -> Path:
+    """Extracted bundle whose plugin `offdep` needs `offline-only-pkg`, a wheel that only the bundle has."""
+    tag = _current_platform_tag()
+    major, minor = _get_venv_python_version()
+    tag_id = f"{tag['idaPlatform']}-cp{major}{minor}"
+    tag.update(
+        id=tag_id,
+        pythonVersion=f"{major}.{minor}",
+        abis=[f"cp{major}{minor}", "abi3", "none"],
+        wheelhouse=f"dependencies/python/{tag_id}",
+    )
+    manifest = _make_bundle_manifest()
+    manifest["targetPlatformTags"] = [tag]
+
+    root = tmp_path / "bundle"
+    (root / "plugins").mkdir(parents=True)
+    (root / "plugin-bundle.json").write_text(json.dumps(manifest), encoding="utf-8")
+    wheelhouse = root / tag["wheelhouse"]
+    wheelhouse.mkdir(parents=True)
+    _write_wheel(wheelhouse, "offline-only-pkg")
+
+    metadata = {
+        "IDAMetadataDescriptorVersion": 1,
+        "plugin": {
+            "name": "offdep",
+            "version": "1.0.0",
+            "entryPoint": "offdep.py",
+            "urls": {"repository": "https://github.com/example/offdep"},
+            "authors": [{"name": "Test", "email": "test@example.com"}],
+            "pythonDependencies": ["offline-only-pkg"],
+        },
+    }
+    with zipfile.ZipFile(root / "plugins" / "offdep-1.0.0.zip", "w") as zf:
+        zf.writestr("offdep/ida-plugin.json", json.dumps(metadata))
+        zf.writestr("offdep/offdep.py", "# plugin")
+    return root
+
+
+def _is_installed_in_venv(distribution: str) -> bool:
+    result = subprocess.run(
+        [
+            os.environ["HCLI_CURRENT_IDA_PYTHON_EXE"],
+            "-c",
+            f"import importlib.metadata as m; m.version({distribution!r})",
+        ],
+        check=False,
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
+def test_install_from_extracted_bundle_directory(virtual_ida_environment_with_venv, block_network, tmp_path):
+    bundle_dir = _write_bundle_dir_with_python_dependency(tmp_path)
+
+    result = _invoke(CliRunner(mix_stderr=False), "--repo", str(bundle_dir), "install", "offdep")
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert ("offdep", "1.0.0") in [(r.name, r.version) for r in get_installed_plugin_records()]
+    assert _is_installed_in_venv("offline-only-pkg")
+
+
+def test_offline_install_from_named_bundle_repository(virtual_ida_environment_with_venv, block_network, tmp_path):
+    bundle_dir = _write_bundle_dir_with_python_dependency(tmp_path)
+    runner = CliRunner(mix_stderr=False)
+    assert _invoke(runner, "repo", "add", "offline", bundle_dir.as_uri()).exit_code == 0
+
+    result = _invoke(runner, "--offline", "install", "offline/offdep")
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert ("offdep", "1.0.0") in [(r.name, r.version) for r in get_installed_plugin_records()]
+    assert _is_installed_in_venv("offline-only-pkg")
+
+
+def test_offline_install_from_named_online_repository_is_refused(virtual_ida_environment, tmp_path):
+    json_path = _make_json_repo_file(tmp_path, PLUGIN1_V1)
+    runner = CliRunner(mix_stderr=False)
+    assert _invoke(runner, "repo", "add", "local-index", json_path.as_uri()).exit_code == 0
+
+    result = _invoke(runner, "--offline", "install", "local-index/plugin1==1.0.0")
+
+    assert result.exit_code != 0
+    assert "--offline requires --pip-find-links or a plugin bundle repository" in result.output

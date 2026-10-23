@@ -22,7 +22,7 @@ from hcli.lib.ida.plugin.bundle import bundle_dependency_source
 from hcli.lib.ida.plugin.context import InstallContext, InstallOptions
 from hcli.lib.ida.plugin.reference import PluginReference
 from hcli.lib.ida.plugin.repo.aggregate import AggregatePluginRepo
-from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo, is_plugin_bundle_zip
+from hcli.lib.ida.plugin.repo.bundle import PluginBundleRepo, is_plugin_bundle
 from hcli.lib.ida.python import PipOptions, merge_bundle_pip_options
 from hcli.lib.venv import PythonVersion
 
@@ -72,7 +72,7 @@ def read_repos_file(path: Path) -> list[str]:
 @click.group()
 @click.option(
     "--repo",
-    help="'github', path to directory containing plugins, path to JSON file, URL to JSON file, or path to a plugin bundle .zip",
+    help="'github', path to directory containing plugins, path to JSON file, URL to JSON file, or path to a plugin bundle .zip or its extracted directory",
     hidden=True,
 )
 @click.option("--with-repos-list", help="path to file containing known GitHub repositories", hidden=True)
@@ -179,10 +179,10 @@ def plugin(
                 )
                 raise click.Abort()
 
-            if path.is_dir():
-                plugin_repo = hcli.lib.ida.plugin.repo.fs.FileSystemPluginRepo(path)
-            elif is_plugin_bundle_zip(path):
+            if is_plugin_bundle(path):
                 plugin_repo = PluginBundleRepo(path)
+            elif path.is_dir():
+                plugin_repo = hcli.lib.ida.plugin.repo.fs.FileSystemPluginRepo(path)
             else:
                 plugin_repo = hcli.lib.ida.plugin.repo.file.JSONFilePluginRepo.from_file(path)
 
@@ -199,7 +199,18 @@ def plugin(
     ctx.obj["plugin_repo"] = plugin_repo
     ctx.obj.setdefault("plugin_repos", None)
 
-    if offline and not pip_find_links and not isinstance(plugin_repo, PluginBundleRepo):
+    # The repository that an aggregate uses is known only per plugin, in resolve_bundle_install_context.
+    if not isinstance(plugin_repo, (PluginBundleRepo, AggregatePluginRepo)):
+        validate_offline_sources(pip_options)
+
+
+def validate_offline_sources(pip_options: PipOptions) -> None:
+    """Check that `--offline` has a local source for Python dependencies, other than a bundle wheelhouse.
+
+    Raises:
+        click.Abort: when `--offline` is given without `--pip-find-links`.
+    """
+    if pip_options.offline and not pip_options.find_links:
         console.print("[red]--offline requires --pip-find-links or a plugin bundle repository[/red]")
         raise click.Abort()
 
@@ -266,9 +277,11 @@ def resolve_bundle_install_context(
     ``with`` block.
 
     Raises:
-        click.Abort: when the bundle has no matching dependency target.
+        click.Abort: when the bundle has no matching dependency target, or when
+            `--offline` is given for a repository that is not a bundle and there is no `--pip-find-links`.
     """
     if plugin_repo is None:
+        validate_offline_sources(install_ctx.options.pip_options)
         yield install_ctx
         return
 
@@ -277,16 +290,15 @@ def resolve_bundle_install_context(
         try:
             plugin_obj = plugin_repo.get_plugin_by_name(plugin_name, host=host)
         except KeyError:
+            validate_offline_sources(install_ctx.options.pip_options)
             yield install_ctx
             return
         owner_name = plugin_repo.repo_of(plugin_obj)
         if owner_name is not None:
             effective_repo = plugin_repo.get_child_repo(owner_name)
 
-    if not isinstance(effective_repo, PluginBundleRepo):
-        yield install_ctx
-        return
-    if install_ctx.options.pip_options.has_custom_sources:
+    if not isinstance(effective_repo, PluginBundleRepo) or install_ctx.options.pip_options.has_custom_sources:
+        validate_offline_sources(install_ctx.options.pip_options)
         yield install_ctx
         return
 

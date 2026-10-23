@@ -97,7 +97,7 @@ The plugin command group gains these options:
 hcli plugin [--repo REPO] [--pip-index-url URL] [--pip-extra-index-url URL] [--pip-find-links PATH_OR_URL] [--offline] COMMAND ...
 ```
 
-`--repo` accepts the existing repository forms plus a local plugin bundle archive. A plugin bundle archive is a ZIP file containing top-level `plugin-bundle.json`.
+`--repo` accepts the existing repository forms plus a local plugin bundle. A plugin bundle is a ZIP file containing top-level `plugin-bundle.json`, or the directory that extracting that ZIP file gives. HCLI reads a directory with a top-level `plugin-bundle.json` as a plugin bundle. Other directories are directories of plugin archives. `hcli plugin repo add` accepts the same forms as `file://` URLs.
 
 `--pip-index-url` is passed to pip as `--index-url`. It may point to PyPI, Artifactory, or any other compatible package index.
 
@@ -105,7 +105,7 @@ hcli plugin [--repo REPO] [--pip-index-url URL] [--pip-extra-index-url URL] [--p
 
 `--pip-find-links` is repeatable and passed to pip as `--find-links`.
 
-`--offline` forces pip dependency resolution to use only local sources. It passes `--no-index` and must be used with either a plugin bundle wheelhouse or at least one `--pip-find-links` value.
+`--offline` forces pip dependency resolution to use only local sources. It passes `--no-index` and must be used with either a plugin bundle wheelhouse or at least one `--pip-find-links` value. A plugin bundle wheelhouse already implies `--no-index`, so `--offline` changes nothing for a bundle repository.
 
 Pip source precedence is:
 
@@ -186,17 +186,19 @@ Bundle creation does not check IDA version compatibility. The builder machine ma
 
 ## Dependency installation behavior
 
-When installing a plugin with `pythonDependencies`, HCLI installs dependencies with pip before extracting the plugin. When a plugin bundle is in use, HCLI extracts the matching wheelhouse to a temporary directory and adds it as a `--find-links` source. By default pip can still reach online indexes, so a bundle with an incomplete wheelhouse will fall back to downloading missing wheels. When the user passes `--offline`, HCLI adds `--no-index` so pip resolves only from local sources:
+When installing a plugin with `pythonDependencies`, HCLI installs dependencies with pip before extracting the plugin. When a plugin bundle is in use, HCLI copies the matching wheelhouse to a temporary directory, adds it as a `--find-links` source, and passes `--no-index`, so pip resolves only from the bundle:
 
 ```console
 python -m pip install \
   --isolated \
   --disable-pip-version-check \
   --no-cache-dir \
-  [--no-index]           # only when --offline is passed \
+  --no-index \
   --find-links <temporary-wheelhouse> \
   <all dependency specs>
 ```
+
+Bundle creation puts the wheels of all Python dependencies of each target into its wheelhouse, so the index has nothing to add. Without `--no-index`, pip asks the index for each requirement first. On a machine with no network, pip retries each request, and an install of a plugin with many dependencies takes about 15 minutes before it succeeds from the wheelhouse. A bundle that is missing a wheel fails the install with a pip resolver error. To use an index together with a bundle, pass `--pip-index-url` or `--pip-find-links`. Explicit pip options replace the bundle wheelhouse.
 
 HCLI includes dependency specs from already installed HCLI-managed plugins plus the plugin being installed or upgraded. Already installed packages may satisfy requirements if pip considers them compatible. HCLI does not use `--ignore-installed` by default.
 
