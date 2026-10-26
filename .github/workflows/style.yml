@@ -42,8 +42,8 @@ jobs:
       - name: Lint with ruff
         run: |
           uvx ruff format --check --line-length 120 src/ tests/
-          uvx ruff check src/ tests/
-          uvx ruff check --select I src/ tests/
+          uvx ruff check --no-fix src/ tests/
+          uvx ruff check --no-fix --select I src/ tests/
 
       - name: Lint with mypy
         run: |
