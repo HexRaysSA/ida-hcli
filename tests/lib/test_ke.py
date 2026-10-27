@@ -25,6 +25,11 @@ from hcli.lib.ida.handler.ke_url_handler import (
     _validate_content_url,
 )
 
+
+def _fake_clock():
+    return SimpleNamespace(sleep=MagicMock(), time=time.time)
+
+
 # Content-true fixtures: the handler VERIFIES downloads against the link's sha, so the
 # fixture identity is the real hash of the fixture bytes.
 CONTENT = b"file content"
@@ -508,7 +513,7 @@ class TestHandleKeUrl:
 
         with (
             patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env,
-            patch("hcli.lib.ida.handler.ke_url_handler.time.sleep"),
+            patch("hcli.lib.ida.handler.ke_url_handler.time", _fake_clock()),
         ):
             _set_handler_env(mock_env, tmp_path)
             KEURLHandler().handle(uri, parsed, no_launch=True, timeout=120.0, skip_analysis=False)
@@ -551,7 +556,7 @@ class TestHandleKeUrl:
 
         with (
             patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env,
-            patch("hcli.lib.ida.handler.ke_url_handler.time.sleep"),
+            patch("hcli.lib.ida.handler.ke_url_handler.time", _fake_clock()),
             patch("hcli.lib.ida.resolve._print"),
         ):
             _set_handler_env(mock_env, tmp_path)
@@ -600,7 +605,7 @@ class TestHandleKeUrl:
 
         with (
             patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env,
-            patch("hcli.lib.ida.handler.ke_url_handler.time.sleep"),
+            patch("hcli.lib.ida.handler.ke_url_handler.time", _fake_clock()),
             patch("hcli.lib.ida.resolve._print"),
         ):
             _set_handler_env(mock_env, tmp_path, allow_private=False, skip_confirm=False)
@@ -638,7 +643,7 @@ class TestHandleKeUrl:
 
         with (
             patch("hcli.lib.ida.handler.ke_url_handler.ENV") as mock_env,
-            patch("hcli.lib.ida.handler.ke_url_handler.time.sleep"),
+            patch("hcli.lib.ida.handler.ke_url_handler.time", _fake_clock()),
             patch("hcli.lib.ida.handler.ke_url_handler.socket.getaddrinfo") as mock_gai,
         ):
             # allow_private=False so a reached _validate_content_url WOULD resolve — proving
