@@ -20,6 +20,7 @@
 - Add `hcli extension` as an alias for `hcli plugin`, so `hcli extension install <plugin>` uses the plugin manager
 
 ### Fixed
+- `hcli ida install --accept-eula` and `hcli ida accept-eula` accept the updated EULA of IDA 9.5. IDA 9.5 checks the registry key `EULA 95`, and hcli wrote only `EULA 90` to `EULA 94`, so IDA 9.5 refused to run headless with `License not yet accepted, cannot run in batch mode`
 - `hcli license get` and `hcli ida install --license-id` no longer download the IDA 9.0 format of a license file (`idapro_v90_<license-id>.hexlic`). With both files installed, IDA could load the 9.0 file and miss add-ons that only the current file lists. Download the 9.0 format from the customer portal if you need it
 - `hcli plugin install` and `hcli plugin upgrade` from a plugin bundle install Python dependencies only from the bundle wheelhouse, also without `--offline`. Before, pip asked the online index first, and on a machine with no network an install took about 15 minutes. `--repo` and `hcli plugin repo add` accept the directory that extracting a bundle gives, and `--offline` works with a named repository that is a plugin bundle
 - `hcli plugin install` and `hcli plugin upgrade` show a pip failure as one line, such as `pip could not build pminit`, instead of all of the pip output. Set `HCLI_DEBUG=1` to see the pip output. An optional dependency that is not installed is shown as `Optional dependency not installed`. When the plugin has dependencies, the last line starts with `Success:` and gives the number of dependencies that are not installed
