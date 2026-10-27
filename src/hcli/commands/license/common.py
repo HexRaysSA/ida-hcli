@@ -16,7 +16,7 @@ from hcli.lib.constants import cli
 
 # License files in the IDA 9.0 format. Next to the current `hexlic` file, IDA can
 # load one of these instead and miss the add-ons that only the current file lists,
-# so HCLI does not download them. Users who need one get it from the portal.
+# so HCLI does not download them unless asked to with `--include-legacy-license`.
 LEGACY_ASSET_TYPES = frozenset({"hexlic_v90"})
 
 
@@ -81,11 +81,17 @@ async def select_licenses(customer_id: str, predicate: Callable[[License], bool]
         return selected
 
 
+def downloadable_asset_types(lic: License, include_legacy: bool = False) -> list[str]:
+    """Return the asset types of a license to download, without the legacy ones unless asked for."""
+    return [asset for asset in (lic.asset_types or []) if include_legacy or asset not in LEGACY_ASSET_TYPES]
+
+
 async def download_license(
     customer_id: str,
     lic: License,
     target_dir: str,
     ask_assets: bool = True,
+    include_legacy: bool = False,
 ) -> list[str]:
     """
     Download a single license.
@@ -95,18 +101,19 @@ async def download_license(
         lic: License to download
         target_dir: Target directory for downloads
         ask_assets: Whether to ask which asset types to download
+        include_legacy: Whether to also download the IDA 9.0 license format
 
     Returns:
         List of downloaded file paths
     """
     results: list[str] = []
-    asset_types = [asset for asset in (lic.asset_types or []) if asset not in LEGACY_ASSET_TYPES]
+    asset_types = downloadable_asset_types(lic, include_legacy)
 
     for asset in lic.asset_types or []:
-        if asset in LEGACY_ASSET_TYPES:
+        if asset not in asset_types:
             console.print(
                 f"[grey69]Skipped {asset} for {lic.pubhash}: the IDA 9.0 license format. "
-                f"Download it from {ENV.HCLI_PORTAL_URL} if you need it.[/grey69]"
+                f"Use --include-legacy-license or download it from {ENV.HCLI_PORTAL_URL} if you need it.[/grey69]"
             )
 
     if not asset_types:

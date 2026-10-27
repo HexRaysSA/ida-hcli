@@ -37,6 +37,24 @@ from hcli.lib.util.io import get_hcli_display_command, get_os
 
 logger = logging.getLogger(__name__)
 
+# IDA before 9.3 rejects a license file that lists an add-on it does not know. For
+# licenses with such add-ons the portal also offers the IDA 9.0 format
+# (`<product>_v90_<license-id>.hexlic`), which leaves them out.
+FIRST_CURRENT_LICENSE_FORMAT_VERSION = (9, 3)
+
+
+def uses_legacy_license_format(version: IdaProduct) -> bool:
+    return (version.major, version.minor) < FIRST_CURRENT_LICENSE_FORMAT_VERSION
+
+
+def select_license_files(license_files: list[Path], version: IdaProduct) -> list[Path]:
+    """Pick the license files to install for an IDA version: never both formats."""
+    legacy = [f for f in license_files if "_v90_" in f.name]
+    current = [f for f in license_files if f not in legacy]
+    if uses_legacy_license_format(version) and legacy:
+        return legacy
+    return current
+
 
 @click.option(
     "-d",
@@ -180,7 +198,10 @@ async def install(
                 # and the idalib configuration and EULA acceptance depend on it.
                 actions = [f"Extract installer to: {install_dir_path}"]
                 if license_id:
-                    actions.append(f"Install license to: {get_license_dir(install_dir_path)}")
+                    license_format = (
+                        " (IDA 9.0 format, if the license has one)" if uses_legacy_license_format(version) else ""
+                    )
+                    actions.append(f"Install license{license_format} to: {get_license_dir(install_dir_path)}")
                 if set_default:
                     actions.extend(
                         [
@@ -205,10 +226,12 @@ async def install(
             install_ida(installer_path, install_dir_path)
 
             if license_id:
-                await get_license.callback(lid=license_id, output_dir=tmp_dir)
+                await get_license.callback(
+                    lid=license_id, output_dir=tmp_dir, include_legacy=uses_legacy_license_format(version)
+                )
 
-                # Find all *{license_id}.hexlic files in tmp_dir and install them
-                license_files = list(Path(tmp_dir).glob(f"*{license_id}.hexlic"))
+                # Find the *{license_id}.hexlic files in tmp_dir and install the format this IDA version reads
+                license_files = select_license_files(list(Path(tmp_dir).glob(f"*{license_id}.hexlic")), version)
                 if not license_files:
                     raise FileNotFoundError(f"License file matching *{license_id}.hexlic not found in {tmp_dir}")
 
