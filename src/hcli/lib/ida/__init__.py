@@ -551,6 +551,9 @@ def get_license_dir(ida_dir: Path) -> Path:
     return get_ida_path(ida_dir)
 
 
+EULA_REGISTRY_KEYS = ("EULA 90", "EULA 91", "EULA 92", "EULA 93", "EULA 94", "EULA 95")
+
+
 def accept_eula(install_dir: Path) -> None:
     # Accept the EULA (to be persistent across runs - you need to mount $HOME/.idapro as a volume)
     old_idadir = os.environ.get("IDADIR")
@@ -563,11 +566,8 @@ def accept_eula(install_dir: Path) -> None:
         except Exception:
             raise RuntimeError("idalib not available")
 
-        ida_registry.reg_write_int("EULA 90", 1)
-        ida_registry.reg_write_int("EULA 91", 1)
-        ida_registry.reg_write_int("EULA 92", 1)
-        ida_registry.reg_write_int("EULA 93", 1)
-        ida_registry.reg_write_int("EULA 94", 1)
+        for key in EULA_REGISTRY_KEYS:
+            ida_registry.reg_write_int(key, 1)
         logger.info("EULA accepted")
     finally:
         if old_idadir is None:
