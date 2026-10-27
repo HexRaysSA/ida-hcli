@@ -209,6 +209,7 @@ class APIClient:
         force: bool = False,
         auth: bool = False,
         asset_key: str | None = None,
+        cache: bool = True,
     ) -> str:
         """Download file with progress bar and caching.
 
@@ -219,6 +220,7 @@ class APIClient:
             force: Skip cache and force download
             auth: Use authentication
             asset_key: Full asset key (e.g., 'release/9.2/ida-pro/filename.zip') for cache path
+            cache: When False, stream straight to the target and never touch the cache
         """
         target_dir = Path(target_dir).expanduser().resolve()
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -230,12 +232,17 @@ class APIClient:
             parsed = urlparse(url)
             filename = Path(parsed.path).name or "download"
 
+        target_path = target_dir / filename
+
+        if not cache:
+            await self._stream_to_file(url, target_path, filename, auth)
+            return str(target_path)
+
         # Create cache path using XDG_CACHE_HOME with "downloads" key
         # Use the full asset_key if provided, otherwise fall back to filename
         cache_key = asset_key or filename
         cache_path = get_cache_directory("downloads") / cache_key
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path = target_dir / filename
 
         # Check cache
         if cache_path.exists() and not force:
@@ -269,44 +276,7 @@ class APIClient:
                 # Continue with download if cache check fails
                 pass
 
-        # Download file
-        headers = self._get_headers(auth) if auth else {}
-
-        async with self.client.stream("GET", url, headers=headers, follow_redirects=True) as response:
-            await self._handle_response(response)
-
-            total_size_str = response.headers.get("content-length")
-            total_size = int(total_size_str) if total_size_str else 0
-
-            # Proactive space check if total_size is known
-            if total_size > 0:
-                check_free_space(cache_path.parent, total_size)
-
-            with Progress(
-                "[progress.description]{task.description}",
-                "[progress.percentage]{task.percentage:>3.0f}%",
-                DownloadColumn(),
-                TransferSpeedColumn(),
-                TimeRemainingColumn(),
-                console=stderr_console,
-            ) as progress:
-                download_task = progress.add_task(
-                    f"Downloading {filename}",
-                    total=total_size if total_size > 0 else None,
-                )
-
-                try:
-                    with open(cache_path, "wb") as f:  # noqa: ASYNC230
-                        async for chunk in response.aiter_bytes(chunk_size=8192):
-                            f.write(chunk)
-                            if total_size > 0:
-                                progress.update(download_task, advance=len(chunk))
-                except OSError as e:
-                    if e.errno == errno.ENOSPC:
-                        if cache_path.exists():
-                            cache_path.unlink()
-                        raise NoSpaceError(cache_path.parent) from e
-                    raise
+        await self._stream_to_file(url, cache_path, filename, auth)
 
         # Check space at target before copying from cache
         file_size = cache_path.stat().st_size
@@ -323,6 +293,46 @@ class APIClient:
             raise
 
         return str(target_path)
+
+    async def _stream_to_file(self, url: str, path: Path, filename: str, auth: bool) -> None:
+        """Stream ``url`` into ``path`` with a progress bar."""
+        headers = self._get_headers(auth) if auth else {}
+
+        async with self.client.stream("GET", url, headers=headers, follow_redirects=True) as response:
+            await self._handle_response(response)
+
+            total_size_str = response.headers.get("content-length")
+            total_size = int(total_size_str) if total_size_str else 0
+
+            # Proactive space check if total_size is known
+            if total_size > 0:
+                check_free_space(path.parent, total_size)
+
+            with Progress(
+                "[progress.description]{task.description}",
+                "[progress.percentage]{task.percentage:>3.0f}%",
+                DownloadColumn(),
+                TransferSpeedColumn(),
+                TimeRemainingColumn(),
+                console=stderr_console,
+            ) as progress:
+                download_task = progress.add_task(
+                    f"Downloading {filename}",
+                    total=total_size if total_size > 0 else None,
+                )
+
+                try:
+                    with open(path, "wb") as f:  # noqa: ASYNC230
+                        async for chunk in response.aiter_bytes(chunk_size=8192):
+                            f.write(chunk)
+                            if total_size > 0:
+                                progress.update(download_task, advance=len(chunk))
+                except OSError as e:
+                    if e.errno == errno.ENOSPC:
+                        if path.exists():
+                            path.unlink()
+                        raise NoSpaceError(path.parent) from e
+                    raise
 
 
 # Global API client instance
