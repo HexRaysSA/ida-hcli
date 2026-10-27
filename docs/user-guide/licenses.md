@@ -74,11 +74,18 @@ The options are:
 License files are named after the license, for example
 `idapro_96-0000-0000-01.hexlic`.
 
-HCLI downloads only the current license file format. The portal also offers an
-IDA 9.0 format of some licenses (`idapro_v90_96-0000-0000-01.hexlic`), which
-HCLI skips: with both files installed, IDA can load the 9.0 file and miss add-ons
-that only the current file lists. If you need the 9.0 format, download it from
-the [customer portal](https://my.hex-rays.com).
+HCLI downloads only the current license file format by default. The portal also
+offers an IDA 9.0 format of some licenses (`idapro_v90_96-0000-0000-01.hexlic`),
+which HCLI skips: with both files installed, IDA can load the 9.0 file and miss
+add-ons that only the current file lists. IDA before 9.3 needs the 9.0 format
+when the license has add-ons it does not know. `hcli ida install --license-id`
+picks the format for the IDA version it installs. To download the 9.0 format
+yourself, pass `--include-legacy-license` to `hcli license get`, or download it
+from the [customer portal](https://my.hex-rays.com):
+
+```bash
+hcli license get --id 96-0000-0000-01 --include-legacy-license
+```
 
 ## Installing Licenses
 

@@ -3,6 +3,8 @@
 ## unreleased
 
 ### Added
+- `hcli ida install --license-id` installs the IDA 9.0 format of the license file (`idapro_v90_<license-id>.hexlic`) instead of the current one when the installer is for IDA before 9.3 and the license has that format. IDA before 9.3 rejects a license file that lists an add-on it does not know (#429)
+- `hcli license get --include-legacy-license` also downloads the IDA 9.0 format of a license file (#429)
 - `hcli ida install` without `--create-python-environment` checks IDA's Python environment after it installs IDA, and warns when IDA uses a global Python or another setup that `hcli ida python doctor` reports
 - `hcli ida python doctor`, `hcli plugin install`, and `hcli plugin upgrade` report an error when the current user cannot write to the site-packages directory of IDA's Python
 - `hcli plugin bundle create` accepts bare and range plugin specs, and resolves them and unpinned plugin dependencies to the newest version for each target platform
