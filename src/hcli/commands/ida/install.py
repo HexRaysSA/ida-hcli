@@ -12,6 +12,7 @@ import rich_click as click
 from rich.prompt import Confirm
 
 from hcli.commands.download import download
+from hcli.commands.license.common import uses_legacy_license_format
 from hcli.commands.license.get import get_license
 from hcli.lib.auth import get_auth_service
 from hcli.lib.commands import async_command, enforce_login
@@ -36,24 +37,6 @@ from hcli.lib.ida.python.environment import warn_python_environment
 from hcli.lib.util.io import get_hcli_display_command, get_os
 
 logger = logging.getLogger(__name__)
-
-# IDA before 9.3 rejects a license file that lists an add-on it does not know. For
-# licenses with such add-ons the portal also offers the IDA 9.0 format
-# (`<product>_v90_<license-id>.hexlic`), which leaves them out.
-FIRST_CURRENT_LICENSE_FORMAT_VERSION = (9, 3)
-
-
-def uses_legacy_license_format(version: IdaProduct) -> bool:
-    return (version.major, version.minor) < FIRST_CURRENT_LICENSE_FORMAT_VERSION
-
-
-def select_license_files(license_files: list[Path], version: IdaProduct) -> list[Path]:
-    """Pick the license files to install for an IDA version: never both formats."""
-    legacy = [f for f in license_files if "_v90_" in f.name]
-    current = [f for f in license_files if f not in legacy]
-    if uses_legacy_license_format(version) and legacy:
-        return legacy
-    return current
 
 
 @click.option(
@@ -136,6 +119,7 @@ async def install(
                 )
 
             version = IdaProduct.from_installer_filename(installer_path.name)
+            legacy_license = uses_legacy_license_format(version)
 
             if not install_dir:
                 install_dir_path = get_default_ida_install_directory(version)
@@ -198,9 +182,7 @@ async def install(
                 # and the idalib configuration and EULA acceptance depend on it.
                 actions = [f"Extract installer to: {install_dir_path}"]
                 if license_id:
-                    license_format = (
-                        " (IDA 9.0 format, if the license has one)" if uses_legacy_license_format(version) else ""
-                    )
+                    license_format = " (IDA 9.0 format, if the license has one)" if legacy_license else ""
                     actions.append(f"Install license{license_format} to: {get_license_dir(install_dir_path)}")
                 if set_default:
                     actions.extend(
@@ -227,11 +209,11 @@ async def install(
 
             if license_id:
                 await get_license.callback(
-                    lid=license_id, output_dir=tmp_dir, include_legacy=uses_legacy_license_format(version)
+                    lid=license_id, output_dir=tmp_dir, legacy="prefer" if legacy_license else None
                 )
 
-                # Find the *{license_id}.hexlic files in tmp_dir and install the format this IDA version reads
-                license_files = select_license_files(list(Path(tmp_dir).glob(f"*{license_id}.hexlic")), version)
+                # Find all *{license_id}.hexlic files in tmp_dir and install them
+                license_files = list(Path(tmp_dir).glob(f"*{license_id}.hexlic"))
                 if not license_files:
                     raise FileNotFoundError(f"License file matching *{license_id}.hexlic not found in {tmp_dir}")
 
