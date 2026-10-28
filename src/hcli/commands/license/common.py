@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
 import questionary
 
@@ -14,10 +15,24 @@ from hcli.lib.api.license import License, license
 from hcli.lib.console import console
 from hcli.lib.constants import cli
 
-# License files in the IDA 9.0 format. Next to the current `hexlic` file, IDA can
-# load one of these instead and miss the add-ons that only the current file lists,
-# so HCLI does not download them unless asked to with `--include-legacy-license`.
-LEGACY_ASSET_TYPES = frozenset({"hexlic_v90"})
+if TYPE_CHECKING:
+    from hcli.lib.ida import IdaProduct
+
+# License files in the IDA 9.0 format, and the current format each one replaces.
+# IDA before 9.3 rejects a license file that lists an add-on it does not know, and
+# for licenses with such add-ons the portal also offers the 9.0 format, which leaves
+# them out. Next to the current file, IDA can load the 9.0 one and miss those add-ons,
+# so HCLI downloads one or the other unless asked for both.
+LEGACY_ASSET_TYPES = {"hexlic_v90": "hexlic"}
+FIRST_CURRENT_LICENSE_FORMAT_VERSION = (9, 3)
+
+# include: download the 9.0 format too; prefer: download it instead of the format it
+# replaces. Without either, HCLI leaves it out.
+LegacyLicense = Literal["include", "prefer"]
+
+
+def uses_legacy_license_format(version: IdaProduct) -> bool:
+    return (version.major, version.minor) < FIRST_CURRENT_LICENSE_FORMAT_VERSION
 
 
 async def select_licenses(customer_id: str, predicate: Callable[[License], bool] | None = None) -> list[License]:
@@ -81,9 +96,14 @@ async def select_licenses(customer_id: str, predicate: Callable[[License], bool]
         return selected
 
 
-def downloadable_asset_types(lic: License, include_legacy: bool = False) -> list[str]:
-    """Return the asset types of a license to download, without the legacy ones unless asked for."""
-    return [asset for asset in (lic.asset_types or []) if include_legacy or asset not in LEGACY_ASSET_TYPES]
+def downloadable_asset_types(asset_types: list[str], legacy: LegacyLicense | None = None) -> list[str]:
+    """Return the asset types of a license to download, given how to treat the IDA 9.0 format."""
+    if legacy == "include":
+        return list(asset_types)
+    if legacy == "prefer":
+        replaced = {LEGACY_ASSET_TYPES[asset] for asset in asset_types if asset in LEGACY_ASSET_TYPES}
+        return [asset for asset in asset_types if asset not in replaced]
+    return [asset for asset in asset_types if asset not in LEGACY_ASSET_TYPES]
 
 
 async def download_license(
@@ -91,7 +111,7 @@ async def download_license(
     lic: License,
     target_dir: str,
     ask_assets: bool = True,
-    include_legacy: bool = False,
+    legacy: LegacyLicense | None = None,
 ) -> list[str]:
     """
     Download a single license.
@@ -101,16 +121,16 @@ async def download_license(
         lic: License to download
         target_dir: Target directory for downloads
         ask_assets: Whether to ask which asset types to download
-        include_legacy: Whether to also download the IDA 9.0 license format
+        legacy: How to treat the IDA 9.0 license format
 
     Returns:
         List of downloaded file paths
     """
     results: list[str] = []
-    asset_types = downloadable_asset_types(lic, include_legacy)
+    asset_types = downloadable_asset_types(lic.asset_types or [], legacy)
 
     for asset in lic.asset_types or []:
-        if asset not in asset_types:
+        if legacy is None and asset in LEGACY_ASSET_TYPES:
             console.print(
                 f"[grey69]Skipped {asset} for {lic.pubhash}: the IDA 9.0 license format. "
                 f"Use --include-legacy-license or download it from {ENV.HCLI_PORTAL_URL} if you need it.[/grey69]"

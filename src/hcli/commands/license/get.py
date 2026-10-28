@@ -4,6 +4,8 @@ import rich_click as click
 
 from hcli.commands.common import select_customer
 from hcli.commands.license.common import (
+    FIRST_CURRENT_LICENSE_FORMAT_VERSION,
+    LegacyLicense,
     download_license,
     ensure_target_directory,
     select_licenses,
@@ -27,9 +29,10 @@ from hcli.lib.console import console
 @click.option("--output-dir", "output_dir", default="./", help="Output directory for license files")
 @click.option(
     "--include-legacy-license",
-    "include_legacy",
-    is_flag=True,
-    help="Also download the IDA 9.0 license format (hexlic_v90), needed by IDA 9.0 to 9.2",
+    "legacy",
+    flag_value="include",
+    help="Also download the IDA 9.0 license format (hexlic_v90), needed by IDA before "
+    + ".".join(map(str, FIRST_CURRENT_LICENSE_FORMAT_VERSION)),
 )
 @async_command
 async def get_license(
@@ -38,7 +41,7 @@ async def get_license(
     type: str | None = None,
     all: bool = False,
     output_dir: str = "./",
-    include_legacy: bool = False,
+    legacy: LegacyLicense | None = None,
 ) -> None:
     """Download license files with optional filtering."""
     # Select customer
@@ -77,6 +80,6 @@ async def get_license(
     console.print(f"\n[bold]Downloading {len(selected)} license(s) to {target_dir}[/bold]")
 
     for lic in selected:
-        await download_license(customer_id_str, lic, target_dir, ask_assets=False, include_legacy=include_legacy)
+        await download_license(customer_id_str, lic, target_dir, ask_assets=False, legacy=legacy)
 
     console.print("[green]Download completed[/green]")
