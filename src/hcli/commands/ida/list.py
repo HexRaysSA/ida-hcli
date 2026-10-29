@@ -11,7 +11,7 @@ from rich.text import Text
 
 from hcli.lib.config import config_store
 from hcli.lib.ida import is_ida_dir, parse_instance_version
-from hcli.lib.util.io import get_hcli_display_command
+from hcli.lib.util.io import _quote_for_shell, get_hcli_display_command
 
 console = Console()
 
@@ -101,8 +101,12 @@ def list_instances() -> None:
             latest_valid = valid_rows[0] if valid_rows else None
             if latest_valid and latest_valid["name"] != default_instance:
                 console.print(
-                    "[yellow]Latest IDA version is not the default. "
-                    f"Use '{get_hcli_display_command()} ida switch {latest_valid['name']}' to update it.[/yellow]"
+                    Text(
+                        "Latest IDA version is not the default. "
+                        f"Use '{get_hcli_display_command()} ida switch {_quote_for_shell(latest_valid['name'])}' "
+                        "to update it.",
+                        style="yellow",
+                    )
                 )
         else:
             console.print(f"[red]Default instance '{default_instance}' no longer exists![/red]")
