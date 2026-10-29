@@ -52,6 +52,9 @@ build-backend = "setuptools.build_meta"
 [dependency-groups]
 dev = [
     "types-pexpect>=4.9.0.20250809",
+    # Pinned through uv.lock: `preview = true` lets a new ruff release add
+    # rules, which would fail CI without a code change.
+    "ruff>=0.17.2",
 ]
 
 [project.optional-dependencies]
