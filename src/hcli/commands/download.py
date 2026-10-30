@@ -7,7 +7,7 @@ import rich_click as click
 from questionary import Choice
 
 from hcli.commands.common import safe_ask_async
-from hcli.lib.api.asset import Asset, TreeNode
+from hcli.lib.api.asset import Asset, Tag, TreeNode
 from hcli.lib.api.asset import asset as asset_api
 from hcli.lib.api.common import get_api_client
 from hcli.lib.commands import async_command, auth_command
@@ -194,33 +194,28 @@ def validate_pattern_for_direct_mode(ctx, param, value):
     return value
 
 
-async def resolve_tag(tag_spec: str) -> str | None:
-    """Resolve a tag specification (e.g., 'ida-pro:latest' or 'ida-pro:9.2') to an asset key.
+def resolve_tag(tags: list[Tag], tag_spec: str) -> str | None:
+    """Resolve a tag specification (e.g., 'ida-pro:latest:armmac') to an asset key.
 
     Args:
-        tag_spec: Tag specification in format 'name' or 'name:version'
+        tags: The tags available to the user, as returned by the API
+        tag_spec: Tag specification in format 'category:version:os'
 
     Returns:
         The resolved asset key, or None if tag not found
     """
-    try:
-        tags = await asset_api.get_tags()
+    # Try exact match first
+    for tag in tags:
+        if tag.tag == tag_spec:
+            return tag.key
 
-        # Try exact match first
-        for tag in tags:
-            if tag.tag == tag_spec:
-                return tag.key
+    # If no exact match, try case-insensitive
+    tag_spec_lower = tag_spec.lower()
+    for tag in tags:
+        if tag.tag.lower() == tag_spec_lower:
+            return tag.key
 
-        # If no exact match, try case-insensitive
-        tag_spec_lower = tag_spec.lower()
-        for tag in tags:
-            if tag.tag.lower() == tag_spec_lower:
-                return tag.key
-
-        return None
-    except Exception as e:
-        console.print(f"[yellow]Warning: Failed to resolve tag: {e}[/yellow]")
-        return None
+    return None
 
 
 def is_tag_format(key: str) -> bool:
@@ -321,20 +316,23 @@ async def download(
                 if normalized_tag != key:
                     console.print(f"[blue]Normalized to: {normalized_tag} (current platform)[/blue]")
 
-                resolved_key = await resolve_tag(normalized_tag)
+                available_tags = await asset_api.get_tags()
+                resolved_key = resolve_tag(available_tags, normalized_tag)
                 if resolved_key:
                     console.print(f"[green]Tag resolved to: {resolved_key}[/green]")
                     key = resolved_key
                 else:
                     console.print(f"[red]Tag '{normalized_tag}' not found[/red]")
-                    available_tags = await asset_api.get_tags()
                     if available_tags:
                         console.print("[yellow]Available tags:[/yellow]")
                         for tag in available_tags[:10]:  # Show first 10
                             console.print(f"  • {tag.tag}")
                         if len(available_tags) > 10:
                             console.print(f"  ... and {len(available_tags) - 10} more")
-                    return []
+                        console.print("[grey69]Run 'hcli download --list-tags' to see them all[/grey69]")
+                    # Raise rather than return []: callers such as `hcli ida install` would
+                    # otherwise report a missing installer file instead of the unknown tag.
+                    raise ValueError(f"tag '{normalized_tag}' not found")
 
             selected_keys = [key]
         else:
