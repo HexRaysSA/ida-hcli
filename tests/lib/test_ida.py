@@ -24,6 +24,7 @@ from hcli.lib.ida import (
     get_ida_path,
     get_installer_args,
     install_ida,
+    install_license,
     parse_instance_version,
     parse_version_from_dir_name,
     parse_version_from_ida_pro_py,
@@ -436,3 +437,25 @@ def test_install_ida_runs_non_executable_installer_without_modifying_it(tmp_path
     assert installer.stat().st_mode & 0o777 == 0o444
     assert installer.read_bytes() == contents
     assert set(tmp_path.iterdir()) == {installer, install_dir}
+
+
+def test_install_license_copies_file_into_target(tmp_path):
+    source_dir = tmp_path / "downloads"
+    target_dir = tmp_path / "idausr"
+    source_dir.mkdir()
+    target_dir.mkdir()
+    license_file = source_dir / "idapro_96-0000-0000-01.hexlic"
+    license_file.write_text("license")
+
+    install_license(license_file, target_dir)
+
+    assert (target_dir / license_file.name).read_text() == "license"
+
+
+def test_install_license_accepts_file_already_in_target(tmp_path):
+    license_file = tmp_path / "idapro_96-0000-0000-01.hexlic"
+    license_file.write_text("license")
+
+    install_license(license_file, tmp_path)
+
+    assert license_file.read_text() == "license"
