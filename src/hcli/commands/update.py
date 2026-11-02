@@ -1,15 +1,25 @@
 from __future__ import annotations
 
+import asyncio
 import re
+import sys
+from pathlib import Path
 
 import questionary
 import rich_click as click
+from rich.markup import escape
 from semantic_version import SimpleSpec
 
 from hcli.commands.common import safe_ask_async
 from hcli.env import ENV
 from hcli.lib.commands import async_command
 from hcli.lib.console import console
+from hcli.lib.update.install import (
+    fetch_latest_pypi_version,
+    get_install_method,
+    get_upgrade_command,
+    render_command,
+)
 from hcli.lib.update.release import (
     GitHubRepo,
     get_assets,
@@ -17,6 +27,7 @@ from hcli.lib.update.release import (
     update_asset,
 )
 from hcli.lib.update.version import (
+    compare_versions,
     is_binary,
     is_editable,
 )
@@ -33,9 +44,7 @@ from hcli.lib.util.io import get_arch, get_executable_path, get_os, is_uvx_envir
     help="Update source (auto detects based on installation type).",
     hidden=True,
 )
-@click.option(
-    "--auto-install", is_flag=True, help="Automatically install update if available (for binary version only)."
-)
+@click.option("--auto-install", is_flag=True, help="Automatically install update if available.")
 @click.option(
     "--include-prereleases",
     is_flag=True,
@@ -121,7 +130,48 @@ async def update(
             raise click.Abort()
 
     else:
-        console.print("\nTo update, run:")
-        console.print("[bold cyan]uv tool upgrade ida-hcli[/bold cyan]")
-        console.print("or")
-        console.print("[bold cyan]pip install --upgrade ida-hcli[/bold cyan]")
+        await update_from_pypi(force=force, auto_install=auto_install)
+
+
+async def update_from_pypi(force: bool, auto_install: bool) -> None:
+    current_version = ENV.HCLI_VERSION
+    method = get_install_method(Path(sys.prefix))
+    argv = get_upgrade_command(method, sys.executable)
+    command = escape(render_command(argv))
+
+    try:
+        latest_version = fetch_latest_pypi_version()
+    except Exception as e:
+        console.print(f"[red]Failed to check PyPI for updates: {e}[/red]")
+        console.print(f"\nTo update, run:\n[bold cyan]{command}[/bold cyan]")
+        raise click.Abort()
+
+    if compare_versions(current_version, latest_version):
+        console.print(f"[yellow]Update available: {current_version} -> {latest_version}[/yellow]")
+    elif force:
+        console.print(f"[yellow]Already using the latest version ({current_version}); forcing update[/yellow]")
+    else:
+        console.print(f"[green]Already using the latest version ({current_version})[/green]")
+        return
+
+    console.print(f"Installed with {method.value}. Update command:\n[bold cyan]{command}[/bold cyan]")
+
+    if not auto_install:
+        confirm = await safe_ask_async(
+            questionary.confirm(f"Do you want to install the update to {latest_version}?", default=True),
+            "Update cancelled.",
+        )
+        if not confirm:
+            console.print("[yellow]Update cancelled.[/yellow]")
+            return
+
+    try:
+        process = await asyncio.create_subprocess_exec(*argv)
+        returncode = await process.wait()
+    except OSError as e:
+        console.print(f"[red]Failed to run {command}: {e}[/red]")
+        raise click.Abort()
+    if returncode != 0:
+        console.print(f"[red]Update command failed with exit code {returncode}.[/red]")
+        raise click.Abort()
+    console.print(f"[green]Successfully updated to {latest_version}[/green]")
