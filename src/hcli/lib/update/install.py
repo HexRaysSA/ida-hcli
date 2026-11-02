@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import enum
 import logging
-import shlex
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
 import httpx
 from packaging.version import InvalidVersion, Version
+
+from hcli.lib.util.io import _quote_for_shell
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +50,7 @@ def get_upgrade_command(method: InstallMethod, python_exe: str) -> list[str]:
 
 
 def render_command(argv: list[str]) -> str:
-    if sys.platform == "win32":
-        return subprocess.list2cmdline(argv)
-    return shlex.join(argv)
+    return " ".join(_quote_for_shell(arg) for arg in argv)
 
 
 def get_latest_pypi_version(payload: dict[str, Any]) -> Version:
