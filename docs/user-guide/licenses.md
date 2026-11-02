@@ -122,6 +122,7 @@ Where do you want to install the license?
 
 The list offers your IDA user directory, the IDA installations HCLI detects, and a
 custom path. If the directory you choose does not exist, HCLI offers to create it.
+If the file is already in the directory you choose, HCLI leaves it in place.
 
 Give the target directory directly to skip the prompt:
 

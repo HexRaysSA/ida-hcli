@@ -543,6 +543,10 @@ def is_ida_dir(ida_dir: Path) -> bool:
 def install_license(license_path: Path, target_path: Path) -> None:
     """Install a license file to an IDA directory."""
     target_file = target_path / license_path.name
+    if target_file.exists() and target_file.samefile(license_path):
+        # shutil.copy2 fails with a sharing violation on Windows when source and destination are the same file.
+        logger.debug("license already installed: %s", target_file)
+        return
     shutil.copy2(license_path, target_file)
 
 
