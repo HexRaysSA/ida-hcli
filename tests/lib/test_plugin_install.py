@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -39,6 +40,7 @@ from hcli.lib.ida.plugin.install import (
     get_trash_directory,
     install_plugin_archive,
     is_plugin_installed,
+    pack_plugin_directory_to_zip,
     sweep_trash,
     uninstall_plugin,
     upgrade_plugin_archive,
@@ -738,6 +740,96 @@ def test_extraction_keeps_unc_entry_in_subdirectory_inside(member: str):
         extract_zip_subdirectory_to(buf.getvalue(), Path("plugin"), destination)
 
         assert (destination / "server" / "share" / "x.py").read_text() == "content"
+
+
+unix_only = pytest.mark.skipif(sys.platform == "win32", reason="Windows has no execute permission bit")
+
+
+@pytest.fixture
+def umask_022():
+    old = os.umask(0o022)
+    try:
+        yield
+    finally:
+        os.umask(old)
+
+
+def _zip_entry_with_mode(zf: zipfile.ZipFile, name: str, mode: int | None) -> None:
+    info = zipfile.ZipInfo(name)
+    if mode is None:
+        # as written on Windows: no Unix mode in external_attr
+        info.create_system = 0
+    else:
+        info.create_system = 3
+        info.external_attr = mode << 16
+    zf.writestr(info, "content")
+
+
+@unix_only
+@pytest.mark.parametrize(
+    "archive_mode, expected_mode",
+    [
+        (0o100755, 0o755),
+        (0o100700, 0o755),
+        (0o100644, 0o644),
+        (0o100600, 0o644),
+        # setuid/setgid/sticky and world-writable bits are never applied
+        (0o104755, 0o755),
+        (0o106755, 0o755),
+        (0o101755, 0o755),
+        (0o100777, 0o755),
+        # no Unix mode recorded
+        (None, 0o644),
+    ],
+)
+def test_extraction_keeps_execute_permission(umask_022, archive_mode: int | None, expected_mode: int):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("plugin/ida-plugin.json", '{"test": true}')
+        _zip_entry_with_mode(zf, "plugin/bin/tool", archive_mode)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        destination = Path(temp_dir) / "plugins" / "myplugin"
+        destination.parent.mkdir()
+        extract_zip_subdirectory_to(buf.getvalue(), Path("plugin"), destination)
+
+        assert stat.S_IMODE((destination / "bin" / "tool").stat().st_mode) == expected_mode
+        assert stat.S_IMODE((destination / "ida-plugin.json").stat().st_mode) == 0o644
+
+
+@unix_only
+def test_extraction_execute_permission_follows_umask():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        _zip_entry_with_mode(zf, "tool", 0o100755)
+
+    old = os.umask(0o077)
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "plugins" / "myplugin"
+            destination.parent.mkdir()
+            extract_zip_subdirectory_to(buf.getvalue(), Path("."), destination)
+
+            assert stat.S_IMODE((destination / "tool").stat().st_mode) == 0o700
+    finally:
+        os.umask(old)
+
+
+@unix_only
+def test_directory_install_keeps_execute_permission(umask_022):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source = Path(temp_dir) / "source"
+        (source / "bin").mkdir(parents=True)
+        (source / "ida-plugin.json").write_text('{"test": true}')
+        (source / "bin" / "tool").write_text("#!/bin/sh\n")
+        (source / "bin" / "tool").chmod(0o755)
+
+        destination = Path(temp_dir) / "plugins" / "myplugin"
+        destination.parent.mkdir()
+        extract_zip_subdirectory_to(pack_plugin_directory_to_zip(source), Path("."), destination)
+
+        assert os.access(destination / "bin" / "tool", os.X_OK)
+        assert not os.access(destination / "ida-plugin.json", os.X_OK)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="file locking semantics are Windows-specific")
