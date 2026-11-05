@@ -753,15 +753,19 @@ def is_unix_executable_archive_entry(file_info: zipfile.ZipInfo) -> bool:
     return stat.S_ISREG(mode) and bool(mode & 0o111)
 
 
-def add_execute_permission(path: Path) -> None:
-    """Grant execute to each class (user, group, other) that can read the file.
+def get_mode_with_execute_permission(mode: int) -> int:
+    """Add execute to each class (user, group, other) that can read with the given mode.
 
     Like pip does for wheels, only the execute bit is taken from the archive:
     the read/write bits stay as the user's umask set them, and setuid, setgid,
     sticky, and world-writable bits from the archive are never applied.
     """
-    mode = stat.S_IMODE(path.stat().st_mode)
-    path.chmod(mode | ((mode & 0o444) >> 2))
+    return mode | ((mode & 0o444) >> 2)
+
+
+def add_execute_permission(path: Path) -> None:
+    """Make the file executable by each class that can read it. Unix only: Windows has no execute bit."""
+    path.chmod(get_mode_with_execute_permission(stat.S_IMODE(path.stat().st_mode)))
 
 
 def should_extract_plugin_archive_path(plugin_dir_prefix: str, file_info: zipfile.ZipInfo) -> bool:
@@ -838,6 +842,7 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
                         with zip_file.open(file_info.filename) as source_file, target_path.open("wb") as target_file:
                             logger.debug("creating file:      %s", relative_path)
                             shutil.copyfileobj(source_file, target_file)
+                        # Windows decides what is executable by file extension, so there's nothing to restore.
                         if os.name != "nt" and is_unix_executable_archive_entry(file_info):
                             add_execute_permission(target_path)
                     except OSError as e:
