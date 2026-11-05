@@ -6,6 +6,7 @@ import logging
 import os
 import pathlib
 import shutil
+import stat
 import subprocess
 import uuid
 import zipfile
@@ -72,6 +73,9 @@ from hcli.lib.util.io import NoSpaceError
 from hcli.lib.venv import get_environment_for_python
 
 logger = logging.getLogger(__name__)
+
+# `ZipInfo.create_system` value for archives made on Unix.
+ZIP_CREATE_SYSTEM_UNIX = 3
 
 
 def get_plugins_directory() -> Path:
@@ -736,6 +740,30 @@ def validate_archive_entry(file_info: zipfile.ZipInfo, relative_path: pathlib.Pu
         raise ValueError(f"Drive letter or stream in archive path: {file_info.filename}")
 
 
+def is_unix_executable_archive_entry(file_info: zipfile.ZipInfo) -> bool:
+    """Does the ZIP entry record a Unix regular file with an execute bit set?
+
+    Unix zip tools (Info-ZIP, `git archive`, Python's zipfile) store the file's
+    `st_mode` in the high 16 bits of `external_attr`. Entries written on other
+    systems don't, so they're never considered executable.
+    """
+    if file_info.create_system != ZIP_CREATE_SYSTEM_UNIX:
+        return False
+    mode = file_info.external_attr >> 16
+    return stat.S_ISREG(mode) and bool(mode & 0o111)
+
+
+def add_execute_permission(path: Path) -> None:
+    """Grant execute to each class (user, group, other) that can read the file.
+
+    Like pip does for wheels, only the execute bit is taken from the archive:
+    the read/write bits stay as the user's umask set them, and setuid, setgid,
+    sticky, and world-writable bits from the archive are never applied.
+    """
+    mode = stat.S_IMODE(path.stat().st_mode)
+    path.chmod(mode | ((mode & 0o444) >> 2))
+
+
 def should_extract_plugin_archive_path(plugin_dir_prefix: str, file_info: zipfile.ZipInfo) -> bool:
     """Should the given file entry be extracted for the given plugin directory in a zip archive?
 
@@ -810,6 +838,8 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
                         with zip_file.open(file_info.filename) as source_file, target_path.open("wb") as target_file:
                             logger.debug("creating file:      %s", relative_path)
                             shutil.copyfileobj(source_file, target_file)
+                        if os.name != "nt" and is_unix_executable_archive_entry(file_info):
+                            add_execute_permission(target_path)
                     except OSError as e:
                         if e.errno == errno.ENOSPC:
                             raise NoSpaceError(target_path.parent) from e
