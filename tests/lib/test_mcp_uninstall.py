@@ -70,11 +70,12 @@ def test_codex_removes_installed_plugin(tmp_path: Path) -> None:
     assert read_commands(log_path)[-1] == ["plugin", "remove", "ida-mcp@HexRaysSA"]
 
 
-def test_copilot_removes_listed_plugin(tmp_path: Path) -> None:
+@pytest.mark.parametrize("listed_name", ["ida-mcp", "ida-mcp@HexRaysSA"])
+def test_copilot_removes_listed_plugin(tmp_path: Path, listed_name: str) -> None:
     agent, log_path = make_fake_agent(
         tmp_path,
         "copilot",
-        {("plugin", "list"): "Installed plugins:\n  • ida-mcp (v0.8.1)\n"},
+        {("plugin", "list"): f"Installed plugins:\n  • {listed_name} (v0.8.1)\n"},
     )
 
     assert get_installed_scopes(agent) == ["global"]
@@ -103,6 +104,28 @@ def test_pi_removes_a_user_source_without_trusting_the_project(tmp_path: Path) -
     uninstall_agent(agent, "global")
 
     assert read_commands(log_path)[-1] == ["remove", "git:github.com/HexRaysSA/ida-mcp@latest", "--no-approve"]
+
+
+def test_pi_without_trust_flags_removes_the_project_source(tmp_path: Path) -> None:
+    agent, log_path = make_fake_agent(
+        tmp_path,
+        "pi",
+        {("list",): PI_LISTING},
+        exit_codes={("list", "--approve"): 1},
+        errors={("list", "--approve"): 'Unknown option --approve for "list".\n'},
+    )
+
+    assert get_installed_scopes(agent) == ["local"]
+    uninstall_agent(agent, "local")
+
+    assert read_commands(log_path)[-1] == ["remove", "git:github.com/HexRaysSA/ida-mcp@v1.2.3", "--local"]
+
+
+def test_pi_does_not_retry_without_trust_flags_after_other_errors(tmp_path: Path) -> None:
+    agent, log_path = make_fake_agent(tmp_path, "pi", {("list",): PI_LISTING}, exit_codes={("list", "--approve"): 1})
+
+    assert get_installed_scopes(agent) == []
+    assert ["list"] not in read_commands(log_path)
 
 
 def test_omp_removes_plugin(tmp_path: Path) -> None:

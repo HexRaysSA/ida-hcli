@@ -184,7 +184,9 @@ def _install_codex(agent: Agent) -> None:
 
 
 def _is_copilot_installed(agent: Agent) -> bool:
-    return _has_named_line(_query_text(agent, ["plugin", "list"]), PLUGIN_NAME)
+    # Copilot CLI lists a marketplace plugin with its marketplace, as in `ida-mcp@HexRaysSA (v1.0.0)`.
+    listing = _query_text(agent, ["plugin", "list"])
+    return _has_named_line(listing, PLUGIN_NAME) or _has_named_line(listing, PLUGIN_ID)
 
 
 def _has_copilot_marketplace(agent: Agent) -> bool:
@@ -206,13 +208,25 @@ def _install_copilot(agent: Agent) -> None:
     _run_checked(agent, ["plugin", "install", PLUGIN_ID])
 
 
-def _find_pi_source(agent: Agent, scope: Scope, *, trust_project: bool) -> str | None:
-    """Find the package source of ida-mcp as `pi list` prints it.
+@dataclass(frozen=True)
+class PiPackage:
+    source: str
+    has_trust_flags: bool
+
+
+def _find_pi_package(agent: Agent, scope: Scope, *, trust_project: bool) -> PiPackage | None:
+    """Find the ida-mcp package as `pi list` prints it.
 
     `pi list` shows project packages only with `--approve`, which trusts the
     project settings for that one command. It does not load project code.
+    Older Pi releases have no project trust and reject both trust flags.
     """
-    result = _run(agent, ["list", "--approve" if trust_project else "--no-approve"], capture=True)
+    trust_flag = "--approve" if trust_project else "--no-approve"
+    result = _run(agent, ["list", trust_flag], capture=True)
+    has_trust_flags = True
+    if result.returncode != 0 and f"Unknown option {trust_flag}" in result.stderr:
+        result = _run(agent, ["list"], capture=True)
+        has_trust_flags = False
     if result.returncode != 0:
         return None
 
@@ -226,13 +240,13 @@ def _find_pi_source(agent: Agent, scope: Scope, *, trust_project: bool) -> str |
             current_scope = "local"
         elif current_scope == scope and "hexrayssa/ida-mcp" in heading:
             # Each source line comes before the line with its installed path.
-            return text.removesuffix(" (filtered)")
+            return PiPackage(source=text.removesuffix(" (filtered)"), has_trust_flags=has_trust_flags)
     return None
 
 
 def _is_pi_installed(agent: Agent, scope: Scope) -> bool:
     # `pi update` reads only the saved project trust, so a project package it cannot see must be installed again.
-    return _find_pi_source(agent, scope, trust_project=False) is not None
+    return _find_pi_package(agent, scope, trust_project=False) is not None
 
 
 def _install_pi(agent: Agent, scope: Scope) -> None:
@@ -281,7 +295,7 @@ def _is_installed(agent: Agent, scope: Scope) -> bool:
     elif agent.command == "copilot":
         return _is_copilot_installed(agent)
     elif agent.command == "pi":
-        return _find_pi_source(agent, scope, trust_project=True) is not None
+        return _find_pi_package(agent, scope, trust_project=True) is not None
     elif agent.command == "omp":
         return _is_omp_installed(agent)
     else:  # pragma: no cover - Agent instances are built from the fixed definitions above.
@@ -298,13 +312,15 @@ def get_installed_scopes(agent: Agent) -> list[Scope]:
 
 
 def _uninstall_pi(agent: Agent, scope: Scope) -> None:
-    source = _find_pi_source(agent, scope, trust_project=True)
-    if source is None:
+    package = _find_pi_package(agent, scope, trust_project=True)
+    if package is None:
         raise click.ClickException("pi does not list the ida-mcp package")
+    args = ["remove", package.source]
     if scope == "local":
-        _run_checked(agent, ["remove", source, "--local", "--approve"])
-    else:
-        _run_checked(agent, ["remove", source, "--no-approve"])
+        args.append("--local")
+    if package.has_trust_flags:
+        args.append("--approve" if scope == "local" else "--no-approve")
+    _run_checked(agent, args)
 
 
 def uninstall_agent(agent: Agent, scope: Scope) -> None:

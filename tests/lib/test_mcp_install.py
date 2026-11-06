@@ -18,6 +18,7 @@ def make_fake_agent(
     *,
     command_shim: bool = False,
     exit_codes: dict[tuple[str, ...], int] | None = None,
+    errors: dict[tuple[str, ...], str] | None = None,
 ) -> tuple[Agent, Path]:
     log_path = tmp_path / f"{command}.log"
     script_path = tmp_path / f"{command}_fake.py"
@@ -32,6 +33,7 @@ def make_fake_agent(
                 f"with Path({str(log_path)!r}).open('a', encoding='utf-8') as f:",
                 "    f.write(json.dumps(args) + '\\n')",
                 "sys.stdout.write(responses.get(args, ''))",
+                f"sys.stderr.write({errors or {}!r}.get(args, ''))",
                 f"sys.exit({exit_codes or {}!r}.get(args, 0))",
             ]
         ),
@@ -160,12 +162,13 @@ def test_copilot_updates_existing_marketplace_then_installs(tmp_path: Path) -> N
     ]
 
 
-def test_copilot_updates_existing_plugin_and_marketplace(tmp_path: Path) -> None:
+@pytest.mark.parametrize("listed_name", ["ida-mcp", "ida-mcp@HexRaysSA"])
+def test_copilot_updates_existing_plugin_and_marketplace(tmp_path: Path, listed_name: str) -> None:
     agent, log_path = make_fake_agent(
         tmp_path,
         "copilot",
         {
-            ("plugin", "list"): "Installed plugins:\n  • ida-mcp (v0.8.1)\n",
+            ("plugin", "list"): f"Installed plugins:\n  • {listed_name} (v0.8.1)\n",
         },
     )
 
@@ -209,6 +212,24 @@ def test_pi_installs_or_updates_selected_scope(
     install_agent(agent, scope)
 
     assert read_commands(log_path) == [["list", "--no-approve"], expected]
+
+
+def test_pi_without_trust_flags_updates_listed_package(tmp_path: Path) -> None:
+    agent, log_path = make_fake_agent(
+        tmp_path,
+        "pi",
+        {("list",): "User packages:\n  git:github.com/HexRaysSA/ida-mcp@latest\n"},
+        exit_codes={("list", "--no-approve"): 1},
+        errors={("list", "--no-approve"): 'Unknown option --no-approve for "list".\n'},
+    )
+
+    install_agent(agent, "global")
+
+    assert read_commands(log_path) == [
+        ["list", "--no-approve"],
+        ["list"],
+        ["update", "--extension", "git:github.com/HexRaysSA/ida-mcp@latest"],
+    ]
 
 
 def test_codex_installs_plugin_that_is_only_available(tmp_path: Path) -> None:
