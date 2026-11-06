@@ -17,6 +17,7 @@ def make_fake_agent(
     responses: dict[tuple[str, ...], str],
     *,
     command_shim: bool = False,
+    exit_codes: dict[tuple[str, ...], int] | None = None,
 ) -> tuple[Agent, Path]:
     log_path = tmp_path / f"{command}.log"
     script_path = tmp_path / f"{command}_fake.py"
@@ -31,6 +32,7 @@ def make_fake_agent(
                 f"with Path({str(log_path)!r}).open('a', encoding='utf-8') as f:",
                 "    f.write(json.dumps(args) + '\\n')",
                 "sys.stdout.write(responses.get(args, ''))",
+                f"sys.exit({exit_codes or {}!r}.get(args, 0))",
             ]
         ),
         encoding="utf-8",

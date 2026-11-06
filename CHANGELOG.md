@@ -19,6 +19,7 @@
 - Warn when IDA's Python version (registered by idapyswitch) doesn't match the active virtualenv, in `explain-environment` and before installing plugin dependencies
 - Honor `$IDAPYTHON_VENV_EXECUTABLE` for plugin dependency management
 - Add GitHub Copilot CLI support to `hcli mcp install`
+- Add `hcli mcp uninstall`, which removes the IDA MCP integration from the agents on PATH that have it, then removes the `ida-mcp` IDA plugin. It asks for confirmation unless you give `--yes`. It finds a local (project) integration only in the repository where you run it (#444)
 - Add `hcli extension` as an alias for `hcli plugin`, so `hcli extension install <plugin>` uses the plugin manager
 
 ### Fixed

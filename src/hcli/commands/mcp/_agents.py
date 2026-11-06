@@ -12,7 +12,10 @@ import rich_click as click
 
 from hcli.lib.console import console
 
-PLUGIN_ID = "ida-mcp@HexRaysSA"
+PLUGIN_NAME = "ida-mcp"
+PLUGIN_ID = f"{PLUGIN_NAME}@HexRaysSA"
+PI_SOURCE = "git:github.com/HexRaysSA/ida-mcp@latest"
+OMP_SOURCE = "github:HexRaysSA/ida-mcp#latest"
 
 
 Scope = Literal["local", "global"]
@@ -124,9 +127,13 @@ def _has_named_item(value: Any, name: str) -> bool:
     return False
 
 
+def _get_cli_scope(scope: Scope) -> str:
+    return "project" if scope == "local" else "user"
+
+
 def _is_claude_installed(agent: Agent, scope: Scope) -> bool:
     value = _query_json(agent, ["plugin", "list", "--json"])
-    expected_scope = "project" if scope == "local" else "user"
+    expected_scope = _get_cli_scope(scope)
     if not isinstance(value, list):
         return False
     return any(
@@ -143,7 +150,7 @@ def _has_claude_marketplace(agent: Agent) -> bool:
 
 
 def _install_claude(agent: Agent, scope: Scope) -> None:
-    cli_scope = "project" if scope == "local" else "user"
+    cli_scope = _get_cli_scope(scope)
     if _is_claude_installed(agent, scope):
         _run_checked(agent, ["plugin", "update", PLUGIN_ID, "--scope", cli_scope, "--yes"])
         return
@@ -177,7 +184,7 @@ def _install_codex(agent: Agent) -> None:
 
 
 def _is_copilot_installed(agent: Agent) -> bool:
-    return _has_named_line(_query_text(agent, ["plugin", "list"]), "ida-mcp")
+    return _has_named_line(_query_text(agent, ["plugin", "list"]), PLUGIN_NAME)
 
 
 def _has_copilot_marketplace(agent: Agent) -> bool:
@@ -190,7 +197,7 @@ def _has_copilot_marketplace(agent: Agent) -> bool:
 def _install_copilot(agent: Agent) -> None:
     if _is_copilot_installed(agent):
         _run_checked(agent, ["plugin", "marketplace", "update", "HexRaysSA"])
-        _run_checked(agent, ["plugin", "update", "ida-mcp"])
+        _run_checked(agent, ["plugin", "update", PLUGIN_NAME])
         return
     if _has_copilot_marketplace(agent):
         _run_checked(agent, ["plugin", "marketplace", "update", "HexRaysSA"])
@@ -199,29 +206,40 @@ def _install_copilot(agent: Agent) -> None:
     _run_checked(agent, ["plugin", "install", PLUGIN_ID])
 
 
-def _is_pi_installed(agent: Agent, scope: Scope) -> bool:
-    result = _run(agent, ["list", "--no-approve"], capture=True)
+def _find_pi_source(agent: Agent, scope: Scope, *, trust_project: bool) -> str | None:
+    """Find the package source of ida-mcp as `pi list` prints it.
+
+    `pi list` shows project packages only with `--approve`, which trusts the
+    project settings for that one command. It does not load project code.
+    """
+    result = _run(agent, ["list", "--approve" if trust_project else "--no-approve"], capture=True)
     if result.returncode != 0:
-        return False
+        return None
 
     current_scope: Scope | None = None
     for line in result.stdout.splitlines():
-        heading = line.strip().casefold()
+        text = line.strip()
+        heading = text.casefold()
         if heading == "user packages:":
             current_scope = "global"
         elif heading in {"project packages:", "local packages:"}:
             current_scope = "local"
         elif current_scope == scope and "hexrayssa/ida-mcp" in heading:
-            return True
-    return False
+            # Each source line comes before the line with its installed path.
+            return text.removesuffix(" (filtered)")
+    return None
+
+
+def _is_pi_installed(agent: Agent, scope: Scope) -> bool:
+    # `pi update` reads only the saved project trust, so a project package it cannot see must be installed again.
+    return _find_pi_source(agent, scope, trust_project=False) is not None
 
 
 def _install_pi(agent: Agent, scope: Scope) -> None:
-    pi_source = "git:github.com/HexRaysSA/ida-mcp@latest"
     if _is_pi_installed(agent, scope):
-        _run_checked(agent, ["update", "--extension", pi_source])
+        _run_checked(agent, ["update", "--extension", PI_SOURCE])
         return
-    args = ["install", pi_source]
+    args = ["install", PI_SOURCE]
     if scope == "local":
         args.append("--local")
     _run_checked(agent, args)
@@ -229,15 +247,15 @@ def _install_pi(agent: Agent, scope: Scope) -> None:
 
 def _is_omp_installed(agent: Agent) -> bool:
     value = _query_json(agent, ["plugin", "list", "--json"])
-    return _has_named_item(value, "ida-mcp")
+    return _has_named_item(value, PLUGIN_NAME)
 
 
 def _install_omp(agent: Agent) -> None:
     # omp installs a git source as an npm package for the current user and ignores --scope for it.
     if _is_omp_installed(agent):
-        _run_checked(agent, ["plugin", "upgrade", "ida-mcp"])
+        _run_checked(agent, ["plugin", "upgrade", PLUGIN_NAME])
         return
-    _run_checked(agent, ["plugin", "install", "github:HexRaysSA/ida-mcp#latest"])
+    _run_checked(agent, ["plugin", "install", OMP_SOURCE])
 
 
 def install_agent(agent: Agent, scope: Scope) -> None:
@@ -253,3 +271,61 @@ def install_agent(agent: Agent, scope: Scope) -> None:
         _install_omp(agent)
     else:  # pragma: no cover - Agent instances are built from the fixed definitions above.
         raise click.ClickException(f"unsupported agent: {agent.name}")
+
+
+def _is_installed(agent: Agent, scope: Scope) -> bool:
+    if agent.command == "claude":
+        return _is_claude_installed(agent, scope)
+    elif agent.command == "codex":
+        return _is_codex_installed(agent)
+    elif agent.command == "copilot":
+        return _is_copilot_installed(agent)
+    elif agent.command == "pi":
+        return _find_pi_source(agent, scope, trust_project=True) is not None
+    elif agent.command == "omp":
+        return _is_omp_installed(agent)
+    else:  # pragma: no cover - Agent instances are built from the fixed definitions above.
+        raise click.ClickException(f"unsupported agent: {agent.name}")
+
+
+def get_installed_scopes(agent: Agent) -> list[Scope]:
+    """Find the scopes in which the agent has the IDA MCP integration.
+
+    The local scope is the project in the current directory.
+    """
+    scopes: list[Scope] = ["local", "global"] if agent.supports_local else ["global"]
+    return [scope for scope in scopes if _is_installed(agent, scope)]
+
+
+def _uninstall_pi(agent: Agent, scope: Scope) -> None:
+    source = _find_pi_source(agent, scope, trust_project=True)
+    if source is None:
+        raise click.ClickException("pi does not list the ida-mcp package")
+    if scope == "local":
+        _run_checked(agent, ["remove", source, "--local", "--approve"])
+    else:
+        _run_checked(agent, ["remove", source, "--no-approve"])
+
+
+def uninstall_agent(agent: Agent, scope: Scope) -> None:
+    """Remove the IDA MCP integration from the agent in the given scope.
+
+    Raises:
+        click.ClickException: if the agent command fails.
+    """
+    if agent.command == "claude":
+        _run_checked(agent, ["plugin", "uninstall", PLUGIN_ID, "--scope", _get_cli_scope(scope)])
+    elif agent.command == "codex":
+        _run_checked(agent, ["plugin", "remove", PLUGIN_ID])
+    elif agent.command == "copilot":
+        _run_checked(agent, ["plugin", "uninstall", PLUGIN_NAME])
+    elif agent.command == "pi":
+        _uninstall_pi(agent, scope)
+    elif agent.command == "omp":
+        _run_checked(agent, ["plugin", "uninstall", PLUGIN_NAME])
+    else:  # pragma: no cover - Agent instances are built from the fixed definitions above.
+        raise click.ClickException(f"unsupported agent: {agent.name}")
+
+
+def get_scope_description(scope: Scope) -> str:
+    return "in this repository" if scope == "local" else "for the current user"

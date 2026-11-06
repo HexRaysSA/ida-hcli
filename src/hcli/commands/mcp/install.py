@@ -9,7 +9,7 @@ from pathlib import Path
 import questionary
 import rich_click as click
 
-from hcli.commands.mcp._agents import Scope, find_agents, install_agent
+from hcli.commands.mcp._agents import Scope, find_agents, get_scope_description, install_agent
 from hcli.commands.plugin.install import install_plugin
 from hcli.lib.console import console, print_json, stderr_console
 from hcli.lib.constants import cli
@@ -182,5 +182,4 @@ def install(ctx: click.Context) -> None:
         scope = chosen_scope
 
     install_agent(selected, scope)
-    scope_text = " in this repository" if scope == "local" else " for the current user"
-    console.print(f"[green]Installed[/green] IDA MCP for [blue]{selected.name}[/blue]{scope_text}.")
+    console.print(f"[green]Installed[/green] IDA MCP for [blue]{selected.name}[/blue] {get_scope_description(scope)}.")
