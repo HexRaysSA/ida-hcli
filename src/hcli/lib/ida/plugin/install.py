@@ -750,7 +750,9 @@ def is_unix_executable_archive_entry(file_info: zipfile.ZipInfo) -> bool:
     if file_info.create_system != ZIP_CREATE_SYSTEM_UNIX:
         return False
     mode = file_info.external_attr >> 16
-    return stat.S_ISREG(mode) and bool(mode & 0o111)
+    # Some writers record only the permission bits, with no file type:
+    # `ZipFile.writestr`, and the common `info.external_attr = 0o755 << 16`.
+    return stat.S_IFMT(mode) in (0, stat.S_IFREG) and bool(mode & 0o111)
 
 
 def get_mode_with_execute_permission(mode: int) -> int:
@@ -761,11 +763,6 @@ def get_mode_with_execute_permission(mode: int) -> int:
     sticky, and world-writable bits from the archive are never applied.
     """
     return mode | ((mode & 0o444) >> 2)
-
-
-def add_execute_permission(path: Path) -> None:
-    """Make the file executable by each class that can read it. Unix only: Windows has no execute bit."""
-    path.chmod(get_mode_with_execute_permission(stat.S_IMODE(path.stat().st_mode)))
 
 
 def should_extract_plugin_archive_path(plugin_dir_prefix: str, file_info: zipfile.ZipInfo) -> bool:
@@ -844,7 +841,8 @@ def extract_zip_subdirectory_to(zip_data: bytes, subdirectory: Path, destination
                             shutil.copyfileobj(source_file, target_file)
                         # Windows decides what is executable by file extension, so there's nothing to restore.
                         if os.name != "nt" and is_unix_executable_archive_entry(file_info):
-                            add_execute_permission(target_path)
+                            mode = stat.S_IMODE(target_path.stat().st_mode)
+                            target_path.chmod(get_mode_with_execute_permission(mode))
                     except OSError as e:
                         if e.errno == errno.ENOSPC:
                             raise NoSpaceError(target_path.parent) from e

@@ -1,3 +1,4 @@
+import contextlib
 import io
 import json
 import logging
@@ -34,6 +35,7 @@ from hcli.lib.ida.plugin.exceptions import (
     PythonVersionIncompatibleError,
 )
 from hcli.lib.ida.plugin.install import (
+    ZIP_CREATE_SYSTEM_UNIX,
     extract_zip_subdirectory_to,
     get_installed_plugin_records,
     get_mode_with_execute_permission,
@@ -747,7 +749,6 @@ def test_extraction_keeps_unc_entry_in_subdirectory_inside(member: str):
 unix_only = pytest.mark.skipif(sys.platform == "win32", reason="Windows has no Unix permission bits")
 
 ZIP_CREATE_SYSTEM_MSDOS = 0
-ZIP_CREATE_SYSTEM_UNIX = 3
 ZIP_CREATE_SYSTEM_NTFS = 11
 
 
@@ -771,6 +772,9 @@ def _make_zip_info(name: str, mode: int, create_system: int = ZIP_CREATE_SYSTEM_
         # only regular files
         (ZIP_CREATE_SYSTEM_UNIX, 0o040755, False),
         (ZIP_CREATE_SYSTEM_UNIX, 0o120777, False),
+        # no file type recorded, as written by `ZipFile.writestr`
+        (ZIP_CREATE_SYSTEM_UNIX, 0o755, True),
+        (ZIP_CREATE_SYSTEM_UNIX, 0o644, False),
         # no Unix mode recorded
         (ZIP_CREATE_SYSTEM_UNIX, 0, False),
         # the high bits of external_attr have no Unix meaning in archives made on other systems
@@ -799,13 +803,19 @@ def test_get_mode_with_execute_permission(mode: int, expected: int):
     assert get_mode_with_execute_permission(mode) == expected
 
 
-@pytest.fixture
-def umask_022():
-    old = os.umask(0o022)
+@contextlib.contextmanager
+def temp_umask(mask: int):
+    old = os.umask(mask)
     try:
         yield
     finally:
         os.umask(old)
+
+
+@pytest.fixture
+def umask_022():
+    with temp_umask(0o022):
+        yield
 
 
 def _assert_extracted_file_mode(path: Path, expected_mode: int) -> None:
@@ -824,6 +834,7 @@ def _assert_extracted_file_mode(path: Path, expected_mode: int) -> None:
         (ZIP_CREATE_SYSTEM_UNIX, 0o100700, 0o755),
         (ZIP_CREATE_SYSTEM_UNIX, 0o100644, 0o644),
         (ZIP_CREATE_SYSTEM_UNIX, 0o100600, 0o644),
+        (ZIP_CREATE_SYSTEM_UNIX, 0o755, 0o755),
         # read-only in the archive: still writable once installed
         (ZIP_CREATE_SYSTEM_UNIX, 0o100555, 0o755),
         (ZIP_CREATE_SYSTEM_UNIX, 0o100444, 0o644),
@@ -859,16 +870,12 @@ def test_extraction_execute_permission_follows_umask():
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr(_make_zip_info("tool", 0o100755), "content")
 
-    old = os.umask(0o077)
-    try:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            destination = Path(temp_dir) / "plugins" / "myplugin"
-            destination.parent.mkdir()
-            extract_zip_subdirectory_to(buf.getvalue(), Path("."), destination)
+    with temp_umask(0o077), tempfile.TemporaryDirectory() as temp_dir:
+        destination = Path(temp_dir) / "plugins" / "myplugin"
+        destination.parent.mkdir()
+        extract_zip_subdirectory_to(buf.getvalue(), Path("."), destination)
 
-            _assert_extracted_file_mode(destination / "tool", 0o700)
-    finally:
-        os.umask(old)
+        _assert_extracted_file_mode(destination / "tool", 0o700)
 
 
 @unix_only
