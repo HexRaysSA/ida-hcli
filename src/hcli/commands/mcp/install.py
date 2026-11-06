@@ -116,7 +116,7 @@ _AGENT_DEFINITIONS = {
     "codex": AgentDefinition(name="Codex CLI", supports_local=False),
     "copilot": AgentDefinition(name="GitHub Copilot CLI", supports_local=False),
     "pi": AgentDefinition(name="Pi", supports_local=True),
-    "omp": AgentDefinition(name="Oh My Pi", supports_local=True),
+    "omp": AgentDefinition(name="Oh My Pi", supports_local=False),
 }
 
 
@@ -233,6 +233,9 @@ def _install_claude(agent: Agent, scope: Scope) -> None:
 
 def _is_codex_installed(agent: Agent) -> bool:
     value = _query_json(agent, ["plugin", "list", "--json"])
+    # The listing also has an "available" key with plugins that marketplaces offer but are not installed.
+    if isinstance(value, dict) and "installed" in value:
+        value = value["installed"]
     return _has_named_item(value, PLUGIN_ID)
 
 
@@ -303,18 +306,17 @@ def _install_pi(agent: Agent, scope: Scope) -> None:
     _run_checked(agent, args)
 
 
-def _is_omp_installed(agent: Agent, scope: Scope) -> bool:
-    cli_scope = "project" if scope == "local" else "user"
-    value = _query_json(agent, ["plugin", "list", "--json", "--scope", cli_scope])
+def _is_omp_installed(agent: Agent) -> bool:
+    value = _query_json(agent, ["plugin", "list", "--json"])
     return _has_named_item(value, "ida-mcp")
 
 
-def _install_omp(agent: Agent, scope: Scope) -> None:
-    cli_scope = "project" if scope == "local" else "user"
-    if _is_omp_installed(agent, scope):
-        _run_checked(agent, ["plugin", "upgrade", "ida-mcp", "--scope", cli_scope])
+def _install_omp(agent: Agent) -> None:
+    # omp installs a git source as an npm package for the current user and ignores --scope for it.
+    if _is_omp_installed(agent):
+        _run_checked(agent, ["plugin", "upgrade", "ida-mcp"])
         return
-    _run_checked(agent, ["plugin", "install", "github:HexRaysSA/ida-mcp#latest", "--scope", cli_scope])
+    _run_checked(agent, ["plugin", "install", "github:HexRaysSA/ida-mcp#latest"])
 
 
 def _install_agent(agent: Agent, scope: Scope) -> None:
@@ -327,7 +329,7 @@ def _install_agent(agent: Agent, scope: Scope) -> None:
     elif agent.command == "pi":
         _install_pi(agent, scope)
     elif agent.command == "omp":
-        _install_omp(agent, scope)
+        _install_omp(agent)
     else:  # pragma: no cover - Agent instances are built from the fixed definitions above.
         raise click.ClickException(f"unsupported agent: {agent.name}")
 

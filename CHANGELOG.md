@@ -22,6 +22,8 @@
 - Add `hcli extension` as an alias for `hcli plugin`, so `hcli extension install <plugin>` uses the plugin manager
 
 ### Fixed
+- `hcli mcp install` for Codex CLI installs the `ida-mcp` plugin when the HexRaysSA marketplace offers it but it is not installed. Before, hcli read the marketplace offer as an installed plugin, upgraded the marketplace, and did not install the plugin
+- `hcli mcp install` for Oh My Pi no longer asks for a local or global scope. Oh My Pi installs `ida-mcp` for the current user and ignores the scope, so the local choice had no effect
 - `hcli plugin install` and `hcli plugin upgrade` keep the execute permission of files that the plugin archive marks as executable, on Linux and macOS. Before, every extracted file lost it, so a plugin that runs a bundled program or script failed with a permission error. hcli applies only the execute bit from the archive, limited by your umask, and never setuid, setgid, or world-writable bits. Reinstall or upgrade a plugin to fix the permissions of a plugin that is already installed
 - `hcli update` for an install from PyPI gets the newest release from PyPI and, when hcli is not current, offers to run the upgrade command for the tool that installed hcli: `uv tool upgrade ida-hcli`, `pipx upgrade ida-hcli`, or `python -m pip install --upgrade ida-hcli` with the Python that runs hcli. `--auto-install` runs the command without a prompt. Before, it did not contact PyPI and printed `uv tool upgrade` and `pip install --upgrade` for all installs
 - `hcli ida list` quotes instance names in the suggested `ida switch` command, so names containing spaces are passed as one argument, and displays Rich markup in the hint literally

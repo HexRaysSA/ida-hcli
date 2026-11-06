@@ -49,7 +49,7 @@ def make_fake_agent(
         "codex": ("Codex CLI", False),
         "copilot": ("GitHub Copilot CLI", False),
         "pi": ("Pi", True),
-        "omp": ("Oh My Pi", True),
+        "omp": ("Oh My Pi", False),
     }
     name, supports_local = names[command]
     return Agent(command, name, str(executable), supports_local), log_path
@@ -208,18 +208,55 @@ def test_pi_installs_or_updates_selected_scope(
     assert read_commands(log_path) == [["list", "--no-approve"], expected]
 
 
-def test_omp_updates_existing_local_plugin(tmp_path: Path) -> None:
+def test_codex_installs_plugin_that_is_only_available(tmp_path: Path) -> None:
+    agent, log_path = make_fake_agent(
+        tmp_path,
+        "codex",
+        {
+            ("plugin", "list", "--json"): json.dumps(
+                {"installed": [], "available": [{"pluginId": "ida-mcp@HexRaysSA", "installed": False}]}
+            ),
+            ("plugin", "marketplace", "list", "--json"): json.dumps([{"name": "HexRaysSA"}]),
+        },
+    )
+
+    _install_agent(agent, "global")
+
+    assert read_commands(log_path) == [
+        ["plugin", "list", "--json"],
+        ["plugin", "marketplace", "list", "--json"],
+        ["plugin", "marketplace", "upgrade", "HexRaysSA"],
+        ["plugin", "add", "ida-mcp@HexRaysSA"],
+    ]
+
+
+def test_omp_updates_existing_plugin(tmp_path: Path) -> None:
     agent, log_path = make_fake_agent(
         tmp_path,
         "omp",
-        {("plugin", "list", "--json", "--scope", "project"): json.dumps({"npm": [{"name": "ida-mcp"}]})},
+        {("plugin", "list", "--json"): json.dumps({"npm": [{"name": "ida-mcp"}], "marketplace": []})},
     )
 
-    _install_agent(agent, "local")
+    _install_agent(agent, "global")
 
     assert read_commands(log_path) == [
-        ["plugin", "list", "--json", "--scope", "project"],
-        ["plugin", "upgrade", "ida-mcp", "--scope", "project"],
+        ["plugin", "list", "--json"],
+        ["plugin", "upgrade", "ida-mcp"],
+    ]
+
+
+def test_omp_installs_without_scope(tmp_path: Path) -> None:
+    agent, log_path = make_fake_agent(
+        tmp_path,
+        "omp",
+        {("plugin", "list", "--json"): json.dumps({"npm": [], "marketplace": []})},
+    )
+
+    _install_agent(agent, "global")
+
+    assert read_commands(log_path) == [
+        ["plugin", "list", "--json"],
+        ["plugin", "install", "github:HexRaysSA/ida-mcp#latest"],
     ]
 
 
