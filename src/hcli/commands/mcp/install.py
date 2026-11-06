@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -18,6 +19,9 @@ from hcli.lib.constants import cli
 from hcli.lib.ida.python.environment import get_system
 
 PLUGIN_ID = "ida-mcp@HexRaysSA"
+PLUGIN_NAME = "ida-mcp"
+MARKETPLACE_NAME = "HexRaysSA"
+PI_SOURCE = "git:github.com/HexRaysSA/ida-mcp"
 
 
 Scope = Literal["local", "global"]
@@ -233,6 +237,10 @@ def _install_claude(agent: Agent, scope: Scope) -> None:
 
 def _is_codex_installed(agent: Agent) -> bool:
     value = _query_json(agent, ["plugin", "list", "--json"])
+    # `codex plugin list --json` also lists the marketplace plugins that are
+    # only available; look at the installed ones when the listing splits them.
+    if isinstance(value, dict) and "installed" in value:
+        value = value["installed"]
     return _has_named_item(value, PLUGIN_ID)
 
 
@@ -253,7 +261,9 @@ def _install_codex(agent: Agent) -> None:
 
 
 def _is_copilot_installed(agent: Agent) -> bool:
-    return _has_named_line(_query_text(agent, ["plugin", "list"]), "ida-mcp")
+    # Copilot lists marketplace plugins as `ida-mcp@HexRaysSA`, direct installs as `ida-mcp`.
+    listing = _query_text(agent, ["plugin", "list"])
+    return _has_named_line(listing, PLUGIN_NAME) or _has_named_line(listing, PLUGIN_ID)
 
 
 def _has_copilot_marketplace(agent: Agent) -> bool:
@@ -278,6 +288,9 @@ def _install_copilot(agent: Agent) -> None:
 def _is_pi_installed(agent: Agent, scope: Scope) -> bool:
     result = _run(agent, ["list", "--no-approve"], capture=True)
     if result.returncode != 0:
+        # Pi releases without `--no-approve` reject the option.
+        result = _run(agent, ["list"], capture=True)
+    if result.returncode != 0:
         return False
 
     current_scope: Scope | None = None
@@ -293,7 +306,7 @@ def _is_pi_installed(agent: Agent, scope: Scope) -> bool:
 
 
 def _install_pi(agent: Agent, scope: Scope) -> None:
-    pi_source = "git:github.com/HexRaysSA/ida-mcp@latest"
+    pi_source = f"{PI_SOURCE}@latest"
     if _is_pi_installed(agent, scope):
         _run_checked(agent, ["update", "--extension", pi_source])
         return
@@ -317,19 +330,81 @@ def _install_omp(agent: Agent, scope: Scope) -> None:
     _run_checked(agent, ["plugin", "install", "github:HexRaysSA/ida-mcp#latest", "--scope", cli_scope])
 
 
+def _cli_scope(scope: Scope) -> str:
+    return "project" if scope == "local" else "user"
+
+
+@dataclass(frozen=True)
+class AgentIntegration:
+    """How hcli drives one agent's own plugin manager.
+
+    hcli never edits agent configuration files: install and uninstall both go
+    through the agent CLI, and uninstall removes only the ida-mcp plugin that
+    install added, so an `ida` server the user configured by hand stays.
+    """
+
+    is_installed: Callable[[Agent, Scope], bool]
+    install: Callable[[Agent, Scope], None]
+    uninstall_args: Callable[[Scope], list[str]]
+    # None for agents that install from a source, with no marketplace to remove.
+    marketplace_remove_args: Callable[[Scope], list[str]] | None
+
+
+_AGENT_INTEGRATIONS: dict[str, AgentIntegration] = {
+    "claude": AgentIntegration(
+        is_installed=_is_claude_installed,
+        install=_install_claude,
+        uninstall_args=lambda scope: ["plugin", "uninstall", PLUGIN_ID, "--scope", _cli_scope(scope)],
+        marketplace_remove_args=lambda scope: [
+            "plugin",
+            "marketplace",
+            "remove",
+            MARKETPLACE_NAME,
+            "--scope",
+            _cli_scope(scope),
+        ],
+    ),
+    "codex": AgentIntegration(
+        is_installed=lambda agent, scope: _is_codex_installed(agent),
+        install=lambda agent, scope: _install_codex(agent),
+        uninstall_args=lambda scope: ["plugin", "remove", PLUGIN_ID],
+        marketplace_remove_args=lambda scope: ["plugin", "marketplace", "remove", MARKETPLACE_NAME],
+    ),
+    "copilot": AgentIntegration(
+        is_installed=lambda agent, scope: _is_copilot_installed(agent),
+        install=lambda agent, scope: _install_copilot(agent),
+        uninstall_args=lambda scope: ["plugin", "uninstall", PLUGIN_NAME],
+        marketplace_remove_args=lambda scope: ["plugin", "marketplace", "remove", MARKETPLACE_NAME],
+    ),
+    "pi": AgentIntegration(
+        is_installed=_is_pi_installed,
+        install=_install_pi,
+        # `pi remove` matches the source without its `@ref`.
+        uninstall_args=lambda scope: ["remove", PI_SOURCE, *(["--local"] if scope == "local" else [])],
+        marketplace_remove_args=None,
+    ),
+    "omp": AgentIntegration(
+        is_installed=_is_omp_installed,
+        install=_install_omp,
+        uninstall_args=lambda scope: ["plugin", "uninstall", PLUGIN_NAME, "--scope", _cli_scope(scope)],
+        marketplace_remove_args=None,
+    ),
+}
+
+
+def _integration(agent: Agent) -> AgentIntegration:
+    try:
+        return _AGENT_INTEGRATIONS[agent.command]
+    except KeyError:  # pragma: no cover - Agent instances are built from the fixed definitions above.
+        raise click.ClickException(f"unsupported agent: {agent.name}") from None
+
+
+def _agent_scopes(agent: Agent) -> list[Scope]:
+    return ["global", "local"] if agent.supports_local else ["global"]
+
+
 def _install_agent(agent: Agent, scope: Scope) -> None:
-    if agent.command == "claude":
-        _install_claude(agent, scope)
-    elif agent.command == "codex":
-        _install_codex(agent)
-    elif agent.command == "copilot":
-        _install_copilot(agent)
-    elif agent.command == "pi":
-        _install_pi(agent, scope)
-    elif agent.command == "omp":
-        _install_omp(agent, scope)
-    else:  # pragma: no cover - Agent instances are built from the fixed definitions above.
-        raise click.ClickException(f"unsupported agent: {agent.name}")
+    _integration(agent).install(agent, scope)
 
 
 def _print_mcp_json() -> None:

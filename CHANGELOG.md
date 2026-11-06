@@ -19,9 +19,11 @@
 - Warn when IDA's Python version (registered by idapyswitch) doesn't match the active virtualenv, in `explain-environment` and before installing plugin dependencies
 - Honor `$IDAPYTHON_VENV_EXECUTABLE` for plugin dependency management
 - Add GitHub Copilot CLI support to `hcli mcp install`
+- Add `hcli mcp uninstall`, which removes the IDA MCP integration that `hcli mcp install` added to Claude Code, Codex, Copilot, Pi, or Oh My Pi through each agent's own plugin manager, then the `ida-mcp` IDA plugin. `--agent` and `--scope` select what to remove, `--keep-plugin` keeps the IDA plugin, `--remove-marketplace` also removes the HexRaysSA marketplace, and `--dry-run` shows the commands without running them (#444)
 - Add `hcli extension` as an alias for `hcli plugin`, so `hcli extension install <plugin>` uses the plugin manager
 
 ### Fixed
+- `hcli mcp install` detects an existing Copilot install listed as `ida-mcp@HexRaysSA`, ignores Codex plugins that are only available and not installed, and detects Pi installs with Pi releases that reject `pi list --no-approve`
 - `hcli plugin install` and `hcli plugin upgrade` keep the execute permission of files that the plugin archive marks as executable, on Linux and macOS. Before, every extracted file lost it, so a plugin that runs a bundled program or script failed with a permission error. hcli applies only the execute bit from the archive, limited by your umask, and never setuid, setgid, or world-writable bits. Reinstall or upgrade a plugin to fix the permissions of a plugin that is already installed
 - `hcli update` for an install from PyPI gets the newest release from PyPI and, when hcli is not current, offers to run the upgrade command for the tool that installed hcli: `uv tool upgrade ida-hcli`, `pipx upgrade ida-hcli`, or `python -m pip install --upgrade ida-hcli` with the Python that runs hcli. `--auto-install` runs the command without a prompt. Before, it did not contact PyPI and printed `uv tool upgrade` and `pip install --upgrade` for all installs
 - `hcli ida list` quotes instance names in the suggested `ida switch` command, so names containing spaces are passed as one argument, and displays Rich markup in the hint literally
