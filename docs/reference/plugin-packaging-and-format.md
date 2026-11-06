@@ -315,6 +315,10 @@ The file extensions must be exactly:
   - `_aarch64.dylib` - macOS aarch64 (not yet supported by IDA)
   - `.dylib` - macOS Universal Binary, only if Intel/ARM dylibs aren't present. (note: you must use this for macOS currently)
 
+If your plugin runs a bundled program or script, set its execute bit before you create the archive.
+On Linux and macOS, HCLI keeps the execute bit that the archive records.
+`git archive`, and `zip` on Linux or macOS, record it.
+Archives created on Windows don't, so their files install without execute permission.
 
 
 Remember, plugin names must be unique within a plugin archive, which means:
