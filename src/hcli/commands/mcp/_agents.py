@@ -43,6 +43,8 @@ _AGENT_DEFINITIONS = {
     "omp": AgentDefinition(name="Oh My Pi", supports_local=False),
 }
 
+AGENT_COMMANDS = tuple(_AGENT_DEFINITIONS)
+
 
 def _find_command(command: str) -> str | None:
     """Resolve regular executables and Windows command shims."""
@@ -79,8 +81,12 @@ def _run(agent: Agent, args: list[str], *, capture: bool = False) -> subprocess.
         raise click.ClickException(f"could not start {agent.command}: {exc}") from exc
 
 
+def render_command(agent: Agent, args: list[str]) -> str:
+    return f"> {agent.command} {' '.join(args)}"
+
+
 def _run_checked(agent: Agent, args: list[str]) -> None:
-    console.print(f"[dim]> {agent.command} {' '.join(args)}[/dim]")
+    console.print(f"[dim]{render_command(agent, args)}[/dim]")
     result = _run(agent, args)
     if result.returncode != 0:
         raise click.ClickException(f"{agent.command} exited with status {result.returncode}")
@@ -311,7 +317,7 @@ def get_installed_scopes(agent: Agent) -> list[Scope]:
     return [scope for scope in scopes if _is_installed(agent, scope)]
 
 
-def _uninstall_pi(agent: Agent, scope: Scope) -> None:
+def _get_pi_uninstall_args(agent: Agent, scope: Scope) -> list[str]:
     package = _find_pi_package(agent, scope, trust_project=True)
     if package is None:
         raise click.ClickException("pi does not list the ida-mcp package")
@@ -320,7 +326,25 @@ def _uninstall_pi(agent: Agent, scope: Scope) -> None:
         args.append("--local")
     if package.has_trust_flags:
         args.append("--approve" if scope == "local" else "--no-approve")
-    _run_checked(agent, args)
+    return args
+
+
+def get_uninstall_args(agent: Agent, scope: Scope) -> list[str]:
+    """Get the agent command line that removes the IDA MCP integration in the given scope.
+
+    Raises:
+        click.ClickException: if pi no longer lists the ida-mcp package.
+    """
+    if agent.command == "claude":
+        return ["plugin", "uninstall", PLUGIN_ID, "--scope", _get_cli_scope(scope)]
+    elif agent.command == "codex":
+        return ["plugin", "remove", PLUGIN_ID]
+    elif agent.command in {"copilot", "omp"}:
+        return ["plugin", "uninstall", PLUGIN_NAME]
+    elif agent.command == "pi":
+        return _get_pi_uninstall_args(agent, scope)
+    else:  # pragma: no cover - Agent instances are built from the fixed definitions above.
+        raise click.ClickException(f"unsupported agent: {agent.name}")
 
 
 def uninstall_agent(agent: Agent, scope: Scope) -> None:
@@ -329,18 +353,7 @@ def uninstall_agent(agent: Agent, scope: Scope) -> None:
     Raises:
         click.ClickException: if the agent command fails.
     """
-    if agent.command == "claude":
-        _run_checked(agent, ["plugin", "uninstall", PLUGIN_ID, "--scope", _get_cli_scope(scope)])
-    elif agent.command == "codex":
-        _run_checked(agent, ["plugin", "remove", PLUGIN_ID])
-    elif agent.command == "copilot":
-        _run_checked(agent, ["plugin", "uninstall", PLUGIN_NAME])
-    elif agent.command == "pi":
-        _uninstall_pi(agent, scope)
-    elif agent.command == "omp":
-        _run_checked(agent, ["plugin", "uninstall", PLUGIN_NAME])
-    else:  # pragma: no cover - Agent instances are built from the fixed definitions above.
-        raise click.ClickException(f"unsupported agent: {agent.name}")
+    _run_checked(agent, get_uninstall_args(agent, scope))
 
 
 def get_scope_description(scope: Scope) -> str:

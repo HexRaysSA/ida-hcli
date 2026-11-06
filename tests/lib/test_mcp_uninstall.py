@@ -10,8 +10,8 @@ from fixtures import *
 from fixtures import temp_env_var
 from test_mcp_install import make_fake_agent, read_commands
 
-from hcli.commands.mcp._agents import get_installed_scopes, uninstall_agent
-from hcli.commands.mcp.uninstall import uninstall
+from hcli.commands.mcp._agents import Agent, get_installed_scopes, uninstall_agent
+from hcli.commands.mcp.uninstall import Integration, UninstallPlan, uninstall
 from hcli.lib.ida.plugin.install import get_plugin_directory, is_plugin_installed
 
 CLAUDE_BOTH_SCOPES = {
@@ -141,6 +141,48 @@ def test_omp_removes_plugin(tmp_path: Path) -> None:
     assert read_commands(log_path)[-1] == ["plugin", "uninstall", "ida-mcp"]
 
 
+CLAUDE = Agent("claude", "Claude Code", "claude", supports_local=True)
+CODEX = Agent("codex", "Codex CLI", "codex", supports_local=False)
+INSTALLED = [Integration(CLAUDE, "local"), Integration(CLAUDE, "global"), Integration(CODEX, "global")]
+
+
+def test_plan_removes_everything_without_filters() -> None:
+    plan = UninstallPlan.from_installed(INSTALLED, has_ida_plugin=True)
+
+    assert plan.targets == INSTALLED
+    assert plan.kept == []
+    assert plan.remove_ida_plugin
+
+
+def test_plan_keeps_ida_plugin_while_another_agent_uses_it() -> None:
+    plan = UninstallPlan.from_installed(INSTALLED, has_ida_plugin=True, agents=("codex",))
+
+    assert plan.targets == [Integration(CODEX, "global")]
+    assert plan.kept == [Integration(CLAUDE, "local"), Integration(CLAUDE, "global")]
+    assert not plan.remove_ida_plugin
+
+
+def test_plan_keeps_ida_plugin_while_another_scope_uses_it() -> None:
+    plan = UninstallPlan.from_installed(INSTALLED, has_ida_plugin=True, scope="global")
+
+    assert plan.kept == [Integration(CLAUDE, "local")]
+    assert not plan.remove_ida_plugin
+
+
+def test_plan_removes_ida_plugin_when_the_filter_selects_every_integration() -> None:
+    plan = UninstallPlan.from_installed(INSTALLED, has_ida_plugin=True, agents=("claude", "codex"))
+
+    assert plan.kept == []
+    assert plan.remove_ida_plugin
+
+
+def test_plan_keeps_ida_plugin_on_request() -> None:
+    plan = UninstallPlan.from_installed(INSTALLED, has_ida_plugin=True, keep_plugin=True)
+
+    assert plan.targets == INSTALLED
+    assert not plan.remove_ida_plugin
+
+
 def install_fake_ida_mcp_plugin() -> Path:
     plugin_dir = get_plugin_directory("ida-mcp")
     plugin_dir.mkdir(parents=True)
@@ -225,7 +267,8 @@ def test_uninstall_continues_after_an_agent_fails(virtual_ida_environment, agent
 
     assert result.exit_code == 1
     assert read_commands(omp_log)[-1] == ["plugin", "uninstall", "ida-mcp"]
-    assert not plugin_dir.exists()
+    assert "stays installed" in result.output
+    assert plugin_dir.exists()
 
 
 def test_uninstall_lists_what_it_removes(virtual_ida_environment, agents_dir: Path) -> None:
@@ -236,3 +279,72 @@ def test_uninstall_lists_what_it_removes(virtual_ida_environment, agents_dir: Pa
     assert result.exit_code == 0, result.output
     assert "Pi in this repository" in result.output
     assert "IDA plugin" not in result.output
+
+
+OMP_INSTALLED = {("plugin", "list", "--json"): json.dumps({"npm": [{"name": "ida-mcp"}], "marketplace": []})}
+
+
+def test_uninstall_selected_agent_keeps_ida_plugin_for_the_others(virtual_ida_environment, agents_dir: Path) -> None:
+    _, claude_log = make_fake_agent(agents_dir, "claude", CLAUDE_BOTH_SCOPES)
+    _, omp_log = make_fake_agent(agents_dir, "omp", OMP_INSTALLED)
+    plugin_dir = install_fake_ida_mcp_plugin()
+
+    result = CliRunner().invoke(uninstall, ["--agent", "omp", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert read_commands(omp_log)[-1] == ["plugin", "uninstall", "ida-mcp"]
+    assert all(args[1] != "uninstall" for args in read_commands(claude_log))
+    assert "Claude Code for the current user" in result.output
+    assert plugin_dir.exists()
+
+
+def test_uninstall_selected_scope(virtual_ida_environment, agents_dir: Path) -> None:
+    _, claude_log = make_fake_agent(agents_dir, "claude", CLAUDE_BOTH_SCOPES)
+    plugin_dir = install_fake_ida_mcp_plugin()
+
+    result = CliRunner().invoke(uninstall, ["--scope", "local", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert [args for args in read_commands(claude_log) if args[1] == "uninstall"] == [
+        ["plugin", "uninstall", "ida-mcp@HexRaysSA", "--scope", "project"],
+    ]
+    assert plugin_dir.exists()
+
+
+def test_uninstall_keep_plugin(virtual_ida_environment, agents_dir: Path) -> None:
+    _, omp_log = make_fake_agent(agents_dir, "omp", OMP_INSTALLED)
+    plugin_dir = install_fake_ida_mcp_plugin()
+
+    result = CliRunner().invoke(uninstall, ["--keep-plugin", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert read_commands(omp_log)[-1] == ["plugin", "uninstall", "ida-mcp"]
+    assert plugin_dir.exists()
+
+
+def test_uninstall_dry_run_shows_commands_and_removes_nothing(virtual_ida_environment, agents_dir: Path) -> None:
+    _, claude_log = make_fake_agent(agents_dir, "claude", CLAUDE_BOTH_SCOPES)
+    plugin_dir = install_fake_ida_mcp_plugin()
+
+    result = CliRunner().invoke(uninstall, ["--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert "> claude plugin uninstall ida-mcp@HexRaysSA --scope user" in result.output
+    assert "IDA plugin ida-mcp" in result.output
+    assert all(args[1] != "uninstall" for args in read_commands(claude_log))
+    assert plugin_dir.exists()
+
+
+def test_uninstall_removes_agents_when_the_ida_plugin_check_fails(
+    virtual_ida_environment, agents_dir: Path, tmp_path: Path
+) -> None:
+    _, omp_log = make_fake_agent(agents_dir, "omp", OMP_INSTALLED)
+    not_a_directory = tmp_path / "idausr"
+    not_a_directory.write_text("", encoding="utf-8")
+
+    with temp_env_var("HCLI_IDAUSR", str(not_a_directory)):
+        result = CliRunner().invoke(uninstall, ["--yes"])
+
+    assert result.exit_code == 1
+    assert read_commands(omp_log)[-1] == ["plugin", "uninstall", "ida-mcp"]
+    assert "IDA plugin ida-mcp" in result.output
