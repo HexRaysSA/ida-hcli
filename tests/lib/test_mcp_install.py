@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from hcli.commands.mcp.install import Agent, Scope, _find_agents, _install_agent, _install_ida_plugin
+from hcli.commands.mcp._agents import Agent, Scope, find_agents, install_agent
+from hcli.commands.mcp.install import _install_ida_plugin
 
 
 def make_fake_agent(
@@ -65,7 +66,7 @@ def test_find_agents_detects_windows_command_shims(tmp_path: Path) -> None:
     previous_path = os.environ.get("PATH")
     os.environ["PATH"] = str(tmp_path)
     try:
-        found = _find_agents()
+        found = find_agents()
     finally:
         if previous_path is None:
             del os.environ["PATH"]
@@ -85,7 +86,7 @@ def test_claude_updates_existing_scoped_install(tmp_path: Path) -> None:
         command_shim=True,
     )
 
-    _install_agent(agent, "local")
+    install_agent(agent, "local")
 
     assert read_commands(log_path) == [
         ["plugin", "list", "--json"],
@@ -103,7 +104,7 @@ def test_codex_adds_marketplace_then_installs(tmp_path: Path) -> None:
         },
     )
 
-    _install_agent(agent, "global")
+    install_agent(agent, "global")
 
     assert read_commands(log_path) == [
         ["plugin", "list", "--json"],
@@ -125,7 +126,7 @@ def test_copilot_adds_marketplace_then_installs(tmp_path: Path) -> None:
         },
     )
 
-    _install_agent(agent, "global")
+    install_agent(agent, "global")
 
     assert read_commands(log_path) == [
         ["plugin", "list"],
@@ -147,7 +148,7 @@ def test_copilot_updates_existing_marketplace_then_installs(tmp_path: Path) -> N
         },
     )
 
-    _install_agent(agent, "global")
+    install_agent(agent, "global")
 
     assert read_commands(log_path) == [
         ["plugin", "list"],
@@ -166,7 +167,7 @@ def test_copilot_updates_existing_plugin_and_marketplace(tmp_path: Path) -> None
         },
     )
 
-    _install_agent(agent, "global")
+    install_agent(agent, "global")
 
     assert read_commands(log_path) == [
         ["plugin", "list"],
@@ -203,7 +204,7 @@ def test_pi_installs_or_updates_selected_scope(
 ) -> None:
     agent, log_path = make_fake_agent(tmp_path, "pi", {("list", "--no-approve"): listing})
 
-    _install_agent(agent, scope)
+    install_agent(agent, scope)
 
     assert read_commands(log_path) == [["list", "--no-approve"], expected]
 
@@ -220,7 +221,7 @@ def test_codex_installs_plugin_that_is_only_available(tmp_path: Path) -> None:
         },
     )
 
-    _install_agent(agent, "global")
+    install_agent(agent, "global")
 
     assert read_commands(log_path) == [
         ["plugin", "list", "--json"],
@@ -237,7 +238,7 @@ def test_omp_updates_existing_plugin(tmp_path: Path) -> None:
         {("plugin", "list", "--json"): json.dumps({"npm": [{"name": "ida-mcp"}], "marketplace": []})},
     )
 
-    _install_agent(agent, "global")
+    install_agent(agent, "global")
 
     assert read_commands(log_path) == [
         ["plugin", "list", "--json"],
@@ -252,7 +253,7 @@ def test_omp_installs_without_scope(tmp_path: Path) -> None:
         {("plugin", "list", "--json"): json.dumps({"npm": [], "marketplace": []})},
     )
 
-    _install_agent(agent, "global")
+    install_agent(agent, "global")
 
     assert read_commands(log_path) == [
         ["plugin", "list", "--json"],
