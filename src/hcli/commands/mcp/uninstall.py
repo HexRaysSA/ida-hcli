@@ -21,7 +21,6 @@ from hcli.commands.mcp._agents import (
     uninstall_agent,
 )
 from hcli.lib.console import console
-from hcli.lib.ida.plugin.exceptions import PluginInUseError
 from hcli.lib.ida.plugin.install import is_plugin_installed, sweep_trash, uninstall_plugin
 
 logger = logging.getLogger(__name__)
@@ -89,7 +88,7 @@ def _remove(plan: UninstallPlan) -> list[str]:
         try:
             uninstall_agent(integration.agent, integration.scope)
         except click.ClickException as e:
-            logger.debug("failed to remove IDA MCP from %s: %s", integration.agent.name, e.message)
+            logger.debug("failed to remove IDA MCP from %s: %s", integration.describe(), e.message)
             failures.append(f"{integration.describe()}: {e.message}")
         else:
             console.print(f"[green]Removed[/green] IDA MCP from {integration.describe()}")
@@ -104,8 +103,6 @@ def _remove(plan: UninstallPlan) -> list[str]:
 
     try:
         uninstall_plugin(PLUGIN_NAME)
-    except PluginInUseError as e:
-        failures.append(f"IDA plugin {PLUGIN_NAME}: {e}. Close IDA and run this command again")
     except Exception as e:
         logger.debug("failed to uninstall the IDA plugin %s", PLUGIN_NAME, exc_info=True)
         failures.append(f"IDA plugin {PLUGIN_NAME}: {e}")

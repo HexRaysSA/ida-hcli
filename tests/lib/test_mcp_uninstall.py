@@ -23,6 +23,8 @@ CLAUDE_BOTH_SCOPES = {
     )
 }
 
+OMP_INSTALLED = {("plugin", "list", "--json"): json.dumps({"npm": [{"name": "ida-mcp"}], "marketplace": []})}
+
 PI_LISTING = (
     "User packages:\n"
     "  npm:@example/other-extension\n"
@@ -129,11 +131,7 @@ def test_pi_does_not_retry_without_trust_flags_after_other_errors(tmp_path: Path
 
 
 def test_omp_removes_plugin(tmp_path: Path) -> None:
-    agent, log_path = make_fake_agent(
-        tmp_path,
-        "omp",
-        {("plugin", "list", "--json"): json.dumps({"npm": [{"name": "ida-mcp"}], "marketplace": []})},
-    )
+    agent, log_path = make_fake_agent(tmp_path, "omp", OMP_INSTALLED)
 
     assert get_installed_scopes(agent) == ["global"]
     uninstall_agent(agent, "global")
@@ -256,11 +254,7 @@ def test_uninstall_continues_after_an_agent_fails(virtual_ida_environment, agent
         CLAUDE_BOTH_SCOPES,
         exit_codes={("plugin", "uninstall", "ida-mcp@HexRaysSA", "--scope", "project"): 1},
     )
-    _, omp_log = make_fake_agent(
-        agents_dir,
-        "omp",
-        {("plugin", "list", "--json"): json.dumps({"npm": [{"name": "ida-mcp"}], "marketplace": []})},
-    )
+    _, omp_log = make_fake_agent(agents_dir, "omp", OMP_INSTALLED)
     plugin_dir = install_fake_ida_mcp_plugin()
 
     result = CliRunner().invoke(uninstall, ["--yes"])
@@ -279,9 +273,6 @@ def test_uninstall_lists_what_it_removes(virtual_ida_environment, agents_dir: Pa
     assert result.exit_code == 0, result.output
     assert "Pi in this repository" in result.output
     assert "IDA plugin" not in result.output
-
-
-OMP_INSTALLED = {("plugin", "list", "--json"): json.dumps({"npm": [{"name": "ida-mcp"}], "marketplace": []})}
 
 
 def test_uninstall_selected_agent_keeps_ida_plugin_for_the_others(virtual_ida_environment, agents_dir: Path) -> None:
