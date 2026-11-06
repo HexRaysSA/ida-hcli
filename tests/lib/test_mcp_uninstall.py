@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -70,7 +71,9 @@ def use_agents(monkeypatch: pytest.MonkeyPatch, *agents: Agent) -> None:
 
 def run(*args: str) -> tuple[int, str]:
     result = CliRunner().invoke(uninstall, list(args))
-    return result.exit_code, result.output
+    # Rich wraps output to the terminal width and boxes errors, so compare
+    # against the words alone.
+    return result.exit_code, " ".join(re.sub("[\u2500-\u257f]", " ", result.output).split())
 
 
 def test_removes_every_installed_scope_then_the_ida_plugin(
@@ -254,7 +257,7 @@ def test_continues_after_a_failing_agent_and_exits_non_zero(
 def test_ida_plugin_in_use_exits_non_zero(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ida_plugin: FakeIdaPlugin
 ) -> None:
-    ida_plugin.error = PluginInUseError("ida-mcp", tmp_path)
+    ida_plugin.error = PluginInUseError("ida-mcp", Path("ida-mcp"))
     use_agents(monkeypatch)
 
     exit_code, output = run("--yes")
