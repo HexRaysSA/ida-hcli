@@ -5,7 +5,7 @@ import rich_click as click
 from .install import install
 
 
-@click.group(help="Install and manage IDA MCP integrations.")
+@click.group(help="IDA MCP integrations for AI coding agents.")
 def mcp() -> None:
     pass
 
