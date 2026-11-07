@@ -61,6 +61,8 @@ docker run --rm \
   /analysis/binary
 ```
 
+Without a binary argument, the container prints the script's usage.
+
 **Note**: On SELinux systems (RHEL, Fedora, CentOS), use the `:Z` flag to relabel the volume for container access.
 
 ### Example Output
