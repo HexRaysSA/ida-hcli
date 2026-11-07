@@ -1,6 +1,7 @@
+# syntax=docker/dockerfile:1
 # Multi-stage Dockerfile for IDA Pro with idalib
-# Force x86_64 architecture since hcli doesn't support Linux ARM64
-FROM --platform=linux/amd64 python:3.13-slim AS base
+# Builds for the build platform (linux/amd64 or linux/arm64) unless --platform is given
+FROM python:3.13-slim AS base
 
 # Install system dependencies
 RUN apt-get update && \
@@ -20,20 +21,21 @@ FROM base AS ida-installer
 COPY --from=hcli-installer /root/.local/bin/hcli /usr/local/bin/hcli
 
 # Build arguments for IDA installation
-ARG HCLI_API_KEY
-ARG IDA_LICENSE_ID
 ARG IDA_DOWNLOAD_ID=ida-pro:latest
 ARG IDA_INSTALL_DIR=/opt/ida
 
-# Validate required build arguments
-RUN if [ -z "$HCLI_API_KEY" ]; then echo "Error: HCLI_API_KEY build argument is required" && exit 1; fi
-RUN if [ -z "$IDA_LICENSE_ID" ]; then echo "Error: IDA_LICENSE_ID build argument is required" && exit 1; fi
-
-# Install IDA Pro and create the Python environment
-ENV HCLI_API_KEY=${HCLI_API_KEY}
-RUN hcli --disable-updates ida install \
-    --download-id ${IDA_DOWNLOAD_ID} \
-    --license-id ${IDA_LICENSE_ID} \
+# Install IDA Pro and create the Python environment.
+# The API key and license ID come from the hcli_api_key and ida_license_id
+# build secrets, so they are not stored in the build history, cache, or image
+# layers.
+RUN --mount=type=secret,id=hcli_api_key \
+    --mount=type=secret,id=ida_license_id \
+    if [ ! -s /run/secrets/hcli_api_key ]; then echo "Error: hcli_api_key build secret is required" && exit 1; fi && \
+    if [ ! -s /run/secrets/ida_license_id ]; then echo "Error: ida_license_id build secret is required" && exit 1; fi && \
+    HCLI_API_KEY="$(cat /run/secrets/hcli_api_key)" \
+    hcli --disable-updates ida install \
+    --download-id "${IDA_DOWNLOAD_ID}" \
+    --license-id "$(cat /run/secrets/ida_license_id)" \
     --install-dir ${IDA_INSTALL_DIR} \
     --create-python-environment \
     --yes && \

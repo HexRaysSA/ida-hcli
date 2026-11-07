@@ -4,7 +4,7 @@ This Docker container provides a ready-to-use environment for analyzing binaries
 
 ## Prerequisites
 
-- Docker or Podman installed
+- Docker with BuildKit (the default builder) or Podman installed
 - Valid Hex-Rays credentials:
   - `HCLI_API_KEY`: Your Hex-Rays API key
   - `IDA_LICENSE_ID`: Your IDA Pro license ID
@@ -15,12 +15,15 @@ Use `docker` or `podman`:
 
 ```bash
 docker build \
-  --platform=linux/amd64 \
-  --build-arg HCLI_API_KEY="${HCLI_API_KEY}" \
-  --build-arg IDA_LICENSE_ID="${IDA_LICENSE_ID}" \
+  --secret id=hcli_api_key,env=HCLI_API_KEY \
+  --secret id=ida_license_id,env=IDA_LICENSE_ID \
   -t ida-pro:latest \
   .
 ```
+
+The API key and license ID are passed as build secrets, which read them from the `HCLI_API_KEY` and `IDA_LICENSE_ID` environment variables.
+
+The image is built for the architecture of the build host: `linux/amd64` on x86_64 hosts and `linux/arm64` on ARM64 hosts such as Apple Silicon Macs. To build for another architecture, add `--platform=linux/amd64` or `--platform=linux/arm64`; the build then runs under emulation.
 
 **Note**: The IDA Pro EULA is automatically accepted during the installation process via hcli.
 
@@ -30,19 +33,22 @@ You can customize the IDA version and product using additional build arguments:
 
 ```bash
 podman build \
-  --platform=linux/amd64 \
-  --build-arg HCLI_API_KEY="${HCLI_API_KEY}" \
-  --build-arg IDA_LICENSE_ID="${IDA_LICENSE_ID}" \
-  --build-arg IDA_DOWNLOAD_ID="release/9.1/ida-pro/ida-pro_91_x64linux.run" \
-  -t ida-pro:9.1 \
+  --secret id=hcli_api_key,env=HCLI_API_KEY \
+  --secret id=ida_license_id,env=IDA_LICENSE_ID \
+  --build-arg IDA_DOWNLOAD_ID="ida-pro:9.5" \
+  -t ida-pro:9.5 \
   .
 ```
 
+Build secrets:
+- `hcli_api_key` (required): Your Hex-Rays API key
+- `ida_license_id` (required): Your IDA Pro license ID
+
 Available build arguments:
-- `HCLI_API_KEY` (required): Your Hex-Rays API key
-- `IDA_LICENSE_ID` (required): Your IDA Pro license ID
-- `IDA_DOWNLOAD_ID` (optional): Download ID for specific IDA version (default: `release/9.2/ida-pro/ida-pro_92_x64linux.run`)
-  - Must be a Linux x64 installer (`.run` file)
+- `IDA_DOWNLOAD_ID` (optional): Tag or download ID of the IDA installer (default: `ida-pro:latest`)
+  - A tag such as `ida-pro:latest` or `ida-pro:9.5` selects the Linux installer for the image architecture
+  - A full download ID must be a Linux installer (`.run` file) for the image architecture: `x64linux` for `linux/amd64`, `armlinux` for `linux/arm64`, for example `release/9.5/ida-pro/ida-pro_95_armlinux.run`
+  - On `linux/arm64`, the IDA version must have a Linux ARM64 build
 
 ## Running the Container
 
@@ -52,47 +58,32 @@ Available build arguments:
 docker run --rm \
   -v /path/to/your/binary:/analysis/binary \
   ida-pro:latest \
-  -f /analysis/binary
+  /analysis/binary
 ```
+
+Without a binary argument, the container prints the script's usage.
 
 **Note**: On SELinux systems (RHEL, Fedora, CentOS), use the `:Z` flag to relabel the volume for container access.
 
 ### Example Output
 
+The example script prints the address and name of each function:
+
 ```
-Analyzing binary: binary
-Full path: /analysis/binary
---------------------------------------------------------------------------------
-
-Successfully opened database for: binary
-Total functions found: 14
-
-sub_401000: 29 instructions
-sub_401040: 20 instructions
-sub_401070: 16 instructions
-sub_4010A0: 115 instructions
-sub_4011E0: 232 instructions
-_main: 338 instructions
-start: 77 instructions
-_XcptFilter: 1 instructions
-_initterm: 1 instructions
-__setdefaultprecision: 6 instructions
-UserMathErrorFunction: 2 instructions
-nullsub_1: 1 instructions
-_except_handler3: 1 instructions
-_controlfp: 1 instructions
---------------------------------------------------------------------------------
-Analysis complete!
+0x401000: sub_401000
+0x401040: sub_401040
+0x401070: sub_401070
+...
 ```
 
 ## Container Details
 
 ### Base Image
 - Python 3.13-slim (Debian Trixie)
-- Platform: `linux/amd64` (x86_64)
+- Platform: `linux/amd64` (x86_64) or `linux/arm64` (ARM64), the build platform unless `--platform` is given
 
 ### Installed Components
-- IDA Pro 9.2 Professional (x64 Linux) - installed to `/opt/ida`
+- IDA Pro (latest release by default, Linux build for the image architecture) - installed to `/opt/ida`
 - IDA Pro license (`.hexlic` file) - copied to `/root/.idapro/`
 - Python virtualenv at `/root/.idapro/venv` with:
   - `idapro`: IDA Pro Python bindings
@@ -112,22 +103,11 @@ The Dockerfile uses a multi-stage build:
 
 ## Security Considerations
 
-**WARNING**: Build arguments containing secrets are stored in image layers and can be extracted!
+The API key and license ID are passed as build secrets. They are mounted only while hcli installs IDA, and are not stored in the build history, the build cache, or the image layers. Do not pass them as build arguments instead: build arguments are stored in the build history and cache.
 
-- **Do NOT** push images with embedded credentials to public registries
-- **Do NOT** share built images - others can extract your API keys and license IDs
-- Build arguments (including `HCLI_API_KEY` and `IDA_LICENSE_ID`) are visible in:
-  - Image history (`podman history ida-pro:latest`)
-  - Image inspection (`podman inspect ida-pro:latest`)
-  - Intermediate build layers
+**WARNING**: The final image contains your IDA license file (`.hexlic`), which includes the license ID and which others can extract.
 
-### Best Practices
+- **Do NOT** push the image to public registries
+- **Do NOT** share the built image
 
-1. **For Development**: Use environment variables (current approach)
-   - Keep images local and private
-   - Never push to registries
-
-2. **For CI/CD**: Use ephemeral build secrets
-   - GitHub Actions secrets
-   - GitLab CI/CD variables
-   - Jenkins credentials
+In CI/CD, pass the API key from the CI system's secret store, such as GitHub Actions secrets or GitLab CI/CD variables, to the build as the `hcli_api_key` secret, and the license ID as the `ida_license_id` secret.
