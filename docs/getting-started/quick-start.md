@@ -164,7 +164,7 @@ $ hcli ida install --help
 │                                              default                               │
 │ --accept-eula/--no-accept-eula  -a/-A        Accept the EULA without showing it    │
 │                                              (-a), or do not accept it (-A). By    │
-│                                              default, show the EULA and ask on a   │
+│                                              default, show the EULA and ask in a   │
 │                                              terminal                              │
 │ --install-dir                   -i     TEXT  Install dir                           │
 │ --license-id                    -l     TEXT  License ID (e.g., 96-0000-0000-01)    │

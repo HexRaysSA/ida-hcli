@@ -79,7 +79,7 @@
 - Store plugin setting values that equal the default, from install prompts, `--config`, and `hcli plugin config <plugin> setup`, so a stored value can be set back to the default and a reinstall does not ask again (#371)
 
 ### Changed
-- Behavior change: `hcli ida install` no longer accepts the EULA by default. On a terminal, it shows the EULA (`license.txt`) in a pager after the installation and asks you to accept it. Without a terminal, it completes the installation, does not accept the EULA, and prints the `hcli ida accept-eula --yes` command to run. Scripts and CI jobs that need headless IDA must pass `--accept-eula`. `--yes` does not accept the EULA
+- Behavior change: `hcli ida install` no longer accepts the EULA by default. In a terminal, it shows the EULA (`license.txt`) in a pager after the installation and asks you to accept it. Without a terminal, it completes the installation, does not accept the EULA, and prints the `hcli ida accept-eula --yes` command to run. Scripts and CI jobs that need headless IDA must pass `--accept-eula`. `--yes` does not accept the EULA
 - `hcli ida accept-eula` shows the EULA in a pager and asks you to accept it. `--yes` accepts the EULA without the pager and the question. Without a terminal and without `--yes`, the command fails. When hcli accepts the EULA, it prints `Accepted the Hex-Rays EULA (<path to license.txt>)` to stderr
 - Move the hcli extension commands from `hcli extension create` and `hcli extension list` to `hcli hcli-extensions create` and `hcli hcli-extensions list`
 - Log the Python-relevant environment variables (`VIRTUAL_ENV`, `PYTHONHOME`, `PATH`, ...) passed to `idat` at debug level

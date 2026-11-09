@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
     "-a/-A",
     "--accept-eula/--no-accept-eula",
     "eula",
-    help="Accept the EULA without showing it (-a), or do not accept it (-A). By default, show the EULA and ask on a terminal",
+    help="Accept the EULA without showing it (-a), or do not accept it (-A). By default, show the EULA and ask in a terminal",
     default=None,
 )
 @click.option("--set-default/--no-set-default", help="Mark this IDA installation as the default", default=True)

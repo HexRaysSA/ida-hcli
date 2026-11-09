@@ -79,7 +79,7 @@ $ hcli ida install --help
 │                                              default                               │
 │ --accept-eula/--no-accept-eula  -a/-A        Accept the EULA without showing it    │
 │                                              (-a), or do not accept it (-A). By    │
-│                                              default, show the EULA and ask on a   │
+│                                              default, show the EULA and ask in a   │
 │                                              terminal                              │
 │ --install-dir                   -i     TEXT  Install dir                           │
 │ --license-id                    -l     TEXT  License ID (e.g., 96-0000-0000-01)    │
@@ -164,7 +164,7 @@ hcli ida install --license-id 96-0000-0000-01 --download-id ida-pro:latest:x64li
 
 IDA must have an accepted EULA before idalib and `idat` run without a GUI. Until then, they stop with `License not yet accepted, cannot run in batch mode`. `hcli ida accept-eula` records the acceptance for an installation. Without a path, it uses the current IDA installation.
 
-On a terminal, the command shows the EULA text (`license.txt` in the IDA directory) in a pager. Close the pager to get the question `Do you accept the Hex-Rays EULA?`. The default answer is no. When you answer yes, the command records the acceptance and prints `Accepted the Hex-Rays EULA (<path to license.txt>)` to stderr.
+In a terminal, the command shows the EULA text (`license.txt` in the IDA directory) in a pager. Close the pager to get the question `Do you accept the Hex-Rays EULA?`. The default answer is no. When you answer yes, the command records the acceptance and prints `Accepted the Hex-Rays EULA (<path to license.txt>)` to stderr.
 
 In scripts and CI jobs, read the EULA first, then give `--yes` to accept it without the pager and the question. Without a terminal and without `--yes`, the command fails and tells you where the EULA text is:
 
