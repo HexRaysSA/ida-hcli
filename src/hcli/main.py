@@ -131,9 +131,12 @@ def _get_status_section() -> str:
         return ""
 
 
+DESCRIPTION = "Hex-Rays Command-line interface for managing IDA installation, licenses and more."
+
+
 def get_help_text():
     """Generate help text with extensions information."""
-    base_help = f"[bold blue]{ENV.HCLI_BINARY_NAME.upper()}[/bold blue] [dim](v{ENV.HCLI_VERSION}{ENV.HCLI_VERSION_EXTRA})[/dim]\n\n[yellow]Hex-Rays Command-line interface for managing IDA installation, licenses and more.[/yellow]"
+    base_help = f"[bold blue]{ENV.HCLI_BINARY_NAME.upper()}[/bold blue] [dim](v{ENV.HCLI_VERSION}{ENV.HCLI_VERSION_EXTRA})[/dim]\n\n[yellow]{DESCRIPTION}[/yellow]"
 
     base_help += _get_status_section()
 
@@ -217,7 +220,7 @@ def handle_command_completion(_ctx, _result, **_kwargs):
 
 @click.group(help=get_help_text(), cls=MainGroup, result_callback=handle_command_completion)
 @click.version_option(version=f"{ENV.HCLI_VERSION}{ENV.HCLI_VERSION_EXTRA}", package_name="ida-hcli")
-@click.option("--auth", "-a", help="Force authentication type (interactive|key)", default=None)
+@click.option("--auth", "-a", help="Force authentication type: interactive or key", default=None)
 @click.option("--auth-credentials", "-s", help="Force specific credentials by name", default=None)
 @click.option("--disable-updates", is_flag=True, help="Disable automatic update checking")
 @click.pass_context

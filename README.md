@@ -89,19 +89,17 @@ uvx mypy --check-untyped-defs src/ tests/ --exclude tests/data/ --disable-error-
 
 ### Documentation
 
-Documentation is **automatically generated** from source code:
+The documentation is Markdown in `docs/`. The CLI Reference page (`docs/reference/cli.md`) is generated from the Click help text when the site is built.
 
 ```bash
+# Install the documentation dependencies
+uv sync --extra docs
+
 # Build documentation
 uv run mkdocs build
 
 # Serve documentation locally
 uv run mkdocs serve
-
-# Documentation includes:
-# - CLI commands (from Click help text)
-# - API reference (from Python docstrings)
-# - Usage examples (auto-generated)
 ```
 
 ### Testing
