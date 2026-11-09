@@ -285,7 +285,6 @@ jobs:
 - name: Debug HCLI
   env:
     HCLI_DEBUG: true
-    HCLI_LOG_LEVEL: DEBUG
   run: |
     hcli whoami
     hcli ida list
