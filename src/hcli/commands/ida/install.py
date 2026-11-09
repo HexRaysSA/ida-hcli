@@ -32,6 +32,15 @@ from hcli.lib.ida import (
     is_ida_dir,
     is_idalib_capable_installation,
 )
+from hcli.lib.ida.eula import (
+    EulaAction,
+    EulaNeedsTerminalError,
+    get_eula_action,
+    get_eula_consent,
+    get_license_text_path,
+    is_interactive_terminal,
+    render_eula_record,
+)
 from hcli.lib.ida.python import probe_current_python_info, resolve_current_python
 from hcli.lib.ida.python.environment import warn_python_environment
 from hcli.lib.util.io import get_hcli_display_command, get_os
@@ -48,7 +57,13 @@ logger = logging.getLogger(__name__)
 )
 @click.option("-l", "--license-id", "license_id", required=False, help="License ID (e.g., 96-0000-0000-01)")
 @click.option("-i", "--install-dir", "install_dir", required=False, help="Install dir")
-@click.option("-a/-A", "--accept-eula/--no-accept-eula", "eula", help="Accept EULA", default=True)
+@click.option(
+    "-a/-A",
+    "--accept-eula/--no-accept-eula",
+    "eula",
+    help="Accept the EULA without showing it (-a), or do not accept it (-A). By default, show the EULA and ask on a terminal",
+    default=None,
+)
 @click.option("--set-default/--no-set-default", help="Mark this IDA installation as the default", default=True)
 @click.option("--dry-run", is_flag=True, help="Show what would be done without actually installing")
 @click.option("--yes", "-y", "auto_confirm", is_flag=True, help="Auto-accept confirmation prompts", default=False)
@@ -66,7 +81,7 @@ logger = logging.getLogger(__name__)
 async def install(
     ctx,
     install_dir: str | None,
-    eula: bool,
+    eula: bool | None,
     installer: str,
     download_id: str | None,
     license_id: str | None,
@@ -191,8 +206,10 @@ async def install(
                             f"Update default IDA path in: {get_ida_config_path()} (only if the installation includes idalib)",
                         ]
                     )
-                if eula:
-                    actions.append("Accept EULA (only if the installation includes idalib)")
+                if eula is True:
+                    actions.append("Accept EULA (--accept-eula, only if the installation includes idalib)")
+                elif eula is None:
+                    actions.append("Ask to accept EULA (only if the installation includes idalib)")
 
                 console.print("\n[bold]Would perform the following actions:[/bold]")
                 for i, action in enumerate(actions, start=1):
@@ -270,13 +287,9 @@ async def install(
             # this requires using ida_registry to set some keys
             # which requires idalib to be working
             # so it has to go after license and config installation
-            if eula:
+            if eula is not False:
                 if is_idalib_capable_installation(install_dir_path):
-                    console.print("[yellow]Accepting EULA...[/yellow]")
-                    try:
-                        accept_eula(get_ida_path(install_dir_path))
-                    except RuntimeError:
-                        console.print("[red]Skipped EULA acceptance due to missing idalib.[/red]")
+                    handle_eula_for_install(install_dir_path, get_eula_action(eula, is_interactive_terminal()))
                 else:
                     console.print("[yellow]Skipped EULA acceptance due to missing idalib.[/yellow]")
 
@@ -292,6 +305,49 @@ async def install(
         create_python_environment_for_install(install_dir_path, interactive=not auto_confirm)
     elif not dry_run:
         warn_python_environment_for_install(install_dir_path)
+
+
+def handle_eula_for_install(install_dir_path: Path, action: EulaAction) -> None:
+    """Accept the EULA of the IDA that was just installed, as the action says.
+
+    The installation is complete at this point, so a declined or skipped EULA
+    is a warning, not an error.
+    """
+    license_path = get_license_text_path(install_dir_path)
+    accept_command = f"{get_hcli_display_command()} ida accept-eula"
+    try:
+        accepted = get_eula_consent(license_path, action, console)
+    except EulaNeedsTerminalError:
+        stderr_console.print(
+            "[yellow]Skipped EULA acceptance: there is no terminal to ask on.[/yellow]\n"
+            f'Read {license_path}, then run: {accept_command} --yes "{install_dir_path}"',
+            highlight=False,
+            soft_wrap=True,
+        )
+        return
+    except FileNotFoundError:
+        stderr_console.print(
+            f"[yellow]Skipped EULA acceptance: EULA text not found: {license_path}[/yellow]\n"
+            f'To accept the EULA, run: {accept_command} --yes "{install_dir_path}"',
+            highlight=False,
+            soft_wrap=True,
+        )
+        return
+
+    if not accepted:
+        stderr_console.print(
+            f'[yellow]EULA not accepted.[/yellow] To accept it later, run: {accept_command} "{install_dir_path}"',
+            highlight=False,
+            soft_wrap=True,
+        )
+        return
+
+    try:
+        accept_eula(get_ida_path(install_dir_path))
+    except RuntimeError:
+        console.print("[red]Skipped EULA acceptance due to missing idalib.[/red]")
+        return
+    stderr_console.print(render_eula_record(license_path), markup=False, highlight=False, soft_wrap=True)
 
 
 def warn_python_environment_for_install(install_dir_path: Path) -> None:
