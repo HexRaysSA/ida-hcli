@@ -166,7 +166,7 @@ IDA must have an accepted EULA before idalib and `idat` run without a GUI. Until
 
 In a terminal, the command shows the EULA text (`license.txt` in the IDA directory) in a pager. Close the pager to get the question `Do you accept the Hex-Rays EULA?`. The default answer is no. When you answer yes, the command records the acceptance and prints `Accepted the Hex-Rays EULA (<path to license.txt>)` to stderr.
 
-In scripts and CI jobs, make sure you accept the terms of the EULA beforehand, and then you can give `--yes` to accept it without the pager and the question. Without a terminal and without `--yes`, the command fails and tells you where the EULA text is:
+For scripts and CI jobs, make sure you accept the terms of the EULA beforehand, and then you can give `--yes` to accept it without the pager and the question. Without a terminal and without `--yes`, the command fails and tells you where the EULA text is:
 
 ```bash
 $ hcli ida accept-eula --yes "/Applications/IDA Professional 9.5.app"
