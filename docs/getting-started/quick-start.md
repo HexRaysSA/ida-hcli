@@ -55,6 +55,7 @@ $ hcli commands
 │ hcli login                │ Log in to the Hex-Rays portal and create new credentials.        │
 │ hcli logout               │ Log out and remove stored credentials.                           │
 │ hcli mcp install          │ Install IDA MCP for Claude, Codex, Copilot, Pi, or OMP.          │
+│ hcli mcp uninstall        │ Remove IDA MCP from IDA and from the agents on PATH that have it.│
 │ hcli plugin config del    │ Delete a plugin configuration setting.                           │
 │ hcli plugin config export │ Export plugin configuration settings as JSON.                    │
 │ hcli plugin config get    │ Get a plugin configuration setting.                              │
