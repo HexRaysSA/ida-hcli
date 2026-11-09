@@ -138,6 +138,57 @@ You'll want to know the HCLI commands:
 
 Plugins are written to `$IDAUSR/plugins`, which is typically `~/.idapro/plugins` on Unix-like systems, where IDA Pro will load them the next time the application is opened.
 
+`hcli plugin install` and `hcli plugin upgrade` accept `--no-build-isolation`, which HCLI gives to pip when it installs the plugin's Python dependencies. Use it when a dependency builds from source and needs packages that are already in IDA's Python. `hcli plugin install` also accepts these options:
+
+- `-U`/`--upgrade` upgrades the plugin in place when it is already installed. Without it, the install fails. When the installed version is the same or newer, HCLI prints `Already installed` and makes no changes, so a script can run the same command again.
+- `-e`/`--editable` installs a local plugin directory as a symlink in `$IDAUSR/plugins/`. Changes to the source directory take effect the next time IDA loads the plugin.
+
+`hcli plugin status --skip-upgrade-check` lists the installed plugins and does not check the repositories for newer versions. `hcli plugin status --json` and `hcli plugin search --json` write JSON to stdout for scripts.
+
+### Plugin settings
+
+A plugin can declare settings in its `ida-plugin.json`, for example an API key or a feature switch. Each setting has a type (string or boolean) and can have a default value, a list of choices, or the `secret` flag. HCLI stores the values in `$IDAUSR/ida-config.json` under the name of the plugin. The plugin reads them at runtime with the [ida-settings](https://pypi.org/project/ida-settings/) package.
+
+During `hcli plugin install`, HCLI asks for each setting that has no stored value. It does not ask for settings that the plugin marks `"prompt": false`; these use their default value. When the terminal is not interactive, HCLI cannot ask. If a required setting has no default and no stored value, the install stops and gives the `--config` options to add. Use `--config key=value` once for each setting, with `true` or `false` for a boolean. When you give `--config` for a plugin, HCLI does not ask about the other settings of that plugin. To set a value for a component or a dependency, put its name before the key, for example `--config component-name.key=value`.
+
+```console
+❯ hcli plugin install demo-assist
+Error: plugin requires configuration but console is not interactive. Please
+provide settings via command line: --config api_key=<value>
+
+❯ hcli plugin install demo-assist --config api_key=sk-123 --config model=large
+Installed plugin: demo-assist==1.0.0
+```
+
+After the install, use `hcli plugin config <plugin>` to read and change the values:
+
+```console
+❯ hcli plugin config demo-assist list
+ Key      Value            Description
+ api_key  ********         API key for the service
+ model    large            Model to use
+                           Choices: small, large
+ verbose  false (default)  Log each request
+
+❯ hcli plugin config demo-assist set verbose true
+Set demo-assist.verbose
+
+❯ hcli plugin config demo-assist get model
+large
+```
+
+`list` hides the values of secret settings. `get` gives the stored value, or the default when there is no stored value. `set` checks the value against the type and the choices of the setting. `del` removes the stored value, so the setting uses its default again. HCLI does not remove a required setting that has no default. `setup` asks again for all settings that the plugin does not mark `"prompt": false`, with the current values as the defaults. It needs an interactive terminal. For a secret setting, press Enter to keep the current value.
+
+`export` writes the stored values as a JSON object, and `import` reads a JSON object from its argument or from stdin. Together they copy settings to a different machine:
+
+```console
+❯ hcli plugin config demo-assist export > demo-assist.json
+❯ hcli plugin config demo-assist import < demo-assist.json
+Imported 3 settings for demo-assist
+```
+
+`export` writes secret values as plain text, so keep the file safe. The settings of a component use the component's own name, for example `hcli plugin config component-name list`.
+
 ### Plugin dependencies
 
 A plugin can declare other plugins as dependencies in its `ida-plugin.json`, and so can each of its components. When you install or upgrade such a plugin, HCLI resolves the declared dependencies across all configured repositories and installs them as independent top-level plugins. Dependencies that themselves declare further dependencies are resolved recursively. HCLI selects the newest version of each plugin that supports your platform, IDA version, and IDA's Python version, and whose own required dependencies can also be resolved. Thus `hcli plugin install foo` can install an older version of `foo` when the newest version needs a dependency that is not available for your installation. If a required dependency cannot be resolved, the install stops with an error before it writes any files. The error shows the chain of plugins that led to the dependency and why each version was rejected. An optional dependency that cannot be resolved is skipped. When IDA's Python cannot be detected, HCLI skips only the versions that declare `requiresPython`. The output has one line for each dependency. An optional dependency that HCLI cannot resolve or install is shown as `Optional dependency not installed`, with a one-line reason. When the plugin installs, the last line starts with `Success:` and gives the number of dependencies that are not installed.
