@@ -11,7 +11,6 @@ Typically you won't have to touch these, but they can be useful in automation co
 | HCLI_API_KEY          | None          | API key for authentication with Hex-Rays services                          |
 | HCLI_DISABLE_UPDATES  | false         | Disable automatic update checking                                          |
 | HCLI_DEBUG            | false         | Write debug log messages to stderr, print a traceback for unexpected errors, and show the output of pip when a package installation fails (accepts: "true", "yes", "on", "1") |
-| HCLI_CONFIG_NAMESPACE | "hcli"        | Prefix of the configuration keys that store your credentials and login email. Two HCLI-based programs that use the same value share one login |
 
 
 ## Standard System Variables
