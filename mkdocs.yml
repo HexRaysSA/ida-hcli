@@ -98,9 +98,13 @@ nav:
     - Publishing Your Plugin: reference/packaging-your-existing-plugin.md
     - Plugin Bundles: reference/plugin-bundle-spec.md
   - Reference:
+    - CLI Reference: reference/cli.md
     - Environment Variables: reference/environment-variables.md
     - How HCLI Finds IDA: reference/ida-detection.md
   - Changelog: changelog.md
+
+hooks:
+  - scripts/mkdocs_hooks.py
 
 plugins:
   - search

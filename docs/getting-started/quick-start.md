@@ -28,60 +28,7 @@ $ hcli
 ```
 
 
-<details>
-<summary>All Available Commands</summary>
-
-```bash
-$ hcli commands
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Command                   ┃ Description                                                      ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ hcli auth default         │ Set or show the default credentials.                             │
-│ hcli auth key create      │ Create a new API key.                                            │
-│ hcli auth key install     │ Install an API key as a new credentials.                         │
-│ hcli auth key list        │ List all API keys.                                               │
-│ hcli auth key revoke      │ Revoke an API key.                                               │
-│ hcli auth list            │ List all credentials.                                            │
-│ hcli auth switch          │ Switch the default credentials.                                  │
-│ hcli commands             │ List all available command combinations.                         │
-│ hcli download             │ Download IDA binaries, SDKs, and utilities.                      │
-│ hcli hcli-extensions create │ Create an hcli extension                                       │
-│ hcli hcli-extensions list │ List hcli extensions                                             │
-│ hcli ida install          │ Installs IDA unattended.                                         │
-│ hcli ida set-default      │ Set or show the default IDA installation directory.              │
-│ hcli license get          │ Download license files with optional filtering.                  │
-│ hcli license install      │ Install a license file to an IDA Pro installation directory.     │
-│ hcli license list         │ List available licenses with rich formatting.                    │
-│ hcli login                │ Log in to the Hex-Rays portal and create new credentials.        │
-│ hcli logout               │ Log out and remove stored credentials.                           │
-│ hcli mcp install          │ Install IDA MCP for Claude, Codex, Copilot, Pi, or OMP.          │
-│ hcli plugin config del    │ Delete a plugin configuration setting.                           │
-│ hcli plugin config export │ Export plugin configuration settings as JSON.                    │
-│ hcli plugin config get    │ Get a plugin configuration setting.                              │
-│ hcli plugin config import │ Import plugin configuration settings from JSON.                  │
-│ hcli plugin config list   │ List all configuration settings for a plugin.                    │
-│ hcli plugin config set    │ Set a plugin configuration setting.                              │
-│ hcli plugin install       │ Install a plugin from a repository, URL, or local path.          │
-│ hcli plugin lint          │ Lint an IDA plugin directory, archive (.zip file), or HTTPS URL. │
-│ hcli plugin repo add      │ Add a plugin repository.                                         │
-│ hcli plugin repo list     │ List the configured plugin repositories.                         │
-│ hcli plugin repo remove   │ Remove a plugin repository.                                      │
-│ hcli plugin repo set-default │ Set the repository used for references with no repo/ prefix.  │
-│ hcli plugin repo snapshot │ Create a snapshot of the repository.                             │
-│ hcli plugin search        │ Search for plugins across configured repositories.               │
-│ hcli plugin status        │ Show installed plugins and available upgrades.                    │
-│ hcli plugin uninstall     │ Uninstall an installed plugin.                                   │
-│ hcli plugin upgrade       │ Upgrade an installed plugin to the latest version.               │
-│ hcli share delete         │ Delete shared file by code.                                      │
-│ hcli share get            │ Download a shared file using its shortcode.                      │
-│ hcli share list           │ List and manage your shared files.                               │
-│ hcli share put            │ Upload a shared file.                                            │
-│ hcli update               │ Check for hcli updates.                                          │
-│ hcli whoami               │ Display the currently logged-in user.                            │
-└───────────────────────────┴──────────────────────────────────────────────────────────────────┘
-```
-
-</details>
+For all commands and their options, see the [CLI Reference](../reference/cli.md). To list all commands in a terminal, run `hcli commands`.
 
 
 ## Examples
