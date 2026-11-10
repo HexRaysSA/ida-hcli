@@ -1,7 +1,9 @@
-"""Tests for the ignored-URLs list used by the GitHub plugin repository indexer."""
+"""Tests for the ignored-URLs list and the rejected-archive log entries of the GitHub indexer."""
 
 import io
 import json
+import logging
+import re
 import zipfile
 from pathlib import Path
 
@@ -10,22 +12,30 @@ from click.testing import CliRunner
 from fixtures import PLUGINS_DIR
 
 from hcli.commands.plugin import plugin as plugin_group
-from hcli.lib.ida.plugin.repo import PluginArchiveIndex, github
-from hcli.lib.ida.plugin.repo.github import (
-    GitHubCommit,
-    GithubPluginRepo,
-    GitHubRelease,
-    GitHubReleases,
-    GitHubTag,
-    append_ignored_urls,
-    get_release_asset_cache_directory,
-    get_source_archive_cache_directory,
-)
+from hcli.lib.ida.plugin.repo import github
+from hcli.lib.ida.plugin.repo.github import GitHubCommit, GithubPluginRepo, GitHubRelease, GitHubReleases, GitHubTag
 
 # plugin1 declares https://github.com/HexRaysSA/ida-hcli as its repository
 VALID_ZIP = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
-HOST = "https://github.com/HexRaysSA/ida-hcli"
 OWNER, REPO = "hexrayssa", "ida-hcli"
+
+
+def edit_metadata(zip_data: bytes, repository: str | None = None, entry_point: str | None = None) -> bytes:
+    """Rewrite fields of every ida-plugin.json in an archive."""
+    src = zipfile.ZipFile(io.BytesIO(zip_data))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as dst:
+        for name in src.namelist():
+            data = src.read(name)
+            if name.endswith("ida-plugin.json"):
+                metadata = json.loads(data)
+                if repository is not None:
+                    metadata["plugin"]["urls"]["repository"] = repository
+                if entry_point is not None:
+                    metadata["plugin"]["entryPoint"] = entry_point
+                data = json.dumps(metadata).encode("utf-8")
+            dst.writestr(name, data)
+    return buf.getvalue()
 
 
 def make_zip(files: dict[str, bytes]) -> bytes:
@@ -34,61 +44,6 @@ def make_zip(files: dict[str, bytes]) -> bytes:
         for name, data in files.items():
             z.writestr(name, data)
     return buf.getvalue()
-
-
-def with_repository(zip_data: bytes, repository: str) -> bytes:
-    """Rewrite the repository URL in every ida-plugin.json of an archive."""
-    src = zipfile.ZipFile(io.BytesIO(zip_data))
-    files = {}
-    for name in src.namelist():
-        data = src.read(name)
-        if name.endswith("ida-plugin.json"):
-            metadata = json.loads(data)
-            metadata["plugin"]["urls"]["repository"] = repository
-            data = json.dumps(metadata).encode("utf-8")
-        files[name] = data
-    return make_zip(files)
-
-
-NO_METADATA_ZIP = make_zip({"README.md": b"not a plugin"})
-INVALID_METADATA_ZIP = make_zip({"ida-plugin.json": b'{"plugin": {}}'})
-HOST_MISMATCH_ZIP = with_repository(VALID_ZIP, "https://github.com/someone-else/ida-hcli")
-
-
-@pytest.mark.parametrize(
-    "zip_data, expected",
-    [
-        (VALID_ZIP, 1),
-        (NO_METADATA_ZIP, 0),
-        (INVALID_METADATA_ZIP, 0),
-        (HOST_MISMATCH_ZIP, 0),
-    ],
-    ids=["valid", "no-metadata", "invalid-metadata", "host-mismatch"],
-)
-def test_index_plugin_archive_returns_number_of_indexed_plugins(zip_data: bytes, expected: int):
-    index = PluginArchiveIndex()
-    assert index.index_plugin_archive(zip_data, "https://example.com/a.zip", expected_host=HOST) == expected
-
-
-def test_append_ignored_urls_adds_timestamped_block(tmp_path: Path):
-    path = tmp_path / "ignored-urls.txt"
-    path.write_text("# header\nhttps://example.com/old.zip", encoding="utf-8")  # no trailing newline
-
-    append_ignored_urls(path, ["https://example.com/a.zip", "https://example.com/b.zip"])
-
-    lines = path.read_text(encoding="utf-8").splitlines()
-    assert lines[:3] == ["# header", "https://example.com/old.zip", ""]
-    assert lines[3].startswith("# Discovered on ")
-    assert lines[4:] == ["https://example.com/a.zip", "https://example.com/b.zip"]
-
-
-def test_append_ignored_urls_does_nothing_without_urls(tmp_path: Path):
-    path = tmp_path / "ignored-urls.txt"
-    path.write_text("# header\n", encoding="utf-8")
-
-    append_ignored_urls(path, [])
-
-    assert path.read_text(encoding="utf-8") == "# header\n"
 
 
 def commit(oid: str) -> dict:
@@ -128,31 +83,33 @@ def release(tag: str, oid: str, assets: list[str]) -> GitHubRelease:
 
 
 SRC_VALID = commit("a" * 40)["zipballUrl"]
-SRC_REJECTED = commit("b" * 40)["zipballUrl"]
-SRC_TAG_REJECTED = commit("c" * 40)["zipballUrl"]
+SRC_NO_METADATA = commit("b" * 40)["zipballUrl"]
+SRC_HOST_MISMATCH = commit("c" * 40)["zipballUrl"]
 ASSET_VALID = f"https://github.com/{OWNER}/{REPO}/releases/download/v1.0.0/valid.zip"
-ASSET_REJECTED = f"https://github.com/{OWNER}/{REPO}/releases/download/v1.0.0/docs.zip"
+ASSET_INVALID_METADATA = f"https://github.com/{OWNER}/{REPO}/releases/download/v1.0.0/broken.zip"
 ASSET_IGNORED = f"https://github.com/{OWNER}/{REPO}/releases/download/v1.0.0/ignored.zip"
 
 CONTENT = {
     SRC_VALID: VALID_ZIP,
-    SRC_REJECTED: NO_METADATA_ZIP,
-    SRC_TAG_REJECTED: HOST_MISMATCH_ZIP,
+    SRC_NO_METADATA: make_zip({"README.md": b"not a plugin"}),
+    SRC_HOST_MISMATCH: edit_metadata(VALID_ZIP, repository="https://github.com/someone-else/ida-hcli"),
     ASSET_VALID: VALID_ZIP,
-    ASSET_REJECTED: INVALID_METADATA_ZIP,
+    ASSET_INVALID_METADATA: edit_metadata(VALID_ZIP, entry_point="missing.py"),
     ASSET_IGNORED: VALID_ZIP,
 }
+REJECTED = {SRC_NO_METADATA, SRC_HOST_MISMATCH, ASSET_INVALID_METADATA}
 
 
 @pytest.fixture
 def fake_github(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[str]:
     """Serve one repository with a fixed set of releases and tags; return the list of downloaded URLs."""
     monkeypatch.setenv("HCLI_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
 
     releases = GitHubReleases(
         default_branch=GitHubCommit.from_dict(commit("d" * 40)),
         releases=[
-            release("v1.0.0", "a" * 40, ["valid.zip", "docs.zip", "ignored.zip"]),
+            release("v1.0.0", "a" * 40, ["valid.zip", "broken.zip", "ignored.zip"]),
             release("v0.9.0", "b" * 40, []),
         ],
         tags=[
@@ -178,33 +135,23 @@ def fake_github(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[str]:
     return downloads
 
 
-def test_github_repo_skips_ignored_urls_and_records_rejected_ones(fake_github: list[str]):
-    repo = GithubPluginRepo("token", ignored_urls=[ASSET_IGNORED])
-
-    plugins = repo.get_plugins()
-
-    assert ASSET_IGNORED not in fake_github
-    assert set(fake_github) == set(CONTENT) - {ASSET_IGNORED}
-    assert sorted(repo.newly_ignored_urls) == sorted([SRC_REJECTED, SRC_TAG_REJECTED, ASSET_REJECTED])
-
-    urls = {loc.url for p in plugins for locs in p.versions.values() for loc in locs}
-    assert urls == {SRC_VALID, ASSET_VALID}
-
-
-def test_github_repo_keeps_only_valid_archives_in_cache(fake_github: list[str]):
-    GithubPluginRepo("token").get_plugins()
-
-    assert (get_source_archive_cache_directory(OWNER, REPO, "a" * 40) / "source.zip").exists()
-    assert (get_release_asset_cache_directory(OWNER, REPO, "v1.0.0") / "valid.zip").exists()
-    assert not (get_source_archive_cache_directory(OWNER, REPO, "b" * 40) / "source.zip").exists()
-    assert not (get_source_archive_cache_directory(OWNER, REPO, "c" * 40) / "source.zip").exists()
-    assert not (get_release_asset_cache_directory(OWNER, REPO, "v1.0.0") / "docs.zip").exists()
+def logged_rejected_urls(caplog: pytest.LogCaptureFixture) -> list[str]:
+    """Read the rejected archive URLs from the log, as the plugin-repository sync does."""
+    urls = []
+    for record in caplog.records:
+        message = record.getMessage()
+        if not message.startswith("no valid plugin in archive:"):
+            continue
+        match = re.search(r"<structured: (\{.*\})>", message)
+        assert match is not None
+        urls.append(json.loads(match.group(1))["url"])
+    return urls
 
 
-def test_snapshot_appends_rejected_urls_to_ignored_urls_list(
-    fake_github: list[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_snapshot_skips_ignored_urls_and_logs_rejected_archives(
+    fake_github: list[str], caplog: pytest.LogCaptureFixture, tmp_path: Path
 ):
-    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    caplog.set_level(logging.INFO, logger="hcli")
     ignored = tmp_path / "ignored-urls.txt"
     ignored.write_text(f"# archives that hold no valid plugin\n{ASSET_IGNORED}\n", encoding="utf-8")
 
@@ -213,37 +160,21 @@ def test_snapshot_appends_rejected_urls_to_ignored_urls_list(
     )
 
     assert result.exit_code == 0, result.output
-    assert ASSET_IGNORED not in fake_github
-    snapshot = json.loads(result.stdout)
-    assert ASSET_IGNORED not in json.dumps(snapshot)
-
-    lines = ignored.read_text(encoding="utf-8").splitlines()
-    assert lines[:3] == ["# archives that hold no valid plugin", ASSET_IGNORED, ""]
-    assert lines[3].startswith("# Discovered on ")
-    assert sorted(lines[4:]) == sorted([SRC_REJECTED, SRC_TAG_REJECTED, ASSET_REJECTED])
-
-    # a second run reads the valid archives from the cache, skips the rejected ones,
-    # and so downloads nothing and adds nothing
-    fake_github.clear()
-    result = CliRunner().invoke(
-        plugin_group, ["--repo", "github", "--with-ignored-urls-list", str(ignored), "repo", "snapshot"]
-    )
-    assert result.exit_code == 0, result.output
-    assert fake_github == []
-    assert json.loads(result.stdout) == snapshot
-    assert ignored.read_text(encoding="utf-8").splitlines() == lines
+    assert set(fake_github) == set(CONTENT) - {ASSET_IGNORED}
+    assert sorted(logged_rejected_urls(caplog)) == sorted(REJECTED)
 
 
-def test_github_repo_does_not_ignore_url_accepted_under_another_repo_name(
-    fake_github: list[str], monkeypatch: pytest.MonkeyPatch
+def test_github_repo_logs_url_rejected_only_under_old_repository_name(
+    fake_github: list[str], monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ):
     # A renamed repository listed under its old and new name: GitHub follows the rename,
     # so both entries yield the same archive URLs, but only the new name matches the host.
     monkeypatch.setattr(GithubPluginRepo, "_get_repos", lambda self: [(OWNER, "old-name"), (OWNER, REPO)])
-    repo = GithubPluginRepo("token")
+    caplog.set_level(logging.INFO, logger="hcli")
 
-    plugins = repo.get_plugins()
+    plugins = GithubPluginRepo("token").get_plugins()
 
     urls = {loc.url for p in plugins for locs in p.versions.values() for loc in locs}
     assert urls == {SRC_VALID, ASSET_VALID, ASSET_IGNORED}
-    assert sorted(repo.newly_ignored_urls) == sorted([SRC_REJECTED, SRC_TAG_REJECTED, ASSET_REJECTED])
+    # each URL that both names reject is logged once
+    assert sorted(logged_rejected_urls(caplog)) == sorted(REJECTED)
