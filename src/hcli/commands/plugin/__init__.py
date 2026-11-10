@@ -77,6 +77,11 @@ def read_repos_file(path: Path) -> list[str]:
 )
 @click.option("--with-repos-list", help="path to file containing known GitHub repositories", hidden=True)
 @click.option("--with-ignored-repos-list", help="path to file containing ignored GitHub repositories", hidden=True)
+@click.option(
+    "--with-ignored-urls-list",
+    help="path to file containing archive URLs that hold no valid plugin; newly found ones are appended",
+    hidden=True,
+)
 @click.option("--pip-index-url", help="pip --index-url for dependency installation", hidden=True)
 @click.option("--pip-extra-index-url", multiple=True, help="pip --extra-index-url (repeatable)", hidden=True)
 @click.option("--pip-find-links", multiple=True, help="pip --find-links (repeatable)", hidden=True)
@@ -96,6 +101,7 @@ def plugin(
     repo: str | None,
     with_repos_list: str | None,
     with_ignored_repos_list: str | None,
+    with_ignored_urls_list: str | None,
     pip_index_url: str | None,
     pip_extra_index_url: tuple[str, ...],
     pip_find_links: tuple[str, ...],
@@ -167,9 +173,26 @@ def plugin(
                     console.print(f"[red]failed to read ignored repos list file[/red]: {e!s}.")
                     raise click.Abort()
 
-            plugin_repo = hcli.lib.ida.plugin.repo.github.GithubPluginRepo(
-                token, extra_repos=extra_repos, ignored_repos=ignored_repos
+            ignored_urls = []
+            if with_ignored_urls_list is not None:
+                ignored_urls_list_path = Path(with_ignored_urls_list)
+                try:
+                    ignored_urls = read_repos_file(ignored_urls_list_path)
+                except ValueError as e:
+                    console.print(f"[red]failed to read ignored URLs list file[/red]: {e!s}.")
+                    raise click.Abort()
+
+            github_repo = hcli.lib.ida.plugin.repo.github.GithubPluginRepo(
+                token, extra_repos=extra_repos, ignored_repos=ignored_repos, ignored_urls=ignored_urls
             )
+            if with_ignored_urls_list is not None:
+                # Runs after the subcommand, once the archives have been indexed.
+                ctx.call_on_close(
+                    lambda: hcli.lib.ida.plugin.repo.github.append_ignored_urls(
+                        ignored_urls_list_path, github_repo.newly_ignored_urls
+                    )
+                )
+            plugin_repo = github_repo
 
         else:
             path = Path(repo)

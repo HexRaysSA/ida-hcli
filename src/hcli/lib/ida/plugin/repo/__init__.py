@@ -481,7 +481,7 @@ class PluginArchiveIndex:
 
     def index_plugin_archive(
         self, buf: bytes, url: str, expected_host: str | None = None, context: dict[str, str] | None = None
-    ):
+    ) -> int:
         """Parse the given plugin archive and index the encountered plugins.
 
         For suite archives (those with components), only the root manifest is
@@ -490,6 +490,10 @@ class PluginArchiveIndex:
         markers are resolved to pip spec lists at every level.
 
         Optionally filter out plugins whose host does not match the expected host.
+
+        Returns the number of plugins indexed from the archive. Zero means the
+        archive holds no plugin this index accepts: it has no ``ida-plugin.json``,
+        its metadata is invalid, or every plugin's host differs from ``expected_host``.
         """
         if context is None:
             context = {}
@@ -497,7 +501,7 @@ class PluginArchiveIndex:
 
         all_metadatas = list(get_metadatas_with_paths_from_plugin_archive(buf, context=context))
         if not all_metadatas:
-            return
+            return 0
 
         for path, metadata in all_metadatas:
             try:
@@ -516,7 +520,7 @@ class PluginArchiveIndex:
                         ),
                     )
                 )
-                return
+                return 0
 
         metadatas_by_name: dict[str, tuple[Path, IDAMetadataDescriptor]] = {
             meta.plugin.name: (path, meta) for path, meta in all_metadatas
@@ -525,15 +529,19 @@ class PluginArchiveIndex:
         root_entries = _find_root_entries(all_metadatas)
         if not root_entries:
             logger.debug(m("no root manifest found in archive", **context))
-            return
+            return 0
 
+        indexed = 0
         for root_path, root_metadata in root_entries:
             root_metadata = _resolve_inline_python_deps(buf, root_metadata)
 
             if root_metadata.plugin.components:
                 root_metadata = _expand_components(buf, root_metadata, metadatas_by_name)
 
-            self._index_single_plugin(buf, url, root_path, root_metadata, expected_host, context)
+            if self._index_single_plugin(buf, url, root_path, root_metadata, expected_host, context):
+                indexed += 1
+
+        return indexed
 
     def _index_single_plugin(
         self,
@@ -543,7 +551,7 @@ class PluginArchiveIndex:
         metadata: IDAMetadataDescriptor,
         expected_host: str | None,
         context: dict[str, str],
-    ) -> None:
+    ) -> bool:
         h = hashlib.sha256()
         h.update(buf)
         sha256 = h.hexdigest()
@@ -558,7 +566,7 @@ class PluginArchiveIndex:
 
         if expected_host and normalize_plugin_host(expected_host) != normalized_host:
             logger.debug(m("host mismatch: %s: %s versus expected %s", name, host, expected_host, **context))
-            return
+            return False
 
         logger.debug(
             m(
@@ -576,6 +584,7 @@ class PluginArchiveIndex:
         versions = self.index[(name.lower(), normalized_host)]
         specs = versions[version]
         specs[spec].append((url, sha256, metadata))
+        return True
 
     def get_plugins(self) -> list[Plugin]:
         """
