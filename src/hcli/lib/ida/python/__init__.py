@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from collections.abc import Generator, Sequence
@@ -269,13 +270,44 @@ def is_externally_managed(resolved: ResolvedPython) -> bool:
     return get_venv_root_from_python(str(resolved.exe)) is None
 
 
+# What an idapythonrc.py does when it puts IDAPython in a virtualenv: the
+# activate_this recipe, or site.addsitedir() plus a sys.prefix assignment.
+_VENV_RC_MARKERS = ("sys.prefix", "addsitedir", "activate_this", "VIRTUAL_ENV")
+
+
+def _may_run_in_virtualenv() -> bool:
+    """Could IDAPython end up in a virtualenv that IDA's configuration does not name?
+
+    idapythonrc.py runs inside IDA and can move sys.prefix, and IDA resolves a
+    venv from $PATH at startup. Neither is visible in the registry, so when
+    either is possible the interpreter has to be probed through idat.
+    """
+    from hcli.lib.ida import get_ida_user_dir
+
+    try:
+        rc = get_ida_user_dir() / "idapythonrc.py"
+        if rc.is_file() and any(marker in rc.read_text(errors="replace") for marker in _VENV_RC_MARKERS):
+            return True
+    except (ValueError, OSError):
+        return True
+
+    # $VIRTUAL_ENV_PROMPT is exported by the activate script. `uv run` and
+    # `poetry run` put a venv on $PATH without it: that venv describes how HCLI
+    # was started, not an environment IDA will be launched from.
+    if not os.environ.get("VIRTUAL_ENV_PROMPT"):
+        return False
+
+    found = shutil.which("python")
+    return bool(found and (Path(found).parent.parent / "pyvenv.cfg").is_file())
+
+
 def resolve_current_python() -> ResolvedPython:
     """Find IDA's Python executable, along with the probe info used to find it.
 
     Precedence: $HCLI_CURRENT_IDA_PYTHON_EXE, then derivation from hcli's own
     interpreter (when hcli runs inside IDA), then $IDAPYTHON_VENV_EXECUTABLE
-    (when it exists on disk), then derivation from probing IDA's embedded
-    Python via idat.
+    (when it exists on disk), then IDA's configured libpython read from its
+    registry, then derivation from probing IDA's embedded Python via idat.
 
     Raises:
         PythonNotFoundError: when the probe fails or no interpreter can be
@@ -293,6 +325,18 @@ def resolve_current_python() -> ResolvedPython:
     if venv_exe and Path(venv_exe).is_file():
         logger.debug("using $IDAPYTHON_VENV_EXECUTABLE: %s", venv_exe)
         return ResolvedPython(Path(venv_exe), "$IDAPYTHON_VENV_EXECUTABLE")
+
+    # Reading IDA's configured libpython costs nothing; the idat probe below
+    # launches IDA, which is slow and unavailable on editions without idat.
+    # The registry names the base installation only, so anything that can put
+    # IDAPython in a virtualenv has to be probed instead.
+    from . import idapro
+
+    if not _may_run_in_virtualenv():
+        try:
+            return ResolvedPython(idapro.find_python_executable(), f"IDA configuration ({idapro.REG_VALUE})")
+        except PythonNotFoundError as e:
+            logger.debug("reading IDA's Python configuration failed, falling back to idat: %s", e)
 
     try:
         info = probe_current_python_info()
