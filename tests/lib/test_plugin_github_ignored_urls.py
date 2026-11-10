@@ -164,7 +164,7 @@ def test_snapshot_skips_ignored_urls_and_logs_rejected_archives(
     assert sorted(logged_rejected_urls(caplog)) == sorted(REJECTED)
 
 
-def test_github_repo_logs_url_rejected_only_under_old_repository_name(
+def test_github_repo_does_not_log_archive_accepted_under_new_repository_name(
     fake_github: list[str], monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ):
     # A renamed repository listed under its old and new name: GitHub follows the rename,
