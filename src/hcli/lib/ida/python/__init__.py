@@ -552,12 +552,15 @@ def verify_pip_can_install_packages(
 
     Constraints limit the versions pip may select, but pip does not install them.
 
+    --no-deps keeps the dry-run to the named requirements: resolving each full
+    tree is slow and fails on transitive conflicts the plugin does not control.
+
     Raises:
         CantInstallPackagesError: if pip dry-run fails.
     """
     with _get_constraint_args(constraints) as constraint_args:
         process = subprocess.run(
-            [str(python_exe), "-m", "pip", "install", "--dry-run"]
+            [str(python_exe), "-m", "pip", "install", "--dry-run", "--no-deps"]
             + pip_options.build_args()
             + constraint_args
             + packages,
