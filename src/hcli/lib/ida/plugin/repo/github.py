@@ -776,10 +776,6 @@ class GithubPluginRepo(BasePluginRepo):
         ignored_repos: list[str] | None = None,
         ignored_urls: list[str] | None = None,
     ):
-        """
-        Args:
-            ignored_urls: archive URLs that hold no valid plugin. get_plugins does not download them.
-        """
         super().__init__()
         self.token = token
         self.extra_repos = set(extra_repos or [])
@@ -939,7 +935,6 @@ class GithubPluginRepo(BasePluginRepo):
                     logger.debug(m("already found URL for tag: %s", tag.zipball_url, **context))
                 elif tag.zipball_url in self.ignored_urls:
                     logger.debug(m("skipping ignored URL: %s", tag.zipball_url, **context))
-                    seen_zipball_urls.add(tag.zipball_url)
                 else:
                     source_archives.append((owner, repo, tag.commit_hash, tag.zipball_url, tag.committed_date))
                     seen_zipball_urls.add(tag.zipball_url)
@@ -947,10 +942,10 @@ class GithubPluginRepo(BasePluginRepo):
 
         index = PluginArchiveIndex()
 
-        # A renamed repository can be listed under both names. GitHub follows the rename,
-        # so both entries yield the same archive URLs, and the index rejects an archive under
-        # the old name (host mismatch) but accepts it under the new one. So decide at the end,
-        # and report only the archives that no entry accepted.
+        # A renamed repository can be listed under its old and new name. GitHub follows the rename,
+        # so both entries yield the same archive URLs: the index rejects an archive under the old
+        # name (host mismatch) and accepts it under the new one. So log the rejected archives only
+        # after indexing all archives, and only the ones that no entry accepted.
         accepted_urls: set[str] = set()
         rejected: dict[str, dict[str, str]] = {}
 
@@ -1000,8 +995,9 @@ class GithubPluginRepo(BasePluginRepo):
             else:
                 rejected.setdefault(url, context)
 
-        # The plugin-repository sync reads these entries from the log and adds the URLs to its
-        # ignored-URLs list, so later runs don't download these archives again.
+        # The plugin-repository sync reads these entries from the log and adds the URLs to
+        # ignored-urls.txt, so later runs don't download these archives again. The sync matches
+        # the message text and reads the "url" field, so keep both stable.
         for url, context in rejected.items():
             if url not in accepted_urls:
                 logger.info(m("no valid plugin in archive: %s", url, **context))

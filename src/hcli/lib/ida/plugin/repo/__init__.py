@@ -491,9 +491,9 @@ class PluginArchiveIndex:
 
         Optionally filter out plugins whose host does not match the expected host.
 
-        Returns the number of plugins indexed from the archive. Zero means the
-        archive holds no plugin this index accepts: it has no ``ida-plugin.json``,
-        its metadata is invalid, or every plugin's host differs from ``expected_host``.
+        Returns the number of plugins indexed: zero when the archive has no
+        ``ida-plugin.json``, its metadata is invalid, or no plugin's host matches
+        ``expected_host``.
         """
         if context is None:
             context = {}
