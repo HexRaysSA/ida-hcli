@@ -1,3 +1,5 @@
+import contextlib
+import datetime
 import functools
 import json
 import logging
@@ -6,6 +8,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -623,6 +626,13 @@ def get_release_asset_cache(owner: str, repo: str, release_id: str, asset: GitHu
     return asset_path.read_bytes()
 
 
+def remove_release_asset_cache(owner: str, repo: str, release_id: str, asset: GitHubReleaseAsset) -> None:
+    cache_path = get_release_asset_cache_directory(owner, repo, release_id)
+    (cache_path / asset.name).unlink(missing_ok=True)
+    with contextlib.suppress(OSError):
+        cache_path.rmdir()
+
+
 def download_release_asset(owner: str, repo: str, release_id: str, asset: GitHubReleaseAsset) -> bytes:
     if asset.size > MAX_DOWNLOAD_SIZE:
         raise ValueError(f"asset {asset.name} exceeds {MAX_DOWNLOAD_SIZE} limit")
@@ -662,6 +672,13 @@ def get_source_archive_cache(owner: str, repo: str, commit_hash: str) -> bytes:
 
     logger.debug(f"source archive found in cache for {owner}/{repo}@{commit_hash[:8]}")
     return archive_path.read_bytes()
+
+
+def remove_source_archive_cache(owner: str, repo: str, commit_hash: str) -> None:
+    cache_path = get_source_archive_cache_directory(owner, repo, commit_hash)
+    (cache_path / SOURCE_ARCHIVE_FILENAME).unlink(missing_ok=True)
+    with contextlib.suppress(OSError):
+        cache_path.rmdir()
 
 
 def download_source_archive(zip_url: str) -> bytes:
@@ -768,12 +785,44 @@ def find_github_repos_with_plugins(token: str) -> list[str]:
     return sorted(repos)
 
 
+def append_ignored_urls(path: Path, urls: list[str]) -> None:
+    """Append archive URLs to an ignored-URLs list, under a header with the current time.
+
+    The file uses the same format as the repository lists: one entry per line,
+    and lines that start with ``#`` are comments.
+    """
+    if not urls:
+        return
+
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    lines = ["", f"# Discovered on {timestamp}", *urls, ""]
+
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    prefix = "" if not existing or existing.endswith("\n") else "\n"
+    with path.open("a", encoding="utf-8") as f:
+        f.write(prefix + "\n".join(lines))
+
+
 class GithubPluginRepo(BasePluginRepo):
-    def __init__(self, token: str, extra_repos: list[str] | None = None, ignored_repos: list[str] | None = None):
+    def __init__(
+        self,
+        token: str,
+        extra_repos: list[str] | None = None,
+        ignored_repos: list[str] | None = None,
+        ignored_urls: list[str] | None = None,
+    ):
+        """
+        Args:
+            ignored_urls: archive URLs known to hold no valid plugin. These are not downloaded.
+              Archives that are downloaded and turn out to hold no valid plugin are collected
+              in ``newly_ignored_urls``, so the caller can add them to its list.
+        """
         super().__init__()
         self.token = token
         self.extra_repos = set(extra_repos or [])
         self.ignored_repos = set(ignored_repos or [])
+        self.ignored_urls = set(ignored_urls or [])
+        self.newly_ignored_urls: list[str] = []
         self.client = GitHubGraphQLClient(token)
 
         # warm cache
@@ -848,9 +897,14 @@ class GithubPluginRepo(BasePluginRepo):
                 logger.debug(m("found release: %s", release.tag_name, **context))
 
                 # source archives
-                source_archives.append((owner, repo, release.commit_hash, release.zipball_url, release.published_at))
+                if release.zipball_url in self.ignored_urls:
+                    logger.debug(m("skipping ignored URL: %s", release.zipball_url, **context))
+                else:
+                    source_archives.append(
+                        (owner, repo, release.commit_hash, release.zipball_url, release.published_at)
+                    )
+                    logger.debug(m("found zipball URL: %s", release.zipball_url, **context))
                 seen_zipball_urls.add(release.zipball_url)
-                logger.debug(m("found zipball URL: %s", release.zipball_url, **context))
 
                 # assets (distribution/binary archives)
                 for asset in release.assets:
@@ -875,6 +929,12 @@ class GithubPluginRepo(BasePluginRepo):
                                 asset.name,
                                 **dict(context, asset=asset.name),
                             )
+                        )
+                        continue
+
+                    if asset.download_url in self.ignored_urls:
+                        logger.debug(
+                            m("skipping ignored URL: %s", asset.download_url, **dict(context, asset=asset.name))
                         )
                         continue
 
@@ -915,12 +975,22 @@ class GithubPluginRepo(BasePluginRepo):
 
                 if tag.zipball_url in seen_zipball_urls:
                     logger.debug(m("already found URL for tag: %s", tag.zipball_url, **context))
+                elif tag.zipball_url in self.ignored_urls:
+                    logger.debug(m("skipping ignored URL: %s", tag.zipball_url, **context))
+                    seen_zipball_urls.add(tag.zipball_url)
                 else:
                     source_archives.append((owner, repo, tag.commit_hash, tag.zipball_url, tag.committed_date))
                     seen_zipball_urls.add(tag.zipball_url)
                     logger.debug(m("found zipball URL: %s", tag.zipball_url, **context))
 
         index = PluginArchiveIndex()
+
+        # A renamed repository can be listed under both names. GitHub follows the rename,
+        # so both entries yield the same archive URLs, and an archive is rejected under the
+        # old name (host mismatch) but accepted under the new one. So decide at the end:
+        # ignore only the URLs that no entry accepted.
+        accepted_urls: set[str] = set()
+        rejected: dict[str, Callable[[], None]] = {}
 
         for owner, repo, tag_name, asset, date in rich.progress.track(
             assets, description="Fetching plugin assets", transient=True, console=stderr_console
@@ -932,7 +1002,7 @@ class GithubPluginRepo(BasePluginRepo):
                 continue
 
             host_url = f"https://github.com/{owner}/{repo}"
-            index.index_plugin_archive(
+            indexed = index.index_plugin_archive(
                 buf,
                 asset.download_url,
                 expected_host=host_url,
@@ -945,6 +1015,12 @@ class GithubPluginRepo(BasePluginRepo):
                     "date": date,
                 },
             )
+            if indexed:
+                accepted_urls.add(asset.download_url)
+            else:
+                rejected[asset.download_url] = functools.partial(
+                    remove_release_asset_cache, owner, repo, tag_name, asset
+                )
 
         for owner, repo, commit_hash, url, date in rich.progress.track(
             source_archives, description="Fetching plugin source archives", transient=True, console=stderr_console
@@ -956,7 +1032,7 @@ class GithubPluginRepo(BasePluginRepo):
                 continue
 
             host_url = f"https://github.com/{owner}/{repo}"
-            index.index_plugin_archive(
+            indexed = index.index_plugin_archive(
                 buf,
                 url,
                 expected_host=host_url,
@@ -969,5 +1045,19 @@ class GithubPluginRepo(BasePluginRepo):
                     "date": date,
                 },
             )
+            if indexed:
+                accepted_urls.add(url)
+            else:
+                rejected[url] = functools.partial(remove_source_archive_cache, owner, repo, commit_hash)
+
+        for url, remove_from_cache in rejected.items():
+            if url in accepted_urls:
+                continue
+            # Don't keep the bytes of an archive that will not be downloaded again.
+            remove_from_cache()
+            if url not in self.ignored_urls:
+                logger.debug(m("no valid plugin in archive, ignoring URL from now on: %s", url, url=url))
+                self.ignored_urls.add(url)
+                self.newly_ignored_urls.append(url)
 
         return index.get_plugins()
