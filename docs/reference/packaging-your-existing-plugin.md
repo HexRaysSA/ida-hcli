@@ -264,7 +264,8 @@ No. If you publish GitHub Releases with valid `ida-plugin.json` files, your plug
 2. Check that plugin is recognized by the indexer by inspecting [plugin-repository.json](https://github.com/HexRaysSA/plugin-repository/blob/v1/plugin-repository.json).
     1. ensure you can find your plugin in the [search results](https://github.com/search?q=path%3A**%2Fida-plugin.json&type=code)
     2. otherwise, you can propose to add your plugin to the explicit list here: [known-repositories.json](https://github.com/HexRaysSA/plugin-repository/blob/v1/known-repositories.txt)
-3. Open an issue [here](https://github.com/HexRaysSA/plugin-repository/issues) and Hex-Rays will be happy to help debug
+3. The indexer checks each archive once. When it finds no valid plugin in an archive, it adds the archive URL to [ignored-urls.txt](https://github.com/HexRaysSA/plugin-repository/blob/v1/ignored-urls.txt) and does not download it again. So fix the plugin and publish a new release: the indexer does not check an archive that you upload again under the same name.
+4. Open an issue [here](https://github.com/HexRaysSA/plugin-repository/issues) and Hex-Rays will be happy to help debug
 
 
 The indexer runs daily, so it might take a little time for your plugin to show up.
