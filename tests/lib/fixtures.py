@@ -249,6 +249,7 @@ def make_test_install_context(**overrides) -> InstallContext:
     opts_kwargs: dict = {
         "pip_options": PipOptions(),
         "check_environment": True,
+        "allow_incompatible": False,
     }
     for k, v in overrides.items():
         if k in env_kwargs:

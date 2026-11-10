@@ -55,6 +55,7 @@ class InstallOptions:
 
     pip_options: PipOptions = field(default_factory=lambda: PIP_OPTIONS_DEFAULT)
     check_environment: bool = True
+    allow_incompatible: bool = False
 
 
 @dataclass(frozen=True)
