@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "repository": "lumina",
+  "channel": "stable",
+  "snapshot": "22222222-2222-4222-8222-222222222222",
+  "previous_snapshot": null,
+  "published_at": "2026-10-27T00:00:00Z",
+  "packs": [
+    {
+      "name": "rust-windows-msvc-x86_64",
+      "component": "rust",
+      "platform": "windows",
+      "arch": "x86_64",
+      "group": "msvc",
+      "revision": 1,
+      "path": "packs/rust/windows-msvc-x86_64-r1.tar.zst",
+      "sha256": "b0bbc0eff861eeefd4be36864a1845200ae123c394ed5c794cc3c00efdca210e",
+      "size": 6886,
+      "size_uncompressed": 25600,
+      "member_bytes": 23586,
+      "producer_bytes": 626156,
+      "members": 1,
+      "rows": 86,
+      "pack_format": 1,
+      "packer_commit": null,
+      "built_at": "2026-10-27T00:00:00Z",
+      "meta": {
+        "path": "meta/rust/581d3790e67d6704cc6eba8d2c3a671d0b48111c531647a6dc2b981f0e6b0199.jsonl.zst",
+        "sha256": "581d3790e67d6704cc6eba8d2c3a671d0b48111c531647a6dc2b981f0e6b0199",
+        "size": 243,
+        "size_uncompressed": 374
+      }
+    }
+  ]
+}

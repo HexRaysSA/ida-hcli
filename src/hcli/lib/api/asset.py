@@ -201,7 +201,7 @@ class AssetAPI:
     async def get_file(self, bucket: str, key: str) -> Asset | None:
         client = await get_api_client()
         data = await client.get_json(self._asset_path(bucket, key))
-        return Asset(**data)
+        return Asset.model_validate(data)
 
     async def get_files_tree(self, bucket: str, filter_params: PagingFilter | None = None) -> list[TreeNode]:
         """Get all shared files for the current user."""

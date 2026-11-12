@@ -97,6 +97,12 @@ class ENV:
     HCLI_CURRENT_IDA_PYTHON_EXE = _LiveEnvOptional()
     IDAPYTHON_VENV_EXECUTABLE = _LiveEnvOptional()
 
+    # Data packs (hcli packs)
+    HCLI_LUMINA_SERVER = _LiveEnvOptional()
+    HCLI_LUMINA_CA_CERT = _LiveEnvOptional()
+    LUMINA_API_KEY = _LiveEnvOptional()
+    HCLI_PACKS_STATE_DIR = _LiveEnvOptional()
+
     # KE download settings
     HCLI_KE_DOWNLOADS_DIR: str | None = _env_optional("HCLI_KE_DOWNLOADS_DIR")
     HCLI_KE_DOWNLOADS_RETENTION_DAYS: int = _env_int("HCLI_KE_DOWNLOADS_RETENTION_DAYS", 3)
