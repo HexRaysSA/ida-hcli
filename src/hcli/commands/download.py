@@ -223,6 +223,22 @@ async def resolve_tag(tag_spec: str) -> str | None:
         return None
 
 
+def find_similar_tags(tag_spec: str, tags: list[str]) -> list[str]:
+    """Return the tags closest to an unresolved tag spec.
+
+    Prefers tags with the same category and version (e.g. other platforms of 'ida-pro:9.2'),
+    then falls back to tags with the same category. Returns an empty list if nothing is related.
+    """
+    parts = tag_spec.lower().split(":")
+    category = parts[0]
+    same_category = sorted(t for t in tags if t.lower().split(":")[0] == category)
+    if len(parts) >= 2:
+        same_version = [t for t in same_category if t.lower().split(":")[1:2] == [parts[1]]]
+        if same_version:
+            return same_version
+    return same_category
+
+
 def is_tag_format(key: str) -> bool:
     """Check if the key looks like a tag format (contains ':' and no '/')."""
     return ":" in key and "/" not in key
@@ -328,12 +344,14 @@ async def download(
                 else:
                     console.print(f"[red]Tag '{normalized_tag}' not found[/red]")
                     available_tags = await asset_api.get_tags()
-                    if available_tags:
-                        console.print("[yellow]Available tags:[/yellow]")
-                        for tag in available_tags[:10]:  # Show first 10
-                            console.print(f"  • {tag.tag}")
-                        if len(available_tags) > 10:
-                            console.print(f"  ... and {len(available_tags) - 10} more")
+                    similar_tags = find_similar_tags(normalized_tag, [t.tag for t in available_tags])
+                    if similar_tags:
+                        console.print("[yellow]Similar tags:[/yellow]")
+                        for similar_tag in similar_tags[:10]:  # Show first 10
+                            console.print(f"  • {similar_tag}")
+                        if len(similar_tags) > 10:
+                            console.print(f"  ... and {len(similar_tags) - 10} more")
+                    console.print("[grey69]Use 'hcli download --list-tags' to see all available tags[/grey69]")
                     return []
 
             selected_keys = [key]
