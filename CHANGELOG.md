@@ -22,6 +22,7 @@
 - Add `hcli extension` as an alias for `hcli plugin`, so `hcli extension install <plugin>` uses the plugin manager
 
 ### Fixed
+- `hcli ida accept-eula` exits with status 1 when it does not accept the EULA, such as for a path that does not exist, a directory without IDA, an installation without idalib, or no current IDA installation. Before, it printed an error and exited with status 0
 - `hcli plugin install` and `hcli plugin upgrade` keep the execute permission of files that the plugin archive marks as executable, on Linux and macOS. Before, every extracted file lost it, so a plugin that runs a bundled program or script failed with a permission error. hcli applies only the execute bit from the archive, limited by your umask, and never setuid, setgid, or world-writable bits. Reinstall or upgrade a plugin to fix the permissions of a plugin that is already installed
 - `hcli update` for an install from PyPI gets the newest release from PyPI and, when hcli is not current, offers to run the upgrade command for the tool that installed hcli: `uv tool upgrade ida-hcli`, `pipx upgrade ida-hcli`, or `python -m pip install --upgrade ida-hcli` with the Python that runs hcli. `--auto-install` runs the command without a prompt. Before, it did not contact PyPI and printed `uv tool upgrade` and `pip install --upgrade` for all installs
 - `hcli ida list` quotes instance names in the suggested `ida switch` command, so names containing spaces are passed as one argument, and displays Rich markup in the hint literally
@@ -78,6 +79,8 @@
 - Store plugin setting values that equal the default, from install prompts, `--config`, and `hcli plugin config <plugin> setup`, so a stored value can be set back to the default and a reinstall does not ask again (#371)
 
 ### Changed
+- Behavior change: `hcli ida install` no longer accepts the EULA by default. In a terminal, it shows the EULA (`license.txt`) in a pager after the installation and asks you to accept it. Without a terminal, it completes the installation, does not accept the EULA, and prints the `hcli ida accept-eula --yes` command to run. Scripts and CI jobs that need headless IDA must pass `--accept-eula`. `--yes` does not accept the EULA
+- `hcli ida accept-eula` shows the EULA in a pager and asks you to accept it. `--yes` accepts the EULA without the pager and the question. Without a terminal and without `--yes`, the command fails. When hcli accepts the EULA, it prints `Accepted the Hex-Rays EULA (<path to license.txt>)` to stderr
 - Move the hcli extension commands from `hcli extension create` and `hcli extension list` to `hcli hcli-extensions create` and `hcli hcli-extensions list`
 - Log the Python-relevant environment variables (`VIRTUAL_ENV`, `PYTHONHOME`, `PATH`, ...) passed to `idat` at debug level
 - A global Python without a virtual environment is a warning, not an error, in `hcli ida python doctor`, `hcli plugin install`, and `hcli plugin upgrade`, as long as the current user can write to its site-packages directory. `hcli plugin install` installs plugin dependencies there and prints the warning

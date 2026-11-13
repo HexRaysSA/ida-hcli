@@ -25,7 +25,7 @@ The API key and license ID are passed as build secrets, which read them from the
 
 The image is built for the architecture of the build host: `linux/amd64` on x86_64 hosts and `linux/arm64` on ARM64 hosts such as Apple Silicon Macs. To build for another architecture, add `--platform=linux/amd64` or `--platform=linux/arm64`; the build then runs under emulation.
 
-**Note**: The IDA Pro EULA is automatically accepted during the installation process via hcli.
+**Note**: The Dockerfile passes `--accept-eula` to `hcli ida install`, so building the image accepts the IDA Pro EULA. Read the EULA in `license.txt` in the IDA installation directory before you build.
 
 ### Custom IDA Version or Product
 
