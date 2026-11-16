@@ -359,6 +359,133 @@ class PluginSettingDescriptor(BaseModel):
                 raise ChoiceValueError(self.key, candidate_value, self.choices)
 
 
+def is_valid_plugin_name(name: str) -> bool:
+    return (
+        bool(re.match(r"^[a-zA-Z0-9_-]+$", name)) and not name.startswith(("_", "-")) and not name.endswith(("_", "-"))
+    )
+
+
+IDAUSR_TOKEN = "$IDAUSR"
+CONFIG_TEMPLATE_ROOTS = frozenset({"cfg"})
+WINDOWS_RESERVED_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
+)
+WINDOWS_INVALID_PATH_CHARACTERS = frozenset('<>:"|?*\\')
+
+
+def validate_config_template_destination_component(component: str, destination: str) -> None:
+    """Check one path component of a config template destination.
+
+    Raises:
+        ValueError: when the component is empty, a traversal, not ASCII, or not valid on Windows.
+    """
+    if component == "":
+        raise ValueError(f"destination must not contain empty path components: '{destination}'")
+    if component in (".", ".."):
+        raise ValueError(f"destination must not contain '.' or '..': '{destination}'")
+    if not component.isascii():
+        raise ValueError(f"destination must contain only ASCII characters: '{destination}'")
+    if "\\" in component:
+        raise ValueError(f"destination must use '/' as the path separator: '{destination}'")
+    if any(c in WINDOWS_INVALID_PATH_CHARACTERS or ord(c) < 0x20 or ord(c) == 0x7F for c in component):
+        raise ValueError(f"destination contains a character that is not valid in a path: '{destination}'")
+    if component.endswith((".", " ")):
+        raise ValueError(f"destination path components must not end with '.' or ' ': '{destination}'")
+    if component.split(".", maxsplit=1)[0].upper() in WINDOWS_RESERVED_NAMES:
+        raise ValueError(f"destination contains a name reserved on Windows: '{component}' in '{destination}'")
+
+
+def get_config_template_destination_parts(destination: str) -> tuple[str, ...]:
+    """Validate a config template destination and get its path components below `$IDAUSR`.
+
+    The destination is `$IDAUSR/cfg/<owner>.<suffix>` or `$IDAUSR/cfg/<owner>/<path>`,
+    where `<owner>` has the syntax of a plugin name.
+    Whether `<owner>` names the declaring plugin is checked by `validate_config_template_owners`.
+
+    Raises:
+        ValueError: when the destination breaks a rule; the message names the rule.
+    """
+    prefix = IDAUSR_TOKEN + "/"
+    if not destination.startswith(prefix):
+        raise ValueError(f"destination must start with '{prefix}': '{destination}'")
+
+    relative = destination[len(prefix) :]
+    if relative.endswith("/"):
+        raise ValueError(f"destination must not end with '/': '{destination}'")
+
+    parts = tuple(relative.split("/"))
+    for part in parts:
+        validate_config_template_destination_component(part, destination)
+
+    root = parts[0]
+    if root not in CONFIG_TEMPLATE_ROOTS:
+        roots = ", ".join(f"{prefix}{r}/" for r in sorted(CONFIG_TEMPLATE_ROOTS))
+        raise ValueError(f"destination must be under {roots}: '{destination}'")
+
+    if len(parts) < 2:
+        raise ValueError(f"destination must name a file below {prefix}{root}/: '{destination}'")
+
+    if len(parts) == 2:
+        owner, _, suffix = parts[1].partition(".")
+        if not suffix:
+            raise ValueError(
+                f"a destination directly in {prefix}{root}/ must be named '<plugin>.<suffix>': '{destination}'"
+            )
+    else:
+        owner = parts[1]
+
+    if not is_valid_plugin_name(owner):
+        raise ValueError(
+            f"destination must start with {prefix}{root}/<plugin>/ or {prefix}{root}/<plugin>.<suffix>, "
+            f"where <plugin> is a plugin name: '{destination}'"
+        )
+
+    return parts
+
+
+class ConfigTemplate(BaseModel):
+    source: str = Field(
+        description=(
+            "Path of the template file, relative to this `ida-plugin.json`. The file must be in the plugin archive."
+        ),
+        examples=["defaults/my-plugin.cfg"],
+    )
+
+    destination: str = Field(
+        description=(
+            "Path that HCLI copies the template to. It starts with the literal `$IDAUSR/cfg/`, "
+            "followed by `<plugin>.<suffix>` or `<plugin>/<path>`, where `<plugin>` is this plugin's name "
+            "or, for a component, the name of its suite. "
+            "Only ASCII, `/` separators, and no `.` or `..` components."
+        ),
+        examples=["$IDAUSR/cfg/my-plugin.cfg", "$IDAUSR/cfg/my-plugin/patterns.txt"],
+    )
+
+    @field_validator("source", mode="after")
+    @classmethod
+    def validate_source(cls, value: str) -> str:
+        if not value:
+            raise ValueError("source must not be empty")
+        validate_path(value, "config template source")
+        return value
+
+    @field_validator("destination", mode="after")
+    @classmethod
+    def validate_destination(cls, value: str) -> str:
+        _ = get_config_template_destination_parts(value)
+        return value
+
+    @property
+    def destination_parts(self) -> tuple[str, ...]:
+        """Path components of the destination below `$IDAUSR`."""
+        return get_config_template_destination_parts(self.destination)
+
+    @property
+    def owner(self) -> str:
+        """Plugin name that the destination belongs to."""
+        return self.destination_parts[1].partition(".")[0]
+
+
 class PluginMetadata(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
 
@@ -498,6 +625,24 @@ class PluginMetadata(BaseModel):
     settings: list[PluginSettingDescriptor] = Field(
         default_factory=list,
         description="User-configurable settings exposed by the plugin.",
+    )
+
+    config_templates: list[ConfigTemplate] = Field(
+        alias="configTemplates",
+        default_factory=list,
+        description=(
+            "Files that HCLI copies from the plugin directory into `$IDAUSR/cfg`, where IDA's "
+            "`getsysfile` and `read_config_file` find them and the user can edit them. "
+            "HCLI writes a missing copy at install and upgrade, replaces a copy the user did not edit "
+            "when the template changes, and deletes a copy the user did not edit at uninstall. "
+            "The plugin must work when the copy is missing."
+        ),
+        examples=[
+            [
+                {"source": "defaults/my-plugin.cfg", "destination": "$IDAUSR/cfg/my-plugin.cfg"},
+                {"source": "defaults/patterns.txt", "destination": "$IDAUSR/cfg/my-plugin/patterns.txt"},
+            ]
+        ],
     )
 
     dependencies: list = Field(
@@ -730,6 +875,17 @@ class PluginMetadata(BaseModel):
             raise ValueError("setting keys must be unique")
 
         return settings
+
+    @field_validator("config_templates", mode="after")
+    @classmethod
+    def has_unique_config_template_destinations(cls, templates: list[ConfigTemplate]) -> list[ConfigTemplate]:
+        seen: set[str] = set()
+        for template in templates:
+            key = template.destination.lower()
+            if key in seen:
+                raise ValueError(f"config template destinations must be unique: '{template.destination}'")
+            seen.add(key)
+        return templates
 
     @field_validator("settings", mode="after")
     @classmethod
@@ -1045,6 +1201,122 @@ def validate_path(path: str, field_name: str) -> None:
         raise ValueError(f"Invalid {field_name} path: '{path}'")
 
 
+MAX_SUITE_DEPTH = 10
+
+
+def validate_config_template_owners(metadata: IDAMetadataDescriptor, suite_names: Iterable[str]) -> None:
+    """Check that each config template destination belongs to the plugin or to one of its suites.
+
+    Raises:
+        ValueError: when a destination belongs to another plugin.
+    """
+    name = metadata.plugin.name
+    allowed = {name.lower(), *(suite_name.lower() for suite_name in suite_names)}
+    for template in metadata.plugin.config_templates:
+        if template.owner.lower() not in allowed:
+            raise ValueError(
+                f"config template destination of plugin '{name}' must start with "
+                f"{IDAUSR_TOKEN}/cfg/{name}/ or {IDAUSR_TOKEN}/cfg/{name}.<suffix>: '{template.destination}'"
+            )
+
+
+def get_suite_names_from_plugin_archive(zip_data: bytes, name: str) -> set[str]:
+    """Get the names of the plugins in the archive that contain the named plugin as a component, at any depth."""
+    parents: dict[str, set[str]] = {}
+
+    def add_parents(metadata: IDAMetadataDescriptor) -> None:
+        for entry in metadata.plugin.components:
+            parents.setdefault(get_component_name(entry).lower(), set()).add(metadata.plugin.name)
+            if isinstance(entry, IDAMetadataDescriptor):
+                add_parents(entry)
+
+    for _, metadata in get_metadatas_with_paths_from_plugin_archive(zip_data):
+        add_parents(metadata)
+
+    suite_names: set[str] = set()
+    seen = {name.lower()}
+    queue = [name.lower()]
+    while queue:
+        for parent in parents.get(queue.pop(), set()):
+            if parent.lower() not in seen:
+                seen.add(parent.lower())
+                suite_names.add(parent)
+                queue.append(parent.lower())
+    return suite_names
+
+
+def get_suite_names_from_plugin_directory(plugin_path: Path, name: str) -> set[str]:
+    """Get the names of the suites that contain the plugin, from the manifests in its parent directories."""
+    suite_names: set[str] = set()
+    child_name = name.lower()
+    directory = plugin_path.absolute().parent
+    for _ in range(MAX_SUITE_DEPTH):
+        metadata_file = directory / "ida-plugin.json"
+        if not metadata_file.is_file():
+            break
+
+        try:
+            parent = IDAMetadataDescriptor.model_validate_json(metadata_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            logger.debug("failed to read suite metadata %s: %s", metadata_file, e)
+            break
+
+        if child_name not in {get_component_name(entry).lower() for entry in parent.plugin.components}:
+            break
+
+        suite_names.add(parent.plugin.name)
+        child_name = parent.plugin.name.lower()
+        directory = directory.parent
+
+    return suite_names
+
+
+def has_config_templates_owned_by_others(metadata: IDAMetadataDescriptor) -> bool:
+    name = metadata.plugin.name.lower()
+    return any(template.owner.lower() != name for template in metadata.plugin.config_templates)
+
+
+def validate_config_templates_in_plugin_archive(
+    zip_data: bytes, metadata_path: Path, metadata: IDAMetadataDescriptor
+) -> None:
+    """Check that each config template source is a file in the archive and that each destination belongs to the plugin.
+
+    Raises:
+        ValueError: when a source is missing or a destination belongs to another plugin.
+    """
+    if not metadata.plugin.config_templates:
+        return
+
+    plugin_root = metadata_path.parent
+    with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zip_file:
+        names = set(zip_file.namelist())
+
+    for template in metadata.plugin.config_templates:
+        if (plugin_root / template.source).as_posix() not in names:
+            raise ValueError(f"config template source not found in archive: '{template.source}'")
+
+    suite_names: set[str] = set()
+    if has_config_templates_owned_by_others(metadata):
+        suite_names = get_suite_names_from_plugin_archive(zip_data, metadata.plugin.name)
+    validate_config_template_owners(metadata, suite_names)
+
+
+def validate_config_templates_in_plugin_directory(plugin_path: Path, metadata: IDAMetadataDescriptor) -> None:
+    """Check that each config template source is a file in the directory and that each destination belongs to the plugin.
+
+    Raises:
+        ValueError: when a source is missing or a destination belongs to another plugin.
+    """
+    for template in metadata.plugin.config_templates:
+        if not (plugin_path / template.source).is_file():
+            raise ValueError(f"config template source not found in directory: '{template.source}'")
+
+    suite_names: set[str] = set()
+    if has_config_templates_owned_by_others(metadata):
+        suite_names = get_suite_names_from_plugin_directory(plugin_path, metadata.plugin.name)
+    validate_config_template_owners(metadata, suite_names)
+
+
 def validate_metadata_in_plugin_archive(zip_data: bytes, metadata_path: Path, metadata: IDAMetadataDescriptor):
     """validate the `ida-plugin.json` metadata within the given plugin archive.
 
@@ -1055,6 +1327,8 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata_path: Path, me
     - the file paths must exist in the archive:
       - entry point
       - logo path
+      - config template sources
+    - config template destinations must belong to the plugin or to one of its suites
     """
     plugin_root = metadata_path.parent
 
@@ -1107,6 +1381,8 @@ def validate_metadata_in_plugin_archive(zip_data: bytes, metadata_path: Path, me
         if not does_plugin_path_exist_in_plugin_archive(zip_data, plugin_root, metadata.plugin.logo_path):
             logger.debug("Missing logo file: %s", metadata.plugin.logo_path)
             raise ValueError(f"Logo file not found in archive: '{metadata.plugin.logo_path}'")
+
+    validate_config_templates_in_plugin_archive(zip_data, metadata_path, metadata)
 
 
 def is_plugin_archive(zip_data: bytes, name: str) -> bool:
