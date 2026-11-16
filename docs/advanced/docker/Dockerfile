@@ -38,6 +38,7 @@ RUN --mount=type=secret,id=hcli_api_key \
     --license-id "$(cat /run/secrets/ida_license_id)" \
     --install-dir ${IDA_INSTALL_DIR} \
     --create-python-environment \
+    --accept-eula \
     --yes && \
     mkdir -p /root/.idapro && \
     find /tmp -name "*.hexlic" -exec cp {} /root/.idapro/ \; && \

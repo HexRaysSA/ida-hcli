@@ -109,7 +109,10 @@ $ hcli ida install --help
 │                                              actually installing                   │
 │ --set-default/--no-set-default               Mark this IDA installation as the     │
 │                                              default                               │
-│ --accept-eula/--no-accept-eula  -a/-A        Accept EULA                           │
+│ --accept-eula/--no-accept-eula  -a/-A        Accept the EULA without showing it    │
+│                                              (-a), or do not accept it (-A). By    │
+│                                              default, show the EULA and ask in a   │
+│                                              terminal                              │
 │ --install-dir                   -i     TEXT  Install dir                           │
 │ --license-id                    -l     TEXT  License ID (e.g., 96-0000-0000-01)    │
 │ --download-id                   -d     TEXT  Full installer asset key, or tag      │
@@ -123,7 +126,8 @@ Now lets run the automated installer, which doesn't show any dialog or popups - 
 
 Note:
 
-  - `--set-default` and `--accept-eula` are on by default: the installation becomes the one idalib and the plugin manager use, and the EULA is accepted without prompting. Pass `--no-set-default` or `-A`/`--no-accept-eula` to opt out. The example spells both out for clarity, but they are redundant
+  - `--set-default` is on by default: the installation becomes the one idalib and the plugin manager use. Pass `--no-set-default` to opt out. The example spells it out for clarity, but it is redundant
+  - without `--accept-eula`, HCLI shows the EULA after the installation and asks you to accept it. `--accept-eula` accepts the EULA without showing it, and `-A`/`--no-accept-eula` skips this step. `--yes` does not accept the EULA. See [Accepting the EULA](../user-guide/installing-ida.md#accepting-the-eula)
   - the installer is cached, so a second run reuses the download. The per-platform cache locations and the `HCLI_CACHE_DIR` override are listed under Cache & Storage in [Environment Variables](../reference/environment-variables.md)
   - `--create-python-environment` sets up a virtualenv for IDAPython at `$IDAUSR/venv` and configures `IDAPYTHON_VENV_EXECUTABLE`; plugins that need Python packages are installed here
   - in this example we set `--dry-run`, but you should remove this in real-life
@@ -146,7 +150,7 @@ Would perform the following actions:
   2. Install license to: /Applications/IDA Professional 9.2.app/Contents/MacOS
   3. Set as hcli default IDA instance
   4. Update default IDA path in: /Users/user/.idapro/ida-config.json (only if the installation includes idalib)
-  5. Accept EULA (only if the installation includes idalib)
+  5. Accept EULA (--accept-eula, only if the installation includes idalib)
 ```
 
 Now, if you know exactly which version of IDA you want, you can download and install it in a single command.
@@ -178,7 +182,7 @@ Would perform the following actions:
   2. Install license to: /Applications/IDA Professional 9.2.app/Contents/MacOS
   3. Set as hcli default IDA instance
   4. Update default IDA path in: /Users/user/.idapro/ida-config.json (only if the installation includes idalib)
-  5. Accept EULA (only if the installation includes idalib)
+  5. Ask to accept EULA (only if the installation includes idalib)
 ```
 
 `--download-id` also accepts a tag instead of a full asset key, so you do not have to look the key up. A tag is `category:version`, which resolves the OS automatically, or `category:version:os` to pin it:

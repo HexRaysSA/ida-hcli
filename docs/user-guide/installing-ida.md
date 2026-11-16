@@ -77,7 +77,10 @@ $ hcli ida install --help
 │                                              actually installing                   │
 │ --set-default/--no-set-default               Mark this IDA installation as the     │
 │                                              default                               │
-│ --accept-eula/--no-accept-eula  -a/-A        Accept EULA                           │
+│ --accept-eula/--no-accept-eula  -a/-A        Accept the EULA without showing it    │
+│                                              (-a), or do not accept it (-A). By    │
+│                                              default, show the EULA and ask in a   │
+│                                              terminal                              │
 │ --install-dir                   -i     TEXT  Install dir                           │
 │ --license-id                    -l     TEXT  License ID (e.g., 96-0000-0000-01)    │
 │ --download-id                   -d     TEXT  Full installer asset key, or tag      │
@@ -91,7 +94,8 @@ Now lets run the automated installer, which doesn't show any dialog or popups - 
 
 Note:
 
-  - `--set-default` and `--accept-eula` are on by default: the installation becomes the one idalib and the plugin manager use, and the EULA is accepted without prompting. Pass `--no-set-default` or `-A`/`--no-accept-eula` to opt out. The example spells both out for clarity, but they are redundant
+  - `--set-default` is on by default: the installation becomes the one idalib and the plugin manager use. Pass `--no-set-default` to opt out. The example spells it out for clarity, but it is redundant
+  - without `--accept-eula`, HCLI shows the EULA after the installation and asks you to accept it. `--accept-eula` accepts the EULA without showing it, and `-A`/`--no-accept-eula` skips this step. `--yes` does not accept the EULA. See [Accepting the EULA](#accepting-the-eula)
   - the installer is cached, so a second run reuses the download. The per-platform cache locations and the `HCLI_CACHE_DIR` override are listed under Cache & Storage in [Environment Variables](../reference/environment-variables.md)
   - `--create-python-environment` sets up a virtualenv for IDAPython at `$IDAUSR/venv` and configures `IDAPYTHON_VENV_EXECUTABLE`; plugins that need Python packages are installed here (see [IDA's Python Environment](ida-python-environment.md))
   - in this example we set `--dry-run`, but you should remove this in real-life
@@ -114,7 +118,7 @@ Would perform the following actions:
   2. Install license to: /Applications/IDA Professional 9.2.app/Contents/MacOS
   3. Set as hcli default IDA instance
   4. Update default IDA path in: /Users/user/.idapro/ida-config.json (only if the installation includes idalib)
-  5. Accept EULA (only if the installation includes idalib)
+  5. Accept EULA (--accept-eula, only if the installation includes idalib)
 ```
 
 Now, if you know exactly which version of IDA you want, you can download and install it in a single command.
@@ -146,7 +150,7 @@ Would perform the following actions:
   2. Install license to: /Applications/IDA Professional 9.2.app/Contents/MacOS
   3. Set as hcli default IDA instance
   4. Update default IDA path in: /Users/user/.idapro/ida-config.json (only if the installation includes idalib)
-  5. Accept EULA (only if the installation includes idalib)
+  5. Ask to accept EULA (only if the installation includes idalib)
 ```
 
 `--download-id` also accepts a tag instead of a full asset key, so you do not have to look the key up. A tag is `category:version`, which resolves the OS automatically, or `category:version:os` to pin it:
@@ -155,3 +159,20 @@ Would perform the following actions:
 hcli ida install --license-id 96-0000-0000-01 --download-id ida-pro:9.2 --dry-run
 hcli ida install --license-id 96-0000-0000-01 --download-id ida-pro:latest:x64linux --dry-run
 ```
+
+## Accepting the EULA
+
+IDA must have an accepted EULA before idalib and `idat` run without a GUI. Until then, they stop with `License not yet accepted, cannot run in batch mode`. `hcli ida accept-eula` records the acceptance for an installation. Without a path, it uses the current IDA installation.
+
+In a terminal, the command shows the EULA text (`license.txt` in the IDA directory) in a pager. Close the pager to get the question `Do you accept the Hex-Rays EULA?`. The default answer is no. When you answer yes, the command records the acceptance and prints `Accepted the Hex-Rays EULA (<path to license.txt>)` to stderr.
+
+For scripts and CI jobs, make sure you accept the terms of the EULA beforehand, and then you can give `--yes` to accept it without the pager and the question. Without a terminal and without `--yes`, the command fails and tells you where the EULA text is:
+
+```bash
+$ hcli ida accept-eula --yes "/Applications/IDA Professional 9.5.app"
+Accepted the Hex-Rays EULA (/Applications/IDA Professional 9.5.app/Contents/MacOS/license.txt)
+```
+
+`hcli ida install` asks the same question as its last step. `--accept-eula` accepts the EULA without the question, and `--no-accept-eula` skips this step. Without a terminal and without `--accept-eula`, the installation completes but does not accept the EULA, and HCLI prints the `hcli ida accept-eula --yes` command to run.
+
+The command fails for installations without idalib, such as IDA Free, IDA Home, and IDA Classroom.
