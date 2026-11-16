@@ -11,7 +11,7 @@
           "type": "string"
         },
         "destination": {
-          "description": "Path that HCLI copies the template to. It starts with the literal `$IDAUSR/cfg/`, followed by `<plugin>.<suffix>` or `<plugin>/<path>`, where `<plugin>` is this plugin's name or, for a component, the name of its suite. Only ASCII, `/` separators, and no `.` or `..` components. `<plugin>` must not be the name of a file or directory that IDA ships in `$IDADIR/cfg`.",
+          "description": "Path that HCLI copies the template to. It starts with the literal `$IDAUSR/cfg/`, followed by `<plugin>.<suffix>` or `<plugin>/<path>`, where `<plugin>` is this plugin's name or, for a component, the name of its suite. It must be ASCII, use `/` as the separator, and contain no `.` or `..` components. `<plugin>` must not be the name of a file or directory that IDA ships in `$IDADIR/cfg`.",
           "examples": [
             "$IDAUSR/cfg/my-plugin.cfg",
             "$IDAUSR/cfg/my-plugin/patterns.txt"

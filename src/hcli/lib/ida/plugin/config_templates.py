@@ -19,14 +19,14 @@ from rich.markup import escape
 
 from hcli.lib.ida import get_ida_user_dir
 from hcli.lib.ida.plugin import (
-    CONFIG_TEMPLATE_ROOTS,
+    CONFIG_TEMPLATE_ROOT,
+    MAX_COMPONENT_DEPTH,
     ConfigTemplate,
     IDAMetadataDescriptor,
     get_component_name,
     get_inline_component_metadata,
     validate_config_templates_in_plugin_directory,
 )
-from hcli.lib.ida.plugin.components import MAX_COMPONENT_DEPTH
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +145,7 @@ def get_config_template_action(
 def get_config_template_actions(
     old: Iterable[TemplateFile], new: Iterable[TemplateFile], states: Mapping[str, DestinationState]
 ) -> list[ConfigTemplateAction]:
-    """Decide what to do with each destination, deletes first.
+    """Decide what to do with each destination.
 
     Old and new templates pair up by destination. `states` maps each destination to what is there.
     A missing destination means a missing file.
@@ -163,8 +163,7 @@ def get_config_template_actions(
         )
         if action is not None:
             actions.append(action)
-
-    return sorted(actions, key=lambda action: action.kind != ActionKind.DELETE)
+    return actions
 
 
 def get_config_template_path(ida_user_dir: Path, template: TemplateFile) -> Path:
@@ -195,6 +194,7 @@ def write_file_atomically(path: Path, content: bytes) -> None:
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(content)
+        # mkstemp creates the file with mode 0600. Apply the umask instead, as open() does for a new file.
         umask = os.umask(0)
         os.umask(umask)
         temp_path.chmod(0o666 & ~umask)
@@ -205,10 +205,10 @@ def write_file_atomically(path: Path, content: bytes) -> None:
 
 
 def remove_empty_parent_directories(path: Path, ida_user_dir: Path) -> None:
-    """Remove the empty directories between `path` and `$IDAUSR/<root>`, but never the root itself."""
-    roots = {ida_user_dir / root for root in CONFIG_TEMPLATE_ROOTS}
+    """Remove the empty directories between `path` and `$IDAUSR/cfg`, but never `$IDAUSR/cfg` itself."""
+    root = ida_user_dir / CONFIG_TEMPLATE_ROOT
     directory = path.parent
-    while directory not in roots and ida_user_dir in directory.parents:
+    while directory != root and root in directory.parents:
         try:
             directory.rmdir()
         except OSError:
@@ -220,10 +220,9 @@ def remove_empty_parent_directories(path: Path, ida_user_dir: Path) -> None:
 class ConfigTemplateError(Exception):
     """One or more config template copies could not be written or deleted."""
 
-    def __init__(self, failures: list[tuple[Path, OSError]]):
+    def __init__(self, failures: list[str]):
         self.failures = failures
-        details = "; ".join(f"{path}: {error}" for path, error in failures)
-        super().__init__(f"failed to update config files: {details}")
+        super().__init__("; ".join(failures))
 
 
 def render_config_template_action(action: ConfigTemplateAction, path: Path) -> str:
@@ -256,7 +255,7 @@ def apply_config_template_actions(
     Raises:
         ConfigTemplateError: when a write or delete failed.
     """
-    failures: list[tuple[Path, OSError]] = []
+    failures: list[str] = []
     for action in actions:
         path = get_config_template_path(ida_user_dir, action.template)
         try:
@@ -266,8 +265,7 @@ def apply_config_template_actions(
                 path.unlink()
                 remove_empty_parent_directories(path, ida_user_dir)
         except OSError as e:
-            logger.debug("failed to %s %s: %s", action.kind.value, path, e)
-            failures.append((path, e))
+            failures.append(f"failed to {action.kind.value} {path}: {e}")
             continue
         console.print(render_config_template_action(action, path), soft_wrap=True)
 
@@ -414,7 +412,7 @@ def upgrade_config_templates(
     removed = [template for template in old if template.destination not in new_destinations]
     remaining = [template for template in old if template.destination in new_destinations]
 
-    failures: list[tuple[Path, OSError]] = []
+    failures: list[str] = []
     try:
         actions = get_config_template_actions(removed, [], get_destination_states(ida_user_dir, removed))
         apply_config_template_actions(actions, ida_user_dir, console)

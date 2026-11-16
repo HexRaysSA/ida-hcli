@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from hcli.lib.ida.plugin import (
+    MAX_COMPONENT_DEPTH,
     IDAMetadataDescriptor,
     get_component_name,
     get_metadata_from_plugin_archive,
@@ -22,8 +23,6 @@ if TYPE_CHECKING:
     from hcli.lib.ida.plugin.install import InstalledPluginRecord
 
 logger = logging.getLogger(__name__)
-
-MAX_COMPONENT_DEPTH = 10
 
 
 def walk_component_tree_from_directory(

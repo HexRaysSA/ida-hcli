@@ -366,7 +366,7 @@ def is_valid_plugin_name(name: str) -> bool:
 
 
 IDAUSR_TOKEN = "$IDAUSR"
-CONFIG_TEMPLATE_ROOTS = frozenset({"cfg"})
+CONFIG_TEMPLATE_ROOT = "cfg"
 WINDOWS_RESERVED_NAMES = frozenset(
     {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", "CLOCK$"}
     | {f"COM{i}" for i in range(10)}
@@ -590,9 +590,8 @@ def get_config_template_destination_parts(destination: str) -> tuple[str, ...]:
         validate_config_template_destination_component(part, destination)
 
     root = parts[0]
-    if root not in CONFIG_TEMPLATE_ROOTS:
-        roots = ", ".join(f"{prefix}{r}/" for r in sorted(CONFIG_TEMPLATE_ROOTS))
-        raise ValueError(f"destination must be under {roots}: '{destination}'")
+    if root != CONFIG_TEMPLATE_ROOT:
+        raise ValueError(f"destination must be under {prefix}{CONFIG_TEMPLATE_ROOT}/: '{destination}'")
 
     if len(parts) < 2:
         raise ValueError(f"destination must name a file below {prefix}{root}/: '{destination}'")
@@ -632,7 +631,7 @@ class ConfigTemplate(BaseModel):
             "Path that HCLI copies the template to. It starts with the literal `$IDAUSR/cfg/`, "
             "followed by `<plugin>.<suffix>` or `<plugin>/<path>`, where `<plugin>` is this plugin's name "
             "or, for a component, the name of its suite. "
-            "Only ASCII, `/` separators, and no `.` or `..` components. "
+            "It must be ASCII, use `/` as the separator, and contain no `.` or `..` components. "
             "`<plugin>` must not be the name of a file or directory that IDA ships in `$IDADIR/cfg`."
         ),
         examples=["$IDAUSR/cfg/my-plugin.cfg", "$IDAUSR/cfg/my-plugin/patterns.txt"],
@@ -1378,7 +1377,7 @@ def validate_path(path: str, field_name: str) -> None:
         raise ValueError(f"Invalid {field_name} path: '{path}'")
 
 
-MAX_SUITE_DEPTH = 10
+MAX_COMPONENT_DEPTH = 10
 
 
 def validate_config_template_owners(metadata: IDAMetadataDescriptor, suite_names: Iterable[str]) -> None:
@@ -1417,7 +1416,7 @@ def get_suite_names(
     suite_names: set[str] = set()
     child_dir = plugin_dir
     child_name = name
-    for _ in range(MAX_SUITE_DEPTH):
+    for _ in range(MAX_COMPONENT_DEPTH):
         if child_dir.name != child_name or child_dir.parent == child_dir:
             break
 
@@ -1444,7 +1443,7 @@ def get_suite_names_from_plugin_archive(zip_data: bytes, metadata_path: Path, na
     def get_metadata(directory: PurePath, depth: int = 0) -> IDAMetadataDescriptor | None:
         if directory in metadatas:
             return metadatas[directory]
-        if depth >= MAX_SUITE_DEPTH or directory.parent == directory:
+        if depth >= MAX_COMPONENT_DEPTH or directory.parent == directory:
             return None
         parent = get_metadata(directory.parent, depth + 1)
         if parent is None:
@@ -1467,7 +1466,7 @@ def get_metadata_from_plugin_directory_or_suite(directory: Path, *, _depth: int 
             logger.debug("failed to read metadata %s: %s", metadata_file, e)
             return None
 
-    if _depth >= MAX_SUITE_DEPTH or directory.parent == directory:
+    if _depth >= MAX_COMPONENT_DEPTH or directory.parent == directory:
         return None
     parent = get_metadata_from_plugin_directory_or_suite(directory.parent, _depth=_depth + 1)
     if parent is None:
