@@ -33,6 +33,7 @@ from hcli.lib.ida.plugin import (
     is_python_version_compatible,
     is_source_plugin_archive,
     parse_plugin_version,
+    validate_config_templates_in_plugin_directory,
     validate_metadata_in_plugin_archive,
     validate_path,
 )
@@ -40,6 +41,15 @@ from hcli.lib.ida.plugin.components import (
     collect_python_dependencies_from_archive,
     collect_python_dependencies_from_directory,
     validate_components_for_install,
+)
+from hcli.lib.ida.plugin.config_templates import (
+    TemplateFile,
+    get_config_template_claims,
+    install_config_templates,
+    read_config_templates_before_change,
+    uninstall_config_templates,
+    upgrade_config_templates,
+    validate_config_template_destinations,
 )
 from hcli.lib.ida.plugin.context import InstallContext
 from hcli.lib.ida.plugin.exceptions import (
@@ -240,6 +250,8 @@ def validate_metadata_in_plugin_directory(plugin_path: Path):
     - the file paths must exist in the directory:
       - entry point
       - logo path
+      - config template sources
+    - config template destinations must belong to the plugin or to one of its suites
     """
     metadata = get_metadata_from_plugin_directory(plugin_path)
 
@@ -271,6 +283,8 @@ def validate_metadata_in_plugin_directory(plugin_path: Path):
         if not logo_path.exists():
             logger.debug(f"Logo file not found in directory: '{metadata.plugin.logo_path}'")
             raise ValueError(f"Logo file not found in directory: '{metadata.plugin.logo_path}'")
+
+    validate_config_templates_in_plugin_directory(plugin_path, metadata)
 
 
 def is_valid_plugin_directory(path: Path) -> bool:
@@ -954,6 +968,33 @@ def apply_upgrade_with_rollback(
             logger.debug("could not delete rollback copy %s: %s (leaving for later sweep)", rollback_path, e)
 
 
+def validate_config_template_destinations_for_install(
+    metadatas: list[IDAMetadataDescriptor], *, exclude_suite: str | None = None
+) -> None:
+    """Check the config template destinations of a plugin and its components against the installed plugins.
+
+    `exclude_suite` names the installed plugin that an upgrade replaces.
+
+    Raises:
+        ValueError: when a destination is declared twice or already declared by an installed plugin.
+    """
+    if not any(metadata.plugin.config_templates for metadata in metadatas):
+        return
+
+    excluded = exclude_suite.lower() if exclude_suite else None
+    plugin_dirs = [path for path in get_installed_plugin_paths() if path.name.lower() != excluded]
+    validate_config_template_destinations(metadatas, get_config_template_claims(plugin_dirs))
+
+
+def upgrade_config_templates_or_warn(old_templates: list[TemplateFile], plugin_dir: Path) -> None:
+    """Update the config file copies after an upgrade. A failure leaves the new version installed."""
+    try:
+        upgrade_config_templates(old_templates, plugin_dir, stderr_console)
+    except Exception as e:
+        logger.debug("failed to update config files: %s", e, exc_info=True)
+        logger.warning("failed to update config files during upgrade: %s", e)
+
+
 def install_plugin_archive(
     zip_data: bytes,
     name: str,
@@ -972,10 +1013,16 @@ def install_plugin_archive(
 
     logger.info("installing plugin: %s (%s)", metadata.plugin.name, metadata.plugin.version)
 
-    validate_components_for_install(metadata, zip_data, name)
+    component_metadatas = validate_components_for_install(metadata, zip_data, name)
     destination_path = validate_for_install(metadata, ctx)
+    validate_config_template_destinations_for_install([metadata, *component_metadatas.values()])
 
     apply_plugin_archive_files(zip_data, metadata_path.parent, destination_path, metadata.plugin.name)
+    try:
+        install_config_templates(destination_path, stderr_console)
+    except Exception:
+        _rollback_fresh_install(metadata.plugin.name)
+        raise
 
 
 # Files/directories under a plugin source tree we never want to ship into a
@@ -1103,6 +1150,8 @@ def uninstall_plugin(name: str):
     # but we shouldn't do a sync, since there might be other utils installed by the user.
     # so I think its better to just leave the orphans around.
 
+    old_templates = read_config_templates_before_change(record.path)
+
     if record.path.is_symlink():
         # Editable install (or a manually-symlinked plugin): remove the
         # symlink only. Calling shutil.rmtree on a directory symlink raises
@@ -1114,6 +1163,12 @@ def uninstall_plugin(name: str):
         _remove_editable_pth_file(record.name)
     else:
         remove_plugin_directory(record.path)
+
+    try:
+        uninstall_config_templates(old_templates, stderr_console)
+    except Exception as e:
+        logger.debug("failed to remove config files: %s", e, exc_info=True)
+        logger.warning("failed to remove config files: %s", e)
 
 
 def is_plugin_installed(name: str) -> bool:
@@ -1140,10 +1195,15 @@ def upgrade_plugin_archive(
     metadata_path, metadata = get_metadata_from_plugin_archive(zip_data, name)
     validate_metadata_in_plugin_archive(zip_data, metadata_path, metadata)
 
-    validate_components_for_install(metadata, zip_data, name, is_upgrade=True)
+    component_metadatas = validate_components_for_install(metadata, zip_data, name, is_upgrade=True)
     destination_path = validate_for_upgrade(metadata, ctx)
+    validate_config_template_destinations_for_install(
+        [metadata, *component_metadatas.values()], exclude_suite=metadata.plugin.name
+    )
 
+    old_templates = read_config_templates_before_change(destination_path)
     apply_upgrade_with_rollback(zip_data, metadata_path.parent, destination_path, metadata.plugin.name)
+    upgrade_config_templates_or_warn(old_templates, destination_path)
 
 
 def apply_install(
@@ -1174,6 +1234,7 @@ def apply_install(
     try:
         component_metadatas = validate_components_for_install(metadata, source, plugin_name, is_upgrade=False)
         destination_path = validate_for_install(metadata, ctx)
+        validate_config_template_destinations_for_install([metadata, *component_metadatas.values()])
         expanded = get_metadata_with_components(metadata, component_metadatas)
         plan = _plan_loose_dependencies(expanded, plugin_repo, ctx)
 
@@ -1197,6 +1258,7 @@ def apply_install(
             apply_plugin_archive_files(source, metadata_path.parent, destination_path, metadata.plugin.name)
 
         files_written = True
+        install_config_templates(destination_path, stderr_console)
 
         if root_settings and not apply_resolved_settings(plugin_name, metadata, root_settings):
             _rollback_fresh_install(plugin_name)
@@ -1282,12 +1344,16 @@ def apply_upgrade(
 
         component_metadatas = validate_components_for_install(metadata, zip_data, plugin_name, is_upgrade=True)
         destination_path = validate_for_upgrade(metadata, ctx)
+        validate_config_template_destinations_for_install(
+            [metadata, *component_metadatas.values()], exclude_suite=metadata.plugin.name
+        )
         expanded = get_metadata_with_components(metadata, component_metadatas)
         plan = _plan_loose_dependencies(expanded, plugin_repo, ctx)
 
         python_deps = collect_python_dependencies_from_archive(zip_data, metadata_path, metadata)
         install_python_dependencies(python_deps, ctx, excluded_plugins={metadata.plugin.name})
 
+        old_templates = read_config_templates_before_change(destination_path)
         apply_upgrade_with_rollback(zip_data, metadata_path.parent, destination_path, metadata.plugin.name)
     except Exception as e:
         logger.debug("apply_upgrade failed: %s", e, exc_info=True)
@@ -1297,6 +1363,8 @@ def apply_upgrade(
             status=InstallStatus.FAILED,
             reason=str(e),
         )
+
+    upgrade_config_templates_or_warn(old_templates, destination_path)
 
     # The upgrade itself already succeeded; the plugin is at the new version.
     # Rolling back on a settings failure would be worse than leaving settings

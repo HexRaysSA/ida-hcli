@@ -1,5 +1,32 @@
 {
   "$defs": {
+    "ConfigTemplate": {
+      "properties": {
+        "source": {
+          "description": "Path of the template file, relative to this `ida-plugin.json`. The file must be in the plugin archive.",
+          "examples": [
+            "defaults/my-plugin.cfg"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "destination": {
+          "description": "Path that HCLI copies the template to. It starts with the literal `$IDAUSR/cfg/`, followed by `<plugin>.<suffix>` or `<plugin>/<path>`, where `<plugin>` is this plugin's name or, for a component, the name of its suite. Only ASCII, `/` separators, and no `.` or `..` components.",
+          "examples": [
+            "$IDAUSR/cfg/my-plugin.cfg",
+            "$IDAUSR/cfg/my-plugin/patterns.txt"
+          ],
+          "title": "Destination",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "destination"
+      ],
+      "title": "ConfigTemplate",
+      "type": "object"
+    },
     "Contact": {
       "properties": {
         "email": {
@@ -290,6 +317,26 @@
             "$ref": "#/$defs/PluginSettingDescriptor"
           },
           "title": "Settings",
+          "type": "array"
+        },
+        "configTemplates": {
+          "description": "Files that HCLI copies from the plugin directory into `$IDAUSR/cfg`, where IDA's `getsysfile` and `read_config_file` find them and the user can edit them. HCLI writes a missing copy at install and upgrade, replaces a copy the user did not edit when the template changes, and deletes a copy the user did not edit at uninstall. The plugin must work when the copy is missing.",
+          "examples": [
+            [
+              {
+                "destination": "$IDAUSR/cfg/my-plugin.cfg",
+                "source": "defaults/my-plugin.cfg"
+              },
+              {
+                "destination": "$IDAUSR/cfg/my-plugin/patterns.txt",
+                "source": "defaults/patterns.txt"
+              }
+            ]
+          ],
+          "items": {
+            "$ref": "#/$defs/ConfigTemplate"
+          },
+          "title": "Configtemplates",
           "type": "array"
         },
         "dependencies": {

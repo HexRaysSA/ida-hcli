@@ -95,6 +95,7 @@ And there are new optional fields:
   - `.plugin.platforms` is recommended, defaults to all platforms. The possible values are: `windows-x86_64`, `windows-aarch64`, `linux-x86_64`, `linux-aarch64`, `macos-x86_64`, and `macos-aarch64`.
   - `.plugin.license` for the code license of your project
   - `.plugin.settings` is a list of descriptors of settings
+  - `.plugin.configTemplates` lists config files that HCLI copies into `$IDAUSR/cfg`, where the user can edit them; see [Config Templates](#config-templates)
   - `.plugin.dependencies` declares companion plugins to install alongside this one; entries can be strings (`"dep-a"`) or objects (`{"plugin": "dep-a", "required": false}`) to mark optional dependencies
   - `.plugin.components` declares tightly-coupled sub-plugins bundled inside the same archive (e.g., `["helper-a", "helper-b"]`)
 
@@ -185,6 +186,31 @@ Example settings configuration:
   ]
 }
 ```
+
+
+### Config Templates
+
+IDA looks for user config files in `$IDAUSR/cfg` and not in plugin directories. `getsysfile(buf, n, file, CFG_SUBDIR)` returns the first match in each `$IDAUSR/cfg` and then in `$IDADIR/cfg`. `read_config_file(file)` reads every match and applies each file on top of the previous one. A file that the user edits inside `$IDAUSR/plugins/<name>/` is also lost at the next upgrade, because HCLI replaces the plugin directory.
+
+Declare these files in `configTemplates`. HCLI copies each template from the plugin archive to its destination in `$IDAUSR/cfg`, where IDA finds it and the user can edit it:
+
+```json
+"configTemplates": [
+  {"source": "defaults/deobfuscator.cfg", "destination": "$IDAUSR/cfg/deobfuscator.cfg"},
+  {"source": "defaults/patterns.txt", "destination": "$IDAUSR/cfg/deobfuscator/patterns.txt"}
+]
+```
+
+`source` is relative to the `ida-plugin.json` and must name a file in the archive. `destination` starts with the literal `$IDAUSR/cfg/`, followed by `<plugin>.<suffix>` for one file or `<plugin>/<path>` for a file in a subdirectory. `<plugin>` is the name of the plugin, compared without case. A component can also use the name of its suite. HCLI replaces `$IDAUSR` with the IDA user directory and expands no other variable. The destination must be ASCII and use `/` as the separator. It must not contain `.`, `..`, empty components, or names and characters that Windows does not allow. These rules stop a manifest from writing to IDA's own config files, such as `ida.cfg` and `hexrays.cfg`, to the files of other plugins, or to paths outside `$IDAUSR/cfg`. `hcli plugin lint` checks them.
+
+HCLI finds user edits when it compares the copy with the template in the installed plugin directory. At install, HCLI writes each missing copy and keeps an existing file that differs. At upgrade, it writes each missing copy again, replaces a copy that the user did not edit, and keeps an edited copy. When the template of an edited copy changed, HCLI warns and gives the path of the new template. HCLI also deletes an unedited copy of a template that the new version no longer declares. At uninstall, HCLI deletes the copies that the user did not edit and keeps the others. HCLI does not touch a destination that is a symlink.
+
+The copy is optional. Older versions of HCLI and manual installs do not make it, and the user can delete it. When the file is missing, the plugin must use its own defaults.
+
+Both IDA functions accept a filename with a subdirectory, for example `getsysfile(buf, sizeof(buf), "deobfuscator/patterns.txt", CFG_SUBDIR)`. In a file under `cfg/<plugin>/`, `#include` is relative to that subdirectory. Use the template style that matches the function that the plugin calls:
+
+- With `getsysfile`, the plugin reads only the user's copy, so the template is a complete file. After a user edits one line, the copy keeps the old values of all other lines at the next upgrade.
+- With `read_config_file`, the plugin first sets its defaults, for example from values built into the binary or with `read_config` on a file in the plugin directory. Then it calls `read_config_file("deobfuscator")` to apply the user's copy on top. The template contains the defaults as comments, so the user removes the comment marker only from the lines to change. New defaults then apply to all other lines after an upgrade.
 
 
 ### Plugin Dependencies

@@ -189,6 +189,19 @@ Imported 3 settings for demo-assist
 
 `export` writes secret values as plain text, so keep the file safe. The settings of a component use the component's own name, for example `hcli plugin config component-name list`.
 
+### Plugin config files
+
+Some plugins come with config files that you can edit, for example a list of patterns. HCLI copies these files into `$IDAUSR/cfg` when it installs the plugin and prints one line for each file:
+
+```console
+❯ hcli plugin install deobfuscator
+wrote /home/user/.idapro/cfg/deobfuscator.cfg
+wrote /home/user/.idapro/cfg/deobfuscator/patterns.txt
+Installed plugin: deobfuscator==1.0.0
+```
+
+Edit the copies in `$IDAUSR/cfg`, not the files in the plugin directory, because HCLI replaces the plugin directory at each upgrade. An upgrade replaces a copy that you did not edit with the new version and keeps a copy that you edited. When the template of an edited copy changed, HCLI gives the path of the new template so that you can merge the changes yourself. If you delete a copy, the next upgrade writes it again. Uninstall deletes the copies that you did not edit and keeps the others.
+
 ### Plugin dependencies
 
 A plugin can declare other plugins as dependencies in its `ida-plugin.json`, and so can each of its components. When you install or upgrade such a plugin, HCLI resolves the declared dependencies across all configured repositories and installs them as independent top-level plugins. Dependencies that themselves declare further dependencies are resolved recursively. HCLI selects the newest version of each plugin that supports your platform, IDA version, and IDA's Python version, and whose own required dependencies can also be resolved. Thus `hcli plugin install foo` can install an older version of `foo` when the newest version needs a dependency that is not available for your installation. If a required dependency cannot be resolved, the install stops with an error before it writes any files. The error shows the chain of plugins that led to the dependency and why each version was rejected. An optional dependency that cannot be resolved is skipped. When IDA's Python cannot be detected, HCLI skips only the versions that declare `requiresPython`. The output has one line for each dependency. An optional dependency that HCLI cannot resolve or install is shown as `Optional dependency not installed`, with a one-line reason. When the plugin installs, the last line starts with `Success:` and gives the number of dependencies that are not installed.
