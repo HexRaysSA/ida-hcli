@@ -5,8 +5,8 @@ import re
 import sys
 import typing
 import zipfile
-from collections.abc import Iterable, Iterator
-from pathlib import Path
+from collections.abc import Callable, Iterable, Iterator
+from pathlib import Path, PurePath
 from typing import Literal
 
 if sys.version_info >= (3, 11):
@@ -368,8 +368,179 @@ def is_valid_plugin_name(name: str) -> bool:
 IDAUSR_TOKEN = "$IDAUSR"
 CONFIG_TEMPLATE_ROOTS = frozenset({"cfg"})
 WINDOWS_RESERVED_NAMES = frozenset(
-    {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
+    {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", "CLOCK$"}
+    | {f"COM{i}" for i in range(10)}
+    | {f"LPT{i}" for i in range(10)}
 )
+# Base names, in lower case, of the files and directories in `$IDADIR/cfg` of IDA 9.0 to 9.5.
+IDA_CONFIG_NAMES = frozenset(
+    [
+        "32bit-avx",
+        "32bit-core",
+        "32bit-linux",
+        "32bit-sse",
+        "64bit-avx",
+        "64bit-avx512",
+        "64bit-core",
+        "64bit-linux",
+        "64bit-segments",
+        "64bit-sse",
+        "6805",
+        "6808",
+        "6811",
+        "6812",
+        "6816",
+        "78k0",
+        "78k0s",
+        "aarch64",
+        "aarch64-core",
+        "aarch64-fpu",
+        "ad218x",
+        "alpha",
+        "amd64-avx",
+        "arc",
+        "arm-core",
+        "arm-m-profile",
+        "arm-ocd-banked",
+        "arm-vfpv3",
+        "arm-with-banked",
+        "arm-with-m",
+        "arm-with-neon",
+        "arm_sys_reg",
+        "atrap",
+        "avr",
+        "baltic",
+        "bochsrc",
+        "c166",
+        "c166v1",
+        "c166v2",
+        "central_europe",
+        "chinese",
+        "clsid",
+        "dbg_bochs",
+        "dbg_dalvik",
+        "dbg_gdb",
+        "dbg_ios",
+        "dbg_pin",
+        "dbg_xnu",
+        "dex",
+        "dscu",
+        "dsp561xx",
+        "dsp563xx",
+        "dsp566xx",
+        "dsp56k",
+        "dwarf",
+        "eh34",
+        "exceptions",
+        "f2mc16l",
+        "f2mc16lx",
+        "fr",
+        "gdb_arch",
+        "ghidra_patterns",
+        "golang",
+        "goodname",
+        "goomba",
+        "greek",
+        "h8",
+        "hcs12",
+        "hcs12x",
+        "hexrays",
+        "hpux",
+        "i386-avx",
+        "i51",
+        "i960",
+        "ida",
+        "idaclang",
+        "idagui",
+        "idapython",
+        "idatui",
+        "ios-arm",
+        "ios-arm64",
+        "japanese",
+        "korean",
+        "kr1878",
+        "latin_1",
+        "m16c60",
+        "m16c80",
+        "m32c80",
+        "m32r",
+        "m65816",
+        "m68k",
+        "m68k-core",
+        "m740",
+        "m7700",
+        "m7900",
+        "macho",
+        "mc68kvec",
+        "mips-cp0",
+        "mips-cpu",
+        "mips-dsp",
+        "mips-fpu",
+        "mips-linux",
+        "mips64-cp0",
+        "mips64-cpu",
+        "mips64-fpu",
+        "mips64-linux",
+        "n64",
+        "noret",
+        "oakdsp",
+        "objc",
+        "patfind",
+        "pdb",
+        "pe",
+        "pic12",
+        "pic14",
+        "pic16",
+        "pic24",
+        "pic30",
+        "pic33",
+        "power-altivec",
+        "power-core",
+        "power-fpu",
+        "power-linux",
+        "power64-core",
+        "powerpc-32",
+        "powerpc-64",
+        "powerpc-altivec64",
+        "ppc",
+        "psx",
+        "r32c",
+        "rh850",
+        "rh850-core",
+        "riscv",
+        "riscv-32",
+        "riscv-32bit-cpu",
+        "riscv-64",
+        "riscv-64bit-cpu",
+        "rl78",
+        "rust",
+        "sh3",
+        "spc700",
+        "st10",
+        "st20",
+        "st7",
+        "st9",
+        "super10",
+        "swift",
+        "tms32028",
+        "tms320c3",
+        "tms320c54",
+        "tms320c55",
+        "tricore",
+        "tricore-core",
+        "turkish",
+        "uefi",
+        "uefi_guids",
+        "vietnam",
+        "xbe",
+        "xnu-arm64",
+        "xnu-x64",
+        "xref_graph",
+        "z180",
+        "z8",
+    ]
+)
+IDA_CONFIG_DIRECTORY_NAMES = frozenset({"ghidra_patterns"})
 WINDOWS_INVALID_PATH_CHARACTERS = frozenset('<>:"|?*\\')
 
 
@@ -391,7 +562,7 @@ def validate_config_template_destination_component(component: str, destination: 
         raise ValueError(f"destination contains a character that is not valid in a path: '{destination}'")
     if component.endswith((".", " ")):
         raise ValueError(f"destination path components must not end with '.' or ' ': '{destination}'")
-    if component.split(".", maxsplit=1)[0].upper() in WINDOWS_RESERVED_NAMES:
+    if component.split(".", maxsplit=1)[0].rstrip(" ").upper() in WINDOWS_RESERVED_NAMES:
         raise ValueError(f"destination contains a name reserved on Windows: '{component}' in '{destination}'")
 
 
@@ -399,7 +570,8 @@ def get_config_template_destination_parts(destination: str) -> tuple[str, ...]:
     """Validate a config template destination and get its path components below `$IDAUSR`.
 
     The destination is `$IDAUSR/cfg/<owner>.<suffix>` or `$IDAUSR/cfg/<owner>/<path>`,
-    where `<owner>` has the syntax of a plugin name.
+    where `<owner>` has the syntax of a plugin name and is not the name of a file or directory
+    that IDA ships in `$IDADIR/cfg`, because a copy in `$IDAUSR/cfg` hides the file of IDA.
     Whether `<owner>` names the declaring plugin is checked by `validate_config_template_owners`.
 
     Raises:
@@ -440,6 +612,10 @@ def get_config_template_destination_parts(destination: str) -> tuple[str, ...]:
             f"where <plugin> is a plugin name: '{destination}'"
         )
 
+    reserved = IDA_CONFIG_NAMES if len(parts) == 2 else IDA_CONFIG_DIRECTORY_NAMES
+    if owner.lower() in reserved:
+        raise ValueError(f"destination must not use the name of a config file that IDA ships: '{destination}'")
+
     return parts
 
 
@@ -456,7 +632,8 @@ class ConfigTemplate(BaseModel):
             "Path that HCLI copies the template to. It starts with the literal `$IDAUSR/cfg/`, "
             "followed by `<plugin>.<suffix>` or `<plugin>/<path>`, where `<plugin>` is this plugin's name "
             "or, for a component, the name of its suite. "
-            "Only ASCII, `/` separators, and no `.` or `..` components."
+            "Only ASCII, `/` separators, and no `.` or `..` components. "
+            "`<plugin>` must not be the name of a file or directory that IDA ships in `$IDADIR/cfg`."
         ),
         examples=["$IDAUSR/cfg/my-plugin.cfg", "$IDAUSR/cfg/my-plugin/patterns.txt"],
     )
@@ -1220,55 +1397,89 @@ def validate_config_template_owners(metadata: IDAMetadataDescriptor, suite_names
             )
 
 
-def get_suite_names_from_plugin_archive(zip_data: bytes, name: str) -> set[str]:
-    """Get the names of the plugins in the archive that contain the named plugin as a component, at any depth."""
-    parents: dict[str, set[str]] = {}
+def get_inline_component_metadata(parent: IDAMetadataDescriptor, name: str) -> IDAMetadataDescriptor | None:
+    """Get the expanded metadata of the named component from the `components` field of its parent."""
+    for entry in parent.plugin.components:
+        if isinstance(entry, IDAMetadataDescriptor) and entry.plugin.name == name:
+            return entry
+    return None
 
-    def add_parents(metadata: IDAMetadataDescriptor) -> None:
-        for entry in metadata.plugin.components:
-            parents.setdefault(get_component_name(entry).lower(), set()).add(metadata.plugin.name)
-            if isinstance(entry, IDAMetadataDescriptor):
-                add_parents(entry)
 
-    for _, metadata in get_metadatas_with_paths_from_plugin_archive(zip_data):
-        add_parents(metadata)
+def get_suite_names(
+    plugin_dir: PurePath, name: str, get_metadata: Callable[[PurePath], IDAMetadataDescriptor | None]
+) -> set[str]:
+    """Get the names of the suites that contain the plugin, at any depth.
 
+    A component lives in the subdirectory of its suite that has the component's name,
+    and the suite lists the component in `components`.
+    `get_metadata` returns the metadata of the plugin in a directory, or None.
+    """
     suite_names: set[str] = set()
-    seen = {name.lower()}
-    queue = [name.lower()]
-    while queue:
-        for parent in parents.get(queue.pop(), set()):
-            if parent.lower() not in seen:
-                seen.add(parent.lower())
-                suite_names.add(parent)
-                queue.append(parent.lower())
+    child_dir = plugin_dir
+    child_name = name
+    for _ in range(MAX_SUITE_DEPTH):
+        if child_dir.name != child_name or child_dir.parent == child_dir:
+            break
+
+        parent = get_metadata(child_dir.parent)
+        if parent is None:
+            break
+        if child_name not in {get_component_name(entry) for entry in parent.plugin.components}:
+            break
+
+        suite_names.add(parent.plugin.name)
+        child_dir = child_dir.parent
+        child_name = parent.plugin.name
+
     return suite_names
+
+
+def get_suite_names_from_plugin_archive(zip_data: bytes, metadata_path: Path, name: str) -> set[str]:
+    """Get the names of the suites in the archive that contain the plugin, at any depth.
+
+    `metadata_path` is the path of the plugin's `ida-plugin.json` in the archive.
+    """
+    metadatas = {path.parent: metadata for path, metadata in get_metadatas_with_paths_from_plugin_archive(zip_data)}
+
+    def get_metadata(directory: PurePath, depth: int = 0) -> IDAMetadataDescriptor | None:
+        if directory in metadatas:
+            return metadatas[directory]
+        if depth >= MAX_SUITE_DEPTH or directory.parent == directory:
+            return None
+        parent = get_metadata(directory.parent, depth + 1)
+        if parent is None:
+            return None
+        return get_inline_component_metadata(parent, directory.name)
+
+    return get_suite_names(metadata_path.parent, name, get_metadata)
+
+
+def get_metadata_from_plugin_directory_or_suite(directory: Path, *, _depth: int = 0) -> IDAMetadataDescriptor | None:
+    """Get the metadata of the plugin in the directory.
+
+    A component of a suite may have no `ida-plugin.json`, when the suite lists its expanded metadata.
+    """
+    metadata_file = directory / "ida-plugin.json"
+    if metadata_file.is_file():
+        try:
+            return IDAMetadataDescriptor.model_validate_json(metadata_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            logger.debug("failed to read metadata %s: %s", metadata_file, e)
+            return None
+
+    if _depth >= MAX_SUITE_DEPTH or directory.parent == directory:
+        return None
+    parent = get_metadata_from_plugin_directory_or_suite(directory.parent, _depth=_depth + 1)
+    if parent is None:
+        return None
+    return get_inline_component_metadata(parent, directory.name)
 
 
 def get_suite_names_from_plugin_directory(plugin_path: Path, name: str) -> set[str]:
     """Get the names of the suites that contain the plugin, from the manifests in its parent directories."""
-    suite_names: set[str] = set()
-    child_name = name.lower()
-    directory = plugin_path.absolute().parent
-    for _ in range(MAX_SUITE_DEPTH):
-        metadata_file = directory / "ida-plugin.json"
-        if not metadata_file.is_file():
-            break
-
-        try:
-            parent = IDAMetadataDescriptor.model_validate_json(metadata_file.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as e:
-            logger.debug("failed to read suite metadata %s: %s", metadata_file, e)
-            break
-
-        if child_name not in {get_component_name(entry).lower() for entry in parent.plugin.components}:
-            break
-
-        suite_names.add(parent.plugin.name)
-        child_name = parent.plugin.name.lower()
-        directory = directory.parent
-
-    return suite_names
+    return get_suite_names(
+        plugin_path.absolute(), name, lambda directory: get_metadata_from_plugin_directory_or_suite(Path(directory))
+    )
 
 
 def has_config_templates_owned_by_others(metadata: IDAMetadataDescriptor) -> bool:
@@ -1297,7 +1508,7 @@ def validate_config_templates_in_plugin_archive(
 
     suite_names: set[str] = set()
     if has_config_templates_owned_by_others(metadata):
-        suite_names = get_suite_names_from_plugin_archive(zip_data, metadata.plugin.name)
+        suite_names = get_suite_names_from_plugin_archive(zip_data, metadata_path, metadata.plugin.name)
     validate_config_template_owners(metadata, suite_names)
 
 

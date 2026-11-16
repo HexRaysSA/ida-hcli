@@ -102,6 +102,8 @@ def get_cfg_dir() -> Path:
         "$IDAUSR/cfg/deob/patterns.txt",
         "$IDAUSR/cfg/deob/sub/dir/patterns",
         "$IDAUSR/cfg/My-Plugin_2.cfg",
+        "$IDAUSR/cfg/golang/patterns.txt",
+        "$IDAUSR/cfg/idapython-extras.cfg",
     ],
 )
 def test_config_template_accepts_destination(destination: str):
@@ -131,6 +133,15 @@ def test_config_template_accepts_destination(destination: str):
         ("$IDAUSR/cfg/deob/x ", "must not end with '.' or ' '"),
         ("$IDAUSR/cfg/deob/NUL.txt", "reserved on Windows"),
         ("$IDAUSR/cfg/deob/com1", "reserved on Windows"),
+        ("$IDAUSR/cfg/deob/COM0.cfg", "reserved on Windows"),
+        ("$IDAUSR/cfg/deob/lpt0", "reserved on Windows"),
+        ("$IDAUSR/cfg/deob/CONIN$", "reserved on Windows"),
+        ("$IDAUSR/cfg/deob/NUL .txt", "reserved on Windows"),
+        ("$IDAUSR/cfg/ida.cfg", "config file that IDA ships"),
+        ("$IDAUSR/cfg/hexrays.cfg", "config file that IDA ships"),
+        ("$IDAUSR/cfg/IDAGUI.cfg", "config file that IDA ships"),
+        ("$IDAUSR/cfg/golang.json", "config file that IDA ships"),
+        ("$IDAUSR/cfg/ghidra_patterns/x86/x86_patterns.xml", "config file that IDA ships"),
         ("$IDAUSR/plugins/deob/deob.cfg", "must be under $IDAUSR/cfg/"),
         ("$IDAUSR/idapythonrc.py", "must be under $IDAUSR/cfg/"),
         ("$IDAUSR/cfg", "must name a file below"),
@@ -186,7 +197,7 @@ def test_archive_validation_rejects_missing_source():
         validate_archive(buf, "deob")
 
 
-@pytest.mark.parametrize("destination", ["$IDAUSR/cfg/ida.cfg", "$IDAUSR/cfg/deob-extra.cfg", "$IDAUSR/cfg/other/x"])
+@pytest.mark.parametrize("destination", ["$IDAUSR/cfg/ideas.cfg", "$IDAUSR/cfg/deob-extra.cfg", "$IDAUSR/cfg/other/x"])
 def test_archive_validation_rejects_destination_of_other_plugin(destination: str):
     buf = make_plugin_zip("deob", "1.0.0", {"a.cfg": b"x"}, [{"source": "a.cfg", "destination": destination}])
     with pytest.raises(ValueError, match="must start with \\$IDAUSR/cfg/deob/"):
@@ -224,6 +235,31 @@ def test_component_may_not_use_sibling_name():
     buf = make_suite_zip("$IDAUSR/cfg/other.cfg")
     with pytest.raises(ValueError, match="must start with \\$IDAUSR/cfg/part/"):
         validate_archive(buf, "part")
+
+
+def test_component_may_not_use_name_of_unrelated_manifest_that_lists_it():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        templates = [{"source": "a.cfg", "destination": "$IDAUSR/cfg/victim.cfg"}]
+        zf.writestr("deob/ida-plugin.json", json.dumps(make_metadata("deob", "1.0.0", templates)))
+        zf.writestr("deob/deob.py", "# plugin")
+        zf.writestr("deob/a.cfg", "x")
+        zf.writestr("victim/ida-plugin.json", json.dumps(make_metadata("victim", "1.0.0", components=["deob"])))
+        zf.writestr("victim/victim.py", "# plugin")
+
+    with pytest.raises(ValueError, match="must start with \\$IDAUSR/cfg/deob/"):
+        validate_archive(buf.getvalue(), "deob")
+
+
+def test_directory_validation_requires_component_directory_named_after_component(tmp_path: Path):
+    with zipfile.ZipFile(io.BytesIO(make_suite_zip("$IDAUSR/cfg/suite/part.cfg"))) as zf:
+        zf.extractall(tmp_path)
+
+    component_dir = tmp_path / "suite" / "renamed"
+    (tmp_path / "suite" / "part").rename(component_dir)
+    metadata = IDAMetadataDescriptor.model_validate_json((component_dir / "ida-plugin.json").read_text())
+    with pytest.raises(ValueError, match="must start with \\$IDAUSR/cfg/part/"):
+        validate_config_templates_in_plugin_directory(component_dir, metadata)
 
 
 def test_directory_validation_finds_suite_from_parent_manifest(tmp_path: Path):
@@ -296,14 +332,14 @@ def test_get_config_template_actions(
 ):
     olds = [template(old)] if old is not None else []
     news = [template(new)] if new is not None else []
-    actions = get_config_template_actions(olds, news, {"$idausr/cfg/deob.cfg": state})
+    actions = get_config_template_actions(olds, news, {"$IDAUSR/cfg/deob.cfg": state})
     assert [action.kind for action in actions] == ([expected] if expected else [])
 
 
 def test_get_config_template_actions_deletes_first():
     old = [template(b"a", "$IDAUSR/cfg/deob/a.txt"), template(b"z", "$IDAUSR/cfg/deob/z.txt")]
     new = [template(b"b", "$IDAUSR/cfg/deob/b.txt")]
-    states = {"$idausr/cfg/deob/a.txt": file(b"a"), "$idausr/cfg/deob/z.txt": file(b"z")}
+    states = {"$IDAUSR/cfg/deob/a.txt": file(b"a"), "$IDAUSR/cfg/deob/z.txt": file(b"z")}
     actions = get_config_template_actions(old, new, states)
     assert [(action.kind, action.template.destination) for action in actions] == [
         (ActionKind.DELETE, "$IDAUSR/cfg/deob/a.txt"),
@@ -312,11 +348,14 @@ def test_get_config_template_actions_deletes_first():
     ]
 
 
-def test_get_config_template_actions_matches_destinations_ignoring_case():
-    old = [template(b"old", "$IDAUSR/cfg/deob.cfg")]
-    new = [template(b"new", "$IDAUSR/cfg/Deob.cfg")]
-    actions = get_config_template_actions(old, new, {"$idausr/cfg/deob.cfg": file(b"old")})
-    assert [action.kind for action in actions] == [ActionKind.REPLACE]
+def test_get_config_template_actions_treats_case_change_as_delete_and_write():
+    old = [template(b"same", "$IDAUSR/cfg/Deob.cfg")]
+    new = [template(b"same", "$IDAUSR/cfg/deob.cfg")]
+    actions = get_config_template_actions(old, new, {"$IDAUSR/cfg/Deob.cfg": file(b"same")})
+    assert [(action.kind, action.template.destination) for action in actions] == [
+        (ActionKind.DELETE, "$IDAUSR/cfg/Deob.cfg"),
+        (ActionKind.WRITE, "$IDAUSR/cfg/deob.cfg"),
+    ]
 
 
 def test_validate_config_template_destinations():
@@ -484,3 +523,78 @@ def test_suite_rejects_destination_declared_twice(virtual_ida_environment):
 
     assert not is_plugin_installed("suite")
     assert not (get_cfg_dir() / "suite").exists()
+
+
+def make_inline_suite_zip(component_templates: list[dict], files: dict[str, bytes]) -> bytes:
+    """A suite whose manifest lists the expanded metadata of component `c`, which has no `ida-plugin.json`."""
+    component = make_metadata("c", "1.0.0", component_templates)
+    suite = make_metadata("suite", "1.0.0", components=[component])
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("suite/ida-plugin.json", json.dumps(suite))
+        zf.writestr("suite/suite.py", "# plugin")
+        zf.writestr("suite/c/c.py", "# component")
+        for path, content in files.items():
+            zf.writestr(f"suite/c/{path}", content)
+    return buf.getvalue()
+
+
+def test_suite_with_inline_component_installs(virtual_ida_environment):
+    install_plugin_archive(make_inline_suite_zip([], {}), "suite", make_test_install_context())
+
+    assert is_plugin_installed("suite")
+
+
+def test_suite_with_inline_component_installs_and_removes_copies(virtual_ida_environment):
+    templates = [{"source": "c.cfg", "destination": "$IDAUSR/cfg/suite/c.cfg"}]
+    install_plugin_archive(make_inline_suite_zip(templates, {"c.cfg": b"c"}), "suite", make_test_install_context())
+
+    assert (get_cfg_dir() / "suite" / "c.cfg").read_bytes() == b"c"
+
+    uninstall_plugin("suite")
+
+    assert not (get_cfg_dir() / "suite").exists()
+
+
+def test_install_validates_component_manifest_that_is_on_disk(virtual_ida_environment):
+    templates = [{"source": "c.cfg", "destination": "$IDAUSR/cfg/victim.cfg"}]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            "suite/ida-plugin.json",
+            json.dumps(make_metadata("suite", "1.0.0", components=[make_metadata("c", "1.0.0")])),
+        )
+        zf.writestr("suite/suite.py", "# plugin")
+        zf.writestr("suite/c/ida-plugin.json", json.dumps(make_metadata("c", "1.0.0", templates)))
+        zf.writestr("suite/c/c.py", "# component")
+        zf.writestr("suite/c/c.cfg", "x")
+
+    with pytest.raises(ValueError, match="must start with \\$IDAUSR/cfg/c/"):
+        install_plugin_archive(buf.getvalue(), "suite", make_test_install_context())
+
+    assert not is_plugin_installed("suite")
+    assert not (get_cfg_dir() / "victim.cfg").exists()
+
+
+def test_component_installed_alone_may_not_use_suite_name(virtual_ida_environment):
+    buf = make_suite_zip("$IDAUSR/cfg/suite/part.cfg")
+
+    with pytest.raises(ValueError, match="must start with \\$IDAUSR/cfg/part/"):
+        install_plugin_archive(buf, "part", make_test_install_context())
+
+    assert not is_plugin_installed("part")
+    assert not (get_cfg_dir() / "suite").exists()
+
+
+def test_upgrade_moves_copy_when_destination_changes_case(virtual_ida_environment):
+    def make_zip(version: str, destination: str) -> bytes:
+        return make_plugin_zip("deob", version, {"d.cfg": b"cfg"}, [{"source": "d.cfg", "destination": destination}])
+
+    ctx = make_test_install_context()
+    install_plugin_archive(make_zip("1.0.0", "$IDAUSR/cfg/Deob.cfg"), "deob", ctx)
+    assert os.listdir(get_cfg_dir()) == ["Deob.cfg"]
+
+    upgrade_plugin_archive(make_zip("2.0.0", "$IDAUSR/cfg/deob.cfg"), "deob", ctx)
+
+    assert os.listdir(get_cfg_dir()) == ["deob.cfg"]
+    assert (get_cfg_dir() / "deob.cfg").read_bytes() == b"cfg"

@@ -981,15 +981,19 @@ def validate_config_template_destinations_for_install(
     if not any(metadata.plugin.config_templates for metadata in metadatas):
         return
 
-    excluded = exclude_suite.lower() if exclude_suite else None
-    plugin_dirs = [path for path in get_installed_plugin_paths() if path.name.lower() != excluded]
+    plugin_dirs = get_other_installed_plugin_paths(exclude_suite) if exclude_suite else get_installed_plugin_paths()
     validate_config_template_destinations(metadatas, get_config_template_claims(plugin_dirs))
 
 
-def upgrade_config_templates_or_warn(old_templates: list[TemplateFile], plugin_dir: Path) -> None:
+def get_other_installed_plugin_paths(name: str) -> list[Path]:
+    """Get the directories of the installed plugins, except the named one."""
+    return [path for path in get_installed_plugin_paths() if path.name.lower() != name.lower()]
+
+
+def upgrade_config_templates_or_warn(old_templates: list[TemplateFile], plugin_dir: Path, name: str) -> None:
     """Update the config file copies after an upgrade. A failure leaves the new version installed."""
     try:
-        upgrade_config_templates(old_templates, plugin_dir, stderr_console)
+        upgrade_config_templates(old_templates, plugin_dir, get_other_installed_plugin_paths(name), stderr_console)
     except Exception as e:
         logger.debug("failed to update config files: %s", e, exc_info=True)
         logger.warning("failed to update config files during upgrade: %s", e)
@@ -1019,7 +1023,9 @@ def install_plugin_archive(
 
     apply_plugin_archive_files(zip_data, metadata_path.parent, destination_path, metadata.plugin.name)
     try:
-        install_config_templates(destination_path, stderr_console)
+        install_config_templates(
+            destination_path, get_other_installed_plugin_paths(metadata.plugin.name), stderr_console
+        )
     except Exception:
         _rollback_fresh_install(metadata.plugin.name)
         raise
@@ -1203,7 +1209,7 @@ def upgrade_plugin_archive(
 
     old_templates = read_config_templates_before_change(destination_path)
     apply_upgrade_with_rollback(zip_data, metadata_path.parent, destination_path, metadata.plugin.name)
-    upgrade_config_templates_or_warn(old_templates, destination_path)
+    upgrade_config_templates_or_warn(old_templates, destination_path, metadata.plugin.name)
 
 
 def apply_install(
@@ -1258,7 +1264,7 @@ def apply_install(
             apply_plugin_archive_files(source, metadata_path.parent, destination_path, metadata.plugin.name)
 
         files_written = True
-        install_config_templates(destination_path, stderr_console)
+        install_config_templates(destination_path, get_other_installed_plugin_paths(plugin_name), stderr_console)
 
         if root_settings and not apply_resolved_settings(plugin_name, metadata, root_settings):
             _rollback_fresh_install(plugin_name)
@@ -1364,7 +1370,7 @@ def apply_upgrade(
             reason=str(e),
         )
 
-    upgrade_config_templates_or_warn(old_templates, destination_path)
+    upgrade_config_templates_or_warn(old_templates, destination_path, metadata.plugin.name)
 
     # The upgrade itself already succeeded; the plugin is at the new version.
     # Rolling back on a settings failure would be worse than leaving settings
