@@ -969,11 +969,11 @@ def apply_upgrade_with_rollback(
 
 
 def validate_config_template_destinations_for_install(
-    metadatas: list[IDAMetadataDescriptor], *, exclude_suite: str | None = None
+    metadatas: list[IDAMetadataDescriptor], *, upgraded: str | None = None
 ) -> None:
     """Check the config template destinations of a plugin and its components against the installed plugins.
 
-    `exclude_suite` names the installed plugin that an upgrade replaces.
+    `upgraded` names the installed plugin that an upgrade replaces.
 
     Raises:
         ValueError: when a destination is declared twice or already declared by an installed plugin.
@@ -981,7 +981,7 @@ def validate_config_template_destinations_for_install(
     if not any(metadata.plugin.config_templates for metadata in metadatas):
         return
 
-    plugin_dirs = get_other_installed_plugin_paths(exclude_suite) if exclude_suite else get_installed_plugin_paths()
+    plugin_dirs = get_other_installed_plugin_paths(upgraded) if upgraded else get_installed_plugin_paths()
     validate_config_template_destinations(metadatas, get_config_template_claims(plugin_dirs))
 
 
@@ -995,8 +995,8 @@ def upgrade_config_templates_or_warn(old_templates: list[TemplateFile], plugin_d
     try:
         upgrade_config_templates(old_templates, plugin_dir, get_other_installed_plugin_paths(name), stderr_console)
     except Exception as e:
-        logger.debug("failed to update config files: %s", e, exc_info=True)
-        logger.warning("failed to update config files during upgrade: %s", e)
+        logger.debug("failed to update config files of %s: %s", name, e, exc_info=True)
+        logger.warning("upgraded %s, but did not update all of its config files: %s", name, e)
 
 
 def install_plugin_archive(
@@ -1173,8 +1173,8 @@ def uninstall_plugin(name: str):
     try:
         uninstall_config_templates(old_templates, stderr_console)
     except Exception as e:
-        logger.debug("failed to remove config files: %s", e, exc_info=True)
-        logger.warning("failed to remove config files: %s", e)
+        logger.debug("failed to remove config files of %s: %s", name, e, exc_info=True)
+        logger.warning("uninstalled %s, but did not remove all of its config files: %s", name, e)
 
 
 def is_plugin_installed(name: str) -> bool:
@@ -1204,7 +1204,7 @@ def upgrade_plugin_archive(
     component_metadatas = validate_components_for_install(metadata, zip_data, name, is_upgrade=True)
     destination_path = validate_for_upgrade(metadata, ctx)
     validate_config_template_destinations_for_install(
-        [metadata, *component_metadatas.values()], exclude_suite=metadata.plugin.name
+        [metadata, *component_metadatas.values()], upgraded=metadata.plugin.name
     )
 
     old_templates = read_config_templates_before_change(destination_path)
@@ -1351,7 +1351,7 @@ def apply_upgrade(
         component_metadatas = validate_components_for_install(metadata, zip_data, plugin_name, is_upgrade=True)
         destination_path = validate_for_upgrade(metadata, ctx)
         validate_config_template_destinations_for_install(
-            [metadata, *component_metadatas.values()], exclude_suite=metadata.plugin.name
+            [metadata, *component_metadatas.values()], upgraded=metadata.plugin.name
         )
         expanded = get_metadata_with_components(metadata, component_metadatas)
         plan = _plan_loose_dependencies(expanded, plugin_repo, ctx)
