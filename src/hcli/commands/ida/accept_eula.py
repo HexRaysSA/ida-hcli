@@ -51,6 +51,6 @@ def accept_eula_command(path: Path | None) -> None:
     try:
         accept_eula(ida_path)
         console.print("[green]EULA accepted successfully.[/green]")
-    except RuntimeError:
-        console.print("[red]Failed to accept EULA: idalib not available.[/red]")
+    except RuntimeError as e:
+        console.print(f"[red]Failed to accept EULA: {e}.[/red]")
         console.print("[grey69]This may happen for IDA Free, IDA Home, or IDA Classroom editions.[/grey69]")

@@ -275,8 +275,8 @@ async def install(
                     console.print("[yellow]Accepting EULA...[/yellow]")
                     try:
                         accept_eula(get_ida_path(install_dir_path))
-                    except RuntimeError:
-                        console.print("[red]Skipped EULA acceptance due to missing idalib.[/red]")
+                    except RuntimeError as e:
+                        console.print(f"[red]Skipped EULA acceptance: {e}.[/red]")
                 else:
                     console.print("[yellow]Skipped EULA acceptance due to missing idalib.[/yellow]")
 
