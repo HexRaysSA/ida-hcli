@@ -18,8 +18,15 @@ from rich.console import Console
 from rich.markup import escape
 
 from hcli.lib.ida import get_ida_user_dir
-from hcli.lib.ida.plugin import CONFIG_TEMPLATE_ROOTS, ConfigTemplate, IDAMetadataDescriptor
-from hcli.lib.ida.plugin.components import walk_component_tree_from_directory
+from hcli.lib.ida.plugin import (
+    CONFIG_TEMPLATE_ROOTS,
+    ConfigTemplate,
+    IDAMetadataDescriptor,
+    get_component_name,
+    get_inline_component_metadata,
+    validate_config_templates_in_plugin_directory,
+)
+from hcli.lib.ida.plugin.components import MAX_COMPONENT_DEPTH
 
 logger = logging.getLogger(__name__)
 
@@ -140,15 +147,20 @@ def get_config_template_actions(
 ) -> list[ConfigTemplateAction]:
     """Decide what to do with each destination, deletes first.
 
-    `states` maps each destination key to what is at the destination. A missing key means a missing file.
+    Old and new templates pair up by destination. `states` maps each destination to what is there.
+    A missing destination means a missing file.
     """
-    old_by_key = {template.key: template for template in old}
-    new_by_key = {template.key: template for template in new}
+    old_by_destination = {template.destination: template for template in old}
+    new_by_destination = {template.destination: template for template in new}
     missing = DestinationState(DestinationKind.MISSING)
 
     actions: list[ConfigTemplateAction] = []
-    for key in sorted(old_by_key.keys() | new_by_key.keys()):
-        action = get_config_template_action(old_by_key.get(key), new_by_key.get(key), states.get(key, missing))
+    for destination in sorted(old_by_destination.keys() | new_by_destination.keys()):
+        action = get_config_template_action(
+            old_by_destination.get(destination),
+            new_by_destination.get(destination),
+            states.get(destination, missing),
+        )
         if action is not None:
             actions.append(action)
 
@@ -166,7 +178,7 @@ def get_destination_states(ida_user_dir: Path, templates: Iterable[TemplateFile]
         OSError: when a destination exists but cannot be read.
     """
     return {
-        template.key: DestinationState.from_path(get_config_template_path(ida_user_dir, template))
+        template.destination: DestinationState.from_path(get_config_template_path(ida_user_dir, template))
         for template in templates
     }
 
@@ -263,22 +275,66 @@ def apply_config_template_actions(
         raise ConfigTemplateError(failures)
 
 
-def get_config_template_files(plugin_dir: Path) -> list[TemplateFile]:
-    """Read the config templates of an installed plugin and of its components.
+def get_component_metadatas_from_directory(
+    plugin_dir: Path, metadata: IDAMetadataDescriptor, *, _depth: int = 0
+) -> list[tuple[Path, IDAMetadataDescriptor]]:
+    """Get the directory and metadata of each component of an installed plugin, at any depth.
+
+    A component without `ida-plugin.json` uses the expanded metadata in the `components` field of its suite.
 
     Raises:
-        ValueError: when a manifest is invalid or two manifests declare the same destination.
-        OSError: when a template file cannot be read.
+        ValueError: when a component has no metadata, a manifest is invalid, or the nesting is too deep.
+        OSError: when a manifest cannot be read.
+    """
+    if _depth >= MAX_COMPONENT_DEPTH:
+        raise ValueError(f"component nesting exceeds maximum depth ({MAX_COMPONENT_DEPTH})")
+
+    result: list[tuple[Path, IDAMetadataDescriptor]] = []
+    for entry in metadata.plugin.components:
+        name = get_component_name(entry)
+        component_dir = plugin_dir / name
+        metadata_file = component_dir / "ida-plugin.json"
+        if metadata_file.is_file():
+            component = IDAMetadataDescriptor.model_validate_json(metadata_file.read_text(encoding="utf-8"))
+        else:
+            inline = get_inline_component_metadata(metadata, name)
+            if inline is None:
+                raise ValueError(f"ida-plugin.json not found in {component_dir}")
+            component = inline
+        if component.plugin.name != name:
+            raise ValueError(f"component directory '{name}' contains plugin '{component.plugin.name}' (name mismatch)")
+        result.append((component_dir, component))
+        result.extend(get_component_metadatas_from_directory(component_dir, component, _depth=_depth + 1))
+    return result
+
+
+def get_metadatas_from_directory(plugin_dir: Path) -> list[tuple[Path, IDAMetadataDescriptor]]:
+    """Get the directory and metadata of an installed plugin and of each of its components.
+
+    Raises:
+        ValueError: when a manifest is missing or invalid.
+        OSError: when a manifest cannot be read.
     """
     metadata_file = plugin_dir / "ida-plugin.json"
     if not metadata_file.is_file():
         raise ValueError(f"ida-plugin.json not found in {plugin_dir}")
     metadata = IDAMetadataDescriptor.model_validate_json(metadata_file.read_text(encoding="utf-8"))
+    return [(plugin_dir, metadata), *get_component_metadatas_from_directory(plugin_dir, metadata)]
 
+
+def get_config_template_files(plugin_dir: Path) -> list[TemplateFile]:
+    """Validate and read the config templates of an installed plugin and of its components.
+
+    Raises:
+        ValueError: when a manifest is invalid, a destination belongs to another plugin,
+            or two manifests declare the same destination.
+        OSError: when a template file cannot be read.
+    """
     templates: dict[str, TemplateFile] = {}
-    for path, meta in [(plugin_dir, metadata), *walk_component_tree_from_directory(plugin_dir)]:
-        for config_template in meta.plugin.config_templates:
-            template = TemplateFile.from_config_template(meta.plugin.name, path, config_template)
+    for path, metadata in get_metadatas_from_directory(plugin_dir):
+        validate_config_templates_in_plugin_directory(path, metadata)
+        for config_template in metadata.plugin.config_templates:
+            template = TemplateFile.from_config_template(metadata.plugin.name, path, config_template)
             if template.key in templates:
                 raise ValueError(f"config template destination declared twice: '{template.destination}'")
             templates[template.key] = template
@@ -298,38 +354,81 @@ def read_config_templates_before_change(plugin_dir: Path) -> list[TemplateFile]:
         return []
 
 
-def install_config_templates(plugin_dir: Path, console: Console) -> None:
-    """Copy the templates of a freshly installed plugin.
+def validate_config_template_files_unclaimed(templates: Iterable[TemplateFile], claims: Mapping[str, str]) -> None:
+    """Check that no other installed plugin declares a destination.
 
     Raises:
-        ValueError: when a manifest is invalid.
+        ValueError: when another installed plugin declares a destination.
+    """
+    for template in templates:
+        if template.key in claims:
+            raise ValueError(
+                f"config template destination '{template.destination}' of '{template.plugin}' "
+                f"is already declared by installed plugin '{claims[template.key]}'"
+            )
+
+
+def install_config_templates(plugin_dir: Path, other_plugin_dirs: Iterable[Path], console: Console) -> None:
+    """Copy the templates of a freshly installed plugin.
+
+    `other_plugin_dirs` are the directories of the other installed plugins.
+
+    Raises:
+        ValueError: when a manifest is invalid or a destination belongs to another plugin.
         OSError: when a template or a destination cannot be read.
         ConfigTemplateError: when a copy cannot be written.
     """
     new = get_config_template_files(plugin_dir)
     if not new:
         return
+    validate_config_template_files_unclaimed(new, get_config_template_claims(other_plugin_dirs))
     ida_user_dir = get_ida_user_dir()
     actions = get_config_template_actions([], new, get_destination_states(ida_user_dir, new))
     apply_config_template_actions(actions, ida_user_dir, console)
 
 
-def upgrade_config_templates(old: list[TemplateFile], plugin_dir: Path, console: Console) -> None:
+def upgrade_config_templates(
+    old: list[TemplateFile], plugin_dir: Path, other_plugin_dirs: Iterable[Path], console: Console
+) -> None:
     """Update the copies after the files of the new version are in place.
 
     `old` comes from `read_config_templates_before_change`.
+    `other_plugin_dirs` are the directories of the other installed plugins.
+
+    Copies of templates that the new version does not declare at the same destination are handled first,
+    so that a destination that changes only in case moves to the new name.
 
     Raises:
-        ValueError: when a manifest is invalid.
+        ValueError: when a manifest is invalid or a destination belongs to another plugin.
         OSError: when a template or a destination cannot be read.
         ConfigTemplateError: when a copy cannot be written or deleted.
     """
     new = get_config_template_files(plugin_dir)
     if not old and not new:
         return
+    if new:
+        validate_config_template_files_unclaimed(new, get_config_template_claims(other_plugin_dirs))
+
     ida_user_dir = get_ida_user_dir()
-    actions = get_config_template_actions(old, new, get_destination_states(ida_user_dir, [*old, *new]))
-    apply_config_template_actions(actions, ida_user_dir, console)
+    new_destinations = {template.destination for template in new}
+    removed = [template for template in old if template.destination not in new_destinations]
+    remaining = [template for template in old if template.destination in new_destinations]
+
+    failures: list[tuple[Path, OSError]] = []
+    try:
+        actions = get_config_template_actions(removed, [], get_destination_states(ida_user_dir, removed))
+        apply_config_template_actions(actions, ida_user_dir, console)
+    except ConfigTemplateError as e:
+        failures.extend(e.failures)
+
+    try:
+        actions = get_config_template_actions(remaining, new, get_destination_states(ida_user_dir, new))
+        apply_config_template_actions(actions, ida_user_dir, console)
+    except ConfigTemplateError as e:
+        failures.extend(e.failures)
+
+    if failures:
+        raise ConfigTemplateError(failures)
 
 
 def uninstall_config_templates(old: list[TemplateFile], console: Console) -> None:
@@ -355,16 +454,14 @@ def get_config_template_claims(plugin_dirs: Iterable[Path]) -> dict[str, str]:
     """
     claims: dict[str, str] = {}
     for plugin_dir in plugin_dirs:
-        metadata_file = plugin_dir / "ida-plugin.json"
         try:
-            metadata = IDAMetadataDescriptor.model_validate_json(metadata_file.read_text(encoding="utf-8"))
-            entries = [metadata, *(meta for _, meta in walk_component_tree_from_directory(plugin_dir))]
+            metadatas = get_metadatas_from_directory(plugin_dir)
         except (ValueError, OSError) as e:
             logger.debug("cannot read config templates of %s: %s", plugin_dir, e)
             continue
-        for meta in entries:
-            for template in meta.plugin.config_templates:
-                claims.setdefault(template.destination.lower(), meta.plugin.name)
+        for _, metadata in metadatas:
+            for template in metadata.plugin.config_templates:
+                claims.setdefault(template.destination.lower(), metadata.plugin.name)
     return claims
 
 
