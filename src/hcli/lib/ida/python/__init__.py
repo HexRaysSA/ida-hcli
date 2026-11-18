@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -542,6 +543,47 @@ def _get_constraint_args(constraints: Sequence[str]) -> Generator[list[str], Non
         yield ["--constraint", str(path)]
 
 
+def _printable_command(command: Sequence[str]) -> str:
+    """Render a command so the user can copy-paste it into their shell."""
+    # IDA install paths routinely contain spaces, so quote rather than plain-join.
+    if os.name == "nt":
+        return subprocess.list2cmdline(command)
+    return shlex.join(command)
+
+
+def run_pip(
+    python_exe: Path,
+    args: Sequence[str],
+    check: bool = True,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[bytes]:
+    """Run `python -m pip <args>` against the given interpreter, capturing output.
+
+    The single place where pip is invoked: any subcommand goes through here so
+    failures are reported and logged the same way, with the command line.
+
+    Args:
+        check: raise on a non-zero exit. Pass False when the caller treats a
+            non-zero exit as data rather than an error.
+
+    Raises:
+        CantInstallPackagesError: if check is set and pip exits non-zero.
+    """
+    command = [str(python_exe), "-m", "pip", *args]
+    logger.debug("running pip: %s", _printable_command(command))
+
+    process = subprocess.run(
+        command,
+        capture_output=True,
+        check=False,
+        timeout=timeout,
+        env=get_environment_for_python(python_exe),
+    )
+    if check and process.returncode != 0:
+        _raise_for_pip_failure(process.stdout, process.stderr, python_exe)
+    return process
+
+
 def verify_pip_can_install_packages(
     python_exe: Path,
     packages: list[str],
@@ -559,17 +601,10 @@ def verify_pip_can_install_packages(
         CantInstallPackagesError: if pip dry-run fails.
     """
     with _get_constraint_args(constraints) as constraint_args:
-        process = subprocess.run(
-            [str(python_exe), "-m", "pip", "install", "--dry-run", "--no-deps"]
-            + pip_options.build_args()
-            + constraint_args
-            + packages,
-            capture_output=True,
-            check=False,
-            env=get_environment_for_python(python_exe),
+        run_pip(
+            python_exe,
+            ["install", "--dry-run", "--no-deps"] + pip_options.build_args() + constraint_args + packages,
         )
-    if process.returncode != 0:
-        _raise_for_pip_failure(process.stdout, process.stderr, python_exe)
 
 
 def pip_install_packages(
@@ -586,14 +621,7 @@ def pip_install_packages(
         CantInstallPackagesError: if pip install fails.
     """
     with _get_constraint_args(constraints) as constraint_args:
-        process = subprocess.run(
-            [str(python_exe), "-m", "pip", "install"] + pip_options.build_args() + constraint_args + packages,
-            capture_output=True,
-            check=False,
-            env=get_environment_for_python(python_exe),
-        )
-    if process.returncode != 0:
-        _raise_for_pip_failure(process.stdout, process.stderr, python_exe)
+        run_pip(python_exe, ["install"] + pip_options.build_args() + constraint_args + packages)
 
 
 def detect_current_python_version() -> PythonVersion:
