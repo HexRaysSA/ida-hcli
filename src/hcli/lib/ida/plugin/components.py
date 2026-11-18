@@ -7,12 +7,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from hcli.lib.ida.plugin import (
+    MAX_COMPONENT_DEPTH,
     IDAMetadataDescriptor,
     get_component_name,
     get_metadata_from_plugin_archive,
     get_metadatas_with_paths_from_plugin_archive,
     get_python_dependencies_from_plugin_archive,
     get_python_dependencies_from_plugin_directory,
+    validate_config_templates_in_plugin_archive,
+    validate_config_templates_in_plugin_directory,
 )
 from hcli.lib.ida.plugin.exceptions import PluginAlreadyInstalledError
 
@@ -20,8 +23,6 @@ if TYPE_CHECKING:
     from hcli.lib.ida.plugin.install import InstalledPluginRecord
 
 logger = logging.getLogger(__name__)
-
-MAX_COMPONENT_DEPTH = 10
 
 
 def walk_component_tree_from_directory(
@@ -308,7 +309,8 @@ def validate_components_for_install(
         return component_metadatas
 
     if isinstance(source, Path):
-        for _comp_path, comp_meta in walk_component_tree_from_directory(source):
+        for comp_path, comp_meta in walk_component_tree_from_directory(source):
+            validate_config_templates_in_plugin_directory(comp_path, comp_meta)
             component_metadatas[comp_meta.plugin.name] = comp_meta
     else:
         root_path, root_meta = get_metadata_from_plugin_archive(source, plugin_name)
@@ -319,7 +321,8 @@ def validate_components_for_install(
         if collisions:
             msg = "component name collisions:\n" + "\n".join(f"  {c}" for c in collisions)
             raise ValueError(msg)
-        for _comp_path, comp_meta in component_tree:
+        for comp_path, comp_meta in component_tree:
+            validate_config_templates_in_plugin_archive(source, comp_path, comp_meta)
             component_metadatas[comp_meta.plugin.name] = comp_meta
 
     return component_metadatas
