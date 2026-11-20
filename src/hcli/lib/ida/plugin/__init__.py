@@ -71,8 +71,9 @@ IdaVersion = Literal[
     # next versions, unreleased. names are guesses and not any sort of official announcement.
     # we should have these available so that older versions of hcli don't complain about new plugin support.
     "10.0",
-    "9.5",
+    "9.6",
     # released versions
+    "9.5",  #    2026-10
     "9.4",  #    2026-07
     "9.3",  #    2026-02
     "9.2",  #    2025-09
