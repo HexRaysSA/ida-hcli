@@ -320,6 +320,40 @@ You can pin the reference with `name@repository-url`, and optionally include a v
 Because plugins install into `$IDAUSR/plugins/<name>`, only one plugin with a given bare name can be installed at a time. If you need to switch to a different same-named plugin from another repository, uninstall the current one first. Similarly, `upgrade` will not change the source repository: once a plugin is installed, its repository is recorded in the local metadata and upgrades are anchored to it.
 
 
+### Installing a plugin that doesn't support your IDA
+
+Every plugin declares the IDA versions and platforms it supports, and each archive in the repository is built for a specific combination of the two. `hcli plugin install` considers only the archives that match your environment, so a plugin with nothing built for your IDA is refused rather than installed in a state where it cannot load:
+
+```console
+❯ hcli plugin install oplog
+Error: cannot resolve oplog for linux-x86_64 IDA 9.2: oplog 0.1.3 does not support IDA 9.2
+Use --allow-incompatible (-I) to install it anyway. The plugin may fail to load or crash IDA.
+```
+
+Pass `-I` (`--allow-incompatible`) to install it regardless. The same flag also covers plugins installed from a local directory, a `.zip`, or a URL, where there is no repository to filter but the plugin's own metadata still declares what it supports.
+
+```console
+❯ hcli plugin install -I oplog
+warning: plugin does not support IDA version '9.2' (supported: 9.0, 9.1); installing anyway
+Installed plugin: oplog==0.1.3
+```
+
+A compatible archive still wins whenever one exists. The filters are relaxed in stages, so the choice stays predictable: an archive built for your platform and your IDA version, then one built for your platform but a different IDA version, and only then anything at all.
+
+!!! warning "This is not a compatibility promise"
+
+      Installing through the check means IDA loads a plugin its author never built for your setup. It may silently do nothing, fail to load, or crash IDA. A native plugin built for the wrong platform will not load at all. The plugin's own dependencies are not resolved on this path, so a dependency it needs may be missing.
+
+#### Moving an incompatible plugin to another IDA version
+
+`hcli plugin upgrade` has no equivalent flag, on purpose: an upgrade should not quietly move you onto an archive that does not support your IDA. To change which archive is installed - after switching IDA versions, for instance - uninstall and install again:
+
+```console
+❯ hcli plugin uninstall oplog
+❯ hcli plugin install -I oplog
+```
+
+
 ## As a plugin author...
 
 Hex-Rays wants to help you package and distribute plugins for IDA!

@@ -28,6 +28,8 @@ from hcli.lib.console import stderr_console
 from hcli.lib.ida.plugin.exceptions import (
     BrokenPluginInstallationError,
     DependencyInstallationError,
+    IDAVersionIncompatibleError,
+    PlatformIncompatibleError,
     PluginAlreadyInstalledError,
     PluginInUseError,
     PluginNotInstalledError,
@@ -915,3 +917,93 @@ def test_uninstall_while_file_in_use_is_atomic(virtual_ida_environment):
 
     uninstall_plugin("plugin1")
     assert not is_plugin_installed("plugin1")
+
+
+def rewrite_plugin_metadata(zip_data: bytes, **fields) -> bytes:
+    """Return a plugin archive with top-level `plugin` fields replaced."""
+    source = io.BytesIO(zip_data)
+    destination = io.BytesIO()
+    with zipfile.ZipFile(source) as input_zip, zipfile.ZipFile(destination, "w") as output_zip:
+        for info in input_zip.infolist():
+            content = input_zip.read(info.filename)
+            if info.filename.endswith("ida-plugin.json"):
+                doc = json.loads(content)
+                doc["plugin"].update(fields)
+                content = json.dumps(doc).encode()
+            output_zip.writestr(info, content)
+    return destination.getvalue()
+
+
+def get_foreign_platform() -> str:
+    current = os.environ.get("HCLI_CURRENT_IDA_PLATFORM", "linux-x86_64")
+    return "macos-aarch64" if current != "macos-aarch64" else "linux-x86_64"
+
+
+def test_install_incompatible_ida_version(virtual_ida_environment):
+    buf = rewrite_plugin_metadata((PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes(), idaVersions=["9.0"])
+
+    with pytest.raises(IDAVersionIncompatibleError):
+        install_plugin_archive(buf, "plugin1", make_test_install_context())
+    assert not is_plugin_installed("plugin1")
+
+    install_plugin_archive(buf, "plugin1", make_test_install_context(allow_incompatible=True))
+    assert ("plugin1", "1.0.0") in get_installed_plugins()
+
+
+def test_install_incompatible_platform(virtual_ida_environment):
+    buf = rewrite_plugin_metadata(
+        (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes(), platforms=[get_foreign_platform()]
+    )
+
+    with pytest.raises(PlatformIncompatibleError):
+        install_plugin_archive(buf, "plugin1", make_test_install_context())
+    assert not is_plugin_installed("plugin1")
+
+    install_plugin_archive(buf, "plugin1", make_test_install_context(allow_incompatible=True))
+    assert ("plugin1", "1.0.0") in get_installed_plugins()
+
+
+def test_install_compatible_plugin_is_unaffected_by_allow_incompatible(virtual_ida_environment):
+    buf = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
+
+    install_plugin_archive(buf, "plugin1", make_test_install_context(allow_incompatible=True))
+    assert ("plugin1", "1.0.0") in get_installed_plugins()
+
+
+def build_incompatible_repo(tmp_path: Path) -> Path:
+    """A repository holding one plugin that supports neither the current IDA
+    version nor the current platform."""
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    buf = rewrite_plugin_metadata(
+        (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes(),
+        idaVersions=["9.0"],
+        platforms=[get_foreign_platform()],
+    )
+    (repo_dir / "plugin1-v1.0.0.zip").write_bytes(buf)
+    return repo_dir
+
+
+def test_cli_install_incompatible_plugin(virtual_ida_environment, tmp_path):
+    repo_dir = build_incompatible_repo(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "install", "plugin1"], obj={})
+    assert result.exit_code != 0
+    assert not is_plugin_installed("plugin1")
+    # the error must point at the flag that unblocks it
+    assert "--allow-incompatible" in result.output
+
+    result = runner.invoke(plugin_group, ["--repo", str(repo_dir), "install", "-I", "plugin1"], obj={})
+    assert result.exit_code == 0, result.output
+    assert is_plugin_installed("plugin1")
+
+
+def test_cli_install_missing_plugin_does_not_mention_allow_incompatible(virtual_ida_environment, tmp_path):
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+
+    result = CliRunner().invoke(plugin_group, ["--repo", str(repo_dir), "install", "nosuchplugin"], obj={})
+
+    assert result.exit_code != 0
+    assert "--allow-incompatible" not in result.output
