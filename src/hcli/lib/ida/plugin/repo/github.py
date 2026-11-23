@@ -17,7 +17,7 @@ from tenacity.wait import wait_base
 
 from hcli.lib.console import stderr_console
 from hcli.lib.ida.plugin.repo import BasePluginRepo, Plugin, PluginArchiveIndex
-from hcli.lib.util.cache import get_cache_directory
+from hcli.lib.util.cache import PLUGINS_CACHE_KEY, get_cache_directory
 from hcli.lib.util.logging import m
 
 logger = logging.getLogger(__name__)
@@ -26,8 +26,6 @@ logger = logging.getLogger(__name__)
 MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024
 
 GITHUB_API_URL = "https://api.github.com"
-
-PLUGINS_CACHE_KEY = "plugins"
 
 
 def parse_github_url(url: str) -> tuple[str, str, str | None]:

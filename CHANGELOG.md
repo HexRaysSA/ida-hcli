@@ -3,6 +3,7 @@
 ## unreleased
 
 ### Added
+- `hcli cache clear` deletes hcli's cache of downloaded files: IDA installers and other downloads, Lumina and FLIRT packs, and plugin repository data. It shows the size of each part and asks for confirmation. `--yes` skips the question, `--dry-run` shows the sizes and deletes nothing, and `--json` prints the result as JSON (#462)
 - `hcli ida install --license-id` installs the IDA 9.0 format of the license file (`idapro_v90_<license-id>.hexlic`) instead of the current one when the installer is for IDA before 9.3 and the license has that format. IDA before 9.3 rejects a license file that lists an add-on it does not know (#429)
 - `hcli license get --include-legacy-license` also downloads the IDA 9.0 format of a license file (#429)
 - `hcli ida install` without `--create-python-environment` checks IDA's Python environment after it installs IDA, and warns when IDA uses a global Python or another setup that `hcli ida python doctor` reports

@@ -92,7 +92,7 @@ Now lets run the automated installer, which doesn't show any dialog or popups - 
 Note:
 
   - `--set-default` and `--accept-eula` are on by default: the installation becomes the one idalib and the plugin manager use, and the EULA is accepted without prompting. Pass `--no-set-default` or `-A`/`--no-accept-eula` to opt out. The example spells both out for clarity, but they are redundant
-  - the installer is cached, so a second run reuses the download. The per-platform cache locations and the `HCLI_CACHE_DIR` override are listed under Cache & Storage in [Environment Variables](../reference/environment-variables.md)
+  - the installer is cached, so a second run reuses the download. `hcli cache clear` deletes the cache. The per-platform cache locations and the `HCLI_CACHE_DIR` override are listed under Cache & Storage in [Environment Variables](../reference/environment-variables.md)
   - `--create-python-environment` sets up a virtualenv for IDAPython at `$IDAUSR/venv` and configures `IDAPYTHON_VENV_EXECUTABLE`; plugins that need Python packages are installed here (see [IDA's Python Environment](ida-python-environment.md))
   - in this example we set `--dry-run`, but you should remove this in real-life
   - HCLI also fetches and installs the associated license key file so everything's ready to go

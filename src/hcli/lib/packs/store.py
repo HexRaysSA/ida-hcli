@@ -27,13 +27,13 @@ from typing import TYPE_CHECKING, BinaryIO, Final
 
 from hcli.lib.packs.errors import IntegrityError, LocalIOError
 from hcli.lib.packs.models import MetaReceipt, ReleasePack
-from hcli.lib.util.cache import get_cache_directory, get_default_cache_directory
+from hcli.lib.util.cache import PACKS_CACHE_KEY, get_cache_directory, get_default_cache_directory
 
 if TYPE_CHECKING:
     # Type-only: typing.Self needs Python 3.11 (pydantic brings typing_extensions).
     from typing_extensions import Self
 
-CACHE_KEY: Final = "packs"
+CACHE_KEY: Final = PACKS_CACHE_KEY
 _HASH_CHUNK: Final = 1024 * 1024
 _STALE_PARTIAL_AGE: Final = 24 * 60 * 60
 _PARTIAL_NAME: Final = re.compile(r"^\..+\.[0-9a-f]{16}\.partial$")

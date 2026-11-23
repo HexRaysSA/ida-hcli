@@ -20,7 +20,7 @@ from hcli import USER_AGENT
 from hcli.env import ENV
 from hcli.lib.auth import get_auth_service, get_credential_headers
 from hcli.lib.console import console, stderr_console
-from hcli.lib.util.cache import get_cache_directory
+from hcli.lib.util.cache import DOWNLOADS_CACHE_KEY, get_cache_directory
 from hcli.lib.util.io import NoSpaceError, check_free_space
 
 
@@ -242,7 +242,7 @@ class APIClient:
 
         # Use the full asset_key if provided, otherwise fall back to filename
         cache_key = asset_key or filename
-        cache_path = get_cache_directory("downloads") / cache_key
+        cache_path = get_cache_directory(DOWNLOADS_CACHE_KEY) / cache_key
         cache_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Check cache

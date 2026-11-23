@@ -1,7 +1,28 @@
 import os
 import sys
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Final
+
+DOWNLOADS_CACHE_KEY: Final = "downloads"
+PACKS_CACHE_KEY: Final = "packs"
+PLUGINS_CACHE_KEY: Final = "plugins"
+
+
+@dataclass(frozen=True)
+class CacheCategory:
+    """A top-level folder of the cache root that `hcli cache clear` manages."""
+
+    key: str
+    description: str
+
+
+CACHE_CATEGORIES: Final = (
+    CacheCategory(DOWNLOADS_CACHE_KEY, "IDA installers and other downloaded files"),
+    CacheCategory(PACKS_CACHE_KEY, "Lumina and FLIRT packs"),
+    CacheCategory(PLUGINS_CACHE_KEY, "plugin repository data from GitHub"),
+)
 
 
 def get_cache_root(environ: Mapping[str, str], platform: str, home: Path) -> Path:
