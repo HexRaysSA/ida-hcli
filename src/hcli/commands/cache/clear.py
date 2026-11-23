@@ -36,7 +36,7 @@ def clear_cache(dry_run: bool, yes: bool, json_output: bool) -> None:
 
     if plan.is_empty or dry_run:
         if json_output:
-            print_json(get_clear_report(plan, None).model_dump(mode="json"))
+            print_json(get_clear_report(plan, None, dry_run=dry_run).model_dump(mode="json"))
         elif plan.is_empty:
             console.print("The cache is empty.")
         else:
@@ -59,13 +59,12 @@ def clear_cache(dry_run: bool, yes: bool, json_output: bool) -> None:
     result = apply_clear_plan(plan)
 
     if json_output:
-        print_json(get_clear_report(plan, result).model_dump(mode="json"))
+        print_json(get_clear_report(plan, result, dry_run=False).model_dump(mode="json"))
     else:
         console.print(f"Deleted {render_size(result.deleted_bytes)} of cached files.")
         if result.failures:
             console.print(
-                f"[red]error:[/red] could not delete {render_size(result.failed_bytes)}. "
-                "Close other hcli processes and try again. Set HCLI_DEBUG=1 to see the paths."
+                "[red]error:[/red] some cached files could not be deleted. Set HCLI_DEBUG=1 to see the paths."
             )
     if result.failures:
         raise SystemExit(1)

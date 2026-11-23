@@ -56,7 +56,7 @@ def test_plan_measures_each_category_and_skips_unmanaged_entries(root: Path):
         PLUGINS_CACHE_KEY: 30,
     }
     assert plan.total_bytes == 3930
-    planned = {f for c in plan.categories for f in c.files}
+    planned = {f.path for c in plan.categories for f in c.files}
     assert root / "notes.txt" not in planned
     assert not any(f.is_relative_to(root / "owner") for f in planned)
 
@@ -106,9 +106,37 @@ def test_apply_records_a_failure_and_continues(root: Path):
 
     assert [f.path for f in result.failures] == [locked_dir / "installer.run"]
     assert result.failed_bytes == 3000
+    assert result.deleted_bytes == 930
     assert (locked_dir / "installer.run").is_file()
     assert not (root / DOWNLOADS_CACHE_KEY / "license.hexlic").exists()
     assert not (root / PACKS_CACHE_KEY / "abc.tar.zst").exists()
+
+
+def test_apply_removes_empty_subfolders_of_a_category_without_files(tmp_path: Path):
+    root = tmp_path / "cache"
+    (root / DOWNLOADS_CACHE_KEY / "release" / "9.2").mkdir(parents=True)
+
+    apply_clear_plan(get_clear_plan(root))
+
+    assert list((root / DOWNLOADS_CACHE_KEY).iterdir()) == []
+
+
+@posix_only
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores permissions")
+def test_unreadable_folder_is_reported_as_a_failure(tmp_path: Path):
+    root = tmp_path / "cache"
+    locked = root / PACKS_CACHE_KEY / "locked"
+    write(locked / "abc.tar.zst", 10)
+    locked.chmod(0o000)
+    try:
+        plan = get_clear_plan(root)
+        result = apply_clear_plan(plan)
+    finally:
+        locked.chmod(0o700)
+
+    assert not plan.is_empty
+    assert [f.path for f in result.failures] == [locked]
+    assert (locked / "abc.tar.zst").is_file()
 
 
 @posix_only
@@ -146,7 +174,7 @@ def test_listing_names_categories_with_data_and_says_deleting_is_safe(tmp_path: 
 
 def test_report_of_a_dry_run(root: Path):
     plan = get_clear_plan(root)
-    report = get_clear_report(plan, None)
+    report = get_clear_report(plan, None, dry_run=True)
 
     assert report.model_dump(mode="json") == {
         "dry_run": True,
@@ -156,6 +184,7 @@ def test_report_of_a_dry_run(root: Path):
             {"name": PLUGINS_CACHE_KEY, "bytes": 30},
         ],
         "total_bytes": 3930,
+        "deleted_bytes": 0,
         "failed_bytes": 0,
         "failures": [],
     }
@@ -208,6 +237,38 @@ def test_cli_json(root: Path):
     assert report["total_bytes"] == 3930
     assert report["failed_bytes"] == 0
     assert get_clear_plan(root).is_empty
+
+
+def test_cli_dry_run_json(root: Path):
+    result = invoke(root, "--dry-run", "--json")
+
+    assert result.exit_code == 0
+    report = json.loads(result.stdout)
+    assert report["dry_run"] is True
+    assert report["total_bytes"] == 3930
+    assert get_clear_plan(root).total_bytes == 3930
+
+
+def test_cli_json_of_an_empty_cache_is_not_a_dry_run(tmp_path: Path):
+    result = invoke(tmp_path / "missing", "--yes", "--json")
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["dry_run"] is False
+
+
+@posix_only
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores permissions")
+def test_cli_exits_1_when_a_file_cannot_be_deleted(root: Path):
+    locked_dir = root / DOWNLOADS_CACHE_KEY / "release" / "9.2" / "ida-pro"
+    locked_dir.chmod(0o500)
+    try:
+        result = invoke(root, "--yes")
+    finally:
+        locked_dir.chmod(0o700)
+
+    assert result.exit_code == 1
+    assert "could not be deleted" in result.stdout
+    assert (locked_dir / "installer.run").is_file()
 
 
 def test_cli_json_without_yes_fails(root: Path):
