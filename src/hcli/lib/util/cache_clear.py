@@ -137,15 +137,16 @@ def _remove_empty_subfolders(path: Path) -> None:
         try:
             os.rmdir(dirpath)
         except OSError:
+            # the folder has a file that hcli could not delete or that another process added after planning
             pass
 
 
 def apply_clear_plan(plan: ClearPlan) -> ClearResult:
     """Delete the files in `plan`, then the empty subfolders of each category.
 
-    A file that cannot be deleted, or a folder that could not be listed, is recorded
-    as a failure, and deletion continues. The category folders themselves stay.
-    Files added after planning are kept.
+    Records a failure for each file that it cannot delete and for each folder that
+    `get_clear_plan` could not list, and continues. Keeps the category folders and
+    the files that other processes added after planning.
     """
     result = ClearResult()
     for category in plan.categories:
@@ -154,6 +155,7 @@ def apply_clear_plan(plan: ClearPlan) -> ClearResult:
             try:
                 file.path.unlink()
             except FileNotFoundError:
+                # another process deleted the file after planning
                 continue
             except OSError as e:
                 result.failures.append(ClearFailure(file.path, str(e), file.size))
