@@ -18,6 +18,7 @@ from hcli.lib.ida.plugin import (
     is_source_plugin_archive,
     parse_plugin_version,
 )
+from hcli.lib.ida.plugin.exceptions import IDAVersionIncompatibleError
 
 
 def test_source_plugin_archive():
@@ -189,6 +190,14 @@ def test_open_ida_version_spec_matches_unknown_releases():
 
 def test_unparseable_ida_version_matches_nothing():
     assert not is_ida_version_compatible("not-a-version", "*")
+
+
+def test_ida_version_incompatible_error_accepts_a_list_without_a_spec():
+    # ida-hcli-plugin creates the error with only the current version and a list.
+    error = IDAVersionIncompatibleError("9.2", ["9.0", "9.1"])
+    assert error.supported == ["9.0", "9.1"]
+    assert error.spec == ">=9.0,<=9.1"
+    assert ">=9.0,<=9.1" in str(error)
 
 
 @pytest.mark.parametrize(
