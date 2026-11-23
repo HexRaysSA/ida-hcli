@@ -22,12 +22,10 @@ from hcli.lib.ida import (
     find_current_ida_version,
 )
 from hcli.lib.ida.plugin import (
-    ALL_IDA_VERSIONS,
+    ALL_IDA_VERSIONS_SPEC,
     ALL_PLATFORMS,
     IDAMetadataDescriptor,
-    IdaVersion,
     Platform,
-    parse_ida_version,
     parse_plugin_version,
 )
 from hcli.lib.ida.plugin.exceptions import AmbiguousPluginReferenceError
@@ -350,17 +348,10 @@ def render_plugin_name_query_text(result: PluginNameQueryResult, default_repo: s
     render_versions_query_text(result, "available versions:", default_repo)
 
 
-def render_ida_versions(versions: Sequence[IdaVersion]) -> str:
-    if frozenset(versions) == ALL_IDA_VERSIONS:
+def render_ida_versions(spec: str) -> str:
+    if spec == ALL_IDA_VERSIONS_SPEC:
         return "all"
-
-    ordered_versions = sorted(versions, key=parse_ida_version)
-
-    if len(ordered_versions) == 1:
-        return ordered_versions[0]
-
-    # assume there are no holes. we could make this more complete if required.
-    return f"{ordered_versions[0]}-{ordered_versions[-1]}"
+    return spec
 
 
 def render_platforms(platforms: Sequence[Platform]) -> str:
@@ -373,7 +364,7 @@ def render_platforms(platforms: Sequence[Platform]) -> str:
 def collect_download_locations(locations: list[PluginArchiveLocation]) -> list[DownloadLocationEntry]:
     return [
         DownloadLocationEntry(
-            ida_versions=render_ida_versions(location.metadata.plugin.ida_versions),
+            ida_versions=render_ida_versions(location.metadata.plugin.ida_version_spec),
             platforms=render_platforms(location.metadata.plugin.platforms),
             url=location.url,
         )

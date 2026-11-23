@@ -39,15 +39,10 @@ class PlatformIncompatibleError(PluginInstallationError):
 class IDAVersionIncompatibleError(PluginInstallationError):
     """Current IDA version is not supported by the plugin."""
 
-    def __init__(self, current: str, supported: Sequence[str]):
+    def __init__(self, current: str, supported: str):
         self.current = current
         self.supported = supported
-        # Show first 10 supported versions to avoid overwhelming output
-        if len(supported) > 10:
-            versions_str = ", ".join(supported[:10]) + f" (and {len(supported) - 10} more)"
-        else:
-            versions_str = ", ".join(supported)
-        super().__init__(f"Plugin not compatible with IDA version '{current}'. Supported versions: {versions_str}")
+        super().__init__(f"Plugin not compatible with IDA version '{current}'. Supported versions: {supported}")
 
 
 class PythonVersionIncompatibleError(PluginInstallationError):

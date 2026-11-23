@@ -2,13 +2,17 @@ import json
 
 import pytest
 from fixtures import PLUGINS_DIR
+from pydantic import ValidationError
 
+from hcli.commands.plugin.lint import LintResult, _lint_ida_versions
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
     PluginMetadata,
     PluginSettingDescriptor,
     URLs,
+    get_ida_version_spec_from_list,
     is_binary_plugin_archive,
+    is_ida_version_compatible,
     is_plugin_archive,
     is_python_version_compatible,
     is_source_plugin_archive,
@@ -114,6 +118,107 @@ def test_parse_ida_versions():
     assert "9.1" in m.plugin.ida_versions
     assert "8.5" not in m.plugin.ida_versions
     assert "9.2" not in m.plugin.ida_versions
+
+
+def _get_metadata_with_ida_versions(ida_versions: object = None) -> IDAMetadataDescriptor:
+    doc = json.loads((PLUGINS_DIR / "plugin1" / "src-v1" / "ida-plugin.json").read_text())
+    doc["plugin"].pop("idaVersions", None)
+    if ida_versions is not None:
+        doc["plugin"]["idaVersions"] = ida_versions
+    return IDAMetadataDescriptor.model_validate_json(json.dumps(doc))
+
+
+@pytest.mark.parametrize(
+    ("versions", "spec"),
+    [
+        (["9.0", "9.1", "9.2"], ">=9.0,<=9.2"),
+        (["9.0", "9.0sp1", "9.1", "9.2"], ">=9.0,<=9.2"),
+        (["8.4", "9.0", "9.1", "9.2", "9.3"], ">=8.4,<=9.3,!=8.5"),
+        (["9.5"], "==9.5"),
+        (["9.0sp1"], "==9.0"),
+        (["9.4", "9.6"], ">=9.4,<=9.6,!=9.5"),
+        (["9.2", "9.0", "9.1"], ">=9.0,<=9.2"),
+        ([], "*"),
+    ],
+)
+def test_get_ida_version_spec_from_list(versions, spec):
+    assert get_ida_version_spec_from_list(versions) == spec
+
+
+def test_ida_version_list_matches_the_same_released_versions_as_its_spec():
+    m = _get_metadata_with_ida_versions(["8.4", "9.0", "9.1", "9.2", "9.3"])
+    assert m.plugin.ida_version_spec == ">=8.4,<=9.3,!=8.5"
+    assert m.plugin.ida_versions_form == "list"
+    for version in ["8.4", "8.4sp2", "9.0", "9.0sp1", "9.3"]:
+        assert is_ida_version_compatible(version, m.plugin.ida_version_spec)
+    for version in ["8.3", "8.5", "9.4"]:
+        assert not is_ida_version_compatible(version, m.plugin.ida_version_spec)
+
+
+@pytest.mark.parametrize("ida_versions", [[">=9.4"], [9.0], 9.0])
+def test_ida_versions_rejects_values_that_are_not_versions(ida_versions: object):
+    with pytest.raises(ValidationError):
+        _ = _get_metadata_with_ida_versions(ida_versions)
+
+
+def test_ida_version_spec_is_stored_as_written():
+    m = _get_metadata_with_ida_versions(">=9.0,<10")
+    assert m.plugin.ida_version_spec == ">=9.0,<10"
+    assert m.plugin.ida_versions_form == "spec"
+    assert m.plugin.model_dump(mode="json")["idaVersions"] == ">=9.0,<10"
+
+
+def test_ida_version_spec_whitespace_is_removed():
+    assert _get_metadata_with_ida_versions(">=9.0, <10").plugin.ida_version_spec == ">=9.0,<10"
+    assert _get_metadata_with_ida_versions(" >= 9.0 ").plugin.ida_version_spec == ">=9.0"
+
+
+def test_invalid_ida_version_spec_is_rejected():
+    with pytest.raises(ValidationError):
+        _ = _get_metadata_with_ida_versions("9.0 - 9.2x")
+
+
+def test_omitted_ida_versions_matches_all_versions():
+    m = _get_metadata_with_ida_versions()
+    assert m.plugin.ida_version_spec == "*"
+    assert m.plugin.ida_versions_form == "omitted"
+    assert m.plugin.model_dump(mode="json")["idaVersions"] == "*"
+    assert is_ida_version_compatible("12.3", m.plugin.ida_version_spec)
+
+
+def test_open_ida_version_spec_matches_unknown_releases():
+    assert is_ida_version_compatible("9.6", ">=9.0")
+    assert is_ida_version_compatible("10.0", ">=9.0")
+    assert not is_ida_version_compatible("10.0", ">=9.0,<10")
+    assert not is_ida_version_compatible("9.3", ">=9.0,!=9.3")
+
+
+def test_unparseable_ida_version_matches_nothing():
+    assert not is_ida_version_compatible("not-a-version", "*")
+
+
+def test_metadata_round_trips_ida_version_spec():
+    m = _get_metadata_with_ida_versions(["9.0", "9.1"])
+    again = IDAMetadataDescriptor.model_validate_json(m.model_dump_json())
+    assert again.plugin.ida_version_spec == ">=9.0,<=9.1"
+    assert again.plugin.ida_versions_form == "spec"
+
+
+@pytest.mark.parametrize(
+    ("ida_versions", "recommendations", "expected"),
+    [
+        (">=9.0", 0, None),
+        (None, 1, "provide plugin.idaVersions"),
+        (["9.0", "9.1"], 1, '"idaVersions": ">=9.0,<=9.1"'),
+        (">=90", 1, "matches no IDA release"),
+    ],
+)
+def test_lint_ida_versions(capsys, ida_versions, recommendations, expected):
+    result = LintResult()
+    _lint_ida_versions(_get_metadata_with_ida_versions(ida_versions), "test", result)
+    assert result.recommendations == recommendations
+    if expected is not None:
+        assert expected in " ".join(capsys.readouterr().out.split())
 
 
 def test_unexpected_keys_in_plugin_metadata():

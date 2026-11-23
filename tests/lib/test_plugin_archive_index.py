@@ -8,6 +8,7 @@ import pytest
 from fixtures import PLUGINS_DIR
 
 from hcli.lib.ida.plugin.repo import PluginArchiveIndex
+from hcli.lib.ida.plugin.repo.file import JSONFilePluginRepo
 
 # plugin1 declares https://github.com/HexRaysSA/ida-hcli as its repository
 PLUGIN1_ZIP = (PLUGINS_DIR / "plugin1" / "plugin1-v1.0.0.zip").read_bytes()
@@ -51,3 +52,15 @@ def test_index_plugin_archive_returns_number_of_indexed_plugins(zip_data: bytes,
 
     assert index.index_plugin_archive(zip_data, "https://example.com/plugin.zip", expected_host=HOST) == expected
     assert len(index.get_plugins()) == expected
+
+
+def test_index_document_stores_ida_versions_as_spec_strings():
+    index = PluginArchiveIndex()
+    index.index_plugin_archive(edit_metadata(PLUGIN1_ZIP, idaVersions=">=9.0"), "https://example.com/a.zip")
+    index.index_plugin_archive(edit_metadata(PLUGIN1_ZIP, idaVersions=["9.0", "9.1"]), "https://example.com/b.zip")
+
+    doc = json.loads(JSONFilePluginRepo(index.get_plugins()).to_json())
+
+    (plugin,) = doc["plugins"]
+    (locations,) = plugin["versions"].values()
+    assert sorted(location["metadata"]["plugin"]["idaVersions"] for location in locations) == [">=9.0", ">=9.0,<=9.1"]

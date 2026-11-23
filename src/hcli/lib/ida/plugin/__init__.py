@@ -1,3 +1,4 @@
+import functools
 import io
 import logging
 import pathlib
@@ -5,7 +6,7 @@ import re
 import sys
 import typing
 import zipfile
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path, PurePath
 from typing import Literal
 
@@ -21,6 +22,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PrivateAttr,
     ValidationError,
     field_serializer,
     field_validator,
@@ -67,12 +69,10 @@ Platform = Literal[
 
 ALL_PLATFORMS: frozenset[Platform] = frozenset(typing.get_args(Platform))
 
-IdaVersion = Literal[
-    # next versions, unreleased. names are guesses and not any sort of official announcement.
-    # we should have these available so that older versions of hcli don't complain about new plugin support.
-    "10.0",
-    "9.6",
-    # released versions
+# Released IDA versions, newest first. hcli uses this list only to display and lint
+# `idaVersions` specs; compatibility checks match the spec against the running IDA version,
+# so a new IDA release works with existing specs before it is added here.
+KNOWN_IDA_VERSIONS: tuple[str, ...] = (
     "9.5",  #    2026-10
     "9.4",  #    2026-07
     "9.3",  #    2026-02
@@ -139,9 +139,13 @@ IdaVersion = Literal[
     "4.1",
     "4.0",
     "3.0",
-]
+)
 
-ALL_IDA_VERSIONS: frozenset[IdaVersion] = frozenset(typing.get_args(IdaVersion))
+IDA_VERSION_PATTERN = re.compile(r"^(\d+)\.(\d+)(?:sp\d+)?$")
+
+ALL_IDA_VERSIONS_SPEC = "*"
+
+IdaVersionsForm = Literal["omitted", "spec", "list"]
 
 
 def parse_plugin_version(version: str) -> semantic_version.Version:
@@ -168,9 +172,55 @@ def parse_ida_version(version: str) -> semantic_version.Version:
     return semantic_version.Version(normalized_version)
 
 
+@functools.lru_cache(maxsize=1024)
 def parse_ida_version_spec(version: str) -> semantic_version.SimpleSpec:
     normalized_version = version.replace("sp", ".")
     return semantic_version.SimpleSpec(normalized_version)
+
+
+def get_ida_major_minor(version: str) -> str:
+    """Return the "X.Y" part of an IDA version such as "9.0" or "9.0sp1".
+
+    Raises:
+        ValueError: when the version does not look like "X.Y" or "X.YspN".
+    """
+    match = IDA_VERSION_PATTERN.match(version)
+    if not match:
+        raise ValueError(f"invalid IDA version: '{version}' (expected X.Y or X.YspN)")
+    return f"{match.group(1)}.{match.group(2)}"
+
+
+def get_ida_version_spec_from_list(versions: Sequence[str]) -> str:
+    """Convert an explicit list of IDA versions into an equivalent spec string.
+
+    hcli detects the running IDA version as "X.Y", so service packs collapse into their
+    release. Known releases between the lowest and highest entry that the list leaves
+    out become "!=X.Y" exclusions. An empty list means all versions.
+
+    Raises:
+        ValueError: when an entry does not look like "X.Y" or "X.YspN".
+    """
+    if not versions:
+        return ALL_IDA_VERSIONS_SPEC
+
+    declared = sorted({get_ida_major_minor(version) for version in versions}, key=parse_ida_version)
+    if len(declared) == 1:
+        return f"=={declared[0]}"
+
+    lowest = parse_ida_version(declared[0])
+    highest = parse_ida_version(declared[-1])
+    known = {get_ida_major_minor(version) for version in KNOWN_IDA_VERSIONS}
+    missing = sorted(
+        (version for version in known - set(declared) if lowest < parse_ida_version(version) < highest),
+        key=parse_ida_version,
+    )
+    return ",".join([f">={declared[0]}", f"<={declared[-1]}", *(f"!={version}" for version in missing)])
+
+
+def get_ida_versions_matching_spec(spec: str, versions: Iterable[str] = KNOWN_IDA_VERSIONS) -> list[str]:
+    """Return the given IDA versions that the spec matches, oldest first."""
+    parsed = parse_ida_version_spec(spec)
+    return sorted((version for version in versions if parse_ida_version(version) in parsed), key=parse_ida_version)
 
 
 def split_plugin_version_spec(version_spec: str) -> tuple[str, str]:
@@ -663,8 +713,19 @@ class ConfigTemplate(BaseModel):
         return self.destination_parts[1].partition(".")[0]
 
 
+def set_ida_versions_json_schema(schema: dict[str, typing.Any]) -> None:
+    """Document the spec string, and keep the deprecated list form valid."""
+    del schema["type"]
+    schema["anyOf"] = [
+        {"type": "string"},
+        {"type": "array", "items": {"type": "string"}, "deprecated": True},
+    ]
+
+
 class PluginMetadata(BaseModel):
     model_config = ConfigDict(serialize_by_alias=True, extra="allow")  # type: ignore
+
+    _ida_versions_form: IdaVersionsForm = PrivateAttr(default="omitted")
 
     # required fields
     name: str = Field(
@@ -748,15 +809,18 @@ class PluginMetadata(BaseModel):
         description="Maintainers of the plugin. At least one author or maintainer is required.",
     )
 
-    ida_versions: list[IdaVersion] = Field(
+    ida_version_spec: str = Field(
         alias="idaVersions",
-        default_factory=lambda: sorted(ALL_IDA_VERSIONS),
+        default=ALL_IDA_VERSIONS_SPEC,
         description=(
-            "Versions of IDA Pro the plugin supports. Each version must be declared "
-            "separately because IDA's APIs do not strictly follow semantic versioning. "
-            "The default is all versions, but this is almost certainly incorrect."
+            'Versions of IDA Pro the plugin supports, as a version spec such as ">=9.0" or '
+            '">=9.0,<10,!=9.3". Comma-separated clauses must all match. An open upper bound '
+            'includes IDA releases that come later. Service packs are not distinguished: "9.0" '
+            "also matches 9.0 SP1. The default is all versions, but this is almost certainly incorrect. "
+            "A list of versions is deprecated; hcli converts it to the equivalent spec."
         ),
-        examples=[["9.0", "9.1", "9.2"]],
+        examples=[">=9.0", ">=9.0,<10", "==9.2"],
+        json_schema_extra=set_ida_versions_json_schema,
     )
 
     platforms: list[Platform] = Field(
@@ -1019,26 +1083,52 @@ class PluginMetadata(BaseModel):
             raise ValueError(f"failed to parse version: {e}") from e
         return value
 
-    @field_validator("ida_versions", mode="before")
+    @field_validator("ida_version_spec", mode="before")
     @classmethod
-    def transform_ida_version_spec_to_versions(cls, raw: str | list[IdaVersion]) -> list[IdaVersion]:
-        if isinstance(raw, str):
-            spec = parse_ida_version_spec(raw)
+    def get_ida_version_spec(cls, raw: object) -> object:
+        if isinstance(raw, list) and all(isinstance(version, str) for version in raw):
+            return get_ida_version_spec_from_list(raw)
 
-            versions: list[IdaVersion] = [version for version in ALL_IDA_VERSIONS if parse_ida_version(version) in spec]
-            return versions
-        else:
+        if not isinstance(raw, str):
             return raw
+
+        spec = re.sub(r"\s+", "", raw)
+        try:
+            _ = parse_ida_version_spec(spec)
+        except ValueError as e:
+            raise ValueError(f"invalid IDA version spec: '{raw}': {e}") from e
+        return spec
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def record_ida_versions_form(cls, data: typing.Any, handler: typing.Callable[[typing.Any], "PluginMetadata"]):
+        form: IdaVersionsForm = "omitted"
+        if isinstance(data, dict):
+            raw = data.get("idaVersions")
+            if isinstance(raw, list):
+                form = "list"
+            elif raw is not None:
+                form = "spec"
+        model = handler(data)
+        if not isinstance(data, PluginMetadata):
+            model._ida_versions_form = form
+        return model
+
+    @property
+    def ida_versions_form(self) -> IdaVersionsForm:
+        """How ida-plugin.json declared idaVersions: omitted, as a spec string, or as a deprecated list."""
+        return self._ida_versions_form
+
+    @property
+    def ida_versions(self) -> list[str]:
+        """Known IDA versions that the spec matches, oldest first."""
+        return get_ida_versions_matching_spec(self.ida_version_spec)
 
     @model_validator(mode="after")
     def check_at_least_one_contact(self):
         if not self.authors and not self.maintainers:
             raise ValueError("authors or maintainers must be present")
         return self
-
-    @field_serializer("ida_versions")
-    def serialize_sorted_ida_versions(self, versions: list[IdaVersion]):
-        return sorted(versions, key=parse_ida_version)
 
     @field_serializer("platforms")
     def serialize_sorted_platforms(self, platforms: list[Platform]):
@@ -1341,9 +1431,17 @@ def does_plugin_path_exist_in_plugin_archive(zip_data: bytes, plugin_root: Path,
     return does_path_exist_in_zip_archive(zip_data, candidate_path.as_posix())
 
 
-def is_ida_version_compatible(current_version: str, compatible_versions: Iterable[str]) -> bool:
-    """Check if current IDA version is compatible with the given versions."""
-    return current_version in compatible_versions
+def is_ida_version_compatible(current_version: str, ida_version_spec: str) -> bool:
+    """Whether the IDA version matches the plugin's `idaVersions` spec.
+
+    A version that cannot be parsed matches no spec.
+    """
+    try:
+        version = parse_ida_version(current_version)
+    except ValueError:
+        logger.debug("failed to parse IDA version: %s", current_version)
+        return False
+    return version in parse_ida_version_spec(ida_version_spec)
 
 
 def is_python_version_compatible(current_version: str, requirement: str) -> bool:
