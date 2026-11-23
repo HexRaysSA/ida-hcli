@@ -48,7 +48,6 @@ class CategoryPlan:
 
 @dataclass(frozen=True)
 class ClearPlan:
-    root: Path
     categories: tuple[CategoryPlan, ...]
 
     @property
@@ -128,7 +127,7 @@ def _get_category_plan(category: CacheCategory, path: Path) -> CategoryPlan:
 
 def get_clear_plan(root: Path) -> ClearPlan:
     """Measure the data in each cache category under `root`, without creating folders."""
-    return ClearPlan(root, tuple(_get_category_plan(c, root / c.key) for c in CACHE_CATEGORIES))
+    return ClearPlan(tuple(_get_category_plan(c, root / c.key) for c in CACHE_CATEGORIES))
 
 
 def _remove_empty_subfolders(path: Path) -> None:
