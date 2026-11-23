@@ -18,6 +18,7 @@ from hcli.lib.ida.plugin import (
     is_source_plugin_archive,
     parse_plugin_version,
 )
+from hcli.lib.ida.plugin.exceptions import IDAVersionIncompatibleError
 
 
 def test_source_plugin_archive():
@@ -211,6 +212,8 @@ def test_metadata_round_trips_ida_version_spec():
         (None, 1, "provide plugin.idaVersions"),
         (["9.0", "9.1"], 1, '"idaVersions": ">=9.0,<=9.1"'),
         (">=90", 1, "matches no IDA release"),
+        ([], 1, "provide plugin.idaVersions"),
+        (">=9.0sp1", 1, '"idaVersions": ">=9.0"'),
     ],
 )
 def test_lint_ida_versions(capsys, ida_versions, recommendations, expected):
@@ -219,6 +222,13 @@ def test_lint_ida_versions(capsys, ida_versions, recommendations, expected):
     assert result.recommendations == recommendations
     if expected is not None:
         assert expected in " ".join(capsys.readouterr().out.split())
+
+
+def test_ida_version_incompatible_error_lists_supported_versions():
+    plugin = _get_metadata_with_ida_versions(">=9.3,<9.5").plugin
+    exc = IDAVersionIncompatibleError("9.0", plugin.ida_version_spec, plugin.ida_versions)
+    assert exc.supported == ["9.3", "9.4"]
+    assert "Supported versions: >=9.3,<9.5" in str(exc)
 
 
 def test_unexpected_keys_in_plugin_metadata():

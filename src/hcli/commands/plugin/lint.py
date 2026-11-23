@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,7 @@ from pydantic import ValidationError
 
 from hcli.lib.console import console
 from hcli.lib.ida.plugin import (
+    ALL_IDA_VERSIONS_SPEC,
     KNOWN_IDA_VERSIONS,
     IDAMetadataDescriptor,
     get_ida_versions_matching_spec,
@@ -108,7 +110,8 @@ def _check_unexpected_keys(metadata: IDAMetadataDescriptor, source_name: str, re
 def _lint_ida_versions(metadata: IDAMetadataDescriptor, source_name: str, result: LintResult) -> None:
     """Check how plugin.idaVersions is declared."""
     plugin = metadata.plugin
-    if plugin.ida_versions_form == "omitted":
+    is_empty_list = plugin.ida_versions_form == "list" and plugin.ida_version_spec == ALL_IDA_VERSIONS_SPEC
+    if plugin.ida_versions_form == "omitted" or is_empty_list:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.idaVersions")
         console.print('  Specify which IDA versions your plugin supports as a version spec (e.g., ">=9.0")')
         result.recommendations += 1
@@ -119,6 +122,15 @@ def _lint_ida_versions(metadata: IDAMetadataDescriptor, source_name: str, result
             f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: plugin.idaVersions as a list is deprecated"
         )
         console.print(f'  Use the equivalent version spec: "idaVersions": "{plugin.ida_version_spec}"')
+        result.recommendations += 1
+
+    if "sp" in plugin.ida_version_spec:
+        spec_without_service_packs = re.sub(r"sp\d+", "", plugin.ida_version_spec)
+        console.print(
+            f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: plugin.idaVersions names a service pack"
+        )
+        console.print("  hcli detects the running IDA version as X.Y and cannot tell service packs apart.")
+        console.print(f'  Use "idaVersions": "{spec_without_service_packs}"')
         result.recommendations += 1
 
     if not get_ida_versions_matching_spec(plugin.ida_version_spec):
