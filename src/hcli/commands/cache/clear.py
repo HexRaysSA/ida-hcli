@@ -18,8 +18,6 @@ from hcli.lib.util.cache_clear import (
 
 logger = logging.getLogger(__name__)
 
-NEEDS_YES = "pass --yes to delete the cache without a terminal"
-
 
 @click.command()
 @click.option("--dry-run", is_flag=True, default=False, help="Show what would be deleted, and delete nothing.")
@@ -43,11 +41,12 @@ def clear_cache(dry_run: bool, yes: bool, json_output: bool) -> None:
             console.print(escape(render_clear_listing(plan)))
         return
 
+    # the y/N question needs a terminal, and with --json it would mix with the JSON on stdout
     if not yes and (json_output or not sys.stdin.isatty()):
         if json_output:
-            print_json({"error": NEEDS_YES})
+            print_json({"error": "pass --yes to delete the cache with --json"})
         else:
-            console.print(f"[red]error:[/red] {NEEDS_YES}")
+            console.print("[red]error:[/red] pass --yes to delete the cache without a terminal")
         raise SystemExit(1)
 
     if not json_output:
