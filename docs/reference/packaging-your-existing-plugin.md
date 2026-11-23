@@ -74,11 +74,7 @@ and a more complete `ida-plugin.json` looks like:
     "name": "ida-terminal-plugin",
     "entryPoint": "index.py",
     "version": "1.0.0",
-    "idaVersions": [
-      "9.0",
-      "9.1",
-      "9.2"
-    ],
+    "idaVersions": ">=9.0",
     "platforms": [
       "windows-x86_64",
       "linux-x86_64",

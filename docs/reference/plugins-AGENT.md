@@ -27,12 +27,14 @@ Here are your specific instructions. Ask for guidance and clarification along th
       "name": str, handle or username is ok
       "email": str, optionl
     }],
-    "idaVersions": [
-      # the IDA versions the plugin supports, each one listed separately.
-      # omitting this advertises every version, which is almost always wrong.
-      # released values: "9.0", "9.0sp1", "9.1", "9.2", "9.3", "9.4"
-      "9.2",
-    ],
+    # version spec string of the IDA versions the plugin supports.
+    # use the oldest version the plugin is known to work with, as ">=X.Y".
+    # an open upper bound also matches future IDA releases.
+    # to exclude versions, add clauses: ">=9.0,<10" or ">=9.0,!=9.3". all clauses must match.
+    # service packs are not distinguished: "9.0" also matches 9.0 SP1.
+    # omitting this advertises every version, which is almost always wrong.
+    # do not use a list of versions: lists are deprecated.
+    "idaVersions": ">=9.2",
     "platforms": [
       # omit entirely for pure Python plugins: the default is all six platforms.
       # for native plugins, list exactly the platforms you ship a binary for.

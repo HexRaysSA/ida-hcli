@@ -318,7 +318,7 @@ Before creating a GitHub release:
 - [ ] `license` specified
 - [ ] `authors` and/or `maintainers` with email
 - [ ] `urls.repository` points to correct GitHub repo
-- [ ] `idaVersions` lists all supported versions
+- [ ] `idaVersions` is a version spec that matches all supported versions (e.g., `">=9.0"`)
 - [ ] `platforms` specified (or omit for all platforms)
 - [ ] `logoPath` included (optional but recommended)
 - [ ] `dependencies` lists companion plugins correctly (if applicable)
