@@ -240,7 +240,6 @@ class APIClient:
             await self._stream_to_file(url, target_path, filename, auth)
             return str(target_path)
 
-        # Create cache path using XDG_CACHE_HOME with "downloads" key
         # Use the full asset_key if provided, otherwise fall back to filename
         cache_key = asset_key or filename
         cache_path = get_cache_directory("downloads") / cache_key
