@@ -344,9 +344,9 @@ jobs:
               default_path: "/Applications/IDA Professional 9.3.app"
               supports_idalib: true
 
-          # The latest IDA Pro nightly build. Its version changes over time,
-          # so these jobs have no default_path to check, and a failure here
-          # does not fail the workflow.
+          # The latest IDA Pro nightly build. A failure here does not fail the
+          # workflow. Update the version in default_path when the nightly moves
+          # to a new IDA version.
           - python-version: "3.13"
             os_ida:
               name: IDA Pro nightly on Linux
@@ -355,7 +355,7 @@ jobs:
               ida_version: "nightly"
               slug: "nightly@ida-pro:latest:x64linux"
               idat_path: "/idat"
-              default_path: ""
+              default_path: "/home/runner/.local/share/applications/IDA Professional 9.6"
               supports_idalib: true
               nightly: true
 
@@ -367,7 +367,7 @@ jobs:
               ida_version: "nightly"
               slug: "nightly@ida-pro:latest:x64win"
               idat_path: "/idat.exe"
-              default_path: ""
+              default_path: "C:\\Program Files\\IDA Professional 9.6"
               supports_idalib: true
               nightly: true
 
@@ -379,7 +379,7 @@ jobs:
               ida_version: "nightly"
               slug: "nightly@ida-pro:latest:armmac"
               idat_path: "/Contents/MacOS/idat"
-              default_path: ""
+              default_path: "/Applications/IDA Professional 9.6.app"
               supports_idalib: true
               nightly: true
 
@@ -402,7 +402,7 @@ jobs:
           uv sync --no-sources --extra dev --extra test
 
       - name: Clean stale IDA install (macOS runners occasionally retain state)
-        if: ${{ startsWith(matrix.os_ida.os, 'macos') && matrix.os_ida.default_path != '' }}
+        if: ${{ startsWith(matrix.os_ida.os, 'macos') }}
         shell: bash
         run: |
           if [[ -d "${{ matrix.os_ida.default_path }}" ]]; then
@@ -420,7 +420,7 @@ jobs:
           IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
 
       - name: Check default install location (unix)
-        if: ${{ matrix.os_ida.os != 'windows-latest' && matrix.os_ida.default_path != '' }}
+        if: ${{ matrix.os_ida.os != 'windows-latest' }}
         run: |
           if [[ ! -d "${{ matrix.os_ida.default_path }}" ]]; then
             echo "ERROR: Default installation path does not exist: ${{matrix.os_ida.default_path }}"
@@ -428,7 +428,7 @@ jobs:
           fi
 
       - name: Check default install location (windows)
-        if: ${{ matrix.os_ida.os == 'windows-latest' && matrix.os_ida.default_path != '' }}
+        if: ${{ matrix.os_ida.os == 'windows-latest' }}
         run: |
           if (!(Test-Path "${{ matrix.os_ida.default_path }}")) {
             Write-Error "ERROR: Default installation path does not exist: ${{ matrix.os_ida.default_path }}"
