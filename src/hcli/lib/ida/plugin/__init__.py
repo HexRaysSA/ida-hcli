@@ -69,9 +69,10 @@ Platform = Literal[
 
 ALL_PLATFORMS: frozenset[Platform] = frozenset(typing.get_args(Platform))
 
-# Released IDA versions, newest first. hcli uses this list only to display and lint
-# `idaVersions` specs; compatibility checks match the spec against the running IDA version,
-# so a new IDA release works with existing specs before it is added here.
+# Released IDA versions, newest first. Compatibility checks match the `idaVersions` spec
+# against the running IDA version, so a new IDA release works with existing specs before it
+# is added here. This list chooses the "!=X.Y" exclusions when a deprecated list of versions
+# is converted to a spec, and it is used to display and lint specs.
 KNOWN_IDA_VERSIONS: tuple[str, ...] = (
     "9.5",  #    2026-10
     "9.4",  #    2026-07
