@@ -33,6 +33,7 @@ def _make_metadata(
     version: str,
     *,
     requires_python: str | None = None,
+    ida_versions: str | None = None,
     deps: list[str] | None = None,
     python_deps: list[str] | None = None,
 ) -> dict:
@@ -45,6 +46,8 @@ def _make_metadata(
     }
     if requires_python is not None:
         plugin["requiresPython"] = requires_python
+    if ida_versions is not None:
+        plugin["idaVersions"] = ida_versions
     if deps is not None:
         plugin["dependencies"] = deps
     if python_deps is not None:
@@ -52,11 +55,14 @@ def _make_metadata(
     return {"IDAMetadataDescriptorVersion": 1, "plugin": plugin}
 
 
-def _make_location(name: str, version: str, *, requires_python: str | None = None) -> PluginArchiveLocation:
+def _make_location(
+    name: str, version: str, *, requires_python: str | None = None, ida_versions: str | None = None
+) -> PluginArchiveLocation:
+    metadata = _make_metadata(name, version, requires_python=requires_python, ida_versions=ida_versions)
     return PluginArchiveLocation(
         url=f"file:///{name}-{version}.zip",
         sha256="0" * 64,
-        metadata=IDAMetadataDescriptor.model_validate(_make_metadata(name, version, requires_python=requires_python)),
+        metadata=IDAMetadataDescriptor.model_validate(metadata),
     )
 
 
@@ -100,11 +106,7 @@ def test_is_compatible_location_tests_major_minor_as_patch_zero():
 
 
 def test_is_compatible_location_checks_platform_and_ida_version():
-    metadata = _make_metadata("a", "2.0.0")
-    metadata["plugin"]["idaVersions"] = ">=9.0"
-    location = PluginArchiveLocation(
-        url="file:///a-2.0.0.zip", sha256="0" * 64, metadata=IDAMetadataDescriptor.model_validate(metadata)
-    )
+    location = _make_location("a", "2.0.0", ida_versions=">=9.0")
 
     assert is_compatible_location(location, "linux-x86_64", ida_version="9.1")
     assert is_compatible_location(location, "linux-x86_64", ida_version="10.0")

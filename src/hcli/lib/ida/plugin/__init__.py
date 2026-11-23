@@ -69,10 +69,10 @@ Platform = Literal[
 
 ALL_PLATFORMS: frozenset[Platform] = frozenset(typing.get_args(Platform))
 
-# Released IDA versions, newest first. Compatibility checks match the `idaVersions` spec
-# against the running IDA version, so a new IDA release works with existing specs before it
-# is added here. This list chooses the "!=X.Y" exclusions when a deprecated list of versions
-# is converted to a spec, and it is used to display and lint specs.
+# Released IDA versions, newest first. hcli matches the `idaVersions` spec against the
+# running IDA version, so existing specs match a new IDA release before it is added here.
+# hcli uses this list to pick the "!=X.Y" exclusions when it converts a deprecated list of
+# versions to a spec, and to display and lint specs.
 KNOWN_IDA_VERSIONS: tuple[str, ...] = (
     "9.5",  #    2026-10
     "9.4",  #    2026-07
@@ -218,10 +218,12 @@ def get_ida_version_spec_from_list(versions: Sequence[str]) -> str:
     return ",".join([f">={declared[0]}", f"<={declared[-1]}", *(f"!={version}" for version in missing)])
 
 
-def get_ida_versions_matching_spec(spec: str, versions: Iterable[str] = KNOWN_IDA_VERSIONS) -> list[str]:
-    """Return the given IDA versions that the spec matches, oldest first."""
+def get_ida_versions_matching_spec(spec: str) -> list[str]:
+    """Return the known IDA versions that the spec matches, oldest first."""
     parsed = parse_ida_version_spec(spec)
-    return sorted((version for version in versions if parse_ida_version(version) in parsed), key=parse_ida_version)
+    return sorted(
+        (version for version in KNOWN_IDA_VERSIONS if parse_ida_version(version) in parsed), key=parse_ida_version
+    )
 
 
 def split_plugin_version_spec(version_spec: str) -> tuple[str, str]:
@@ -815,10 +817,10 @@ class PluginMetadata(BaseModel):
         default=ALL_IDA_VERSIONS_SPEC,
         description=(
             'Versions of IDA Pro the plugin supports, as a version spec such as ">=9.0" or '
-            '">=9.0,<10,!=9.3". Comma-separated clauses must all match. An open upper bound '
-            'includes IDA releases that come later. Service packs are not distinguished: "9.0" '
-            "also matches 9.0 SP1. The default is all versions, but this is almost certainly incorrect. "
-            "A list of versions is deprecated; hcli converts it to the equivalent spec."
+            '">=9.0,<10,!=9.3". Comma-separated clauses must all match. A spec without an upper '
+            "bound also matches later IDA releases. HCLI does not distinguish service packs: "
+            '"9.0" also matches 9.0 SP1. The default is all versions, but this is almost certainly '
+            "incorrect. A list of versions is deprecated; HCLI converts it to the equivalent spec."
         ),
         examples=[">=9.0", ">=9.0,<10", "==9.2"],
         json_schema_extra=set_ida_versions_json_schema,
@@ -1086,7 +1088,7 @@ class PluginMetadata(BaseModel):
 
     @field_validator("ida_version_spec", mode="before")
     @classmethod
-    def get_ida_version_spec(cls, raw: object) -> object:
+    def normalize_ida_version_spec(cls, raw: object) -> object:
         if isinstance(raw, list) and all(isinstance(version, str) for version in raw):
             return get_ida_version_spec_from_list(raw)
 
@@ -1102,7 +1104,9 @@ class PluginMetadata(BaseModel):
 
     @model_validator(mode="wrap")
     @classmethod
-    def record_ida_versions_form(cls, data: typing.Any, handler: typing.Callable[[typing.Any], "PluginMetadata"]):
+    def record_ida_versions_form(
+        cls, data: typing.Any, handler: typing.Callable[[typing.Any], "PluginMetadata"]
+    ) -> "PluginMetadata":
         form: IdaVersionsForm = "omitted"
         if isinstance(data, dict):
             raw = data.get("idaVersions")
@@ -1433,7 +1437,7 @@ def does_plugin_path_exist_in_plugin_archive(zip_data: bytes, plugin_root: Path,
 
 
 def is_ida_version_compatible(current_version: str, ida_version_spec: str) -> bool:
-    """Whether the IDA version matches the plugin's `idaVersions` spec.
+    """Check if the IDA version matches the plugin's `idaVersions` spec.
 
     A version that cannot be parsed matches no spec.
     """
