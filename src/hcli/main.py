@@ -17,6 +17,7 @@ from hcli.env import ENV
 from hcli.lib.console import console, stderr_console
 from hcli.lib.extensions import get_extensions
 from hcli.lib.update.version import BackgroundUpdateChecker, is_binary
+from hcli.lib.util.cache import get_default_cache_directory
 from hcli.lib.util.io import get_hcli_display_command
 
 # Configure rich-click styling
@@ -236,7 +237,7 @@ def cli(_ctx, auth, auth_credentials, disable_updates: bool):
         global update_checker
 
         # Initialize update checker
-        update_checker = BackgroundUpdateChecker()
+        update_checker = BackgroundUpdateChecker(get_default_cache_directory())
 
         # Start background check (non-blocking)
         update_checker.start_check()

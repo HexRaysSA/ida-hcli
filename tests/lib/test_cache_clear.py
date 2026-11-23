@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from hcli.lib.util.cache import DOWNLOADS_CACHE_KEY, PACKS_CACHE_KEY, PLUGINS_CACHE_KEY
+from hcli.lib.util.cache import DOWNLOADS_CACHE_KEY, PACKS_CACHE_KEY, PLUGINS_CACHE_KEY, UPDATE_CACHE_KEY
 from hcli.lib.util.cache_clear import apply_clear_plan, get_clear_plan, render_clear_listing
 from hcli.main import cli
 
@@ -32,6 +32,7 @@ def root(tmp_path: Path) -> Path:
     write(root / PACKS_CACHE_KEY / "abc.tar.zst", 800)
     write(root / PLUGINS_CACHE_KEY / "owner" / "repo" / "releases.json", 20)
     write(root / PLUGINS_CACHE_KEY / "candidate_repos.json", 10)
+    write(root / UPDATE_CACHE_KEY / "update_check.json", 70)
     write(root / "owner" / "repo" / "releases.json", 5)
     write(root / "notes.txt", 7)
     return root
@@ -41,7 +42,7 @@ def test_apply_deletes_files_and_empty_subfolders_and_keeps_the_rest(root: Path)
     result = apply_clear_plan(get_clear_plan(root))
 
     assert result.failures == []
-    for key in (DOWNLOADS_CACHE_KEY, PACKS_CACHE_KEY, PLUGINS_CACHE_KEY):
+    for key in (DOWNLOADS_CACHE_KEY, PACKS_CACHE_KEY, PLUGINS_CACHE_KEY, UPDATE_CACHE_KEY):
         assert (root / key).is_dir()
         assert list((root / key).iterdir()) == []
     assert (root / "notes.txt").is_file()
@@ -79,7 +80,7 @@ def test_apply_records_a_failure_and_continues(root: Path):
 
     assert [f.path for f in result.failures] == [locked_dir / "installer.run"]
     assert result.failed_bytes == 3000
-    assert result.deleted_bytes == 930
+    assert result.deleted_bytes == 1000
     assert (locked_dir / "installer.run").is_file()
     assert not (root / DOWNLOADS_CACHE_KEY / "license.hexlic").exists()
     assert not (root / PACKS_CACHE_KEY / "abc.tar.zst").exists()
@@ -165,7 +166,7 @@ def test_cli_dry_run_lists_and_deletes_nothing(root: Path):
 
     assert result.exit_code == 0
     assert "IDA installers and other downloaded files" in result.stdout
-    assert get_clear_plan(root).total_bytes == 3930
+    assert get_clear_plan(root).total_bytes == 4000
 
 
 def test_cli_without_a_terminal_requires_yes(root: Path):
@@ -173,14 +174,14 @@ def test_cli_without_a_terminal_requires_yes(root: Path):
 
     assert result.exit_code == 1
     assert "--yes" in result.stdout
-    assert get_clear_plan(root).total_bytes == 3930
+    assert get_clear_plan(root).total_bytes == 4000
 
 
 def test_cli_yes_deletes_the_cache(root: Path):
     result = invoke(root, "--yes")
 
     assert result.exit_code == 0
-    assert "Deleted 3.9 kB of cached files." in result.stdout
+    assert "Deleted 4.0 kB of cached files." in result.stdout
     assert get_clear_plan(root).is_empty
 
 
@@ -208,13 +209,14 @@ def test_cli_dry_run_json(root: Path):
             {"name": DOWNLOADS_CACHE_KEY, "bytes": 3100},
             {"name": PACKS_CACHE_KEY, "bytes": 800},
             {"name": PLUGINS_CACHE_KEY, "bytes": 30},
+            {"name": UPDATE_CACHE_KEY, "bytes": 70},
         ],
-        "total_bytes": 3930,
+        "total_bytes": 4000,
         "deleted_bytes": 0,
         "failed_bytes": 0,
         "failures": [],
     }
-    assert get_clear_plan(root).total_bytes == 3930
+    assert get_clear_plan(root).total_bytes == 4000
 
 
 def test_cli_json(root: Path):
@@ -223,7 +225,7 @@ def test_cli_json(root: Path):
     assert result.exit_code == 0
     report = json.loads(result.stdout)
     assert report["dry_run"] is False
-    assert report["deleted_bytes"] == 3930
+    assert report["deleted_bytes"] == 4000
     assert report["failures"] == []
     assert get_clear_plan(root).is_empty
 
@@ -233,7 +235,7 @@ def test_cli_json_without_yes_fails(root: Path):
 
     assert result.exit_code == 1
     assert "--yes" in json.loads(result.stdout)["error"]
-    assert get_clear_plan(root).total_bytes == 3930
+    assert get_clear_plan(root).total_bytes == 4000
 
 
 def test_cli_json_of_an_empty_cache_needs_no_yes(tmp_path: Path):

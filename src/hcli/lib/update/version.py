@@ -10,12 +10,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from packaging.version import Version, parse
-from platformdirs import user_cache_dir
 from semantic_version import SimpleSpec
 
 from hcli import __version__
 from hcli.env import ENV
 from hcli.lib.update.release import GitHubRepo, get_compatible_version
+from hcli.lib.util.cache import UPDATE_CACHE_KEY
 from hcli.lib.util.io import get_hcli_display_command, is_uvx_environment
 
 
@@ -57,17 +57,16 @@ def is_editable() -> bool:
 class BackgroundUpdateChecker:
     """Manages background checking for CLI updates."""
 
-    def __init__(self, check_interval_hours: int = 24, cache_enabled: bool = True):
+    def __init__(self, cache_root: Path, check_interval_hours: int = 24, cache_enabled: bool = True):
         """Initialize the background update checker.
 
         Args:
-            cache_dir: Directory to store cache files (defaults to user cache dir)
+            cache_root: hcli cache root; the result goes to `update/update_check.json` below it
             check_interval_hours: Hours between update checks
             cache_enabled: Whether to use caching for update checks
         """
         self.repo = GitHubRepo.from_url(ENV.HCLI_GITHUB_URL)
-        self.cache_dir = Path(user_cache_dir(ENV.HCLI_BINARY_NAME, "hex-rays"))
-        self.cache_file = self.cache_dir / "update_check.json"
+        self.cache_file = cache_root / UPDATE_CACHE_KEY / "update_check.json"
         self.check_interval = timedelta(hours=check_interval_hours)
         self.cache_enabled = cache_enabled
         self.check_thread: threading.Thread | None = None
@@ -97,7 +96,7 @@ class BackgroundUpdateChecker:
             return
 
         try:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            self.cache_file.parent.mkdir(parents=True, exist_ok=True)
             cache_data = {
                 "last_check": datetime.now(tz=timezone.utc).isoformat(),
                 "latest_version": str(latest_version) if latest_version else None,
