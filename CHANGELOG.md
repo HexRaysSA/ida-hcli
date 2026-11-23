@@ -80,6 +80,7 @@
 - Store plugin setting values that equal the default, from install prompts, `--config`, and `hcli plugin config <plugin> setup`, so a stored value can be set back to the default and a reinstall does not ask again (#371)
 
 ### Changed
+- `plugin.idaVersions` in `ida-plugin.json` is a version spec string such as `">=9.0"`. hcli matches the spec against the running IDA version, so a spec without an upper bound also matches IDA releases that hcli does not know yet. A list of versions is deprecated. hcli converts it to the equivalent spec, and `hcli plugin lint` recommends that spec. `hcli plugin search` and the error for an incompatible IDA version show the spec
 - hcli stores plugin repository data (GitHub source archives, release assets, release metadata, and `candidate_repos.json`) in the `plugins/` folder of the cache directory, next to `downloads/` and `packs/`. Before, these entries were directly in the cache directory. hcli does not move the old `<owner>/<repo>/` folders and `candidate_repos.json`. hcli downloads the data again when it needs it, and you can delete the old entries
 - Move the hcli extension commands from `hcli extension create` and `hcli extension list` to `hcli hcli-extensions create` and `hcli hcli-extensions list`
 - Log the Python-relevant environment variables (`VIRTUAL_ENV`, `PYTHONHOME`, `PATH`, ...) passed to `idat` at debug level
