@@ -79,6 +79,7 @@
 - Store plugin setting values that equal the default, from install prompts, `--config`, and `hcli plugin config <plugin> setup`, so a stored value can be set back to the default and a reinstall does not ask again (#371)
 
 ### Changed
+- hcli stores plugin repository data (GitHub source archives, release assets, release metadata, and `candidate_repos.json`) in the `plugins/` folder of the cache directory, next to `downloads/` and `packs/`. Before, these entries were directly in the cache directory. hcli does not move the old `<owner>/<repo>/` folders and `candidate_repos.json`. hcli downloads the data again when it needs it, and you can delete the old entries
 - Move the hcli extension commands from `hcli extension create` and `hcli extension list` to `hcli hcli-extensions create` and `hcli hcli-extensions list`
 - Log the Python-relevant environment variables (`VIRTUAL_ENV`, `PYTHONHOME`, `PATH`, ...) passed to `idat` at debug level
 - A global Python without a virtual environment is a warning, not an error, in `hcli ida python doctor`, `hcli plugin install`, and `hcli plugin upgrade`, as long as the current user can write to its site-packages directory. `hcli plugin install` installs plugin dependencies there and prints the warning

@@ -27,6 +27,8 @@ MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024
 
 GITHUB_API_URL = "https://api.github.com"
 
+PLUGINS_CACHE_KEY = "plugins"
+
 
 def parse_github_url(url: str) -> tuple[str, str, str | None]:
     """Parse a direct-install GitHub URL into ``(owner, repo, tag)``.
@@ -534,15 +536,15 @@ def parse_repository(repo_string: str) -> tuple[str, str]:
 
 
 def get_source_archive_cache_directory(owner: str, repo: str, commit_hash: str) -> Path:
-    return get_cache_directory(owner, repo, "source-archives", commit_hash)
+    return get_cache_directory(PLUGINS_CACHE_KEY, owner, repo, "source-archives", commit_hash)
 
 
 def get_release_asset_cache_directory(owner: str, repo: str, release_id: str) -> Path:
-    return get_cache_directory(owner, repo, "release-assets", release_id)
+    return get_cache_directory(PLUGINS_CACHE_KEY, owner, repo, "release-assets", release_id)
 
 
 def get_releases_metadata_cache_path(owner: str, repo: str) -> Path:
-    return get_cache_directory(owner, repo) / "releases.json"
+    return get_cache_directory(PLUGINS_CACHE_KEY, owner, repo) / "releases.json"
 
 
 def set_releases_metadata_cache(owner: str, repo: str, releases: GitHubReleases) -> None:
@@ -684,7 +686,7 @@ def get_source_archive(owner: str, repo: str, commit_hash: str, zip_url: str) ->
 
 
 def get_candidate_github_repos_cache_path() -> Path:
-    return get_cache_directory() / "candidate_repos.json"
+    return get_cache_directory(PLUGINS_CACHE_KEY) / "candidate_repos.json"
 
 
 def set_candidate_github_repos_cache(repos: list[str]) -> None:
