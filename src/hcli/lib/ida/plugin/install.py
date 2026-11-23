@@ -10,6 +10,7 @@ import stat
 import subprocess
 import uuid
 import zipfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -600,6 +601,26 @@ def validate_python_version(metadata: IDAMetadataDescriptor, ctx: InstallContext
         raise PythonVersionIncompatibleError(current_version, requirement)
 
 
+def warn_incompatible_platform(current_platform: str, supported: Sequence[str]) -> None:
+    """Report a platform mismatch that the caller has chosen to install through."""
+    # debug, not warning: the console message below is the user-facing report,
+    # and without HCLI_DEBUG a warning record prints again unformatted.
+    logger.debug("Current platform not supported: %s", current_platform)
+    stderr_console.print(
+        f"[yellow]warning[/yellow]: plugin does not support platform '{current_platform}'"
+        f" (supported: {', '.join(sorted(supported))}); installing anyway"
+    )
+
+
+def warn_incompatible_ida_version(current_version: str, supported: Sequence[str]) -> None:
+    """Report an IDA version mismatch that the caller has chosen to install through."""
+    logger.debug("Current IDA version not supported: %s", current_version)
+    stderr_console.print(
+        f"[yellow]warning[/yellow]: plugin does not support IDA version '{current_version}'"
+        f" (supported: {', '.join(supported)}); installing anyway"
+    )
+
+
 def validate_for_install(metadata: IDAMetadataDescriptor, ctx: InstallContext) -> Path:
     """Validate that a plugin can be installed. Returns the destination path.
 
@@ -624,12 +645,16 @@ def validate_for_install(metadata: IDAMetadataDescriptor, ctx: InstallContext) -
         raise BrokenPluginInstallationError(name, destination_path)
 
     if ctx.env.platform not in metadata.plugin.platforms:
-        raise PlatformIncompatibleError(ctx.env.platform, metadata.plugin.platforms)
+        if not ctx.options.allow_incompatible:
+            raise PlatformIncompatibleError(ctx.env.platform, metadata.plugin.platforms)
+        warn_incompatible_platform(ctx.env.platform, metadata.plugin.platforms)
 
     if metadata.plugin.ida_versions and not is_ida_version_compatible(
         ctx.env.ida_version, metadata.plugin.ida_versions
     ):
-        raise IDAVersionIncompatibleError(ctx.env.ida_version, metadata.plugin.ida_versions)
+        if not ctx.options.allow_incompatible:
+            raise IDAVersionIncompatibleError(ctx.env.ida_version, metadata.plugin.ida_versions)
+        warn_incompatible_ida_version(ctx.env.ida_version, metadata.plugin.ida_versions)
 
     validate_python_version(metadata, ctx)
 

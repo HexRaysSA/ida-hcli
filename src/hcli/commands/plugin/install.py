@@ -52,6 +52,7 @@ from hcli.lib.ida.plugin.repo.scoped import ScopedPluginRepo
 from hcli.lib.ida.plugin.resolve import (
     AmbiguousRequirementError,
     Requirement,
+    ResolutionError,
     get_requirements,
     resolve,
 )
@@ -234,6 +235,20 @@ def _render_cleanup_hint(result: InstallResult) -> None:
         console.print(f"  Run `{get_hcli_display_command()} plugin uninstall {names}` to remove leftover dependencies.")
 
 
+def repo_has_incompatible_plugin(plugin_repo: BasePluginRepo, bare_spec: str, host: str | None) -> bool:
+    """Is this plugin in the repository, but only as archives that don't
+    support the current environment?
+
+    Used to tell "no such plugin" apart from "nothing built for your IDA",
+    so the latter can point at --allow-incompatible.
+    """
+    try:
+        plugin_repo.find_plugin_from_spec(bare_spec, None, None, host=host)
+    except (KeyError, AmbiguousPluginReferenceError, AmbiguousRequirementError):
+        return False
+    return True
+
+
 @click.command()
 @click.pass_context
 @click.argument("plugin")
@@ -244,6 +259,14 @@ def _render_cleanup_hint(result: InstallResult) -> None:
     default=False,
     help="Install a local plugin directory by symlinking it into $IDAUSR/plugins/. "
     "Edits to the source tree take effect immediately on the next plugin reload.",
+)
+@click.option(
+    "-I",
+    "--allow-incompatible",
+    is_flag=True,
+    default=False,
+    help="Install even if the plugin doesn't support this IDA version or platform. "
+    "The plugin may fail to load or crash IDA.",
 )
 @click.option(
     "--config",
@@ -267,7 +290,13 @@ def _render_cleanup_hint(result: InstallResult) -> None:
     "Does nothing when the installed version is already up to date.",
 )
 def install_plugin(
-    ctx, plugin: str, editable: bool, config: tuple[str, ...], no_build_isolation: bool, upgrade: bool
+    ctx,
+    plugin: str,
+    editable: bool,
+    allow_incompatible: bool,
+    config: tuple[str, ...],
+    no_build_isolation: bool,
+    upgrade: bool,
 ) -> None:
     """Install a plugin from a repository, local directory, local .zip file, or URL."""
     pip_options: PipOptions = ctx.obj.get("pip_options", PIP_OPTIONS_DEFAULT)
@@ -283,7 +312,11 @@ def install_plugin(
         with rich.status.Status("collecting environment", console=stderr_console):
             ida_env = IDAEnvironment.from_current()
 
-        install_opts = InstallOptions(pip_options=pip_options, check_environment=check_environment)
+        install_opts = InstallOptions(
+            pip_options=pip_options,
+            check_environment=check_environment,
+            allow_incompatible=allow_incompatible,
+        )
         install_ctx = InstallContext(env=ida_env, options=install_opts)
 
         # --- Source resolution ---
@@ -369,6 +402,7 @@ def install_plugin(
             source_repo = ScopedPluginRepo(ctx.obj.get("plugin_repos") or plugin_repo, {ref.name: plugin_repo})
 
             requirement = Requirement.from_spec(plugin_spec)
+            bare_spec = ref.name + ref.version_spec
             try:
                 with rich.status.Status("fetching plugin", console=stderr_console):
                     resolution = resolve(
@@ -389,6 +423,25 @@ def install_plugin(
                 for candidate_ref in ambiguous.candidate_refs:
                     console.print(f"  {format_qualified_plugin_reference(candidate_ref)}")
                 raise click.Abort()
+            except (ResolutionError, KeyError) as e:
+                # The repository may carry the plugin with no archive for this
+                # environment, which --allow-incompatible can install anyway.
+                if not repo_has_incompatible_plugin(plugin_repo, bare_spec, ref.host):
+                    raise
+                if not allow_incompatible:
+                    console.print(f"[red]Error[/red]: {e}")
+                    console.print(
+                        "Use [blue]--allow-incompatible[/blue] (-I) to install it anyway."
+                        " The plugin may fail to load or crash IDA."
+                    )
+                    raise click.Abort()
+                # -I: take an archive that does not support this environment.
+                # Its own dependencies are not resolved; the mismatch is
+                # reported at validation time below.
+                with rich.status.Status("fetching plugin", console=stderr_console):
+                    plugin_name, buf = plugin_repo.fetch_plugin_from_spec_allowing_incompatible(
+                        bare_spec, ida_env.platform, ida_env.ida_version, host=ref.host
+                    )
 
         if not editable:
             assert buf is not None  # invariant: only the editable branch leaves buf as None
