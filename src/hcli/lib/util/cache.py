@@ -18,11 +18,16 @@ def get_cache_root(environ: Mapping[str, str], platform: str, home: Path) -> Pat
         NotImplementedError: the platform is not Linux, macOS, or Windows.
         KeyError: on Windows, `LOCALAPPDATA` is not set.
     """
+    # set-but-empty must not become Path(""), the current directory
     cache_dir = environ.get("HCLI_CACHE_DIR")
     if cache_dir:
         return Path(cache_dir)
 
+    # ref: https://github.com/mandiant/capa/issues/1212#issuecomment-1361259813
+    # ref: https://stackoverflow.com/a/8220141/87207
     if platform == "linux" or platform == "linux2":
+        # XDG_CACHE_HOME is a POSIX path, so check it with POSIX rules, also when the tests run on Windows
+        # ref: https://specifications.freedesktop.org/basedir-spec/latest/
         xdg_cache_home = environ.get("XDG_CACHE_HOME", "")
         base = Path(xdg_cache_home) if PurePosixPath(xdg_cache_home).is_absolute() else home / ".cache"
         return base / "hex-rays" / "hcli"
