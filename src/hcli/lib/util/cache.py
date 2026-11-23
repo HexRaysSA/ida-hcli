@@ -1,34 +1,41 @@
 import os
 import sys
-from pathlib import Path
+from collections.abc import Mapping
+from pathlib import Path, PurePosixPath
 
 
-def get_default_cache_directory() -> Path:
-    # set-but-empty must not become Path(""), the current directory
-    cache_dir = os.environ.get("HCLI_CACHE_DIR")
+def get_cache_root(environ: Mapping[str, str], platform: str, home: Path) -> Path:
+    r"""Compute the hcli cache root without touching the file system.
+
+    `HCLI_CACHE_DIR` overrides the platform default when it is set and not empty:
+
+    - Linux: `$XDG_CACHE_HOME/hex-rays/hcli`, or `~/.cache/hex-rays/hcli` when
+      `XDG_CACHE_HOME` is unset, empty, or relative (XDG Base Directory spec)
+    - macOS: `~/Library/Caches/hex-rays/hcli`
+    - Windows: `%LOCALAPPDATA%\hex-rays\hcli\cache`
+
+    Raises:
+        NotImplementedError: the platform is not Linux, macOS, or Windows.
+        KeyError: on Windows, `LOCALAPPDATA` is not set.
+    """
+    cache_dir = environ.get("HCLI_CACHE_DIR")
     if cache_dir:
         return Path(cache_dir)
 
-    # otherwise use XDG_CACHE_HOME
-    # ref: https://github.com/mandiant/capa/issues/1212#issuecomment-1361259813
-    #
-    # Linux:   $XDG_CACHE_HOME/hex-rays/hcli/
-    # Windows: %LOCALAPPDATA%\hex-rays\hcli\cache
-    # MacOS:   ~/Library/Caches/hex-rays/hcli/
-
-    # ref: https://stackoverflow.com/a/8220141/87207
-    if sys.platform == "linux" or sys.platform == "linux2":
-        directory = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache" / "hex-rays" / "hcli"))
-    elif sys.platform == "darwin":
-        directory = Path.home() / "Library" / "Caches" / "hex-rays" / "hcli"
-    elif sys.platform == "win32":
-        directory = Path(os.environ["LOCALAPPDATA"]) / "hex-rays" / "hcli" / "cache"
+    if platform == "linux" or platform == "linux2":
+        xdg_cache_home = environ.get("XDG_CACHE_HOME", "")
+        base = Path(xdg_cache_home) if PurePosixPath(xdg_cache_home).is_absolute() else home / ".cache"
+        return base / "hex-rays" / "hcli"
+    elif platform == "darwin":
+        return home / "Library" / "Caches" / "hex-rays" / "hcli"
+    elif platform == "win32":
+        return Path(environ["LOCALAPPDATA"]) / "hex-rays" / "hcli" / "cache"
     else:
-        raise NotImplementedError(f"unsupported platform: {sys.platform}")
+        raise NotImplementedError(f"unsupported platform: {platform}")
 
-    directory.mkdir(parents=True, exist_ok=True)
 
-    return directory
+def get_default_cache_directory() -> Path:
+    return get_cache_root(os.environ, sys.platform, Path.home())
 
 
 def validate_path_component(name: str):
