@@ -642,7 +642,7 @@ def validate_for_install(metadata: IDAMetadataDescriptor, ctx: InstallContext) -
 
     if not is_ida_version_compatible(ctx.env.ida_version, metadata.plugin.ida_version_spec):
         raise IDAVersionIncompatibleError(
-            ctx.env.ida_version, metadata.plugin.ida_version_spec, metadata.plugin.ida_versions
+            ctx.env.ida_version, metadata.plugin.ida_versions, spec=metadata.plugin.ida_version_spec
         )
 
     validate_python_version(metadata, ctx)
@@ -675,7 +675,7 @@ def validate_for_upgrade(metadata: IDAMetadataDescriptor, ctx: InstallContext) -
 
     if not is_ida_version_compatible(ctx.env.ida_version, metadata.plugin.ida_version_spec):
         raise IDAVersionIncompatibleError(
-            ctx.env.ida_version, metadata.plugin.ida_version_spec, metadata.plugin.ida_versions
+            ctx.env.ida_version, metadata.plugin.ida_versions, spec=metadata.plugin.ida_version_spec
         )
 
     existing_metadata = get_metadata_from_plugin_directory(destination_path)
