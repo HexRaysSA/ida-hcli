@@ -8,6 +8,7 @@ from typing import Final
 DOWNLOADS_CACHE_KEY: Final = "downloads"
 PACKS_CACHE_KEY: Final = "packs"
 PLUGINS_CACHE_KEY: Final = "plugins"
+UPDATE_CACHE_KEY: Final = "update"
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ CACHE_CATEGORIES: Final = (
     CacheCategory(DOWNLOADS_CACHE_KEY, "IDA installers and other downloaded files"),
     CacheCategory(PACKS_CACHE_KEY, "Lumina and FLIRT packs"),
     CacheCategory(PLUGINS_CACHE_KEY, "plugin repository data from GitHub"),
+    CacheCategory(UPDATE_CACHE_KEY, "result of the last hcli update check"),
 )
 
 
