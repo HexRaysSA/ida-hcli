@@ -98,3 +98,5 @@ See [How HCLI Finds IDA](ida-detection.md) for the full resolution order these o
 - Linux: $XDG_CACHE_HOME/hex-rays/hcli/ or ~/.cache/hex-rays/hcli/
 - Windows: %LOCALAPPDATA%\hex-rays\hcli\cache
 - macOS: ~/Library/Caches/hex-rays/hcli/
+
+The cache directory contains `downloads/` (IDA installers and other portal downloads), `packs/` (Lumina and FLIRT data packs), and `plugins/` (plugin repository data from GitHub).
