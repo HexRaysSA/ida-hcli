@@ -33,7 +33,6 @@ if TYPE_CHECKING:
     # Type-only: typing.Self needs Python 3.11 (pydantic brings typing_extensions).
     from typing_extensions import Self
 
-CACHE_KEY: Final = PACKS_CACHE_KEY
 _HASH_CHUNK: Final = 1024 * 1024
 _STALE_PARTIAL_AGE: Final = 24 * 60 * 60
 _PARTIAL_NAME: Final = re.compile(r"^\..+\.[0-9a-f]{16}\.partial$")
@@ -47,7 +46,7 @@ ProgressCallback = Callable[[int], None]
 
 def cache_dir(*, create: bool = True) -> Path:
     """``<hcli cache>/packs`` (created on first use); ``create=False`` only computes it (a dry run must not create folders)."""
-    return get_cache_directory(CACHE_KEY) if create else get_default_cache_directory() / CACHE_KEY
+    return get_cache_directory(PACKS_CACHE_KEY) if create else get_default_cache_directory() / PACKS_CACHE_KEY
 
 
 def cached_pack_path(pack: ReleasePack, root: Path | None = None) -> Path:
