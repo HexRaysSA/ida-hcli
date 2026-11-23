@@ -27,6 +27,7 @@ def register_commands(cli: click.Group) -> None:
     # groups
     from .asset import asset
     from .auth import auth
+    from .cache import cache
     from .hcli_extensions import hcli_extensions
     from .ida import ida
     from .license import license
@@ -34,6 +35,7 @@ def register_commands(cli: click.Group) -> None:
     from .share import share
 
     cli.add_command(auth)
+    cli.add_command(cache)
     cli.add_command(ida)
     cli.add_command(share)
     cli.add_command(license)

@@ -99,4 +99,4 @@ See [How HCLI Finds IDA](ida-detection.md) for the full resolution order these o
 - Windows: %LOCALAPPDATA%\hex-rays\hcli\cache
 - macOS: ~/Library/Caches/hex-rays/hcli/
 
-The cache directory contains `downloads/` (IDA installers and other portal downloads), `packs/` (Lumina and FLIRT data packs), and `plugins/` (plugin repository data from GitHub).
+The cache directory contains `downloads/` (IDA installers and other portal downloads), `packs/` (Lumina and FLIRT data packs), and `plugins/` (plugin repository data from GitHub). Run `hcli cache clear` to delete this data. You can do this at any time, because hcli downloads the files again when it needs them.
