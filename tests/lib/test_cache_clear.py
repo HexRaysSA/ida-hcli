@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -150,6 +151,21 @@ def test_apply_removes_symlinks_without_following_them(tmp_path: Path):
 
     plan = get_clear_plan(root)
     result = apply_clear_plan(plan)
+
+    assert result.failures == []
+    assert list((root / DOWNLOADS_CACHE_KEY).iterdir()) == []
+    assert outside_file.read_bytes() == b"x" * 10
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions")
+def test_apply_removes_junctions_without_following_them(tmp_path: Path):
+    root = tmp_path / "cache"
+    outside_file = write(tmp_path / "outside" / "keep.bin", 10)
+    junction = root / DOWNLOADS_CACHE_KEY / "junction"
+    junction.parent.mkdir(parents=True)
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(outside_file.parent)], check=True)
+
+    result = apply_clear_plan(get_clear_plan(root))
 
     assert result.failures == []
     assert list((root / DOWNLOADS_CACHE_KEY).iterdir()) == []

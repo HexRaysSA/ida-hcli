@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -94,8 +96,19 @@ def _get_size(path: Path) -> int:
         return 0
 
 
+def _is_link(path: Path) -> bool:
+    try:
+        st = path.lstat()
+    except OSError:
+        return False
+    # os.walk enters a junction on Windows, because os.path.islink is False for it
+    if sys.platform == "win32" and st.st_reparse_tag == stat.IO_REPARSE_TAG_MOUNT_POINT:
+        return True
+    return stat.S_ISLNK(st.st_mode)
+
+
 def _get_category_plan(category: CacheCategory, path: Path) -> CategoryPlan:
-    """List the files and symlinks under `path`, without following symlinks below it."""
+    """List the files and links under `path`, without following the links below it."""
     files: list[PlannedFile] = []
     unreadable: list[ClearFailure] = []
 
@@ -105,9 +118,11 @@ def _get_category_plan(category: CacheCategory, path: Path) -> CategoryPlan:
     if path.is_dir():
         for dirpath, dirnames, filenames in os.walk(path, onerror=on_error):
             base = Path(dirpath)
-            links = [base / name for name in dirnames if (base / name).is_symlink()]
-            for file in [base / name for name in filenames] + links:
-                files.append(PlannedFile(file, _get_size(file)))
+            # list a link to a folder like a file, so that hcli deletes the link and not the files in its target
+            links = [name for name in dirnames if _is_link(base / name)]
+            dirnames[:] = [name for name in dirnames if name not in links]
+            for name in filenames + links:
+                files.append(PlannedFile(base / name, _get_size(base / name)))
     return CategoryPlan(category, path, tuple(sorted(files, key=lambda f: f.path)), tuple(unreadable))
 
 
