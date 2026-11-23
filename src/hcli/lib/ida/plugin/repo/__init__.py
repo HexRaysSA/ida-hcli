@@ -14,7 +14,6 @@ from pydantic import BaseModel, ConfigDict
 from hcli import USER_AGENT
 from hcli.lib.ida.plugin import (
     IDAMetadataDescriptor,
-    IdaVersion,
     Platform,
     get_component_name,
     get_metadatas_with_paths_from_plugin_archive,
@@ -180,7 +179,7 @@ def is_compatible_location(
     if platform is not None and platform not in plugin.platforms:
         return False
 
-    if ida_version is not None and not is_ida_version_compatible(ida_version, plugin.ida_versions):
+    if ida_version is not None and not is_ida_version_compatible(ida_version, plugin.ida_version_spec):
         return False
 
     if python_version is not None and plugin.requires_python is not None:
@@ -194,7 +193,7 @@ def is_compatible_location(
 def is_compatible_plugin_version_location(
     location: PluginArchiveLocation, current_platform: str, current_version: str
 ) -> bool:
-    if not is_ida_version_compatible(current_version, location.metadata.plugin.ida_versions):
+    if not is_ida_version_compatible(current_version, location.metadata.plugin.ida_version_spec):
         return False
 
     return current_platform in location.metadata.plugin.platforms
@@ -315,12 +314,12 @@ class BasePluginRepo(ABC):
                     continue
 
                 if current_version is not None and not is_ida_version_compatible(
-                    current_version, location.metadata.plugin.ida_versions
+                    current_version, location.metadata.plugin.ida_version_spec
                 ):
                     logger.debug(
                         "skipping location %d: unsupported IDA versions: %s",
                         i,
-                        location.metadata.plugin.ida_versions,
+                        location.metadata.plugin.ida_version_spec,
                     )
                     continue
 
@@ -470,12 +469,12 @@ class PluginArchiveIndex:
     """
 
     def __init__(self):
-        # tuple[name, host] -> version -> tuple[set[IdaVersion], set[Platform]] -> list[tuple[url, sha256, metadata]]
+        # tuple[name, host] -> version -> tuple[ida version spec, set[Platform]] -> list[tuple[url, sha256, metadata]]
         self.index: dict[
             tuple[str, str],
             dict[
                 str,
-                dict[tuple[frozenset[IdaVersion], frozenset[Platform]], list[tuple[str, str, IDAMetadataDescriptor]]],
+                dict[tuple[str, frozenset[Platform]], list[tuple[str, str, IDAMetadataDescriptor]]],
             ],
         ] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
@@ -560,9 +559,8 @@ class PluginArchiveIndex:
         host = metadata.plugin.host
         normalized_host = normalize_plugin_host(host)
         version = metadata.plugin.version
-        ida_versions = frozenset(metadata.plugin.ida_versions)
         platforms = frozenset(metadata.plugin.platforms)
-        spec = (ida_versions, platforms)
+        spec = (metadata.plugin.ida_version_spec, platforms)
 
         if expected_host and normalize_plugin_host(expected_host) != normalized_host:
             logger.debug(m("host mismatch: %s: %s versus expected %s", name, host, expected_host, **context))

@@ -163,86 +163,26 @@
           "type": "array"
         },
         "idaVersions": {
-          "description": "Versions of IDA Pro the plugin supports. Each version must be declared separately because IDA's APIs do not strictly follow semantic versioning. The default is all versions, but this is almost certainly incorrect.",
-          "examples": [
-            [
-              "9.0",
-              "9.1",
-              "9.2"
-            ]
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "deprecated": true,
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
           ],
-          "items": {
-            "enum": [
-              "10.0",
-              "9.6",
-              "9.5",
-              "9.4",
-              "9.3",
-              "9.2",
-              "9.1",
-              "9.0sp1",
-              "9.0",
-              "8.5",
-              "8.4sp2",
-              "8.4sp1",
-              "8.4",
-              "8.3",
-              "8.2sp1",
-              "8.2",
-              "8.1",
-              "8.0sp1",
-              "8.0",
-              "7.7sp1",
-              "7.7",
-              "7.6sp1",
-              "7.6",
-              "7.5sp3",
-              "7.5sp2",
-              "7.5sp1",
-              "7.5",
-              "7.4sp1",
-              "7.4",
-              "7.3",
-              "7.2",
-              "7.1",
-              "7.0sp1",
-              "7.0",
-              "6.95",
-              "6.9",
-              "6.8",
-              "6.7",
-              "6.6",
-              "6.5",
-              "6.4",
-              "6.3",
-              "6.2",
-              "6.1",
-              "6.0",
-              "5.7",
-              "5.6",
-              "5.5",
-              "5.4",
-              "5.3",
-              "5.2",
-              "5.1",
-              "5.0",
-              "4.9sp1",
-              "4.9",
-              "4.8",
-              "4.7",
-              "4.6",
-              "4.5",
-              "4.4",
-              "4.3",
-              "4.2",
-              "4.1",
-              "4.0",
-              "3.0"
-            ],
-            "type": "string"
-          },
-          "title": "Idaversions",
-          "type": "array"
+          "default": "*",
+          "description": "Versions of IDA Pro the plugin supports, as a version spec such as \">=9.0\" or \">=9.0,<10,!=9.3\". Comma-separated clauses must all match. An open upper bound includes IDA releases that come later. Service packs are not distinguished: \"9.0\" also matches 9.0 SP1. The default is all versions, but this is almost certainly incorrect. A list of versions is deprecated; hcli converts it to the equivalent spec.",
+          "examples": [
+            ">=9.0",
+            ">=9.0,<10",
+            "==9.2"
+          ],
+          "title": "Idaversions"
         },
         "platforms": {
           "description": "Platforms the plugin supports. The default is all platforms, which is appropriate for cross-platform Python plugins. Native plugins should declare the platform consistent with the `.dll`/`.so`/`.dylib` file in the archive.",

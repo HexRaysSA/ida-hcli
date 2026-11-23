@@ -100,11 +100,16 @@ def test_is_compatible_location_tests_major_minor_as_patch_zero():
 
 
 def test_is_compatible_location_checks_platform_and_ida_version():
-    location = _make_location("a", "2.0.0")
+    metadata = _make_metadata("a", "2.0.0")
+    metadata["plugin"]["idaVersions"] = ">=9.0"
+    location = PluginArchiveLocation(
+        url="file:///a-2.0.0.zip", sha256="0" * 64, metadata=IDAMetadataDescriptor.model_validate(metadata)
+    )
 
     assert is_compatible_location(location, "linux-x86_64", ida_version="9.1")
+    assert is_compatible_location(location, "linux-x86_64", ida_version="10.0")
     assert not is_compatible_location(location, "linux-riscv", ida_version="9.1")
-    assert not is_compatible_location(location, "linux-x86_64", ida_version="1.0")
+    assert not is_compatible_location(location, "linux-x86_64", ida_version="8.4")
 
 
 def test_is_compatible_location_probes_python_only_when_required():

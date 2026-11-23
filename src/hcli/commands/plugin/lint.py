@@ -14,7 +14,9 @@ from pydantic import ValidationError
 
 from hcli.lib.console import console
 from hcli.lib.ida.plugin import (
+    KNOWN_IDA_VERSIONS,
     IDAMetadataDescriptor,
+    get_ida_versions_matching_spec,
     parse_plugin_version,
     validate_metadata_in_plugin_archive,
 )
@@ -103,6 +105,30 @@ def _check_unexpected_keys(metadata: IDAMetadataDescriptor, source_name: str, re
             result.recommendations += 1
 
 
+def _lint_ida_versions(metadata: IDAMetadataDescriptor, source_name: str, result: LintResult) -> None:
+    """Check how plugin.idaVersions is declared."""
+    plugin = metadata.plugin
+    if plugin.ida_versions_form == "omitted":
+        console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.idaVersions")
+        console.print('  Specify which IDA versions your plugin supports as a version spec (e.g., ">=9.0")')
+        result.recommendations += 1
+        return
+
+    if plugin.ida_versions_form == "list":
+        console.print(
+            f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: plugin.idaVersions as a list is deprecated"
+        )
+        console.print(f'  Use the equivalent version spec: "idaVersions": "{plugin.ida_version_spec}"')
+        result.recommendations += 1
+
+    if not get_ida_versions_matching_spec(plugin.ida_version_spec):
+        console.print(
+            f"[yellow]Warning[/yellow] ({source_name}): ida-plugin.json: plugin.idaVersions matches no IDA release"
+        )
+        console.print(f"  Spec: '{plugin.ida_version_spec}'. Latest releases: {', '.join(KNOWN_IDA_VERSIONS[:5])}")
+        result.recommendations += 1
+
+
 def _lint_metadata(metadata: IDAMetadataDescriptor, source_name: str, result: LintResult) -> None:
     """Validate a single plugin metadata and show lint recommendations."""
     _check_unexpected_keys(metadata, source_name, result)
@@ -111,10 +137,7 @@ def _lint_metadata(metadata: IDAMetadataDescriptor, source_name: str, result: Li
         console.print(f"[red]Error[/red] ({source_name}): plugin version should look like 'X.Y.Z'")
         result.errors += 1
 
-    if not metadata.plugin.ida_versions:
-        console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.idaVersions")
-        console.print("  Specify which IDA versions your plugin supports (e.g., ['9.0', '9.1'])")
-        result.recommendations += 1
+    _lint_ida_versions(metadata, source_name, result)
 
     if not metadata.plugin.description:
         console.print(f"[yellow]Recommendation[/yellow] ({source_name}): ida-plugin.json: provide plugin.description")
