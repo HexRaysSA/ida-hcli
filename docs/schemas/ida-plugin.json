@@ -176,7 +176,7 @@
             }
           ],
           "default": "*",
-          "description": "Versions of IDA Pro the plugin supports, as a version spec such as \">=9.0\" or \">=9.0,<10,!=9.3\". Comma-separated clauses must all match. An open upper bound includes IDA releases that come later. Service packs are not distinguished: \"9.0\" also matches 9.0 SP1. The default is all versions, but this is almost certainly incorrect. A list of versions is deprecated; hcli converts it to the equivalent spec.",
+          "description": "Versions of IDA Pro the plugin supports, as a version spec such as \">=9.0\" or \">=9.0,<10,!=9.3\". Comma-separated clauses must all match. A spec without an upper bound also matches later IDA releases. HCLI does not distinguish service packs: \"9.0\" also matches 9.0 SP1. The default is all versions, but this is almost certainly incorrect. A list of versions is deprecated; HCLI converts it to the equivalent spec.",
           "examples": [
             ">=9.0",
             ">=9.0,<10",
