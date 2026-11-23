@@ -319,8 +319,7 @@ def test_find_current_python_executable_honors_idapythonrc(tmp_path, monkeypatch
     _assert_detected_venv_python(result, venv_dir)
 
 
-@pytest.mark.skipif(not has_idat(), reason="Skip when idat not present (Free/Home)")
-def test_verify_pip_can_install_packages():
+def test_verify_pip_can_install_packages(virtual_ida_environment_with_venv):
     python_exe = find_current_python_executable()
 
     verify_pip_can_install_packages(python_exe, ["flare-capa"])
