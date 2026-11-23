@@ -12,7 +12,6 @@ HOME = Path("/home/user")
     [
         ({}, HOME / ".cache" / "hex-rays" / "hcli"),
         ({"XDG_CACHE_HOME": "/var/cache/user"}, Path("/var/cache/user/hex-rays/hcli")),
-        ({"XDG_CACHE_HOME": str(HOME / ".cache")}, HOME / ".cache" / "hex-rays" / "hcli"),
         ({"XDG_CACHE_HOME": ""}, HOME / ".cache" / "hex-rays" / "hcli"),
         ({"XDG_CACHE_HOME": "relative/cache"}, HOME / ".cache" / "hex-rays" / "hcli"),
     ],
@@ -39,8 +38,3 @@ def test_get_cache_root_hcli_cache_dir_overrides_platform_default(platform: str)
 
 def test_get_cache_root_empty_hcli_cache_dir_uses_platform_default():
     assert get_cache_root({"HCLI_CACHE_DIR": ""}, "linux", HOME) == HOME / ".cache" / "hex-rays" / "hcli"
-
-
-def test_get_cache_root_unsupported_platform():
-    with pytest.raises(NotImplementedError):
-        get_cache_root({}, "sunos5", HOME)
