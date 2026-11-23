@@ -639,13 +639,8 @@ def _validate_installed_ida(install_dir: Path) -> None:
     if not len(contents):
         raise RuntimeError("installation failed: installation directory contents not created")
 
-    has_ida_hlp = False
-    for _, _, files in os.walk(install_dir):
-        if "ida.hlp" in files:
-            has_ida_hlp = True
-
-    if not has_ida_hlp:
-        raise RuntimeError("installation failed: ida.hlp not created")
+    if not is_ida_dir(install_dir):
+        raise RuntimeError(f"installation failed: {get_ida_binary_path(install_dir).name} not created")
 
 
 def _install_ida_mac(installer: Path, prefix: Path, product: IdaProduct) -> None:
