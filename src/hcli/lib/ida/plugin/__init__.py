@@ -861,7 +861,7 @@ class PluginMetadata(BaseModel):
         alias="pythonDependencies",
         default_factory=list,
         description=(
-            "List of pip-compatible dependency specifications, or the literal "
+            "List of PEP 508 dependency specifications, or the literal "
             "string `inline` to read PEP 723 metadata from the entry point."
         ),
         examples=[["httpx", "gidgethub[httpx]>4.0.0", "pkg3>=1.0,<=2.0"], "inline"],
@@ -1269,8 +1269,7 @@ class MinimalIDAPluginMetadata(BaseModel):
 def validate_python_dependencies(dependencies: Sequence[object]) -> None:
     """Check that each entry of pythonDependencies is a PEP 508 requirement.
 
-    HCLI passes these entries to pip, so an entry such as `--target=/some/dir`
-    must not reach it: pip would take it as an option.
+    HCLI passes these entries to pip, and pip takes an entry such as `--target=/some/dir` as an option.
 
     Raises:
         ValueError: if an entry is not a string or does not parse as a requirement.

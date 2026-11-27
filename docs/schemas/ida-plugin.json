@@ -241,7 +241,7 @@
               "type": "string"
             }
           ],
-          "description": "List of pip-compatible dependency specifications, or the literal string `inline` to read PEP 723 metadata from the entry point.",
+          "description": "List of PEP 508 dependency specifications, or the literal string `inline` to read PEP 723 metadata from the entry point.",
           "examples": [
             [
               "httpx",
