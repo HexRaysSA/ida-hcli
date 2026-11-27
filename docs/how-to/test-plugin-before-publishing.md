@@ -173,7 +173,7 @@ Error: ida-plugin.json validation failed
 ```
 
 !!! note
-    Lint does not check `pythonDependencies` against PyPI, so it won't catch a misspelled package name. Check names on [pypi.org](https://pypi.org) and test installation (Step 4).
+    Lint checks that each `pythonDependencies` entry is a valid requirement, but does not check it against PyPI, so it won't catch a misspelled package name. Check names on [pypi.org](https://pypi.org) and test installation (Step 4).
 
 ### Step 4: Test Local Installation
 

@@ -19,6 +19,8 @@ from hcli.lib.ida.plugin import (
     KNOWN_IDA_VERSIONS,
     IDAMetadataDescriptor,
     get_ida_versions_matching_spec,
+    get_python_dependencies_from_plugin_archive,
+    get_python_dependencies_from_plugin_directory,
     parse_plugin_version,
     validate_metadata_in_plugin_archive,
 )
@@ -201,6 +203,26 @@ def _lint_metadata(metadata: IDAMetadataDescriptor, source_name: str, result: Li
     _check_expanded_components(metadata, source_name, result)
 
 
+def _lint_inline_python_dependencies(
+    metadata: IDAMetadataDescriptor, source: bytes | Path, source_name: str, result: LintResult
+) -> None:
+    """Check the PEP 723 dependencies of a plugin with `"pythonDependencies": "inline"`.
+
+    Metadata validation checks a list of dependencies, but not the entry point's PEP 723 block.
+    `source` is the plugin archive or the plugin directory.
+    """
+    if metadata.plugin.python_dependencies != "inline":
+        return
+    try:
+        if isinstance(source, Path):
+            get_python_dependencies_from_plugin_directory(source, metadata)
+        else:
+            get_python_dependencies_from_plugin_archive(source, metadata)
+    except (ValueError, OSError, KeyError) as e:
+        console.print(f"[red]Error[/red] ({source_name}): plugin.pythonDependencies: {e}")
+        result.errors += 1
+
+
 def _is_github_host(url: str) -> bool:
     from urllib.parse import urlparse
 
@@ -266,13 +288,14 @@ def _check_components_in_directory(
         return
 
     seen_names: set[str] = {metadata.plugin.name}
-    for _, comp_meta in tree:
+    for comp_path, comp_meta in tree:
         comp_source = f"{source_name}:{comp_meta.plugin.name}"
         if comp_meta.plugin.name in seen_names:
             console.print(f"[red]Error[/red] ({comp_source}): duplicate component name '{comp_meta.plugin.name}'")
             result.errors += 1
         seen_names.add(comp_meta.plugin.name)
         _lint_metadata(comp_meta, comp_source, result)
+        _lint_inline_python_dependencies(comp_meta, comp_path, comp_source, result)
 
 
 def _check_components_in_archive(
@@ -310,6 +333,7 @@ def _check_components_in_archive(
             result.errors += 1
         seen_names.add(comp_meta.plugin.name)
         _lint_metadata(comp_meta, comp_source, result)
+        _lint_inline_python_dependencies(comp_meta, zip_data, comp_source, result)
 
 
 def _lint_plugin_directory(plugin_path: Path, result: LintResult) -> None:
@@ -347,6 +371,7 @@ def _lint_plugin_directory(plugin_path: Path, result: LintResult) -> None:
         return
 
     _lint_metadata(metadata, str(plugin_path), result)
+    _lint_inline_python_dependencies(metadata, plugin_path, str(plugin_path), result)
     _lint_readme_in_directory(plugin_path, str(plugin_path), result)
     _check_components_in_directory(plugin_path, metadata, str(plugin_path), result)
 
@@ -445,6 +470,7 @@ def _lint_plugin_archive(zip_data: bytes, source_name: str, result: LintResult) 
             continue
 
         _lint_metadata(metadata, plugin_source_name, result)
+        _lint_inline_python_dependencies(metadata, zip_data, plugin_source_name, result)
         _lint_readme_in_archive(zip_data, metadata_path, plugin_source_name, result)
         _check_components_in_archive(zip_data, metadata_path, metadata, plugin_source_name, result)
 

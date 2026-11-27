@@ -44,7 +44,8 @@ Here are your specific instructions. Ask for guidance and clarification along th
     "pythonDependencies": [
       # for pure Python plugins.
       # dependencies must be called out in the readme, not inferred from source.
-      "packagename[>=version]",
+      # each entry is a PEP 508 requirement; the version spec is optional.
+      "packagename>=version",
     ],
     "dependencies": [
       # other plugins that should be installed alongside this one.

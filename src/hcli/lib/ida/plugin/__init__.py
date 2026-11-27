@@ -16,6 +16,7 @@ else:
     import tomli as tomllib
 
 import semantic_version
+from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import Version
 from pydantic import (
@@ -860,7 +861,7 @@ class PluginMetadata(BaseModel):
         alias="pythonDependencies",
         default_factory=list,
         description=(
-            "List of pip-compatible dependency specifications, or the literal "
+            "List of PEP 508 dependency specifications, or the literal "
             "string `inline` to read PEP 723 metadata from the entry point."
         ),
         examples=[["httpx", "gidgethub[httpx]>4.0.0", "pkg3>=1.0,<=2.0"], "inline"],
@@ -1049,6 +1050,13 @@ class PluginMetadata(BaseModel):
             else:
                 result.append(entry)
         return result
+
+    @field_validator("python_dependencies", mode="after")
+    @classmethod
+    def is_valid_python_dependencies(cls, value: list[str] | str) -> list[str] | str:
+        if isinstance(value, list):
+            validate_python_dependencies(value)
+        return value
 
     @field_validator("requires_python", mode="after")
     @classmethod
@@ -1258,6 +1266,23 @@ class MinimalIDAPluginMetadata(BaseModel):
     plugin: "MinimalIDAPluginMetadata.MinimalPluginMetadata"
 
 
+def validate_python_dependencies(dependencies: Sequence[object]) -> None:
+    """Check that each entry of pythonDependencies is a PEP 508 requirement.
+
+    HCLI passes these entries to pip, and pip takes an entry such as `--target=/some/dir` as an option.
+
+    Raises:
+        ValueError: if an entry is not a string or does not parse as a requirement.
+    """
+    for dependency in dependencies:
+        if not isinstance(dependency, str):
+            raise ValueError(f"Python dependency must be a string, got {type(dependency).__name__}")  # noqa: TRY004
+        try:
+            Requirement(dependency)
+        except InvalidRequirement as e:
+            raise ValueError(f"invalid Python dependency: '{dependency}': {e}") from e
+
+
 def parse_pep723_metadata(python_file_content: str) -> list[str]:
     """Parse PEP 723 inline script metadata from Python file content.
 
@@ -1265,7 +1290,8 @@ def parse_pep723_metadata(python_file_content: str) -> list[str]:
     or an empty list if no metadata block is found.
 
     Raises:
-        ValueError: If metadata block is found but contains invalid TOML or unexpected data format
+        ValueError: If metadata block is found but contains invalid TOML, unexpected data format,
+            or a dependency that is not a valid requirement
     """
     pattern = r"#\s*///\s*script\s*\n(.*?)#\s*///\s*\n"
     match = re.search(pattern, python_file_content, re.DOTALL | re.MULTILINE)
@@ -1288,12 +1314,13 @@ def parse_pep723_metadata(python_file_content: str) -> list[str]:
     try:
         metadata = tomllib.loads(toml_content)
         dependencies = metadata.get("dependencies", [])
-        if isinstance(dependencies, list):
-            return dependencies
-        else:
-            raise ValueError(f"PEP 723 dependencies must be a list, got {type(dependencies).__name__}")  # noqa: TRY004
     except tomllib.TOMLDecodeError as e:
         raise ValueError(f"Failed to parse PEP 723 TOML metadata: {e}") from e
+
+    if not isinstance(dependencies, list):
+        raise ValueError(f"PEP 723 dependencies must be a list, got {type(dependencies).__name__}")  # noqa: TRY004
+    validate_python_dependencies(dependencies)
+    return dependencies
 
 
 def get_file_content_from_plugin_archive(zip_data: bytes, plugin_name: str, relative_path: str) -> bytes:

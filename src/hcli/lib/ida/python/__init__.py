@@ -512,10 +512,12 @@ def verify_pip_can_install_packages(
         CantInstallPackagesError: if pip dry-run fails.
     """
     with _get_constraint_args(constraints) as constraint_args:
+        # `--` keeps pip from taking a package that starts with `-` as an option.
         process = subprocess.run(
             [str(python_exe), "-m", "pip", "install", "--dry-run"]
             + pip_options.build_args()
             + constraint_args
+            + ["--"]
             + packages,
             capture_output=True,
             check=False,
@@ -539,8 +541,9 @@ def pip_install_packages(
         CantInstallPackagesError: if pip install fails.
     """
     with _get_constraint_args(constraints) as constraint_args:
+        # `--` keeps pip from taking a package that starts with `-` as an option.
         process = subprocess.run(
-            [str(python_exe), "-m", "pip", "install"] + pip_options.build_args() + constraint_args + packages,
+            [str(python_exe), "-m", "pip", "install"] + pip_options.build_args() + constraint_args + ["--"] + packages,
             capture_output=True,
             check=False,
             env=get_environment_for_python(python_exe),
