@@ -675,6 +675,8 @@ def _download_wheelhouse(
     if pip_options.offline:
         cmd.append("--no-index")
 
+    # `--` keeps pip from taking a dependency that starts with `-` as an option.
+    cmd.append("--")
     cmd.extend(deps)
 
     logger.debug("pip download: %s", " ".join(cmd))
