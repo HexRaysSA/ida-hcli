@@ -1,4 +1,7 @@
 import json
+import os
+import stat
+import tempfile
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -7,6 +10,19 @@ from platformdirs import user_config_dir
 from hcli.env import ENV
 
 T = TypeVar("T")
+
+
+def _make_private(path: Path) -> None:
+    """Remove the group and other permissions of `path`, on POSIX."""
+    if os.name != "posix":
+        return
+    try:
+        mode = stat.S_IMODE(path.stat().st_mode)
+        if mode & 0o077:
+            path.chmod(mode & ~0o077)
+    except OSError:
+        # missing, or owned by another user: leave it as it is
+        pass
 
 
 class ConfigStore:
@@ -22,6 +38,9 @@ class ConfigStore:
     def _load_config(self) -> None:
         """Load configuration from disk."""
         if self._config_file.exists():
+            # fix a config that an older version wrote with umask-default permissions
+            _make_private(self._config_dir)
+            _make_private(self._config_file)
             try:
                 with open(self._config_file, "r", encoding="utf-8") as f:
                     self._data = json.load(f)
@@ -31,10 +50,28 @@ class ConfigStore:
             self._data = {}
 
     def _save_config(self):
-        """Save configuration to disk."""
-        self._config_dir.mkdir(parents=True, exist_ok=True)
-        with open(self._config_file, "w", encoding="utf-8") as f:
-            json.dump(self._data, f, indent=2)
+        """Save configuration to disk, readable only by the current user.
+
+        Write to a temporary file and replace config.json with it, so a crash during the
+        write does not leave a truncated config.
+        """
+        # config.json holds the account token, so other users must not read it
+        self._config_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        # mkdir does not change the mode of a directory that exists already
+        _make_private(self._config_dir)
+
+        # write through a symlinked config.json instead of replacing the link
+        target = self._config_file.resolve()
+        # mkstemp creates the file with mode 0600, so other users can never read it
+        fd, temp_name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+        temp_path = Path(temp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(self._data, f, indent=2)
+            os.replace(temp_path, target)
+        except BaseException:
+            temp_path.unlink(missing_ok=True)
+            raise
 
     def _migrate_config(self):
         """Migrate configuration if version changed."""
